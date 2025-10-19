@@ -1,0 +1,181 @@
+/**
+ * Service pour gérer le registry des agents côté backend
+ */
+export class AgentRegistryService {
+  private agentRegistry: any = null
+  
+  /**
+   * Charge le registry des agents de manière dynamique
+   */
+  private async loadAgentRegistry() {
+    if (!this.agentRegistry) {
+      try {
+        // Import dynamique pour éviter la dépendance circulaire
+        // Essayer d'abord le chemin dist, puis le chemin source
+        let importPath = '@data-agents/agents'
+        
+        try {
+          const agentsModule = await import(importPath)
+          this.agentRegistry = agentsModule.agentRegistry
+          console.log('✅ Registry des agents chargé avec succès')
+        } catch (e) {
+          console.warn(`⚠️ Impossible de charger via "${importPath}", tentative avec le chemin absolu...`)
+          // Fallback au chemin absolu
+          const absolutePath = '/Users/fx/dev/data-agents/apps/agents/src/index.ts'
+          const agentsModule = await import(absolutePath)
+          this.agentRegistry = agentsModule.agentRegistry
+          console.log('✅ Registry des agents chargé avec succès (chemin absolu)')
+        }
+      } catch (error) {
+        console.warn('⚠️ Impossible de charger le registry des agents:', error)
+        // Fallback: créer un registry vide
+        this.agentRegistry = {
+          getRegisteredTypes: () => [],
+          create: () => null
+        }
+      }
+    }
+    return this.agentRegistry
+  }
+  
+  /**
+   * Récupère la liste des types d'agents disponibles
+   */
+  async getAvailableAgentTypes(): Promise<string[]> {
+    const registry = await this.loadAgentRegistry()
+    return registry.getRegisteredTypes()
+  }
+  
+  /**
+   * Crée une instance d'un agent avec une configuration temporaire
+   * pour récupérer sa définition et son schéma
+   */
+  async getAgentDefinition(agentType: string, existingConfig?: any): Promise<{
+    configSchema: any
+    defaultConfig: any
+  } | null> {
+    try {
+      const registry = await this.loadAgentRegistry()
+      
+      // Créer une configuration minimale pour l'instanciation
+      const tempConfig = {
+        id: 'temp-agent',
+        name: 'Temporary Agent',
+        type: agentType,
+        frequency: '0 0 * * *',
+        isActive: false,
+        config: existingConfig || {}
+      }
+      
+      // Instancier l'agent temporairement
+      const agent = registry.create(agentType, tempConfig)
+      
+      if (!agent) {
+        console.error(`Registry n'a pas pu créer d'instance pour le type: ${agentType}`)
+        return null
+      }
+      
+      // Récupérer la configuration de l'agent
+      const agentConfig = (agent as any).config
+      
+      if (!agentConfig) {
+        console.error(`Aucune propriété 'config' sur l'instance d'agent ${agentType}`)
+        return null
+      }
+      
+      // La configuration peut être soit dans config.config, soit directement dans config
+      const configData = agentConfig.config || agentConfig
+      const configSchema = configData?.configSchema || {}
+      
+      if (!configSchema || Object.keys(configSchema).length === 0) {
+        console.warn(`Aucun schéma de configuration trouvé pour l'agent ${agentType}`)
+      }
+      
+      return {
+        configSchema: configSchema,
+        defaultConfig: configData || {}
+      }
+      
+    } catch (error) {
+      console.error(`Erreur lors de la récupération de la définition pour l'agent ${agentType}:`, error)
+      return null
+    }
+  }
+  
+  /**
+   * Convertit un schéma du format framework vers le format DynamicConfigForm
+   */
+  convertSchemaFormat(frameworkSchema: any): any {
+    if (!frameworkSchema || !frameworkSchema.fields || !Array.isArray(frameworkSchema.fields)) {
+      return frameworkSchema // Déjà au bon format ou pas de schéma
+    }
+    
+    const convertedSchema: any = {}
+    
+    for (const field of frameworkSchema.fields) {
+      const { name, ...fieldConfig } = field
+      
+      convertedSchema[name] = {
+        ...fieldConfig,
+        type: fieldConfig.type === 'switch' ? 'boolean' : fieldConfig.type,
+        description: fieldConfig.helpText || fieldConfig.description,
+        defaultValue: fieldConfig.defaultValue,
+        category: fieldConfig.category,
+        min: fieldConfig.validation?.min,
+        max: fieldConfig.validation?.max,
+        step: fieldConfig.validation?.step,
+        options: fieldConfig.options,
+        placeholder: fieldConfig.placeholder
+      }
+    }
+    
+    return convertedSchema
+  }
+  
+  /**
+   * Détecte le type d'agent basé sur le nom ou l'ID
+   */
+  async detectAgentType(agentName: string, agentId: string): Promise<string | null> {
+    // Mappings connus
+    const typeMapping: { [key: string]: string } = {
+      'google-search': 'GOOGLE_SEARCH_DATE',
+      'google_search': 'GOOGLE_SEARCH_DATE',
+      'GoogleSearchDate': 'GOOGLE_SEARCH_DATE',
+      'google': 'GOOGLE_SEARCH_DATE',
+      'ffa-scraper': 'FFA_SCRAPER',
+      'ffa_scraper': 'FFA_SCRAPER',
+      'FFAScraper': 'FFA_SCRAPER',
+      'ffa': 'FFA_SCRAPER'
+    }
+    
+    const nameToCheck = (agentName || '') + ' ' + (agentId || '')
+    
+    // Chercher par nom
+    for (const [pattern, type] of Object.entries(typeMapping)) {
+      if (nameToCheck.toLowerCase().includes(pattern.toLowerCase())) {
+        return type
+      }
+    }
+    
+    // Récupérer les types disponibles
+    const availableTypes = await this.getAvailableAgentTypes()
+    
+    // Essayer une correspondance approximative avec les types disponibles
+    for (const type of availableTypes) {
+      if (nameToCheck.toLowerCase().includes(type.toLowerCase().replace(/_/g, '-'))) {
+        return type
+      }
+    }
+    
+    // Par défaut, retourner le premier type disponible si aucun autre n'a matché
+    if (availableTypes.length > 0) {
+      console.warn(`Impossible de détecter le type pour l'agent "${agentName}". Utilisation du type par défaut: ${availableTypes[0]}`)
+      return availableTypes[0]
+    }
+    
+    return null
+  }
+}
+
+// Instance globale
+export const agentRegistryService = new AgentRegistryService()

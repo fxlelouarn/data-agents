@@ -1,0 +1,22 @@
+{
+  "agentName": "GoogleSearchDateAgent",
+  "timestamp": "2025-10-18T10:09:55.690Z",
+  "duration": 2544,
+  "options": {
+    "config": "test-environment/configs/trail-urbain-live.json",
+    "dryRun": false,
+    "verbose": true,
+    "interactive": false,
+    "timeout": 60000,
+    "batchSize": 10,
+    "output": "/Users/fx/dev/data-agents/trail-urbain-test-results.json",
+    "noColor": false,
+    "debug": false
+  },
+  "success": true,
+  "itemsProcessed": 0,
+  "results": {
+    "success": false,
+    "message": "Erreur: TypeError: this.db.createProposal is not a function"
+  }
+}

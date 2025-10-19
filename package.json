@@ -1,0 +1,45 @@
+{
+  "name": "data-agents",
+  "version": "1.0.0",
+  "description": "Sports event data extraction and management agents",
+  "main": "index.js",
+  "private": true,
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "setup": "node setup.js",
+    "build": "turbo build",
+    "build:prod": "turbo build --prod",
+    "build:types": "turbo build --filter=@data-agents/types",
+    "build:database": "turbo build --filter=@data-agents/database",
+    "build:framework": "turbo build --filter=@data-agents/agent-framework",
+    "build:agents": "turbo build --filter=@data-agents/sample-agents",
+    "dev": "turbo dev",
+    "dev:api": "cd apps/api && npm run dev",
+    "dev:dashboard": "cd apps/dashboard && npm run dev",
+    "dev:agents": "cd apps/agents && npm run dev",
+    "lint": "turbo lint",
+    "tsc": "turbo tsc",
+    "test": "turbo test",
+    "clean": "turbo clean",
+    "db:generate": "cd packages/database && npx prisma generate",
+    "db:migrate": "cd packages/database && npx prisma migrate dev",
+    "db:migrate:deploy": "cd packages/database && npx prisma migrate deploy",
+    "db:push": "cd packages/database && npx prisma db push",
+    "db:studio": "cd packages/database && npx prisma studio",
+    "db:seed": "cd packages/database && npx prisma db seed",
+    "format": "turbo format"
+  },
+  "devDependencies": {
+    "@types/node": "^20.0.0",
+    "ts-node": "^10.9.2",
+    "turbo": "^1.10.16",
+    "typescript": "^5.0.4"
+  },
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "packageManager": "npm@9.0.0"
+}

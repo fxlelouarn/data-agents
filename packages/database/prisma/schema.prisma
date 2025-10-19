@@ -1,0 +1,260 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model Agent {
+  id          String     @id @default(cuid())
+  name        String     @unique
+  description String?
+  type        AgentType
+  isActive    Boolean    @default(true)
+  frequency   String
+  config      Json
+  createdAt   DateTime   @default(now())
+  updatedAt   DateTime   @updatedAt
+  logs        AgentLog[]
+  runs        AgentRun[]
+  proposals   Proposal[]
+  states      AgentState[]
+
+  @@map("agents")
+}
+
+model AgentState {
+  id        String   @id @default(cuid())
+  agentId   String
+  key       String
+  value     Json
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  agent     Agent    @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@unique([agentId, key])
+  @@map("agent_states")
+}
+
+model AgentRun {
+  id        String     @id @default(cuid())
+  agentId   String
+  status    RunStatus
+  startedAt DateTime   @default(now())
+  endedAt   DateTime?
+  duration  Int?
+  result    Json?
+  error     String?
+  logs      AgentLog[]
+  agent     Agent      @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("agent_runs")
+}
+
+model AgentLog {
+  id        String    @id @default(cuid())
+  agentId   String
+  runId     String?
+  level     LogLevel
+  message   String
+  data      Json?
+  timestamp DateTime  @default(now())
+  agent     Agent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  run       AgentRun? @relation(fields: [runId], references: [id])
+
+  @@map("agent_logs")
+}
+
+model Proposal {
+  id            String         @id @default(cuid())
+  agentId       String
+  type          ProposalType
+  status        ProposalStatus @default(PENDING)
+  eventId       String?
+  editionId     String?
+  raceId        String?
+  changes       Json
+  justification Json
+  confidence    Float?
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
+  reviewedAt    DateTime?
+  reviewedBy    String?
+  agent         Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@map("proposals")
+}
+
+model DatabaseConnection {
+  id             String       @id @default(cuid())
+  name           String       @unique
+  description    String?
+  type           DatabaseType
+  isActive       Boolean      @default(true)
+  host           String?
+  port           Int?
+  database       String?
+  username       String?
+  password       String?
+  connectionUrl  String?
+  sslMode        String?      @default("prefer")
+  timeout        Int?         @default(30000)
+  maxConnections Int?         @default(10)
+  tags           String[]     @default([])
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  lastTestedAt   DateTime?
+  isHealthy      Boolean      @default(false)
+
+  @@map("database_connections")
+}
+
+model EventCache {
+  id                                  String         @id
+  name                                String
+  city                                String
+  lastSyncAt                          DateTime       @default(now())
+  country                             String
+  countrySubdivisionDisplayCodeLevel1 String?
+  countrySubdivisionDisplayCodeLevel2 String?
+  countrySubdivisionNameLevel1        String
+  countrySubdivisionNameLevel2        String
+  coverImage                          String?
+  dataSource                          String?
+  facebookUrl                         String?
+  fullAddress                         String?
+  images                              String[]       @default([])
+  instagramUrl                        String?
+  isFeatured                          Boolean        @default(false)
+  isPrivate                           Boolean        @default(false)
+  isRecommended                       Boolean        @default(false)
+  latitude                            Float?
+  longitude                           Float?
+  slug                                String?
+  status                              String         @default("DRAFT")
+  twitterUrl                          String?
+  websiteUrl                          String?
+  editions                            EditionCache[]
+
+  @@map("event_cache")
+}
+
+model EditionCache {
+  id                      String      @id
+  eventId                 String
+  year                    String
+  calendarStatus          String      @default("CONFIRMED")
+  registrantsNumber       Int?
+  lastSyncAt              DateTime    @default(now())
+  clientStatus            String?
+  currency                String      @default("EUR")
+  customerType            String?
+  dataSource              String?
+  endDate                 DateTime?
+  federationId            String?
+  medusaVersion           String      @default("V1")
+  registrationClosingDate DateTime?
+  registrationOpeningDate DateTime?
+  startDate               DateTime?
+  status                  String      @default("DRAFT")
+  timeZone                String?     @default("Europe/Paris")
+  event                   EventCache  @relation(fields: [eventId], references: [id], onDelete: Cascade)
+  races                   RaceCache[]
+
+  @@map("edition_cache")
+}
+
+model RaceCache {
+  id                        String       @id
+  editionId                 String
+  name                      String
+  startDate                 DateTime?
+  price                     Float?
+  lastSyncAt                DateTime     @default(now())
+  adultJustificativeOptions String?
+  bikeDistance              Float        @default(0)
+  bikeNegativeElevation     Float?
+  bikePositiveElevation     Float?
+  bikeRunDistance           Float        @default(0)
+  categoryLevel1            String?
+  categoryLevel2            String?
+  dataSource                String?
+  distanceCategory          String?
+  externalFunnelURL         String?
+  federationId              String?
+  isActive                  Boolean      @default(true)
+  isArchived                Boolean      @default(false)
+  licenseNumberType         String       @default("FFA")
+  maxTeamSize               Int?
+  medusaProductId           String?
+  minTeamSize               Int?
+  minorJustificativeOptions String?
+  paymentCollectionType     String       @default("SINGLE")
+  priceType                 String       @default("PER_TEAM")
+  raceVariantStoreId        String?
+  registrationClosingDate   DateTime?
+  registrationOpeningDate   DateTime?
+  resaleEnabled             Boolean      @default(false)
+  runDistance               Float        @default(0)
+  runDistance2              Float        @default(0)
+  runNegativeElevation      Float?
+  runPositiveElevation      Float?
+  swimDistance              Float        @default(0)
+  swimRunDistance           Float        @default(0)
+  timeZone                  String?
+  walkDistance              Float        @default(0)
+  walkNegativeElevation     Float?
+  walkPositiveElevation     Float?
+  edition                   EditionCache @relation(fields: [editionId], references: [id], onDelete: Cascade)
+
+  @@map("race_cache")
+}
+
+enum AgentType {
+  EXTRACTOR
+  COMPARATOR
+  VALIDATOR
+  CLEANER
+  DUPLICATOR
+  SPECIFIC_FIELD
+}
+
+enum RunStatus {
+  PENDING
+  RUNNING
+  SUCCESS
+  FAILED
+  CANCELLED
+}
+
+enum LogLevel {
+  DEBUG
+  INFO
+  WARN
+  ERROR
+}
+
+enum ProposalType {
+  NEW_EVENT
+  EVENT_UPDATE
+  EDITION_UPDATE
+  RACE_UPDATE
+}
+
+enum ProposalStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  ARCHIVED
+}
+
+enum DatabaseType {
+  POSTGRESQL
+  MYSQL
+  SQLITE
+  MONGODB
+  EXTERNAL_API
+  MILES_REPUBLIC
+}

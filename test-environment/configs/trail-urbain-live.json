@@ -1,0 +1,41 @@
+{
+  "name": "Live Test - Trail Urbain Nocturne Event 738",
+  "description": "Configuration pour tester réellement l'événement 738: Trail urbain nocturne de la cité de l'écrit avec vraie DB et vraie API Google",
+  "agentId": "google-search-date-agent-live",
+  "agentName": "Google Search Date Agent - Live Test",
+  "agentType": "EXTRACTOR",
+  "sourceDatabase": "localhost",
+  "batchSize": 1,
+  "googleResultsCount": 5,
+  "googleApiKey": "AIzaSyBv6rvEYkm3nSSVt6VSzU1zZsoU7mkIfTc",
+  "googleSearchEngineId": "50eb493be7a6f476c",
+  "testMode": "live",
+  "useMockContext": false,
+  "targetEventId": 738,
+  "frenchEventsOnly": true,
+  "confidenceThreshold": 0.6,
+  "testDatabaseConfigs": [
+    {
+      "id": "localhost",
+      "name": "localhost",
+      "type": "postgresql",
+      "host": "localhost",
+      "port": 5432,
+      "database": "peyce",
+      "username": "fx",
+      "password": "",
+      "ssl": false,
+      "isDefault": false,
+      "isActive": true,
+      "description": "Base de données locale peyce pour tests",
+      "connectionString": "postgresql://fx@localhost/peyce"
+    }
+  ],
+  "dryRun": false,
+  "verbose": true,
+  "debug": true,
+  "timeout": 45000,
+  "saveResults": true,
+  "outputFormat": "json",
+  "includeLogs": true
+}

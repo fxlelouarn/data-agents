@@ -1,0 +1,39 @@
+{
+  "name": "FFA Scraper Test Configuration",
+  "description": "Configuration for testing the FFA website scraper",
+  
+  "// Scraping Configuration": "Configuration du scraping",
+  "baseUrl": "https://www.athle.fr",
+  "maxPages": 3,
+  "pageDelay": 1000,
+  "userAgent": "Mozilla/5.0 (compatible; DataAgents FFA Scraper; +https://your-site.com/bot)",
+  "headless": true,
+  
+  "// Filtering": "Options de filtrage",
+  "eventTypes": ["Marathon", "Semi-marathon", "10km", "5km", "Trail"],
+  "regions": ["Île-de-France", "Auvergne-Rhône-Alpes", "Nouvelle-Aquitaine"],
+  "minDate": "2024-01-01",
+  "maxDate": "2024-12-31",
+  
+  "// Test Configuration": "Paramètres pour les tests",
+  "batchSize": 10,
+  "timeout": 60000,
+  "retryAttempts": 3,
+  "simulationMode": true,
+  "dryRun": true,
+  "verbose": true,
+  "debug": false,
+  
+  "// Browser Configuration": "Configuration navigateur",
+  "browserTimeout": 30000,
+  "viewportWidth": 1920,
+  "viewportHeight": 1080,
+  "enableJavaScript": true,
+  "enableImages": false,
+  
+  "// Output Configuration": "Configuration de sortie",
+  "saveScreenshots": false,
+  "screenshotPath": "./test-environment/outputs/screenshots",
+  "saveHtml": false,
+  "htmlPath": "./test-environment/outputs/html"
+}

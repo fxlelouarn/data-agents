@@ -1,0 +1,25 @@
+{
+  "name": "@data-agents/sample-agents",
+  "version": "1.0.0",
+  "description": "Sample agent implementations",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsx watch src/index.ts",
+    "prisma:generate": "prisma generate --schema=prisma/miles-republic.prisma",
+    "prisma:update-schema": "cp /Users/fx/dev/milesrepublic/packages/db/prisma/schema.prisma prisma/miles-republic.prisma && npm run prisma:generate"
+  },
+  "dependencies": {
+    "@data-agents/agent-framework": "*",
+    "@data-agents/database": "*",
+    "@prisma/client": "^6.17.1",
+    "axios": "^1.6.0",
+    "cheerio": "^1.0.0-rc.12",
+    "playwright": "^1.40.0",
+    "prisma": "^6.17.1"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.4"
+  }
+}

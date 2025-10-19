@@ -1,0 +1,30 @@
+{
+  "name": "GoogleSearchDateAgent Test Configuration",
+  "description": "Configuration for testing the Google Search Date Agent",
+  "googleApiKey": "YOUR_GOOGLE_API_KEY_HERE",
+  "searchEngineId": "YOUR_SEARCH_ENGINE_ID_HERE",
+  "sourceDatabase": "miles-republic-staging",
+  "batchSize": 5,
+  "maxResults": 10,
+  "simulationMode": true,
+  "frenchEventsOnly": true,
+  "excludeWeekends": false,
+  "confidenceThreshold": 0.7,
+  "searchQueries": [
+    "marathon france 2024",
+    "course à pied france 2024",
+    "trail running france 2024"
+  ],
+  "dateRange": {
+    "start": "2024-01-01",
+    "end": "2024-12-31"
+  },
+  "timeout": 45000,
+  "retryAttempts": 3,
+  "dryRun": true,
+  "verbose": true,
+  "debug": false,
+  "saveResults": true,
+  "outputFormat": "json",
+  "includeLogs": true
+}

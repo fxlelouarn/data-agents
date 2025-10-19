@@ -1,0 +1,908 @@
+import { BaseAgent, DatabaseManager } from '@data-agents/agent-framework'
+import { AgentType, IAgentStateService, AgentStateService } from '@data-agents/database'
+import { prisma } from '@data-agents/database'
+import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
+import { GoogleSearchDateAgentConfigSchema } from './GoogleSearchDateAgent.configSchema'
+import axios from 'axios'
+
+// Interface pour la configuration spécifique de l'agent
+interface GoogleSearchDateConfig {
+  batchSize: number // Nombre d'événements à traiter par batch (défaut: 10)
+  googleResultsCount: number // Nombre de résultats Google à récupérer (défaut: 5) 
+  googleApiKey?: string // Clé API Google
+  googleSearchEngineId?: string // ID du moteur de recherche personnalisé Google
+  sourceDatabase: string // ID de la base de données source pour lire les événements
+  cooldownDays: number // Nombre de jours à attendre avant de rechercher à nouveau un événement (défaut: 14)
+}
+
+// Interface pour les résultats de recherche Google
+interface GoogleSearchResult {
+  items?: Array<{
+    title: string
+    link: string
+    snippet: string
+    displayLink: string
+  }>
+}
+
+// Interface pour les événements de la DB Next Prod
+interface NextProdEvent {
+  id: string
+  name: string
+  city: string
+  currentEditionEventId: string | null
+  edition?: {
+    id: string
+    year: string
+    calendarStatus: string
+    startDate: Date | null
+    races?: Array<{
+      id: string
+      name: string
+      startDate: Date | null
+    }>
+  }
+  historicalEditions?: Array<{
+    id: string
+    year: string
+    startDate: Date
+    calendarStatus: string
+  }>
+}
+
+// Interface pour les dates extraites
+interface ExtractedDate {
+  date: Date
+  confidence: number
+  source: string
+  context: string
+}
+
+export class GoogleSearchDateAgent extends BaseAgent {
+  private dbManager: DatabaseManager // Gestionnaire de bases de données
+  private sourceDb: any // Connexion à la base source
+  private stateService: IAgentStateService // Service de gestion d'état
+
+  constructor(config: any, db?: any, logger?: any) {
+    const agentConfig = {
+      id: config.id || 'google-search-date-agent',
+      name: config.name || 'Google Search Date Agent',
+      description: 'Agent qui recherche les dates d\'événements via Google Search et propose des mises à jour',
+      type: AgentType.EXTRACTOR,
+      frequency: config.frequency || '0 */6 * * *', // Toutes les 6 heures par défaut
+      isActive: config.isActive ?? true,
+      config: {
+        batchSize: config.config?.batchSize || 10,
+        googleResultsCount: config.config?.googleResultsCount || 5,
+        googleApiKey: config.config?.googleApiKey || process.env.GOOGLE_API_KEY,
+        googleSearchEngineId: config.config?.googleSearchEngineId || process.env.GOOGLE_SEARCH_ENGINE_ID,
+        sourceDatabase: config.config?.sourceDatabase, // ID de base de données requis
+        cooldownDays: config.config?.cooldownDays || 14, // 2 semaines par défaut
+        ...config.config,
+        configSchema: GoogleSearchDateAgentConfigSchema // Ajouter le schéma de configuration
+      }
+    }
+
+    super(agentConfig, db, logger)
+    this.dbManager = new DatabaseManager(this.logger)
+    // Créer une instance du service d'état avec le client Prisma
+    this.stateService = new AgentStateService(prisma)
+  }
+
+  private async initializeSourceConnection(config: GoogleSearchDateConfig) {
+    try {
+      if (!this.sourceDb) {
+        // Obtenir la configuration de la base de données
+        const dbConfig = await this.dbManager.getAvailableDatabases()
+        const targetDb = dbConfig.find(db => db.id === config.sourceDatabase)
+        
+        if (!targetDb) {
+          throw new Error(`Configuration de base de données non trouvée: ${config.sourceDatabase}`)
+        }
+        
+        // Essayer d'utiliser le client Prisma de Miles Republic
+        let connectionUrl = targetDb.connectionString
+        if (!connectionUrl) {
+          // Construire l'URL si pas fournie
+          const protocol = targetDb.type === 'postgresql' ? 'postgresql' : 'mysql'
+          const sslParam = targetDb.ssl ? '?ssl=true' : ''
+          connectionUrl = `${protocol}://${targetDb.username}:${targetDb.password}@${targetDb.host}:${targetDb.port}/${targetDb.database}${sslParam}`
+        }
+        
+        this.logger.info(`🔗 Tentative de connexion Miles Republic: ${targetDb.name}`, {
+          connectionUrl: connectionUrl.replace(/\/\/[^@]+@/, '//***:***@')
+        })
+        
+        // Configurer les variables d'environnement pour Prisma
+        const originalDatabaseUrl = process.env.DATABASE_URL
+        process.env.DATABASE_URL = connectionUrl
+        process.env.DATABASE_DIRECT_URL = connectionUrl
+        
+        // Utiliser le client Prisma pré-généré avec le schéma Miles Republic
+        this.logger.info('📚 Utilisation du client Prisma Miles Republic pré-généré...')
+        
+        const { PrismaClient } = await import('@prisma/client')
+        this.sourceDb = new PrismaClient({
+          datasources: {
+            db: {
+              url: connectionUrl
+            }
+          }
+        })
+        
+        this.logger.info('✅ Client Miles Republic créé avec succès')
+        
+        // Tester la connexion
+        await this.sourceDb.$connect()
+        this.logger.info(`✅ Connexion établie avec succès à: ${targetDb.name}`)
+      }
+      return this.sourceDb
+    } catch (error) {
+      this.logger.error(`Erreur lors de l'initialisation de la connexion source: ${config.sourceDatabase}`, { error: String(error) })
+      throw error
+    }
+  }
+
+  async run(context: AgentContext): Promise<AgentRunResult> {
+    const config = this.config.config as GoogleSearchDateConfig
+    
+    try {
+      // Récupérer l'offset persistant
+      const offset = await this.stateService.getState<number>(this.config.id, 'offset') || 0
+      
+      context.logger.info('🚀 Début de l\'exécution de Google Search Date Agent', {
+        batchSize: config.batchSize,
+        googleResultsCount: config.googleResultsCount,
+        offset: offset,
+        sourceDatabase: config.sourceDatabase
+      })
+
+      // S'assurer que la connexion source est initialisée
+      context.logger.info('🔌 Initialisation de la connexion source...', { sourceDatabase: config.sourceDatabase })
+      await this.initializeSourceConnection(config)
+      context.logger.info('✅ Connexion source initialisée avec succès')
+
+      // 1. Récupérer les événements TO_BE_CONFIRMED par batch
+      context.logger.info(`📋 Récupération des événements TO_BE_CONFIRMED (batch: ${config.batchSize}, offset: ${offset})`)
+      const events = await this.getToBeConfirmedEvents(config.batchSize, offset)
+      
+      context.logger.info(`📊 Nombre d'événements récupérés: ${events.length}`)
+      
+      if (events.length === 0) {
+        // Fin du parcours, recommencer du début
+        await this.stateService.setState(this.config.id, 'offset', 0)
+        context.logger.info('🔄 Fin du parcours des événements, remise à zéro de l\'offset')
+        return {
+          success: true,
+          message: 'Parcours complet terminé, recommence du début au prochain run'
+        }
+      }
+
+      const proposals: ProposalData[] = []
+      let eventsProcessed = 0
+      let eventsSkipped = 0
+      
+      context.logger.info(`📋 Début du traitement de ${events.length} événement(s)...`)
+
+      // 2. Traiter chaque événement
+      for (let i = 0; i < events.length; i++) {
+        const event = events[i]
+        context.logger.info(`🏃 [Événement ${i + 1}/${events.length}] Traitement: ${event.name} (${event.city})`)
+        
+        try {
+          // 2.1. Vérifier le cooldown avant de traiter
+          const isInCooldown = await this.isEventInCooldown(event.id, config.cooldownDays)
+          
+          if (isInCooldown) {
+            context.logger.info(`⏸️ Événement en cooldown (${config.cooldownDays} jours) - ignoré: ${event.name}`)
+            eventsSkipped++
+            continue
+          }
+
+          // 3. Effectuer la recherche Google
+          const searchQuery = this.buildSearchQuery(event)
+          context.logger.info(`🔍 Recherche Google: "${searchQuery}"`)
+          eventsProcessed++
+          
+          const searchResults = await this.performGoogleSearch(searchQuery, config)
+
+          if (!searchResults?.items?.length) {
+            context.logger.warn(`⚠️ Aucun résultat Google trouvé pour: ${searchQuery}`)
+            continue
+          }
+          
+          context.logger.info(`📋 ${searchResults.items.length} résultat(s) Google obtenus`)
+
+          // 4. Extraire les dates des snippets
+          const extractedDates = await this.extractDatesFromSnippets(searchResults, event)
+
+          if (extractedDates.length === 0) {
+            context.logger.info(`Aucune date extraite pour l'événement: ${event.name}`)
+            continue
+          }
+
+          // 5. Créer les propositions
+          const eventProposals = await this.createDateProposals(event, extractedDates, searchResults)
+          proposals.push(...eventProposals)
+
+          context.logger.info(`${eventProposals.length} proposition(s) créée(s) pour l'événement: ${event.name}`)
+          
+          // 6. Marquer l'événement comme traité (même si aucune proposition)
+          await this.markEventAsProcessed(event.id)
+
+        } catch (error) {
+          context.logger.error(`Erreur lors du traitement de l'événement ${event.name}:`, { error: String(error) })
+          // Marquer comme traité même en cas d'erreur pour éviter de réessayer immédiatement
+          await this.markEventAsProcessed(event.id)
+        }
+      }
+
+      // 6. Mettre à jour l'offset pour le prochain batch
+      const newOffset = offset + events.length
+      await this.stateService.setState(this.config.id, 'offset', newOffset)
+
+      // 7. Sauvegarder les propositions
+      for (const proposal of proposals) {
+        // Utiliser la confiance calculée de la proposition au lieu du 0.7 codé en dur
+        const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
+        
+        await this.createProposal(
+          proposal.type,
+          proposal.changes,
+          proposal.justification,
+          proposal.eventId,
+          proposal.editionId,
+          proposal.raceId,
+          proposalConfidence // Utiliser la confiance calculée
+        )
+      }
+
+      context.logger.info('Exécution terminée avec succès', {
+        eventsRetrieved: events.length,
+        eventsProcessed: eventsProcessed,
+        eventsSkipped: eventsSkipped,
+        proposalsCreated: proposals.length,
+        cooldownDays: config.cooldownDays,
+        nextOffset: newOffset
+      })
+
+      return {
+        success: true,
+        proposals,
+        message: `${events.length} événements récupérés, ${eventsProcessed} traités, ${eventsSkipped} ignorés (cooldown), ${proposals.length} propositions créées`,
+        metrics: {
+          eventsRetrieved: events.length,
+          eventsProcessed: eventsProcessed,
+          eventsSkipped: eventsSkipped,
+          proposalsCreated: proposals.length,
+          cooldownDays: config.cooldownDays,
+          nextOffset: newOffset
+        }
+      }
+
+    } catch (error) {
+      context.logger.error('Erreur lors de l\'exécution de l\'agent:', { error: String(error) })
+      return {
+        success: false,
+        message: `Erreur: ${String(error)}`
+      }
+    }
+  }
+
+  private async getToBeConfirmedEvents(batchSize: number, offset: number = 0): Promise<NextProdEvent[]> {
+    const config = this.config.config as GoogleSearchDateConfig
+    
+    try {
+      this.logger.info(`🔍 Récupération des événements TO_BE_CONFIRMED...`, {
+        sourceDbStatus: this.sourceDb ? 'connecté' : 'non-connecté',
+        batchSize,
+        offset: offset
+      })
+      
+      // Si pas de connexion source, échouer
+      if (!this.sourceDb) {
+        throw new Error('Pas de connexion source - impossible de continuer')
+      }
+      
+      this.logger.info('📊 Exécution de la requête Prisma...')
+      
+      // Vérifier que this.sourceDb a bien la méthode Event (majuscule - schéma Miles Republic)
+      if (!this.sourceDb || !this.sourceDb.Event) {
+        throw new Error('La base source ne contient pas le modèle "Event" - vérifiez la configuration de la base de données')
+      }
+      
+      // Calculer les années à traiter (année courante et suivante)
+      const currentYear = new Date().getFullYear().toString()
+      const nextYear = (new Date().getFullYear() + 1).toString()
+      
+      let events
+      try {
+        this.logger.info('🔍 Paramètres de la requête Prisma:', {
+          skip: offset,
+          take: batchSize,
+          years: [currentYear, nextYear],
+          filter: 'Events avec éditions TO_BE_CONFIRMED qui sont currentEdition'
+        })
+        
+        // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED 
+        // en utilisant la même logique que votre requête SQL
+        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED')
+        const eventIds = await this.sourceDb.$queryRaw<{id: number}[]>`
+          SELECT DISTINCT e.id, e."createdAt"
+          FROM "Event" e 
+          WHERE EXISTS (
+            SELECT 1 FROM "Edition" ed 
+            WHERE ed."currentEditionEventId" = e.id 
+            AND ed."calendarStatus" = 'TO_BE_CONFIRMED'
+            AND ed."status" = 'LIVE'
+            AND e.status = 'LIVE'
+            AND ed.year IN (${currentYear}, ${nextYear})
+          )
+          ORDER BY e."createdAt" ASC
+          LIMIT ${batchSize} OFFSET ${offset}
+        `
+        
+        this.logger.info(`📊 Étape 1 terminée: ${eventIds.length} Event IDs récupérés`)
+        
+        if (eventIds.length === 0) {
+          this.logger.info('Aucun Event trouvé, retour d\'un tableau vide')
+          return []
+        }
+        
+        // Étape 2: Récupérer les Events complets avec leurs éditions
+        this.logger.info('🔍 Étape 2: Récupération des Events complets avec éditions')
+        const eventIdNumbers = eventIds.map((row: {id: number}) => row.id)
+        
+        events = await this.sourceDb.Event.findMany({
+          where: {
+            id: {
+              in: eventIdNumbers
+            }
+          },
+          include: {
+            editions: {
+              where: {
+                status: 'LIVE' // Récupérer toutes les éditions pour analyser l'historique
+              },
+              select: {
+                id: true,
+                year: true,
+                calendarStatus: true,
+                startDate: true,
+                races: {
+                  select: {
+                    id: true,
+                    name: true,
+                    startDate: true
+                  }
+                }
+              },
+              orderBy: {
+                year: 'desc' // Plus récentes en premier
+              }
+            }
+          },
+          // Pas de skip/take ici car on a déjà limité dans la requête brute
+          orderBy: {
+            createdAt: 'asc'
+          }
+        })
+        
+        this.logger.info('📋 Détails des événements Prisma bruts:', {
+          totalEvents: events.length,
+          eventDetails: events.map((e: any, i: number) => ({
+            index: i,
+            id: e.id,
+            name: e.name,
+            city: e.city,
+            editionsCount: e.editions?.length || 0,
+            editionsDetails: e.editions?.map((ed: any) => ({
+              id: ed.id,
+              year: ed.year,
+              calendarStatus: ed.calendarStatus,
+              racesCount: ed.races?.length || 0
+            }))
+          }))
+        })
+      } catch (prismaError) {
+        this.logger.error('Erreur lors de l\'exécution de la requête Prisma', {
+          error: String(prismaError)
+        })
+        throw prismaError
+      }
+
+      this.logger.info(`✅ Événements récupérés depuis la base: ${events.length}`)
+
+      const processedEvents = events.map((event: any) => {
+        // Séparer édition TO_BE_CONFIRMED et éditions historiques
+        const currentYearInt = parseInt(currentYear)
+        const nextYearInt = parseInt(nextYear)
+        
+        const currentEdition = event.editions.find((ed: any) => 
+          ed.calendarStatus === 'TO_BE_CONFIRMED' && 
+          (parseInt(ed.year) === currentYearInt || parseInt(ed.year) === nextYearInt)
+        )
+        
+        const historicalEditions = event.editions
+          .filter((ed: any) => 
+            ed.calendarStatus === 'CONFIRMED' && // Seulement les éditions confirmées
+            ed.startDate && 
+            parseInt(ed.year) < currentYearInt
+          )
+          .map((ed: any) => ({
+            id: ed.id.toString(),
+            year: ed.year,
+            startDate: new Date(ed.startDate),
+            calendarStatus: ed.calendarStatus // Pour info/debug
+          }))
+          .sort((a: any, b: any) => parseInt(b.year) - parseInt(a.year)) // Plus récent en premier
+        
+        return {
+          id: event.id.toString(),
+          name: event.name,
+          city: event.city,
+          currentEditionEventId: currentEdition?.id?.toString() || null,
+          edition: currentEdition ? {
+            id: currentEdition.id.toString(),
+            year: currentEdition.year,
+            calendarStatus: currentEdition.calendarStatus,
+            startDate: currentEdition.startDate ? new Date(currentEdition.startDate) : null,
+            races: currentEdition.races?.map((race: any) => ({
+              id: race.id.toString(),
+              name: race.name,
+              startDate: race.startDate ? new Date(race.startDate) : null
+            })) || []
+          } : undefined,
+          historicalEditions // Ajouter l'historique pour l'analyse de confiance
+        }
+      })
+      
+      this.logger.info(`🎆 Événements traités: ${processedEvents.length}`)
+      return processedEvents
+
+    } catch (error) {
+      this.logger.error('Erreur lors de la récupération des événements TO_BE_CONFIRMED:', { error: String(error) })
+      throw error
+    }
+  }
+
+
+  private buildSearchQuery(event: NextProdEvent): string {
+    // Format: "<Event.name> <Event.city> <Edition.year>"
+    const year = event.edition?.year || new Date().getFullYear().toString()
+    return `"${event.name}" "${event.city}" ${year}`
+  }
+
+  /**
+   * Vérifie si un événement est en période de cooldown (déjà traité récemment)
+   */
+  private async isEventInCooldown(eventId: string, cooldownDays: number): Promise<boolean> {
+    try {
+      const lastProcessedKey = `lastProcessed_${eventId}`
+      const lastProcessedTimestamp = await this.stateService.getState<number>(this.config.id, lastProcessedKey)
+      
+      if (!lastProcessedTimestamp) {
+        // Jamais traité, pas de cooldown
+        return false
+      }
+      
+      const lastProcessedDate = new Date(lastProcessedTimestamp)
+      const now = new Date()
+      const daysDiff = Math.floor((now.getTime() - lastProcessedDate.getTime()) / (1000 * 60 * 60 * 24))
+      
+      return daysDiff < cooldownDays
+    } catch (error) {
+      this.logger.warn(`Erreur lors de la vérification du cooldown pour l'événement ${eventId}:`, { error: String(error) })
+      return false // En cas d'erreur, ne pas bloquer
+    }
+  }
+
+  /**
+   * Marque un événement comme traité (met à jour le timestamp)
+   */
+  private async markEventAsProcessed(eventId: string): Promise<void> {
+    try {
+      const lastProcessedKey = `lastProcessed_${eventId}`
+      const now = Date.now()
+      await this.stateService.setState(this.config.id, lastProcessedKey, now)
+      this.logger.debug(`Événement ${eventId} marqué comme traité`, { timestamp: now })
+    } catch (error) {
+      this.logger.warn(`Erreur lors du marquage de l'événement ${eventId} comme traité:`, { error: String(error) })
+    }
+  }
+
+  /**
+   * Calcule la confiance basée sur le jour de la semaine et l'historique
+   */
+  private calculateWeekdayConfidence(proposedDate: Date, event: NextProdEvent, baseConfidence: number): number {
+    let adjustedConfidence = baseConfidence
+    const dayOfWeek = proposedDate.getDay() // 0 = dimanche, 6 = samedi
+    
+    // Bonus pour le week-end (samedi = 6, dimanche = 0)
+    if (dayOfWeek === 0) { // Dimanche
+      adjustedConfidence += 0.1 // +10% pour dimanche
+    } else if (dayOfWeek === 6) { // Samedi
+      adjustedConfidence += 0.05 // +5% pour samedi
+    } else {
+      // Vérifier si c'est un jour férié connu
+      if (this.isPublicHoliday(proposedDate)) {
+        adjustedConfidence += 0.08 // +8% pour jour férié
+      } else {
+        adjustedConfidence -= 0.05 // -5% pour jour de semaine normal
+      }
+    }
+    
+    // Bonus si le jour correspond à une édition précédente
+    if (event.historicalEditions && event.historicalEditions.length > 0) {
+      const lastEdition = event.historicalEditions[0] // Plus récente
+      const lastDayOfWeek = lastEdition.startDate.getDay()
+      
+      if (dayOfWeek === lastDayOfWeek) {
+        adjustedConfidence += 0.15 // +15% si même jour que l'édition précédente
+      }
+      
+      // Vérifier la cohérence avec plusieurs éditions précédentes
+      const recentEditions = event.historicalEditions.slice(0, 3) // 3 dernières
+      const consistentDay = recentEditions.every(ed => ed.startDate.getDay() === dayOfWeek)
+      
+      if (consistentDay && recentEditions.length >= 2) {
+        adjustedConfidence += 0.1 // +10% si cohérent avec plusieurs éditions
+      }
+    }
+    
+    // S'assurer que la confiance reste dans [0, 1]
+    return Math.min(Math.max(adjustedConfidence, 0), 1)
+  }
+
+  /**
+   * Vérifie si une date correspond à un jour férié français connu
+   */
+  private isPublicHoliday(date: Date): boolean {
+    const month = date.getMonth() + 1 // 1-12
+    const day = date.getDate()
+    const year = date.getFullYear()
+    
+    // Jours fériés fixes
+    const fixedHolidays = [
+      { month: 1, day: 1 },   // Nouvel An
+      { month: 5, day: 1 },   // Fête du Travail
+      { month: 5, day: 8 },   // Victoire 1945
+      { month: 7, day: 14 },  // Fête Nationale
+      { month: 8, day: 15 },  // Assomption
+      { month: 11, day: 1 },  // Toussaint
+      { month: 11, day: 11 }, // Armistice
+      { month: 12, day: 25 }  // Noël
+    ]
+    
+    return fixedHolidays.some(holiday => 
+      holiday.month === month && holiday.day === day
+    )
+    
+    // Note: On pourrait ajouter Pâques, Ascension, Pentecôte (dates variables)
+    // mais c'est plus complexe à calculer
+  }
+
+  private async performGoogleSearch(query: string, config: GoogleSearchDateConfig): Promise<GoogleSearchResult | null> {
+    try {
+      const { googleApiKey, googleSearchEngineId, googleResultsCount } = config
+
+      if (!googleApiKey || !googleSearchEngineId) {
+        this.logger.error('Clés API Google manquantes - impossible de continuer', {
+          hasApiKey: !!googleApiKey,
+          hasSearchEngineId: !!googleSearchEngineId
+        })
+        throw new Error('Clés API Google manquantes (googleApiKey et googleSearchEngineId requis)')
+      }
+
+      const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
+        params: {
+          key: googleApiKey,
+          cx: googleSearchEngineId,
+          q: query,
+          num: Math.min(googleResultsCount, 10), // Max 10 résultats par requête Google
+          dateRestrict: 'y1' // Limiter aux résultats de l'année écoulée
+        }
+      })
+
+      return response.data
+    } catch (error) {
+      this.logger.error('Erreur lors de la recherche Google:', { query, error: String(error) })
+      return null
+    }
+  }
+
+
+  private async extractDatesFromSnippets(searchResults: GoogleSearchResult, event: NextProdEvent): Promise<ExtractedDate[]> {
+    const dates: ExtractedDate[] = []
+    const currentYear = new Date().getFullYear()
+    const nextYear = currentYear + 1
+
+    if (!searchResults.items) return dates
+
+    for (const item of searchResults.items) {
+      const snippet = item.snippet.toLowerCase()
+      const context = `${item.title} - ${item.snippet}`
+
+      // Patterns de dates en français
+      const datePatterns = [
+        // "le 15 juin 2024", "le dimanche 16 juin 2024"
+        /(?:le (?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche) )?(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/gi,
+        // "04 janvier" (sans année - assume l'année de l'édition)
+        /(?:le )?(?:lundi|mardi|mercredi|jeudi|vendredi|samedi|dimanche )?(?:(?:le )|(?:du ))?(\d{1,2})\s+(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)(?![\d\s]*\d{4})/gi,
+        // "15/06/2024", "15-06-2024"
+        /(\d{1,2})[\/\-](\d{1,2})[\/\-](\d{4})/g,
+        // "juin 2024", "en juin 2024"
+        /(?:en\s+)?(janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre)\s+(\d{4})/gi,
+        // "2024-06-15" (format ISO)
+        /(\d{4})-(\d{1,2})-(\d{1,2})/g
+      ]
+
+      const monthNames = {
+        'janvier': 1, 'février': 2, 'mars': 3, 'avril': 4, 'mai': 5, 'juin': 6,
+        'juillet': 7, 'août': 8, 'septembre': 9, 'octobre': 10, 'novembre': 11, 'décembre': 12
+      }
+
+      for (const pattern of datePatterns) {
+        let match
+        while ((match = pattern.exec(snippet)) !== null) {
+          try {
+            let date: Date
+            let confidence = 0.6
+
+            if (pattern.source.includes('janvier|') && pattern.source.includes('\\d{4}')) {
+              // Pattern avec nom de mois français et année explicite
+              const day = parseInt(match[1])
+              const monthName = match[2].toLowerCase()
+              const year = parseInt(match[3])
+              const month = monthNames[monthName as keyof typeof monthNames]
+              
+              if (month && year >= currentYear && year <= nextYear + 1) {
+                date = new Date(year, month - 1, day)
+                confidence = 0.8 // Haute confiance pour les dates explicites
+              } else continue
+              
+            } else if (pattern.source.includes('janvier|') && pattern.source.includes('(?![')) {
+              // Pattern "04 janvier" sans année - utiliser l'année de l'édition
+              const day = parseInt(match[1])
+              const monthName = match[2].toLowerCase()
+              const month = monthNames[monthName as keyof typeof monthNames]
+              
+              if (month) {
+                // Utiliser l'année de l'édition ou l'année suivante
+                const editionYear = event.edition?.year ? parseInt(event.edition.year) : nextYear
+                date = new Date(editionYear, month - 1, day)
+                confidence = 0.75 // Confiance légèrement inférieure car année inferred
+              } else continue
+
+            } else if (pattern.source.includes('\\/\\-')) {
+              // Pattern DD/MM/YYYY ou DD-MM-YYYY
+              const day = parseInt(match[1])
+              const month = parseInt(match[2])
+              const year = parseInt(match[3])
+              
+              if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
+                date = new Date(year, month - 1, day)
+                confidence = 0.7
+              } else continue
+
+            } else if (pattern.source.includes('(\d{4})-')) {
+              // Pattern YYYY-MM-DD
+              const year = parseInt(match[1])
+              const month = parseInt(match[2])
+              const day = parseInt(match[3])
+              
+              if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
+                date = new Date(year, month - 1, day)
+                confidence = 0.8
+              } else continue
+
+            } else {
+              // Pattern mois seul
+              const monthName = match[1].toLowerCase()
+              const year = parseInt(match[2])
+              const month = monthNames[monthName as keyof typeof monthNames]
+              
+              if (month && year >= currentYear && year <= nextYear + 1) {
+                date = new Date(year, month - 1, 1) // Premier du mois par défaut
+                confidence = 0.5 // Confiance plus faible pour mois seul
+              } else continue
+            }
+
+            // Vérifier que la date est valide et dans une plage raisonnable
+            if (date && !isNaN(date.getTime())) {
+              const now = new Date()
+              const twoYearsFromNow = new Date(now.getFullYear() + 2, 11, 31)
+              
+              if (date >= now && date <= twoYearsFromNow) {
+                dates.push({
+                  date,
+                  confidence,
+                  source: item.link,
+                  context: match[0] + ` (extrait de: "${context}")`
+                })
+              }
+            }
+          } catch (error) {
+            // Ignorer les erreurs de parsing de dates individuelles
+          }
+        }
+      }
+    }
+
+    // Supprimer les doublons et trier par confiance
+    const uniqueDates = dates.filter((date, index, self) => 
+      index === self.findIndex(d => d.date.getTime() === date.date.getTime())
+    ).sort((a, b) => b.confidence - a.confidence)
+
+    return uniqueDates.slice(0, 5) // Garder les 5 meilleures dates
+  }
+
+  private async createDateProposals(
+    event: NextProdEvent, 
+    extractedDates: ExtractedDate[], 
+    searchResults: GoogleSearchResult
+  ): Promise<ProposalData[]> {
+    const proposals: ProposalData[] = []
+
+    if (!event.edition || extractedDates.length === 0) return proposals
+
+    // Grouper les dates extraites par date pour créer une proposition consolidée
+    const dateGroups = new Map<string, ExtractedDate[]>()
+    
+    // Regrouper les dates identiques (même jour)
+    for (const extractedDate of extractedDates) {
+      const dateKey = extractedDate.date.toDateString()
+      if (!dateGroups.has(dateKey)) {
+        dateGroups.set(dateKey, [])
+      }
+      dateGroups.get(dateKey)!.push(extractedDate)
+    }
+
+    // Créer une seule proposition par date trouvée avec toutes les sources
+    for (const [dateKey, datesGroup] of dateGroups.entries()) {
+      const primaryDate = datesGroup[0] // Date principale (meilleure confiance)
+      const allSources = datesGroup.map(d => ({ source: d.source, snippet: d.context }))
+      
+      // Calculer la confiance moyenne des sources
+      const avgConfidence = datesGroup.reduce((sum, d) => sum + d.confidence, 0) / datesGroup.length
+      
+      // Améliorer la confiance basée sur le jour de la semaine et l'historique
+      const enhancedConfidence = this.calculateWeekdayConfidence(primaryDate.date, event, avgConfidence)
+      
+      // Créer une justification consolidée avec toutes les sources
+      const consolidatedJustification = {
+        type: 'text' as const,
+        content: `Date proposée: ${primaryDate.date.toLocaleDateString('fr-FR')} (${datesGroup.length} source(s))`,
+        metadata: {
+          extractedDate: primaryDate.date.toISOString(),
+          confidence: enhancedConfidence,
+          baseConfidence: avgConfidence, // Confiance originale pour référence
+          weekdayBonus: enhancedConfidence - avgConfidence, // Bonus appliqué
+          dayOfWeek: primaryDate.date.toLocaleDateString('fr-FR', { weekday: 'long' }),
+          eventName: event.name,
+          eventCity: event.city,
+          editionYear: event.edition.year,
+          sourcesCount: datesGroup.length,
+          historicalEditionsCount: event.historicalEditions?.length || 0,
+          dateDetails: {
+            date: primaryDate.date.toLocaleDateString('fr-FR'),
+            confidence: enhancedConfidence, // Format décimal uniforme [0,1]
+            confidencePercent: Math.round(enhancedConfidence * 100), // Pourcentage pour affichage
+            sources: allSources
+          }
+        }
+      }
+
+      // Vérifier si la date proposée est différente de la date actuelle de l'édition
+      const currentStartDate = event.edition.startDate
+      const proposedDate = primaryDate.date
+      
+      // Ne créer une proposition que si la date est réellement différente
+      const isSameDate = currentStartDate && 
+        currentStartDate.toDateString() === proposedDate.toDateString()
+      
+      if (isSameDate) {
+        // Date identique à l'existant, pas de proposition à créer
+        continue
+      }
+      
+      // Créer une seule proposition EDITION_UPDATE qui inclut les courses
+      const changes: any = {
+        startDate: {
+          old: currentStartDate, // Valeur actuelle (peut être null)
+          new: proposedDate,
+          confidence: enhancedConfidence // Utiliser la confiance améliorée
+        }
+      }
+
+      // Si il y a des courses, ajouter les informations des courses dans le changes
+      if (event.edition.races && event.edition.races.length > 0) {
+        const raceChanges = []
+        
+        for (const race of event.edition.races) {
+          // Vérifier si la race a déjà cette date pour éviter les doublons
+          const currentRaceStartDate = race.startDate
+          const isRaceDateSame = currentRaceStartDate && 
+            currentRaceStartDate.toDateString() === proposedDate.toDateString()
+          
+          if (!isRaceDateSame) {
+            // Structurer la proposition avec identifiants + changements old/new
+            const raceChange: any = {
+              // Identifiants (pas de old/new)
+              raceId: race.id,
+              raceName: race.name, // Pour aider à identifier/vérifier
+              
+              // Changements avec old/new
+              startDate: {
+                old: currentRaceStartDate, // Valeur actuelle (peut être null)
+                new: proposedDate,
+                confidence: enhancedConfidence * 0.95 // Utiliser confiance améliorée, légèrement réduite pour les courses
+              }
+            }
+            
+            raceChanges.push(raceChange)
+          }
+        }
+        
+        // Ne inclure les races que si au moins une race nécessite un changement
+        if (raceChanges.length > 0) {
+          changes.races = raceChanges
+        }
+      }
+
+      proposals.push({
+        type: 'EDITION_UPDATE' as any,
+        eventId: event.id,
+        editionId: event.edition.id,
+        changes,
+        justification: [consolidatedJustification]
+      })
+    }
+
+    return proposals
+  }
+
+  async validate(): Promise<boolean> {
+    // Validation de base + spécifique à Google Search
+    const baseValid = await super.validate()
+    if (!baseValid) return false
+
+    const config = this.config.config as GoogleSearchDateConfig
+    
+    // Vérifier les paramètres requis
+    if (!config.batchSize || config.batchSize <= 0) {
+      this.logger.error('batchSize doit être un nombre positif')
+      return false
+    }
+
+    if (!config.googleResultsCount || config.googleResultsCount <= 0) {
+      this.logger.error('googleResultsCount doit être un nombre positif')
+      return false
+    }
+
+    // Vérifier la connexion à la base source
+    try {
+      const sourceDbId = config.sourceDatabase
+      const available = await this.dbManager.getAvailableDatabases()
+      
+      if (!available.find(db => db.id === sourceDbId)) {
+        this.logger.error(`Base de données source non disponible: ${sourceDbId}`)
+        return false
+      }
+      
+      // Test de connexion
+      const testResult = await this.dbManager.testConnection(sourceDbId)
+      if (!testResult) {
+        this.logger.error(`Test de connexion échoué pour: ${sourceDbId}`)
+        return false
+      }
+      
+    } catch (error) {
+      this.logger.error('Impossible de se connecter à la base Next Prod', { error: String(error) })
+      return false
+    }
+
+    this.logger.info('Validation réussie pour GoogleSearchDateAgent')
+    return true
+  }
+}

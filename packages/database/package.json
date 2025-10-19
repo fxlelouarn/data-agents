@@ -1,0 +1,28 @@
+{
+  "name": "@data-agents/database",
+  "version": "1.0.0",
+  "description": "Database layer for data agents",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "dev": "tsc --watch",
+    "generate": "prisma generate",
+    "migrate": "prisma migrate dev",
+    "migrate:deploy": "prisma migrate deploy",
+    "push": "prisma db push",
+    "studio": "prisma studio",
+    "seed": "tsx prisma/seed.ts",
+    "seed:consensus": "tsx seed-consensus-example.ts"
+  },
+  "dependencies": {
+    "@data-agents/types": "*",
+    "@prisma/client": "^5.6.0",
+    "prisma": "^5.6.0",
+    "zod": "^4.1.12"
+  },
+  "devDependencies": {
+    "tsx": "^4.0.0",
+    "typescript": "^5.0.4"
+  }
+}
