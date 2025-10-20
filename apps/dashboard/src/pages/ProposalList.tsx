@@ -24,7 +24,9 @@ import {
   ListItem,
   ListItemText,
   ListItemSecondaryAction,
-  Divider
+  Divider,
+  Menu,
+  ButtonGroup
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -36,11 +38,16 @@ import {
   Info as InfoIcon,
   ExpandMore as ExpandMoreIcon,
   Group as GroupIcon,
-  ViewList as ViewListIcon
+  ViewList as ViewListIcon,
+  Add as AddIcon,
+  ArrowDropDown as ArrowDropDownIcon,
+  Event as EventIcon,
+  Edit as EditIcon
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
 import { ProposalStatus, ProposalType } from '@/types'
+import CreateManualProposal from '@/components/CreateManualProposal'
 
 const proposalStatusLabels: Record<ProposalStatus, string> = {
   PENDING: 'En attente',
@@ -70,6 +77,9 @@ const ProposalList: React.FC = () => {
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
+  const [createProposalOpen, setCreateProposalOpen] = useState(false)
+  const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
+  const [creationType, setCreationType] = useState<'NEW_EVENT' | 'EDIT_EVENT'>('NEW_EVENT')
 
   const { data: proposalsData, isLoading } = useProposals({ 
     status: statusFilter !== 'ALL' ? statusFilter : undefined,
@@ -433,9 +443,65 @@ const ProposalList: React.FC = () => {
           </Box>
         </Box>
         
-        {/* Bulk Actions */}
-        {selectedRows.length > 0 && viewMode === 'table' && (
-          <Box sx={{ display: 'flex', gap: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Créer une proposition dropdown button */}
+          <ButtonGroup variant="contained" color="primary">
+            <Button
+              startIcon={<AddIcon />}
+              onClick={() => {
+                setCreateProposalOpen(true)
+              }}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Créer une proposition
+            </Button>
+            <Button
+              size="small"
+              onClick={(event) => setCreateMenuAnchor(event.currentTarget)}
+              sx={{ px: 1 }}
+            >
+              <ArrowDropDownIcon />
+            </Button>
+          </ButtonGroup>
+          
+          <Menu
+            anchorEl={createMenuAnchor}
+            open={Boolean(createMenuAnchor)}
+            onClose={() => setCreateMenuAnchor(null)}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'right',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
+          >
+            <MenuItem 
+              onClick={() => {
+                setCreationType('NEW_EVENT')
+                setCreateMenuAnchor(null)
+                setCreateProposalOpen(true)
+              }}
+            >
+              <EventIcon sx={{ mr: 2 }} />
+              Création d'événement
+            </MenuItem>
+            <MenuItem 
+              onClick={() => {
+                setCreationType('EDIT_EVENT')
+                setCreateMenuAnchor(null)
+                setCreateProposalOpen(true)
+              }}
+            >
+              <EditIcon sx={{ mr: 2 }} />
+              Édition d'événement
+            </MenuItem>
+          </Menu>
+        
+          {/* Bulk Actions */}
+          {selectedRows.length > 0 && viewMode === 'table' && (
+            <Box sx={{ display: 'flex', gap: 1 }}>
             <Button
               variant="contained"
               color="success"
@@ -476,8 +542,9 @@ const ProposalList: React.FC = () => {
             >
               Supprimer ({selectedRows.length})
             </Button>
-          </Box>
-        )}
+            </Box>
+          )}
+        </Box>
       </Box>
 
       {/* Filters */}
@@ -800,6 +867,13 @@ const ProposalList: React.FC = () => {
           </Box>
         </Card>
       )}
+      
+      {/* Manual Proposal Creation Modal */}
+      <CreateManualProposal
+        open={createProposalOpen}
+        onClose={() => setCreateProposalOpen(false)}
+        mode={creationType}
+      />
     </Box>
   )
 }

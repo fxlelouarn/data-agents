@@ -15,8 +15,8 @@ import AgentLogs from '@/pages/AgentLogs'
 import ProposalList from '@/pages/ProposalList'
 import ProposalDetail from '@/pages/ProposalDetail'
 import GroupedProposalDetail from '@/pages/GroupedProposalDetail'
-import RunList from '@/pages/RunList'
-import RunDetail from '@/pages/RunDetail'
+import UpdateList from '@/pages/UpdateList'
+import UpdateDetail from '@/pages/UpdateDetail'
 import Dashboard from '@/pages/Dashboard'
 import Settings from '@/pages/Settings'
 import TestDynamicForm from '@/pages/TestDynamicForm'
@@ -134,9 +134,9 @@ function App() {
                     <Route path="/proposals/group/:groupKey" element={<GroupedProposalDetail />} />
                     <Route path="/proposals/:id" element={<ProposalDetail />} />
                     
-                    {/* Runs routes */}
-                    <Route path="/runs" element={<RunList />} />
-                    <Route path="/runs/:id" element={<RunDetail />} />
+                    {/* Updates routes */}
+                    <Route path="/updates" element={<UpdateList />} />
+                    <Route path="/updates/:id" element={<UpdateDetail />} />
                     
                     {/* Settings route */}
                     <Route path="/settings" element={<Settings />} />

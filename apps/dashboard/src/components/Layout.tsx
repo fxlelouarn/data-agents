@@ -23,7 +23,7 @@ import {
   Dashboard as DashboardIcon,
   SmartToy as AgentIcon,
   Assignment as ProposalIcon,
-  PlayArrow as RunIcon,
+  Update as UpdateIcon,
   Article as LogIcon,
   MonitorHeart as HealthIcon,
   Settings as SettingsIcon,
@@ -67,7 +67,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: 'Tableau de bord', icon: <DashboardIcon />, path: '/dashboard' },
     { text: 'Agents', icon: <AgentIcon />, path: '/agents' },
     { text: 'Propositions', icon: <ProposalIcon />, path: '/proposals', badge: pendingProposals },
-    { text: 'Exécutions', icon: <RunIcon />, path: '/runs' },
+    { text: 'Mises à jour', icon: <UpdateIcon />, path: '/updates' },
     { text: 'Logs', icon: <LogIcon />, path: '/logs' },
     { text: 'Administration', icon: <SettingsIcon />, path: '/settings' },
   ]
