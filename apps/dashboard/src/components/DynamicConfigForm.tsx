@@ -421,38 +421,6 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
           />
         )
 
-      case 'slider':
-        return (
-          <Box key={fieldName} sx={{ mt: 2, mb: 3 }}>
-            <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-              {fieldConfig.label}
-              {fieldConfig.description && (
-                <Tooltip title={fieldConfig.description}>
-                  <IconButton size="small">
-                    <HelpIcon fontSize="small" />
-                  </IconButton>
-                </Tooltip>
-              )}
-            </Typography>
-            <Box sx={{ px: 2, mt: 4 }}>
-              <Slider
-                value={Number(value) || fieldConfig.default || fieldConfig.min || 0}
-                onChange={(_, newValue) => onChange(fieldName, newValue)}
-                min={fieldConfig.min}
-                max={fieldConfig.max}
-                step={fieldConfig.step || 1}
-                marks
-                valueLabelDisplay="on"
-                color={hasError ? 'error' : 'primary'}
-              />
-            </Box>
-            {hasError && (
-              <Typography variant="caption" color="error" sx={{ ml: 2 }}>
-                {errorMessage}
-              </Typography>
-            )}
-          </Box>
-        )
 
       case 'text':
       default:
