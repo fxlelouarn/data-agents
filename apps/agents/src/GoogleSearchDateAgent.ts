@@ -62,6 +62,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
   private dbManager: DatabaseManager // Gestionnaire de bases de données
   private sourceDb: any // Connexion à la base source
   private stateService: IAgentStateService // Service de gestion d'état
+  private prisma: typeof prisma // Client Prisma pour le cache local
 
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
@@ -84,7 +85,8 @@ export class GoogleSearchDateAgent extends BaseAgent {
     }
 
     super(agentConfig, db, logger)
-    this.dbManager = new DatabaseManager(this.logger)
+    this.dbManager = DatabaseManager.getInstance(this.logger)
+    this.prisma = prisma // Client Prisma pour accès au cache local
     // Créer une instance du service d'état avec le client Prisma
     this.stateService = new AgentStateService(prisma)
   }
@@ -184,13 +186,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
       
       context.logger.info(`📋 Début du traitement de ${events.length} événement(s)...`)
 
-      // 2. Traiter chaque événement
+          // 2. Synchroniser les événements vers le cache local
+      await this.syncEventsToCache(events, context)
+      
+      // 3. Traiter chaque événement
       for (let i = 0; i < events.length; i++) {
         const event = events[i]
         context.logger.info(`🏃 [Événement ${i + 1}/${events.length}] Traitement: ${event.name} (${event.city})`)
         
         try {
-          // 2.1. Vérifier le cooldown avant de traiter
+          // 3.1. Vérifier le cooldown avant de traiter
           const isInCooldown = await this.isEventInCooldown(event.id, config.cooldownDays)
           
           if (isInCooldown) {
@@ -199,7 +204,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
             continue
           }
 
-          // 3. Effectuer la recherche Google
+          // 4. Effectuer la recherche Google
           const searchQuery = this.buildSearchQuery(event)
           context.logger.info(`🔍 Recherche Google: "${searchQuery}"`)
           eventsProcessed++
@@ -213,7 +218,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
           
           context.logger.info(`📋 ${searchResults.items.length} résultat(s) Google obtenus`)
 
-          // 4. Extraire les dates des snippets
+          // 5. Extraire les dates des snippets
           const extractedDates = await this.extractDatesFromSnippets(searchResults, event)
 
           if (extractedDates.length === 0) {
@@ -221,13 +226,13 @@ export class GoogleSearchDateAgent extends BaseAgent {
             continue
           }
 
-          // 5. Créer les propositions
+          // 6. Créer les propositions
           const eventProposals = await this.createDateProposals(event, extractedDates, searchResults)
           proposals.push(...eventProposals)
 
           context.logger.info(`${eventProposals.length} proposition(s) créée(s) pour l'événement: ${event.name}`)
           
-          // 6. Marquer l'événement comme traité (même si aucune proposition)
+          // 7. Marquer l'événement comme traité (même si aucune proposition)
           await this.markEventAsProcessed(event.id)
 
         } catch (error) {
@@ -237,11 +242,11 @@ export class GoogleSearchDateAgent extends BaseAgent {
         }
       }
 
-      // 6. Mettre à jour l'offset pour le prochain batch
+      // 8. Mettre à jour l'offset pour le prochain batch
       const newOffset = offset + events.length
       await this.stateService.setState(this.config.id, 'offset', newOffset)
 
-      // 7. Sauvegarder les propositions
+      // 9. Sauvegarder les propositions
       for (const proposal of proposals) {
         // Utiliser la confiance calculée de la proposition au lieu du 0.7 codé en dur
         const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
@@ -325,20 +330,21 @@ export class GoogleSearchDateAgent extends BaseAgent {
         })
         
         // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED 
-        // en utilisant la même logique que votre requête SQL
-        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED')
-        const eventIds = await this.sourceDb.$queryRaw<{id: number}[]>`
-          SELECT DISTINCT e.id, e."createdAt"
+        // ordonnés par la date future estimée pour un traitement déterministe
+        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée)')
+        const eventIds = await this.sourceDb.$queryRaw<{id: number, estimatedDate: Date | null}[]>`
+          SELECT DISTINCT e.id, 
+                 ed."startDate" as "estimatedDate",
+                 e."createdAt"
           FROM "Event" e 
-          WHERE EXISTS (
-            SELECT 1 FROM "Edition" ed 
-            WHERE ed."currentEditionEventId" = e.id 
-            AND ed."calendarStatus" = 'TO_BE_CONFIRMED'
+          INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id 
+          WHERE ed."calendarStatus" = 'TO_BE_CONFIRMED'
             AND ed."status" = 'LIVE'
             AND e.status = 'LIVE'
             AND ed.year IN (${currentYear}, ${nextYear})
-          )
-          ORDER BY e."createdAt" ASC
+          ORDER BY 
+            ed."startDate" ASC NULLS LAST,  -- Date estimée en premier (nulls à la fin)
+            e."createdAt" ASC               -- Puis par date de création comme fallback
           LIMIT ${batchSize} OFFSET ${offset}
         `
         
@@ -350,10 +356,12 @@ export class GoogleSearchDateAgent extends BaseAgent {
         }
         
         // Étape 2: Récupérer les Events complets avec leurs éditions
+        // et maintenir l'ordre déterministe de la requête principale
         this.logger.info('🔍 Étape 2: Récupération des Events complets avec éditions')
-        const eventIdNumbers = eventIds.map((row: {id: number}) => row.id)
+        const eventIdNumbers = eventIds.map((row: {id: number, estimatedDate: Date | null}) => row.id)
+        const eventOrderMap = new Map<number, number>(eventIds.map((row: {id: number, estimatedDate: Date | null}, index: number) => [row.id, index]))
         
-        events = await this.sourceDb.Event.findMany({
+        const eventsFromDb = await this.sourceDb.Event.findMany({
           where: {
             id: {
               in: eventIdNumbers
@@ -381,11 +389,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 year: 'desc' // Plus récentes en premier
               }
             }
-          },
-          // Pas de skip/take ici car on a déjà limité dans la requête brute
-          orderBy: {
-            createdAt: 'asc'
           }
+        })
+        
+        // Trier les événements selon l'ordre original (date estimée -> createdAt)
+        events = eventsFromDb.sort((a: any, b: any) => {
+          const orderA = eventOrderMap.get(a.id) || 999999
+          const orderB = eventOrderMap.get(b.id) || 999999
+          return orderA - orderB
         })
         
         this.logger.info('📋 Détails des événements Prisma bruts:', {
@@ -904,5 +915,93 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
     this.logger.info('Validation réussie pour GoogleSearchDateAgent')
     return true
+  }
+
+  /**
+   * Synchronise les événements Miles Republic vers le cache local
+   */
+  private async syncEventsToCache(events: NextProdEvent[], context: AgentContext): Promise<void> {
+    context.logger.info(`🔄 Synchronisation de ${events.length} événements vers le cache local...`)
+    
+    for (const event of events) {
+      try {
+        // 1. Synchroniser l'événement
+        const eventCacheId = `event-${event.id}`
+        await this.prisma.eventCache.upsert({
+          where: { id: eventCacheId },
+          update: {
+            name: event.name,
+            city: event.city,
+            country: 'France', // Défaut pour les événements français
+            countrySubdivisionNameLevel1: 'France',
+            countrySubdivisionNameLevel2: event.city,
+            lastSyncAt: new Date()
+          },
+          create: {
+            id: eventCacheId,
+            name: event.name,
+            city: event.city,
+            country: 'France',
+            countrySubdivisionNameLevel1: 'France', 
+            countrySubdivisionNameLevel2: event.city,
+            lastSyncAt: new Date()
+          }
+        })
+        
+        // 2. Synchroniser l'édition TO_BE_CONFIRMED
+        if (event.edition) {
+          const editionCacheId = `edition-${event.edition.id}`
+          await this.prisma.editionCache.upsert({
+            where: { id: editionCacheId },
+            update: {
+              eventId: eventCacheId,
+              year: event.edition.year,
+              calendarStatus: event.edition.calendarStatus,
+              startDate: event.edition.startDate,
+              lastSyncAt: new Date()
+            },
+            create: {
+              id: editionCacheId,
+              eventId: eventCacheId,
+              year: event.edition.year,
+              calendarStatus: event.edition.calendarStatus,
+              startDate: event.edition.startDate,
+              lastSyncAt: new Date()
+            }
+          })
+          
+          // 3. Synchroniser les courses de l'édition
+          if (event.edition.races && event.edition.races.length > 0) {
+            for (const race of event.edition.races) {
+              const raceCacheId = `race-${race.id}`
+              await this.prisma.raceCache.upsert({
+                where: { id: raceCacheId },
+                update: {
+                  editionId: editionCacheId,
+                  name: race.name,
+                  startDate: race.startDate,
+                  lastSyncAt: new Date()
+                },
+                create: {
+                  id: raceCacheId,
+                  editionId: editionCacheId,
+                  name: race.name,
+                  startDate: race.startDate,
+                  lastSyncAt: new Date()
+                }
+              })
+            }
+          }
+        }
+        
+        context.logger.debug(`✅ Événement synchronisé: ${event.name} (${eventCacheId})`)
+        
+      } catch (error) {
+        context.logger.error(`❌ Erreur sync événement ${event.name}:`, { error: String(error) })
+        // Continuer avec les autres événements même si un échoue
+      }
+    }
+    
+    context.logger.info(`✅ Synchronisation terminée: ${events.length} événements traités`)
   }
 }

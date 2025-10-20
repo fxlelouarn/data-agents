@@ -17,20 +17,59 @@ export interface DatabaseConfig {
 }
 
 export class DatabaseManager {
+  private static instance: DatabaseManager | null = null
   private connections = new Map<string, any>()
   private configs = new Map<string, DatabaseConfig>()
   private logger: AgentLogger
   private configsLoaded = false
+  private loadPromise: Promise<void> | null = null
 
-  constructor(logger: AgentLogger) {
+  private constructor(logger: AgentLogger) {
     this.logger = logger
     // Ne pas attendre ici, mais charger dès la première utilisation
   }
+  
+  /**
+   * Obtenir l'instance singleton de DatabaseManager
+   */
+  static getInstance(logger: AgentLogger): DatabaseManager {
+    if (!DatabaseManager.instance) {
+      DatabaseManager.instance = new DatabaseManager(logger)
+    }
+    // Mettre à jour le logger si nécessaire
+    DatabaseManager.instance.logger = logger
+    return DatabaseManager.instance
+  }
+  
+  /**
+   * Réinitialiser l'instance (pour les tests)
+   */
+  static resetInstance(): void {
+    DatabaseManager.instance = null
+  }
 
   private async loadConfigurations() {
+    // Si déjà en cours de chargement, attendre la fin
+    if (this.loadPromise) {
+      await this.loadPromise
+      return
+    }
+    
+    // Si déjà chargé, ne pas recharger
+    if (this.configsLoaded) {
+      return
+    }
+    
+    this.loadPromise = this.doLoadConfigurations()
+    await this.loadPromise
+    this.loadPromise = null
+  }
+  
+  private async doLoadConfigurations() {
     try {
       // Charger uniquement les configurations depuis la base de données
       await this.loadDatabaseConfigurations()
+      this.configsLoaded = true
 
       this.logger.info(`Configurations de bases de données chargées: ${this.configs.size}`)
     } catch (error) {
@@ -110,10 +149,7 @@ export class DatabaseManager {
   async getConnection(databaseId: string): Promise<any> {
     try {
       // S'assurer que les configurations sont chargées
-      if (!this.configsLoaded) {
-        await this.loadConfigurations()
-        this.configsLoaded = true
-      }
+      await this.loadConfigurations()
 
       // Vérifier si la connexion existe déjà
       if (this.connections.has(databaseId)) {
@@ -185,10 +221,7 @@ export class DatabaseManager {
    */
   async getAvailableDatabases(): Promise<DatabaseConfig[]> {
     // S'assurer que les configurations sont chargées
-    if (!this.configsLoaded) {
-      await this.loadConfigurations()
-      this.configsLoaded = true
-    }
+    await this.loadConfigurations()
     return Array.from(this.configs.values()).filter(config => config.isActive)
   }
 
@@ -210,10 +243,7 @@ export class DatabaseManager {
   async testConnection(databaseId: string): Promise<boolean> {
     try {
       // S'assurer que les configurations sont chargées
-      if (!this.configsLoaded) {
-        await this.loadConfigurations()
-        this.configsLoaded = true
-      }
+      await this.loadConfigurations()
 
       const config = this.configs.get(databaseId)
       if (!config) {
