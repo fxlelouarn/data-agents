@@ -16,12 +16,26 @@ interface SystemSettings {
    * Par défaut: 5 minutes
    */
   checkIntervalMinutes: number
+
+  /**
+   * URL du serveur Meilisearch
+   * Par défaut: null (non configuré)
+   */
+  meilisearchUrl: string | null
+
+  /**
+   * Clé API Meilisearch
+   * Par défaut: null (non configuré)
+   */
+  meilisearchApiKey: string | null
 }
 
 const defaultSettings: SystemSettings = {
   maxConsecutiveFailures: 3,
   enableAutoDisabling: true,
-  checkIntervalMinutes: 5
+  checkIntervalMinutes: 5,
+  meilisearchUrl: null,
+  meilisearchApiKey: null
 }
 
 class SettingsService {
@@ -32,7 +46,9 @@ class SettingsService {
     this.settings = {
       maxConsecutiveFailures: parseInt(process.env.MAX_CONSECUTIVE_FAILURES || '3', 10),
       enableAutoDisabling: process.env.ENABLE_AUTO_DISABLING !== 'false',
-      checkIntervalMinutes: parseInt(process.env.CHECK_INTERVAL_MINUTES || '5', 10)
+      checkIntervalMinutes: parseInt(process.env.CHECK_INTERVAL_MINUTES || '5', 10),
+      meilisearchUrl: process.env.MEILISEARCH_URL || null,
+      meilisearchApiKey: process.env.MEILISEARCH_API_KEY || null
     }
 
     // Validation des valeurs
@@ -69,6 +85,18 @@ class SettingsService {
     return this.settings.checkIntervalMinutes
   }
 
+  getMeilisearchUrl(): string | null {
+    return this.settings.meilisearchUrl
+  }
+
+  getMeilisearchApiKey(): string | null {
+    return this.settings.meilisearchApiKey
+  }
+
+  isMeilisearchConfigured(): boolean {
+    return !!(this.settings.meilisearchUrl && this.settings.meilisearchApiKey)
+  }
+
   /**
    * Met à jour un paramètre spécifique
    */
@@ -98,6 +126,24 @@ class SettingsService {
           console.log(`⚙️ Updated checkIntervalMinutes to: ${value}`)
         } else {
           throw new Error('checkIntervalMinutes must be a number >= 1')
+        }
+        break
+
+      case 'meilisearchUrl':
+        if (typeof value === 'string' || value === null) {
+          this.settings.meilisearchUrl = value
+          console.log(`⚙️ Updated meilisearchUrl to: ${value}`)
+        } else {
+          throw new Error('meilisearchUrl must be a string or null')
+        }
+        break
+
+      case 'meilisearchApiKey':
+        if (typeof value === 'string' || value === null) {
+          this.settings.meilisearchApiKey = value
+          console.log(`⚙️ Updated meilisearchApiKey to: [${value ? 'REDACTED' : 'null'}]`)
+        } else {
+          throw new Error('meilisearchApiKey must be a string or null')
         }
         break
 

@@ -33,7 +33,7 @@ router.get('/', async (req: Request, res: Response) => {
  */
 router.put('/', async (req: Request, res: Response) => {
   try {
-    const { maxConsecutiveFailures, enableAutoDisabling, checkIntervalMinutes } = req.body
+    const { maxConsecutiveFailures, enableAutoDisabling, checkIntervalMinutes, meilisearchUrl, meilisearchApiKey } = req.body
 
     // Validation des données
     if (maxConsecutiveFailures !== undefined) {
@@ -64,6 +64,26 @@ router.put('/', async (req: Request, res: Response) => {
         })
       }
       settingsService.updateSetting('checkIntervalMinutes', checkIntervalMinutes)
+    }
+
+    if (meilisearchUrl !== undefined) {
+      if (meilisearchUrl !== null && (typeof meilisearchUrl !== 'string' || !meilisearchUrl.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'meilisearchUrl must be a non-empty string or null'
+        })
+      }
+      settingsService.updateSetting('meilisearchUrl', meilisearchUrl)
+    }
+
+    if (meilisearchApiKey !== undefined) {
+      if (meilisearchApiKey !== null && (typeof meilisearchApiKey !== 'string' || !meilisearchApiKey.trim())) {
+        return res.status(400).json({
+          success: false,
+          message: 'meilisearchApiKey must be a non-empty string or null'
+        })
+      }
+      settingsService.updateSetting('meilisearchApiKey', meilisearchApiKey)
     }
 
     const updatedSettings = settingsService.getSettings()

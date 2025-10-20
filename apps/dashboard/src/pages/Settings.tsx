@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useEffect } from 'react'
 import {
   Box,
   Card,
@@ -71,6 +71,37 @@ const Settings: React.FC = () => {
   
   const [editingDatabase, setEditingDatabase] = useState<any>(null)
   const [databaseFormOpen, setDatabaseFormOpen] = useState(false)
+  
+  // Handlers pour Meilisearch avec débounce
+  const [meilisearchTimeouts, setMeilisearchTimeouts] = useState<{
+    url?: NodeJS.Timeout,
+    apiKey?: NodeJS.Timeout
+  }>({})
+  
+  // État local pour les paramètres Meilisearch
+  const [meilisearchSettings, setMeilisearchSettings] = useState({
+    url: (systemSettings as any)?.meilisearchUrl || '',
+    apiKey: (systemSettings as any)?.meilisearchApiKey || ''
+  })
+  
+  // Synchroniser avec les settings du serveur
+  useEffect(() => {
+    if (systemSettings) {
+      setMeilisearchSettings({
+        url: (systemSettings as any).meilisearchUrl || '',
+        apiKey: (systemSettings as any).meilisearchApiKey || ''
+      })
+    }
+  }, [systemSettings])
+
+  // Cleanup des timeouts
+  useEffect(() => {
+    return () => {
+      Object.values(meilisearchTimeouts).forEach(timeout => {
+        if (timeout) clearTimeout(timeout)
+      })
+    }
+  }, [meilisearchTimeouts])
 
 
   // TODO: Handlers pour les paramètres système (non utilisés actuellement)
@@ -94,6 +125,40 @@ const Settings: React.FC = () => {
 
   const handleCheckFailures = () => {
     checkFailuresMutation.mutate()
+  }
+
+  const handleMeilisearchUrlChange = (value: string) => {
+    const trimmedValue = value.trim() || null
+    setMeilisearchSettings(prev => ({ ...prev, url: value }))
+    
+    // Clear existing timeout
+    if (meilisearchTimeouts.url) {
+      clearTimeout(meilisearchTimeouts.url)
+    }
+    
+    // Set new timeout
+    const timeout = setTimeout(() => {
+      updateSettingsMutation.mutate({ meilisearchUrl: trimmedValue } as any)
+    }, 500) // Débounce de 500ms
+    
+    setMeilisearchTimeouts(prev => ({ ...prev, url: timeout }))
+  }
+
+  const handleMeilisearchApiKeyChange = (value: string) => {
+    const trimmedValue = value.trim() || null
+    setMeilisearchSettings(prev => ({ ...prev, apiKey: value }))
+    
+    // Clear existing timeout
+    if (meilisearchTimeouts.apiKey) {
+      clearTimeout(meilisearchTimeouts.apiKey)
+    }
+    
+    // Set new timeout
+    const timeout = setTimeout(() => {
+      updateSettingsMutation.mutate({ meilisearchApiKey: trimmedValue } as any)
+    }, 500) // Débounce de 500ms
+    
+    setMeilisearchTimeouts(prev => ({ ...prev, apiKey: timeout }))
   }
 
 
@@ -288,6 +353,86 @@ const Settings: React.FC = () => {
           </Card>
         </Grid>
 
+
+        {/* Configuration Meilisearch */}
+        <Grid item xs={12} lg={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                🔍 Configuration Meilisearch
+              </Typography>
+              
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Configurez Meilisearch pour la recherche d'événements dans l'autocomplétion des propositions.
+              </Alert>
+              
+              {settingsLoading ? (
+                <Typography>Chargement des paramètres...</Typography>
+              ) : systemSettings ? (
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="URL Meilisearch"
+                      value={meilisearchSettings.url}
+                      onChange={(e) => handleMeilisearchUrlChange(e.target.value)}
+                      placeholder="https://your-meilisearch-instance.com"
+                      helperText="URL de votre instance Meilisearch"
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Clé API Meilisearch"
+                      type="password"
+                      value={meilisearchSettings.apiKey}
+                      onChange={(e) => handleMeilisearchApiKeyChange(e.target.value)}
+                      placeholder="Clé API de recherche"
+                      helperText="Clé API pour accéder à Meilisearch"
+                    />
+                  </Grid>
+                  
+                  <Grid item xs={12}>
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+                      <Chip
+                        label={(meilisearchSettings.url.trim() && meilisearchSettings.apiKey.trim()) ? 'Configuré' : 'Non configuré'}
+                        color={(meilisearchSettings.url.trim() && meilisearchSettings.apiKey.trim()) ? 'success' : 'default'}
+                        variant="outlined"
+                      />
+                      <Button
+                        variant="outlined"
+                        size="small"
+                        disabled={!meilisearchSettings.url.trim() || !meilisearchSettings.apiKey.trim()}
+                        onClick={async () => {
+                          try {
+                            const response = await fetch('/api/events/test-meilisearch', { method: 'POST' })
+                            const data = await response.json()
+                            
+                            if (data.success) {
+                              alert(`✅ Connexion réussie: ${data.data.message}`)
+                            } else {
+                              // L'erreur peut être dans data.message ou data.data.message
+                              const errorMessage = data.message || data.data?.message || 'Erreur inconnue'
+                              alert(`❌ Échec de connexion: ${errorMessage}`)
+                            }
+                          } catch (error) {
+                            console.error('Erreur lors du test de connexion:', error)
+                            alert('❌ Erreur lors du test de connexion')
+                          }
+                        }}
+                      >
+                        Tester la connexion
+                      </Button>
+                    </Box>
+                  </Grid>
+                </Grid>
+              ) : (
+                <Typography color="error">Impossible de charger les paramètres Meilisearch</Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
 
         {/* Bases de données */}
         <Grid item xs={12} lg={6}>

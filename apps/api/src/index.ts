@@ -9,10 +9,13 @@ import dotenv from 'dotenv'
 import { agentRouter } from './routes/agents'
 import { proposalRouter } from './routes/proposals'
 import { runRouter } from './routes/runs'
+import { updateRouter } from './routes/updates'
 import { logRouter } from './routes/logs'
 import { healthRouter } from './routes/health'
 import { databaseRouter } from './routes/databases'
 import { settingsRouter } from './routes/settings'
+import { cacheRouter } from './routes/cache'
+import { eventsRouter } from './routes/events'
 import { AgentScheduler } from './services/scheduler'
 import { errorHandler } from './middleware/error-handler'
 
@@ -48,9 +51,12 @@ app.use('/api/health', healthRouter)
 app.use('/api/agents', agentRouter)
 app.use('/api/proposals', proposalRouter)
 app.use('/api/runs', runRouter)
+app.use('/api/updates', updateRouter)
 app.use('/api/logs', logRouter)
 app.use('/api/databases', databaseRouter)
 app.use('/api/settings', settingsRouter)
+app.use('/api/cache', cacheRouter)
+app.use('/api/events', eventsRouter)
 
 // Error handling
 app.use(errorHandler)
