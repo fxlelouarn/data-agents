@@ -15,6 +15,147 @@ const validateRequest = (req: Request, res: Response, next: NextFunction) => {
   next()
 }
 
+// POST /api/proposals - Create a manual proposal
+router.post('/', [
+  body('eventId').optional().isString(),
+  body('editionId').optional().isString(),
+  body('raceId').optional().isString(),
+  body('fieldName').isString().notEmpty(),
+  body('fieldValue').exists(),
+  body('type').isIn(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE']),
+  body('propagateToRaces').optional().isBoolean(),
+  body('justification').optional().isString(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { eventId, editionId, raceId, fieldName, fieldValue, type, propagateToRaces, justification } = req.body
+
+  // Validate that we have the right combination of IDs for the proposal type
+  if (type === 'NEW_EVENT' && (eventId || editionId || raceId)) {
+    throw createError(400, 'NEW_EVENT proposals should not have eventId, editionId, or raceId', 'INVALID_PROPOSAL_TYPE')
+  }
+  if (type === 'EVENT_UPDATE' && !eventId) {
+    throw createError(400, 'EVENT_UPDATE proposals require eventId', 'INVALID_PROPOSAL_TYPE')
+  }
+  if (type === 'EDITION_UPDATE' && !editionId) {
+    throw createError(400, 'EDITION_UPDATE proposals require editionId', 'INVALID_PROPOSAL_TYPE')
+  }
+  if (type === 'RACE_UPDATE' && !raceId) {
+    throw createError(400, 'RACE_UPDATE proposals require raceId', 'INVALID_PROPOSAL_TYPE')
+  }
+
+  // Create a manual agent if it doesn't exist
+  let manualAgent = await db.prisma.agent.findFirst({
+    where: { name: 'Manual Input Agent' }
+  })
+
+  if (!manualAgent) {
+    manualAgent = await db.prisma.agent.create({
+      data: {
+        name: 'Manual Input Agent',
+        description: 'Agent for manually created proposals',
+        type: 'SPECIFIC_FIELD',
+        isActive: true,
+        frequency: '0 0 * * *', // Daily at midnight (not used for manual)
+        config: {}
+      }
+    })
+  }
+
+  // Prepare the changes object
+  let changes: Record<string, any>
+  
+  if (type === 'NEW_EVENT' && fieldName === 'completeEvent') {
+    // For complete event creation, structure the data properly
+    changes = fieldValue
+  } else {
+    // Standard single field change
+    changes = {
+      [fieldName]: {
+        old: null,
+        new: fieldValue,
+        confidence: 1.0 // Manual input has 100% confidence
+      }
+    }
+  }
+
+  // For edition startDate changes with propagation, we need to handle races
+  if (type === 'EDITION_UPDATE' && fieldName === 'startDate' && propagateToRaces && editionId) {
+    // Get all races for this edition to propagate the date
+    const races = await db.prisma.raceCache.findMany({
+      where: { editionId },
+      select: { id: true, name: true, startDate: true }
+    })
+
+    if (races.length > 0) {
+      changes.propagateToRaces = {
+        old: null,
+        new: races.map(race => ({
+          raceId: race.id,
+          raceName: race.name,
+          oldStartDate: race.startDate,
+          newStartDate: fieldValue
+        })),
+        confidence: 1.0
+      }
+    }
+  }
+
+  // Create justification
+  const proposalJustification = [{
+    type: 'text' as const,
+    content: justification || `Manuel changement de ${fieldName} à ${fieldValue}`,
+    metadata: {
+      manual: true,
+      fieldName,
+      fieldValue,
+      timestamp: new Date().toISOString()
+    }
+  }]
+
+  // Create the proposal
+  const proposal = await db.prisma.proposal.create({
+    data: {
+      agentId: manualAgent.id,
+      type,
+      status: 'PENDING',
+      eventId: eventId || undefined,
+      editionId: editionId || undefined,
+      raceId: raceId || undefined,
+      changes,
+      justification: proposalJustification,
+      confidence: 1.0
+    },
+    include: {
+      agent: {
+        select: { name: true, type: true }
+      }
+    }
+  })
+
+  // Log the manual creation
+  await db.createLog({
+    agentId: manualAgent.id,
+    level: 'INFO',
+    message: `Manual proposal created for ${type}: ${fieldName} = ${fieldValue}`,
+    data: {
+      proposalId: proposal.id,
+      eventId,
+      editionId,
+      raceId,
+      fieldName,
+      fieldValue,
+      propagateToRaces,
+      justification
+    }
+  })
+
+  res.status(201).json({
+    success: true,
+    data: proposal,
+    message: 'Manual proposal created successfully'
+  })
+}))
+
 // GET /api/proposals - List proposals with filters
 router.get('/', [
   query('status').optional().isIn(['PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED']),
@@ -135,20 +276,49 @@ router.put('/:id', [
 
   const proposal = await db.updateProposal(id, updates)
 
-  // If approved, log the applied changes for audit trail
-  if (status === 'APPROVED' && appliedChanges) {
-    await db.createLog({
-      agentId: proposal.agentId,
-      level: 'INFO',
-      message: `Proposal ${id} approved and changes applied`,
-      data: { proposalId: id, appliedChanges }
+  // If approved, create a ProposalApplication but don't apply yet
+  let createdApplication = null
+  if (status === 'APPROVED') {
+    // Check if application already exists
+    const existingApp = await db.prisma.proposalApplication.findFirst({
+      where: { proposalId: id }
     })
+
+    if (!existingApp) {
+      createdApplication = await db.prisma.proposalApplication.create({
+        data: {
+          proposalId: id,
+          status: 'PENDING'
+        }
+      })
+
+      await db.createLog({
+        agentId: proposal.agentId,
+        level: 'INFO',
+        message: `Proposal ${id} approved - Application created and ready for deployment`,
+        data: { 
+          proposalId: id,
+          applicationId: createdApplication.id
+        }
+      })
+    } else {
+      await db.createLog({
+        agentId: proposal.agentId,
+        level: 'INFO',
+        message: `Proposal ${id} approved - Application already exists`,
+        data: { 
+          proposalId: id,
+          existingApplicationId: existingApp.id
+        }
+      })
+    }
   }
 
   res.json({
     success: true,
     data: proposal,
-    message: `Proposal ${status?.toLowerCase() || 'updated'} successfully`
+    createdApplication,
+    message: `Proposal ${status?.toLowerCase() || 'updated'} successfully${createdApplication ? ' - Application created and ready for deployment' : ''}`
   })
 }))
 
@@ -224,6 +394,144 @@ router.post('/:id/compare', [
   }
 }))
 
+// POST /api/proposals/:id/apply - Manually apply an approved proposal
+router.post('/:id/apply', [
+  param('id').isString().notEmpty(),
+  body('selectedChanges').isObject().withMessage('selectedChanges must be an object'),
+  body('force').optional().isBoolean().withMessage('force must be a boolean'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { selectedChanges, force = false } = req.body
+
+  // Vérifier que la proposition existe et est approuvée
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id },
+    include: { agent: true }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  if (!force && proposal.status !== 'APPROVED') {
+    throw createError(400, 'Proposal must be approved to be applied', 'PROPOSAL_NOT_APPROVED')
+  }
+
+  try {
+    // Appliquer la proposition
+    const applicationResult = await db.applyProposal(id, selectedChanges)
+
+    // Logger le résultat
+    await db.createLog({
+      agentId: proposal.agentId,
+      level: applicationResult.success ? 'INFO' : 'ERROR',
+      message: applicationResult.success 
+        ? `Manual application of proposal ${id} successful`
+        : `Manual application of proposal ${id} failed`,
+      data: { 
+        proposalId: id, 
+        selectedChanges,
+        applicationResult,
+        force
+      }
+    })
+
+    if (!applicationResult.success) {
+      return res.status(400).json({
+        success: false,
+        data: applicationResult,
+        message: 'Application failed with errors'
+      })
+    }
+
+    res.json({
+      success: true,
+      data: applicationResult,
+      message: 'Proposal applied successfully'
+    })
+  } catch (error) {
+    await db.createLog({
+      agentId: proposal.agentId,
+      level: 'ERROR',
+      message: `Critical error during manual application of proposal ${id}`,
+      data: { 
+        proposalId: id, 
+        selectedChanges,
+        error: error instanceof Error ? error.message : 'Unknown error',
+        force
+      }
+    })
+
+    throw createError(
+      500,
+      `Failed to apply proposal: ${error instanceof Error ? error.message : 'Unknown error'}`,
+      'PROPOSAL_APPLICATION_ERROR'
+    )
+  }
+}))
+
+// POST /api/proposals/:id/preview - Preview what changes would be applied
+router.post('/:id/preview', [
+  param('id').isString().notEmpty(),
+  body('selectedChanges').isObject().withMessage('selectedChanges must be an object'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { selectedChanges } = req.body
+
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  // Créer un aperçu des changements qui seraient appliqués
+  const preview = {
+    proposalType: proposal.type,
+    targetId: proposal.eventId || proposal.editionId || proposal.raceId,
+    selectedChanges,
+    summary: {
+      totalChanges: Object.keys(selectedChanges).length,
+      changeTypes: Object.keys(selectedChanges).reduce((acc, key) => {
+        const category = categorizeField(key)
+        acc[category] = (acc[category] || 0) + 1
+        return acc
+      }, {} as Record<string, number>)
+    },
+    warnings: [] as string[]
+  }
+
+  // Vérifications et avertissements
+  if (proposal.type === 'NEW_EVENT' && (!selectedChanges.name || !selectedChanges.city)) {
+    preview.warnings.push('Un nouvel événement nécessite au minimum un nom et une ville')
+  }
+
+  if (proposal.type === 'EDITION_UPDATE' && selectedChanges.startDate) {
+    const startDate = new Date(selectedChanges.startDate)
+    if (startDate < new Date()) {
+      preview.warnings.push('La date de début est dans le passé')
+    }
+  }
+
+  res.json({
+    success: true,
+    data: preview
+  })
+}))
+
+// Helper function to categorize fields
+function categorizeField(fieldName: string): string {
+  if (['name', 'city', 'country'].includes(fieldName)) return 'basic_info'
+  if (fieldName.includes('Date')) return 'dates'
+  if (['price', 'currency'].includes(fieldName)) return 'pricing'
+  if (fieldName.includes('Distance') || fieldName.includes('Elevation')) return 'course_details'
+  if (['websiteUrl', 'facebookUrl', 'instagramUrl'].includes(fieldName)) return 'social_media'
+  return 'other'
+}
+
 // Bulk operations
 router.post('/bulk-approve', [
   body('proposalIds').isArray().withMessage('proposalIds must be an array'),
@@ -233,22 +541,60 @@ router.post('/bulk-approve', [
 ], asyncHandler(async (req: any, res: any) => {
   const { proposalIds, reviewedBy } = req.body
 
-  const results = await db.prisma.proposal.updateMany({
-    where: {
-      id: { in: proposalIds },
-      status: 'PENDING' // Only approve pending proposals
-    },
-    data: {
-      status: 'APPROVED',
-      reviewedAt: new Date(),
-      reviewedBy: reviewedBy || undefined
+  // Use transaction to approve proposals and create applications atomically
+  const result = await db.prisma.$transaction(async (tx) => {
+    // First, get all pending proposals that will be approved
+    const pendingProposals = await tx.proposal.findMany({
+      where: {
+        id: { in: proposalIds },
+        status: 'PENDING'
+      }
+    })
+
+    // Approve the proposals
+    const updateResult = await tx.proposal.updateMany({
+      where: {
+        id: { in: pendingProposals.map(p => p.id) }
+      },
+      data: {
+        status: 'APPROVED',
+        reviewedAt: new Date(),
+        reviewedBy: reviewedBy || undefined
+      }
+    })
+
+    // Create ProposalApplication for each approved proposal (only if not exists)
+    const applicationsToCreate = []
+    for (const proposal of pendingProposals) {
+      const existingApp = await tx.proposalApplication.findFirst({
+        where: { proposalId: proposal.id }
+      })
+      
+      if (!existingApp) {
+        applicationsToCreate.push({
+          proposalId: proposal.id,
+          status: 'PENDING' as const
+        })
+      }
+    }
+
+    const applications = await tx.proposalApplication.createMany({
+      data: applicationsToCreate
+    })
+
+    return {
+      approvedCount: updateResult.count,
+      applicationsCreated: applications.count
     }
   })
 
   res.json({
     success: true,
-    data: { updated: results.count },
-    message: `${results.count} proposals approved successfully`
+    data: { 
+      updated: result.approvedCount,
+      applicationsCreated: result.applicationsCreated
+    },
+    message: `${result.approvedCount} proposals approved and ${result.applicationsCreated} applications created successfully`
   })
 }))
 

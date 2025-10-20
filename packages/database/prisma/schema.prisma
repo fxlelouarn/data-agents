@@ -68,23 +68,41 @@ model AgentLog {
 }
 
 model Proposal {
-  id            String         @id @default(cuid())
+  id            String                @id @default(cuid())
   agentId       String
   type          ProposalType
-  status        ProposalStatus @default(PENDING)
+  status        ProposalStatus        @default(PENDING)
   eventId       String?
   editionId     String?
   raceId        String?
   changes       Json
   justification Json
   confidence    Float?
-  createdAt     DateTime       @default(now())
-  updatedAt     DateTime       @updatedAt
+  createdAt     DateTime              @default(now())
+  updatedAt     DateTime              @updatedAt
   reviewedAt    DateTime?
   reviewedBy    String?
-  agent         Agent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  agent         Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  applications  ProposalApplication[]
 
   @@map("proposals")
+}
+
+model ProposalApplication {
+  id           String                  @id @default(cuid())
+  proposalId   String
+  status       ApplicationStatus       @default(PENDING)
+  scheduledAt  DateTime?
+  appliedAt    DateTime?
+  errorMessage String?
+  logs         String[]                @default([])
+  appliedChanges Json?                
+  rollbackData Json?
+  createdAt    DateTime                @default(now())
+  updatedAt    DateTime                @updatedAt
+  proposal     Proposal                @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+
+  @@map("proposal_applications")
 }
 
 model DatabaseConnection {
@@ -257,4 +275,10 @@ enum DatabaseType {
   MONGODB
   EXTERNAL_API
   MILES_REPUBLIC
+}
+
+enum ApplicationStatus {
+  PENDING
+  APPLIED
+  FAILED
 }

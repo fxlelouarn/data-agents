@@ -1,12 +1,14 @@
 import { PrismaClient } from '@prisma/client'
 import { AgentService } from './services/AgentService'
 import { ProposalService } from './services/ProposalService'
+import { ProposalApplicationService } from './services/ProposalApplicationService'
 import { RunService, LogService } from './services/RunService'
 import { ConnectionService } from './services/ConnectionService'
 import { AgentStateService, IAgentStateService } from './services/AgentStateService'
 import {
   IAgentService,
   IProposalService,
+  IProposalApplicationService,
   IRunService,
   ILogService,
   IConnectionService,
@@ -17,6 +19,7 @@ import { prisma } from './prisma'
 export class DatabaseService {
   private agentService: IAgentService
   private proposalService: IProposalService
+  private proposalApplicationService: IProposalApplicationService
   private runService: IRunService
   private logService: ILogService
   private connectionService: IConnectionService
@@ -27,6 +30,7 @@ export class DatabaseService {
     this.connectionService = new ConnectionService(this.db)
     this.agentService = new AgentService(this.db, this.connectionService)
     this.proposalService = new ProposalService(this.db)
+    this.proposalApplicationService = new ProposalApplicationService(this.db)
     this.runService = new RunService(this.db)
     this.logService = new LogService(this.db)
     this.stateService = new AgentStateService(this.db)
@@ -44,6 +48,10 @@ export class DatabaseService {
 
   get proposals(): IProposalService {
     return this.proposalService
+  }
+
+  get proposalApplication(): IProposalApplicationService {
+    return this.proposalApplicationService
   }
 
   get runs(): IRunService {
@@ -152,6 +160,11 @@ export class DatabaseService {
     reviewedBy?: string
   }) {
     return this.proposalService.updateProposal(id, data)
+  }
+
+  // Proposal application operations
+  async applyProposal(proposalId: string, selectedChanges: Record<string, any>, options?: any) {
+    return this.proposalApplicationService.applyProposal(proposalId, selectedChanges, options)
   }
 
   // Database connection operations

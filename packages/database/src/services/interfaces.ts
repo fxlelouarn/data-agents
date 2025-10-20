@@ -193,3 +193,43 @@ export interface IConnectionService {
     config: any
   }>>
 }
+
+// Interfaces pour l'application des propositions
+export interface ApplyOptions {
+  applyToDatabase?: boolean  // Par défaut true (cache + Miles Republic)
+  force?: boolean           // Bypass validation
+  dryRun?: boolean         // Simulation
+  milesRepublicDatabaseId?: string // ID de la connexion Miles Republic
+}
+
+export interface ProposalApplicationResult {
+  success: boolean
+  appliedChanges: Record<string, any>
+  createdIds?: {
+    eventId?: string
+    editionId?: string
+    raceIds?: string[]
+  }
+  errors?: Array<{
+    field: string
+    message: string
+    severity: 'error' | 'warning'
+  }>
+  warnings?: Array<{
+    field: string
+    message: string
+    severity: 'warning'
+  }>
+  syncedToDatabase?: boolean // Indique si synchronisé avec Miles Republic
+  syncError?: string // Erreur de synchronisation s'il y en a une
+  dryRun?: boolean // Indique si c'était une simulation
+  [key: string]: any // Pour permettre d'autres champs comme eventData, etc.
+}
+
+export interface IProposalApplicationService {
+  applyProposal(proposalId: string, selectedChanges: Record<string, any>, options?: ApplyOptions): Promise<ProposalApplicationResult>
+  applyNewEvent(changes: any, selectedChanges: Record<string, any>, options?: ApplyOptions): Promise<ProposalApplicationResult>
+  applyEventUpdate(eventId: string, changes: any, selectedChanges: Record<string, any>, options?: ApplyOptions): Promise<ProposalApplicationResult>
+  applyEditionUpdate(editionId: string, changes: any, selectedChanges: Record<string, any>, options?: ApplyOptions): Promise<ProposalApplicationResult>
+  applyRaceUpdate(raceId: string, changes: any, selectedChanges: Record<string, any>, options?: ApplyOptions): Promise<ProposalApplicationResult>
+}
