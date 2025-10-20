@@ -7,7 +7,9 @@ import {
   logsApi, 
   healthApi,
   databasesApi,
-  settingsApi
+  settingsApi,
+  updatesApi,
+  cacheApi
 } from '@/services/api'
 import { 
   AgentFilters, 
@@ -15,7 +17,8 @@ import {
   RunFilters, 
   LogFilters,
   CreateAgentForm,
-  UpdateAgentForm
+  UpdateAgentForm,
+  UpdateFilters
 } from '@/types'
 
 // Agents hooks
@@ -318,6 +321,34 @@ export const useBulkArchiveProposals = () => {
   })
 }
 
+export const useCreateManualProposal = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (data: {
+      eventId?: string
+      editionId?: string
+      raceId?: string
+      fieldName: string
+      fieldValue: any
+      type: 'NEW_EVENT' | 'EVENT_UPDATE' | 'EDITION_UPDATE' | 'RACE_UPDATE'
+      propagateToRaces?: boolean
+      justification?: string
+    }) => proposalsApi.createManual(data),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      enqueueSnackbar(response.message || 'Proposition créée manuellement avec succès', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la création de la proposition',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useDeleteProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()
@@ -587,5 +618,164 @@ export const useHealth = () => {
     queryFn: () => healthApi.check(),
     refetchInterval: 60000, // Check every minute
     retry: false,
+  })
+}
+
+// Updates hooks
+export const useUpdates = (filters: UpdateFilters = {}, limit = 20, offset = 0) => {
+  return useQuery({
+    queryKey: ['updates', filters, limit, offset],
+    queryFn: () => updatesApi.getAll(filters, limit, offset),
+    staleTime: 30000,
+  })
+}
+
+export const useUpdate = (id: string) => {
+  return useQuery({
+    queryKey: ['updates', id],
+    queryFn: () => updatesApi.getById(id),
+    enabled: !!id,
+  })
+}
+
+export const useCreateUpdate = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: ({ proposalId, scheduledAt }: { proposalId: string; scheduledAt?: string }) => 
+      updatesApi.create(proposalId, scheduledAt),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      enqueueSnackbar(response.message || 'Mise à jour créée', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la création de la mise à jour',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useApplyUpdate = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => updatesApi.apply(id),
+    onSuccess: (response, id) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      queryClient.invalidateQueries({ queryKey: ['updates', id] })
+      enqueueSnackbar(response.message || 'Mise à jour appliquée', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de l\'application de la mise à jour',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useDeleteUpdate = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => updatesApi.delete(id),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      enqueueSnackbar(response.message || 'Mise à jour supprimée', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la suppression de la mise à jour',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useReplayUpdate = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => updatesApi.replay(id),
+    onSuccess: (response, id) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      queryClient.invalidateQueries({ queryKey: ['updates', id] })
+      enqueueSnackbar(response.message || 'Mise à jour prête pour rejeu', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors du rejeu de la mise à jour',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useUpdateLogs = (id: string) => {
+  return useQuery({
+    queryKey: ['updates', id, 'logs'],
+    queryFn: () => updatesApi.getLogs(id),
+    enabled: !!id,
+    refetchInterval: 5000, // Auto-refresh logs every 5 seconds
+  })
+}
+
+// Cache hooks
+export const useEvents = (filters: { limit?: number; search?: string } = {}) => {
+  return useQuery({
+    queryKey: ['cache', 'events', filters],
+    queryFn: () => cacheApi.getEvents(filters),
+    staleTime: 300000, // 5 minutes - events don't change often
+  })
+}
+
+export const useEditions = (filters: { eventId?: string; limit?: number } = {}) => {
+  return useQuery({
+    queryKey: ['cache', 'editions', filters],
+    queryFn: () => cacheApi.getEditions(filters),
+    staleTime: 300000, // 5 minutes
+    enabled: !filters.eventId || !!filters.eventId, // Only run if eventId is provided or no eventId filter
+  })
+}
+
+export const useRaces = (filters: { editionId?: string; limit?: number } = {}) => {
+  return useQuery({
+    queryKey: ['cache', 'races', filters],
+    queryFn: () => cacheApi.getRaces(filters),
+    staleTime: 300000, // 5 minutes
+    enabled: !filters.editionId || !!filters.editionId, // Only run if editionId is provided or no editionId filter
+  })
+}
+
+// Miles Republic direct access hooks
+export const useMilesRepublicEvents = (filters: { limit?: number; search?: string } = {}) => {
+  return useQuery({
+    queryKey: ['miles-republic', 'events', filters],
+    queryFn: () => cacheApi.getMilesRepublicEvents(filters),
+    staleTime: 60000, // 1 minute - real-time data
+  })
+}
+
+export const useMilesRepublicEditions = (filters: { eventId?: string; limit?: number } = {}) => {
+  return useQuery({
+    queryKey: ['miles-republic', 'editions', filters],
+    queryFn: () => cacheApi.getMilesRepublicEditions(filters),
+    staleTime: 60000, // 1 minute
+    enabled: !filters.eventId || !!filters.eventId,
+  })
+}
+
+export const useMilesRepublicRaces = (filters: { editionId?: string; limit?: number } = {}) => {
+  return useQuery({
+    queryKey: ['miles-republic', 'races', filters],
+    queryFn: () => cacheApi.getMilesRepublicRaces(filters),
+    staleTime: 60000, // 1 minute
+    enabled: !filters.editionId || !!filters.editionId,
   })
 }

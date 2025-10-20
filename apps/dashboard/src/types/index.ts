@@ -9,6 +9,8 @@ export type ProposalType = 'NEW_EVENT' | 'EVENT_UPDATE' | 'EDITION_UPDATE' | 'RA
 
 export type ProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
 
+export type UpdateStatus = 'PENDING' | 'APPLIED' | 'FAILED'
+
 export interface Agent {
   id: string
   name: string
@@ -165,6 +167,17 @@ export interface UpdateAgentForm extends Partial<CreateAgentForm> {
   isActive?: boolean
 }
 
+export interface ManualProposalForm {
+  eventId?: string
+  editionId?: string
+  raceId?: string
+  fieldName: string
+  fieldValue: any
+  type: ProposalType
+  propagateToRaces?: boolean // Pour propager les dates d'édition aux courses
+  justification?: string
+}
+
 // Filter and search types
 export interface AgentFilters {
   includeInactive?: boolean
@@ -190,5 +203,38 @@ export interface LogFilters {
   agentId?: string
   runId?: string
   level?: LogLevel
+  search?: string
+}
+
+// Update/Application types
+export interface DataUpdate {
+  id: string
+  proposalId: string
+  status: UpdateStatus
+  scheduledAt?: string
+  appliedAt?: string
+  errorMessage?: string
+  logs?: string[]
+  createdAt: string
+  updatedAt: string
+  proposal: {
+    id: string
+    type: ProposalType
+    status: ProposalStatus
+    changes: Record<string, {
+      old?: any
+      new: any
+      confidence: number
+    }>
+    agent: {
+      name: string
+      type: AgentType
+    }
+  }
+}
+
+export interface UpdateFilters {
+  status?: UpdateStatus
+  proposalId?: string
   search?: string
 }

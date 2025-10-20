@@ -12,7 +12,9 @@ import {
   AgentFilters,
   ProposalFilters,
   RunFilters,
-  LogFilters
+  LogFilters,
+  DataUpdate,
+  UpdateFilters
 } from '@/types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
@@ -86,6 +88,18 @@ export const proposalsApi = {
 
   getById: (id: string): Promise<ApiResponse<Proposal & { relatedProposals: Proposal[] }>> =>
     api.get(`/proposals/${id}`).then(res => res.data),
+
+  createManual: (data: {
+    eventId?: string
+    editionId?: string
+    raceId?: string
+    fieldName: string
+    fieldValue: any
+    type: 'NEW_EVENT' | 'EVENT_UPDATE' | 'EDITION_UPDATE' | 'RACE_UPDATE'
+    propagateToRaces?: boolean
+    justification?: string
+  }): Promise<ApiResponse<Proposal>> =>
+    api.post('/proposals', data).then(res => res.data),
 
   update: (
     id: string, 
@@ -296,6 +310,114 @@ export const settingsApi = {
     message?: string
   }>> =>
     api.get(`/settings/agent/${agentId}/failures`).then(res => res.data),
+}
+
+// Updates API
+export const updatesApi = {
+  getAll: (filters: UpdateFilters = {}, limit = 20, offset = 0): Promise<PaginatedResponse<DataUpdate>> =>
+    api.get('/updates', { params: { ...filters, limit, offset } }).then(res => res.data),
+
+  getById: (id: string): Promise<ApiResponse<DataUpdate & { logs: string[] }>> =>
+    api.get(`/updates/${id}`).then(res => res.data),
+
+  create: (proposalId: string, scheduledAt?: string): Promise<ApiResponse<DataUpdate>> =>
+    api.post('/updates', { proposalId, scheduledAt }).then(res => res.data),
+
+  apply: (id: string): Promise<ApiResponse<DataUpdate>> =>
+    api.post(`/updates/${id}/apply`).then(res => res.data),
+
+  delete: (id: string): Promise<ApiResponse<void>> =>
+    api.delete(`/updates/${id}`).then(res => res.data),
+
+  replay: (id: string): Promise<ApiResponse<DataUpdate>> =>
+    api.post(`/updates/${id}/replay`).then(res => res.data),
+
+  getLogs: (id: string): Promise<ApiResponse<{ logs: string[] }>> =>
+    api.get(`/updates/${id}/logs`).then(res => res.data),
+}
+
+// Cache API
+export const cacheApi = {
+  getEvents: (filters: { limit?: number; search?: string } = {}): Promise<ApiResponse<Array<{
+    id: string
+    name: string
+    city: string
+    country: string
+    _count: { editions: number }
+  }>>> =>
+    api.get('/cache/events', { params: filters }).then(res => res.data),
+
+  getEditions: (filters: { eventId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
+    id: string
+    year: number
+    startDate: string | null
+    calendarStatus: string
+    eventId: string
+    event: {
+      name: string
+      city: string
+    }
+    _count: { races: number }
+  }>>> =>
+    api.get('/cache/editions', { params: filters }).then(res => res.data),
+
+  getRaces: (filters: { editionId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
+    id: string
+    name: string
+    startDate: string | null
+    price: number | null
+    runDistance: number | null
+    editionId: string
+    edition: {
+      year: number
+      event: {
+        name: string
+        city: string
+      }
+    }
+  }>>> =>
+    api.get('/cache/races', { params: filters }).then(res => res.data),
+
+  // Miles Republic direct access
+  getMilesRepublicEvents: (filters: { limit?: number; search?: string } = {}): Promise<ApiResponse<Array<{
+    id: string
+    name: string
+    city: string
+    country: string
+    _count: { editions: number }
+  }>>> =>
+    api.get('/cache/miles-republic/events', { params: filters }).then(res => res.data),
+
+  getMilesRepublicEditions: (filters: { eventId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
+    id: string
+    year: number
+    startDate: string | null
+    calendarStatus: string
+    eventId: string
+    event: {
+      name: string
+      city: string
+    }
+    _count: { races: number }
+  }>>> =>
+    api.get('/cache/miles-republic/editions', { params: filters }).then(res => res.data),
+
+  getMilesRepublicRaces: (filters: { editionId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
+    id: string
+    name: string
+    startDate: string | null
+    price: number | null
+    runDistance: number | null
+    editionId: string
+    edition: {
+      year: number
+      event: {
+        name: string
+        city: string
+      }
+    }
+  }>>> =>
+    api.get('/cache/miles-republic/races', { params: filters }).then(res => res.data),
 }
 
 // Health API
