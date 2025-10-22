@@ -16,7 +16,7 @@ import {
   Chip,
   Alert
 } from '@mui/material'
-import { useCreateManualProposal, useEditions, useRaces } from '@/hooks/useApi'
+import { useCreateManualProposal, useMilesRepublicEditions, useRaces } from '@/hooks/useApi'
 import MeilisearchEventSelector from './MeilisearchEventSelector'
 
 interface TabPanelProps {
@@ -60,8 +60,8 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
 
   const createMutation = useCreateManualProposal()
 
-  // Fetch éditions et courses depuis le cache local après sélection d'événement
-  const { data: editionsData, isLoading: isLoadingEditions } = useEditions({ 
+  // Fetch éditions depuis Miles Republic après sélection d'événement
+  const { data: editionsData, isLoading: isLoadingEditions } = useMilesRepublicEditions({ 
     eventId: selectedEventId || undefined,
     limit: 100 
   })
@@ -71,7 +71,17 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
     limit: 100 
   })
   
-  const editions = editionsData?.data || []
+  // Filter editions to only show future editions
+  const allEditions = editionsData?.data || []
+  const editions = useMemo(() => {
+    const now = new Date()
+    return allEditions.filter(edition => {
+      if (!edition.startDate) return false
+      const startDate = new Date(edition.startDate)
+      return startDate > now
+    })
+  }, [allEditions])
+  
   const races = racesData?.data || []
 
   const selectedEvent = selectedEventData
@@ -273,20 +283,29 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
 
           {selectedEventId && (
             <Grid item xs={12}>
-              <Autocomplete
-                options={editions}
-                getOptionLabel={(option) => `${option.year} - ${option.event.name} (${option._count.races} course(s))`}
-                value={selectedEdition || null}
-                onChange={(_, newValue) => setSelectedEditionId(newValue?.id || '')}
-                loading={isLoadingEditions}
-                renderInput={(params) => (
-                  <TextField
-                    {...params}
-                    label="Sélectionner une édition"
-                    helperText="Choisir l'édition à modifier (chargée depuis le cache local après sélection Meilisearch)"
-                  />
-                )}
-              />
+              {editions.length === 0 && !isLoadingEditions ? (
+                <Alert severity="warning">
+                  Aucune édition future trouvée pour cet événement. Seules les éditions avec une date de début dans le futur peuvent être modifiées.
+                </Alert>
+              ) : (
+                <Autocomplete
+                  options={editions}
+                  getOptionLabel={(option) => {
+                    const startDate = option.startDate ? new Date(option.startDate).toLocaleDateString('fr-FR') : 'Date inconnue'
+                    return `${option.year} - ${option.event.name} - ${startDate} (${option._count.races} course(s))`
+                  }}
+                  value={selectedEdition || null}
+                  onChange={(_, newValue) => setSelectedEditionId(newValue?.id || '')}
+                  loading={isLoadingEditions}
+                  renderInput={(params) => (
+                    <TextField
+                      {...params}
+                      label="Sélectionner une édition future"
+                      helperText={`${editions.length} édition(s) future(s) trouvée(s) dans Miles Republic`}
+                    />
+                  )}
+                />
+              )}
             </Grid>
           )}
 
