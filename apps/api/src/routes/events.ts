@@ -30,7 +30,7 @@ router.get('/search', [
   const { q, limit = 10, offset = 0, filters } = req.query
 
   // Vérifier que Meilisearch est configuré
-  if (!settingsService.isMeilisearchConfigured()) {
+  if (!(await settingsService.isMeilisearchConfigured())) {
     return res.status(503).json({
       success: false,
       message: 'Meilisearch is not configured. Please configure URL and API key in settings.',
@@ -41,8 +41,8 @@ router.get('/search', [
   try {
     // Obtenir l'instance du service Meilisearch avec la configuration actuelle
     const meilisearchService = getMeilisearchService(
-      settingsService.getMeilisearchUrl()!,
-      settingsService.getMeilisearchApiKey()!
+      (await settingsService.getMeilisearchUrl())!,
+      (await settingsService.getMeilisearchApiKey())!
     )
 
     // Effectuer la recherche
@@ -93,7 +93,7 @@ router.get('/autocomplete', [
   const { q, limit = 10 } = req.query
 
   // Vérifier que Meilisearch est configuré
-  if (!settingsService.isMeilisearchConfigured()) {
+  if (!(await settingsService.isMeilisearchConfigured())) {
     return res.status(503).json({
       success: false,
       message: 'Meilisearch is not configured',
@@ -104,8 +104,8 @@ router.get('/autocomplete', [
   try {
     // Obtenir l'instance du service Meilisearch
     const meilisearchService = getMeilisearchService(
-      settingsService.getMeilisearchUrl()!,
-      settingsService.getMeilisearchApiKey()!
+      (await settingsService.getMeilisearchUrl())!,
+      (await settingsService.getMeilisearchApiKey())!
     )
 
     // Recherche optimisée pour l'autocomplétion
@@ -143,77 +143,36 @@ router.get('/autocomplete', [
 
 /**
  * GET /api/events/:eventId
- * Récupère un événement spécifique par son ID et le met en cache
+ * Récupère un événement spécifique par son ID depuis Meilisearch
  */
 router.get('/:eventId', [
-  query('cache').optional().isBoolean().withMessage('Cache must be a boolean'),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { eventId } = req.params
-  const { cache = true } = req.query
 
   try {
-    let event = null
-    let fromCache = false
-
-    // D'abord chercher dans le cache local
-    if (cache) {
-      event = await db.prisma.eventCache.findUnique({
-        where: { id: eventId },
-        include: {
-          editions: {
-            include: {
-              races: true
-            }
-          }
-        }
-      })
-      
-      if (event) {
-        fromCache = true
-      }
-    }
-
-    // Si pas trouvé en cache et Meilisearch configuré, chercher dans Meilisearch
-    if (!event && settingsService.isMeilisearchConfigured()) {
+    // Chercher dans Meilisearch si configuré
+    if (await settingsService.isMeilisearchConfigured()) {
       try {
         const meilisearchService = getMeilisearchService(
-          settingsService.getMeilisearchUrl()!,
-          settingsService.getMeilisearchApiKey()!
+          (await settingsService.getMeilisearchUrl())!,
+          (await settingsService.getMeilisearchApiKey())!
         )
 
-        const meilisearchEvent = await meilisearchService.getEventById(eventId)
+        const event = await meilisearchService.getEventById(eventId)
         
-        if (meilisearchEvent && cache) {
-          // Mettre en cache l'événement trouvé dans Meilisearch
-          event = await cacheEventFromMeilisearch(meilisearchEvent)
-          fromCache = false
-        } else {
-          // Retourner directement les données de Meilisearch sans cache
-          event = meilisearchEvent
-          fromCache = false
+        if (event) {
+          return res.json({
+            success: true,
+            data: { event }
+          })
         }
       } catch (meilisearchError) {
         console.warn('Failed to fetch from Meilisearch:', meilisearchError)
-        // Continue sans Meilisearch
       }
     }
 
-    if (!event) {
-      throw createError(404, 'Event not found', 'EVENT_NOT_FOUND')
-    }
-
-    res.json({
-      success: true,
-      data: {
-        event,
-        meta: {
-          fromCache,
-          meilisearchConfigured: settingsService.isMeilisearchConfigured(),
-          cachedAt: fromCache && 'lastSyncAt' in event ? event.lastSyncAt : null
-        }
-      }
-    })
+    throw createError(404, 'Event not found', 'EVENT_NOT_FOUND')
 
   } catch (error) {
     if (error && typeof error === 'object' && 'code' in error && error.code === 'EVENT_NOT_FOUND') {
@@ -230,7 +189,7 @@ router.get('/:eventId', [
  * Teste la connexion à Meilisearch
  */
 router.post('/test-meilisearch', asyncHandler(async (req: Request, res: Response) => {
-  if (!settingsService.isMeilisearchConfigured()) {
+  if (!(await settingsService.isMeilisearchConfigured())) {
     return res.status(400).json({
       success: false,
       message: 'Meilisearch is not configured. Please set URL and API key in settings.'
@@ -239,8 +198,8 @@ router.post('/test-meilisearch', asyncHandler(async (req: Request, res: Response
 
   try {
     const meilisearchService = getMeilisearchService(
-      settingsService.getMeilisearchUrl()!,
-      settingsService.getMeilisearchApiKey()!
+      (await settingsService.getMeilisearchUrl())!,
+      (await settingsService.getMeilisearchApiKey())!
     )
 
     const testResult = await meilisearchService.testConnection()
@@ -251,9 +210,9 @@ router.post('/test-meilisearch', asyncHandler(async (req: Request, res: Response
         configured: true,
         connected: testResult.success,
         message: testResult.message,
-        url: settingsService.getMeilisearchUrl(),
+        url: await settingsService.getMeilisearchUrl(),
         // Ne pas retourner la clé API pour des raisons de sécurité
-        hasApiKey: !!settingsService.getMeilisearchApiKey()
+        hasApiKey: !!(await settingsService.getMeilisearchApiKey())
       }
     })
 
@@ -270,44 +229,269 @@ router.post('/test-meilisearch', asyncHandler(async (req: Request, res: Response
  * Fonction utilitaire pour mettre en cache un événement Meilisearch
  */
 async function cacheEventFromMeilisearch(meilisearchEvent: MeilisearchEvent) {
-  try {
-    // Créer ou mettre à jour l'EventCache
-    const eventData = {
-      id: meilisearchEvent.objectID,
-      name: meilisearchEvent.name,
-      city: meilisearchEvent.city,
-      country: meilisearchEvent.country,
-      latitude: meilisearchEvent.latitude || null,
-      longitude: meilisearchEvent.longitude || null,
-      websiteUrl: meilisearchEvent.websiteUrl || null,
-      slug: meilisearchEvent.slug || null,
-      lastSyncAt: new Date(),
-      // Valeurs par défaut pour les champs requis
-      countrySubdivisionNameLevel1: '',
-      countrySubdivisionNameLevel2: ''
-    }
+  // Note: Cette fonction est obsolète mais conservée pour compatibilité
+  return meilisearchEvent
+}
 
-    const cachedEvent = await db.prisma.eventCache.upsert({
-      where: { id: meilisearchEvent.objectID },
-      update: eventData,
-      create: eventData,
-      include: {
-        editions: {
-          include: {
-            races: true
-          }
-        }
+// Routes pour interroger Miles Republic directement
+
+/**
+ * GET /api/events
+ * Liste les événements
+ */
+router.get('/', [
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  query('search').optional().isString(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { limit = 50, search } = req.query
+
+  try {
+    // Trouver la connexion Miles Republic
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: {
+        type: 'MILES_REPUBLIC',
+        isActive: true
       }
     })
 
-    console.log(`✅ Cached event ${meilisearchEvent.objectID} from Meilisearch`)
-    return cachedEvent
+    if (!milesRepublicConnection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Miles Republic database connection not found'
+      })
+    }
 
+    // Obtenir la connexion via DatabaseManager
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'events-api')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+    // Construire la clause where
+    let whereClause: any = {}
+    if (search) {
+      whereClause.OR = [
+        { name: { contains: search as string, mode: 'insensitive' } },
+        { city: { contains: search as string, mode: 'insensitive' } }
+      ]
+    }
+
+    const events = await connection.event.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        name: true,
+        city: true,
+        country: true,
+        _count: {
+          select: { editions: true }
+        }
+      },
+      orderBy: { name: 'asc' },
+      take: parseInt(String(limit))
+    })
+
+    res.json({
+      success: true,
+      data: events.map((event: any) => ({
+        id: event.id.toString(),
+        name: event.name,
+        city: event.city,
+        country: event.country,
+        _count: { editions: event._count.editions }
+      }))
+    })
   } catch (error) {
-    console.error('Failed to cache event from Meilisearch:', error)
-    // Retourner les données Meilisearch même si le cache échoue
-    return meilisearchEvent
+    console.error('Error fetching events from Miles Republic:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching events from Miles Republic database'
+    })
   }
-}
+}))
+
+/**
+ * GET /api/events/editions
+ * Liste les éditions
+ */
+router.get('/editions', [
+  query('eventId').optional().isString(),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { eventId, limit = 50 } = req.query
+
+  try {
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: {
+        type: 'MILES_REPUBLIC',
+        isActive: true
+      }
+    })
+
+    if (!milesRepublicConnection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Miles Republic database connection not found'
+      })
+    }
+
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'events-api')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+    let whereClause: any = {}
+    if (eventId) {
+      const numericEventId = typeof eventId === 'string' && /^\d+$/.test(eventId)
+        ? parseInt(eventId)
+        : eventId
+      whereClause.eventId = numericEventId
+    }
+
+    const editions = await connection.edition.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        year: true,
+        startDate: true,
+        calendarStatus: true,
+        eventId: true,
+        event: {
+          select: {
+            name: true,
+            city: true
+          }
+        },
+        _count: {
+          select: { races: true }
+        }
+      },
+      orderBy: [
+        { year: 'desc' },
+        { startDate: 'desc' }
+      ],
+      take: parseInt(String(limit))
+    })
+
+    res.json({
+      success: true,
+      data: editions.map((edition: any) => ({
+        id: edition.id ? edition.id.toString() : null,
+        year: edition.year ? (typeof edition.year === 'string' ? parseInt(edition.year) : edition.year) : null,
+        startDate: edition.startDate?.toISOString() || null,
+        calendarStatus: edition.calendarStatus || null,
+        eventId: edition.eventId ? edition.eventId.toString() : null,
+        event: {
+          name: edition.event?.name || null,
+          city: edition.event?.city || null
+        },
+        _count: { races: edition._count?.races || 0 }
+      }))
+    })
+  } catch (error) {
+    console.error('Error fetching editions from Miles Republic:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching editions from Miles Republic database',
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
+}))
+
+/**
+ * GET /api/events/races
+ * Liste les courses
+ */
+router.get('/races', [
+  query('editionId').optional().isString(),
+  query('limit').optional().isInt({ min: 1, max: 100 }),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { editionId, limit = 50 } = req.query
+
+  try {
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: {
+        type: 'MILES_REPUBLIC',
+        isActive: true
+      }
+    })
+
+    if (!milesRepublicConnection) {
+      return res.status(404).json({
+        success: false,
+        message: 'Miles Republic database connection not found'
+      })
+    }
+
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'events-api')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+    let whereClause: any = {}
+    if (editionId) {
+      const numericEditionId = typeof editionId === 'string' && /^\d+$/.test(editionId)
+        ? parseInt(editionId)
+        : editionId
+      whereClause.editionId = numericEditionId
+    }
+
+    const races = await connection.race.findMany({
+      where: whereClause,
+      select: {
+        id: true,
+        name: true,
+        startDate: true,
+        price: true,
+        runDistance: true,
+        editionId: true,
+        edition: {
+          select: {
+            year: true,
+            event: {
+              select: {
+                name: true,
+                city: true
+              }
+            }
+          }
+        }
+      },
+      orderBy: [
+        { startDate: 'desc' },
+        { name: 'asc' }
+      ],
+      take: parseInt(String(limit))
+    })
+
+    res.json({
+      success: true,
+      data: races.map((race: any) => ({
+        id: race.id.toString(),
+        name: race.name,
+        startDate: race.startDate?.toISOString() || null,
+        price: race.price,
+        runDistance: race.runDistance,
+        editionId: race.editionId.toString(),
+        edition: {
+          year: parseInt(race.edition.year),
+          event: {
+            name: race.edition.event.name,
+            city: race.edition.event.city
+          }
+        }
+      }))
+    })
+  } catch (error) {
+    console.error('Error fetching races from Miles Republic:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching races from Miles Republic database'
+    })
+  }
+}))
 
 export { router as eventsRouter }

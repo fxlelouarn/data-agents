@@ -14,7 +14,6 @@ import { logRouter } from './routes/logs'
 import { healthRouter } from './routes/health'
 import { databaseRouter } from './routes/databases'
 import { settingsRouter } from './routes/settings'
-import { cacheRouter } from './routes/cache'
 import { eventsRouter } from './routes/events'
 import { AgentScheduler } from './services/scheduler'
 import { errorHandler } from './middleware/error-handler'
@@ -55,7 +54,6 @@ app.use('/api/updates', updateRouter)
 app.use('/api/logs', logRouter)
 app.use('/api/databases', databaseRouter)
 app.use('/api/settings', settingsRouter)
-app.use('/api/cache', cacheRouter)
 app.use('/api/events', eventsRouter)
 
 // Error handling
