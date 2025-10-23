@@ -185,11 +185,8 @@ export class GoogleSearchDateAgent extends BaseAgent {
       let eventsSkipped = 0
       
       context.logger.info(`📋 Début du traitement de ${events.length} événement(s)...`)
-
-          // 2. Synchroniser les événements vers le cache local
-      await this.syncEventsToCache(events, context)
       
-      // 3. Traiter chaque événement
+      // 2. Traiter chaque événement
       for (let i = 0; i < events.length; i++) {
         const event = events[i]
         context.logger.info(`🏃 [Événement ${i + 1}/${events.length}] Traitement: ${event.name} (${event.city})`)
@@ -480,7 +477,22 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
   private buildSearchQuery(event: NextProdEvent): string {
     // Format: "<Event.name> <Event.city> <Edition.year>"
-    const year = event.edition?.year || new Date().getFullYear().toString()
+    let year = event.edition?.year || new Date().getFullYear().toString()
+    
+    // Si l'édition a une date de début et qu'elle est déjà passée,
+    // chercher l'année suivante (reconduction de l'événement)
+    if (event.edition?.startDate) {
+      const now = new Date()
+      const editionDate = new Date(event.edition.startDate)
+      
+      if (editionDate < now) {
+        // L'édition est passée, chercher l'année suivante
+        const nextYear = parseInt(year) + 1
+        year = nextYear.toString()
+        this.logger.info(`📅 Édition ${event.edition.year} déjà passée (${editionDate.toLocaleDateString('fr-FR')}), recherche pour l'année ${year}`)
+      }
+    }
+    
     return `"${event.name}" "${event.city}" ${year}`
   }
 
@@ -523,7 +535,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
   }
 
   /**
-   * Calcule la confiance basée sur le jour de la semaine et l'historique
+   * Calcule la confiance basée sur le jour de la semaine, la proximité de date et l'historique
    */
   private calculateWeekdayConfidence(proposedDate: Date, event: NextProdEvent, baseConfidence: number): number {
     let adjustedConfidence = baseConfidence
@@ -543,11 +555,31 @@ export class GoogleSearchDateAgent extends BaseAgent {
       }
     }
     
-    // Bonus si le jour correspond à une édition précédente
+    // Bonus basé sur la proximité avec les éditions précédentes
     if (event.historicalEditions && event.historicalEditions.length > 0) {
       const lastEdition = event.historicalEditions[0] // Plus récente
       const lastDayOfWeek = lastEdition.startDate.getDay()
       
+      // Calculer la distance en jours (hors année) entre la date proposée et l'édition précédente
+      const daysDiff = this.calculateDayOfYearDistance(proposedDate, lastEdition.startDate)
+      
+      // Bonus basé sur la proximité de date (uniquement si ≤ 14 jours)
+      if (daysDiff <= 7) {
+        // Très proche (même semaine) : fort bonus
+        adjustedConfidence += 0.25 // +25%
+        this.logger.debug(`📅 Date très proche de l'édition précédente (${daysDiff} jours) : +25% confiance`)
+      } else if (daysDiff <= 14) {
+        // Proche (2 semaines) : bon bonus
+        adjustedConfidence += 0.20 // +20%
+        this.logger.debug(`📅 Date proche de l'édition précédente (${daysDiff} jours) : +20% confiance`)
+      } else if (daysDiff > 60) {
+        // Très éloignée (>2 mois) : pénalité
+        adjustedConfidence -= 0.15 // -15%
+        this.logger.debug(`⚠️ Date éloignée de l'édition précédente (${daysDiff} jours) : -15% confiance`)
+      }
+      // Entre 14 et 60 jours : pas de bonus ni de pénalité
+      
+      // Bonus supplémentaire si même jour de la semaine
       if (dayOfWeek === lastDayOfWeek) {
         adjustedConfidence += 0.15 // +15% si même jour que l'édition précédente
       }
@@ -559,10 +591,44 @@ export class GoogleSearchDateAgent extends BaseAgent {
       if (consistentDay && recentEditions.length >= 2) {
         adjustedConfidence += 0.1 // +10% si cohérent avec plusieurs éditions
       }
+      
+      // Vérifier si la date est cohérente avec plusieurs éditions (distance similaire)
+      if (recentEditions.length >= 2) {
+        const distances = recentEditions.map(ed => this.calculateDayOfYearDistance(proposedDate, ed.startDate))
+        const avgDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length
+        
+        if (avgDistance <= 14) {
+          adjustedConfidence += 0.15 // +15% si cohérent avec plusieurs éditions
+          this.logger.debug(`✨ Date cohérente avec ${recentEditions.length} éditions (avg: ${Math.round(avgDistance)} jours) : +15% confiance`)
+        }
+      }
     }
     
     // S'assurer que la confiance reste dans [0, 1]
     return Math.min(Math.max(adjustedConfidence, 0), 1)
+  }
+  
+  /**
+   * Calcule la distance en jours entre deux dates (hors année)
+   * Ex: 28 septembre vs 1 octobre = 3 jours
+   */
+  private calculateDayOfYearDistance(date1: Date, date2: Date): number {
+    // Normaliser les deux dates à la même année pour comparer uniquement jour/mois
+    const normalized1 = new Date(2000, date1.getMonth(), date1.getDate())
+    const normalized2 = new Date(2000, date2.getMonth(), date2.getDate())
+    
+    // Différence en millisecondes
+    const diffMs = Math.abs(normalized1.getTime() - normalized2.getTime())
+    
+    // Convertir en jours
+    const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
+    
+    // Gérer le cas où la différence traverse le nouvel an (ex: 28 déc vs 5 jan)
+    // Dans ce cas, calculer aussi la distance "dans l'autre sens" et prendre le minimum
+    const daysInYear = 365
+    const alternativeDiff = daysInYear - diffDays
+    
+    return Math.min(diffDays, alternativeDiff)
   }
 
   /**
@@ -631,7 +697,8 @@ export class GoogleSearchDateAgent extends BaseAgent {
     if (!searchResults.items) return dates
 
     for (const item of searchResults.items) {
-      const snippet = item.snippet.toLowerCase()
+      // Analyser à la fois le titre ET le snippet (le titre contient souvent la date)
+      const textToAnalyze = `${item.title} ${item.snippet}`.toLowerCase()
       const context = `${item.title} - ${item.snippet}`
 
       // Patterns de dates en français
@@ -655,7 +722,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
       for (const pattern of datePatterns) {
         let match
-        while ((match = pattern.exec(snippet)) !== null) {
+        while ((match = pattern.exec(textToAnalyze)) !== null) {
           try {
             let date: Date
             let confidence = 0.6
@@ -722,12 +789,22 @@ export class GoogleSearchDateAgent extends BaseAgent {
             // Vérifier que la date est valide et dans une plage raisonnable
             if (date && !isNaN(date.getTime())) {
               const now = new Date()
+              const oneYearAgo = new Date(now.getFullYear() - 1, 0, 1) // Début année précédente
               const twoYearsFromNow = new Date(now.getFullYear() + 2, 11, 31)
               
-              if (date >= now && date <= twoYearsFromNow) {
+              // Accepter les dates de l'année précédente jusqu'à +2 ans
+              if (date >= oneYearAgo && date <= twoYearsFromNow) {
+                // Ajuster la confiance si la date est passée (probablement édition précédente)
+                let adjustedConfidence = confidence
+                if (date < now) {
+                  // Réduire la confiance pour les dates passées
+                  adjustedConfidence = confidence * 0.5
+                  this.logger.debug(`Date passée détectée: ${date.toLocaleDateString('fr-FR')} - confiance réduite à ${adjustedConfidence}`)
+                }
+                
                 dates.push({
                   date,
-                  confidence,
+                  confidence: adjustedConfidence,
                   source: item.link,
                   context: match[0] + ` (extrait de: "${context}")`
                 })
@@ -917,91 +994,4 @@ export class GoogleSearchDateAgent extends BaseAgent {
     return true
   }
 
-  /**
-   * Synchronise les événements Miles Republic vers le cache local
-   */
-  private async syncEventsToCache(events: NextProdEvent[], context: AgentContext): Promise<void> {
-    context.logger.info(`🔄 Synchronisation de ${events.length} événements vers le cache local...`)
-    
-    for (const event of events) {
-      try {
-        // 1. Synchroniser l'événement
-        const eventCacheId = `event-${event.id}`
-        await this.prisma.eventCache.upsert({
-          where: { id: eventCacheId },
-          update: {
-            name: event.name,
-            city: event.city,
-            country: 'France', // Défaut pour les événements français
-            countrySubdivisionNameLevel1: 'France',
-            countrySubdivisionNameLevel2: event.city,
-            lastSyncAt: new Date()
-          },
-          create: {
-            id: eventCacheId,
-            name: event.name,
-            city: event.city,
-            country: 'France',
-            countrySubdivisionNameLevel1: 'France', 
-            countrySubdivisionNameLevel2: event.city,
-            lastSyncAt: new Date()
-          }
-        })
-        
-        // 2. Synchroniser l'édition TO_BE_CONFIRMED
-        if (event.edition) {
-          const editionCacheId = `edition-${event.edition.id}`
-          await this.prisma.editionCache.upsert({
-            where: { id: editionCacheId },
-            update: {
-              eventId: eventCacheId,
-              year: event.edition.year,
-              calendarStatus: event.edition.calendarStatus,
-              startDate: event.edition.startDate,
-              lastSyncAt: new Date()
-            },
-            create: {
-              id: editionCacheId,
-              eventId: eventCacheId,
-              year: event.edition.year,
-              calendarStatus: event.edition.calendarStatus,
-              startDate: event.edition.startDate,
-              lastSyncAt: new Date()
-            }
-          })
-          
-          // 3. Synchroniser les courses de l'édition
-          if (event.edition.races && event.edition.races.length > 0) {
-            for (const race of event.edition.races) {
-              const raceCacheId = `race-${race.id}`
-              await this.prisma.raceCache.upsert({
-                where: { id: raceCacheId },
-                update: {
-                  editionId: editionCacheId,
-                  name: race.name,
-                  startDate: race.startDate,
-                  lastSyncAt: new Date()
-                },
-                create: {
-                  id: raceCacheId,
-                  editionId: editionCacheId,
-                  name: race.name,
-                  startDate: race.startDate,
-                  lastSyncAt: new Date()
-                }
-              })
-            }
-          }
-        }
-        
-        context.logger.debug(`✅ Événement synchronisé: ${event.name} (${eventCacheId})`)
-        
-      } catch (error) {
-        context.logger.error(`❌ Erreur sync événement ${event.name}:`, { error: String(error) })
-        // Continuer avec les autres événements même si un échoue
-      }
-    }
-    
-    context.logger.info(`✅ Synchronisation terminée: ${events.length} événements traités`)
-  }
 }

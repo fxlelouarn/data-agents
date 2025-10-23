@@ -182,8 +182,6 @@ export class DatabaseManager {
    * Créer une connexion selon le type de base de données
    */
   private async createConnection(config: DatabaseConfig): Promise<any> {
-    const { PrismaClient } = await import('@prisma/client')
-    
     try {
       let connectionUrl: string
 
@@ -195,6 +193,27 @@ export class DatabaseManager {
         const protocol = config.type === 'postgresql' ? 'postgresql' : 'mysql'
         const sslParam = config.ssl ? '?ssl=true' : ''
         connectionUrl = `${protocol}://${config.username}:${config.password}@${config.host}:${config.port}/${config.database}${sslParam}`
+      }
+
+      // Use the correct Prisma client based on database type
+      let PrismaClient
+      if (config.type === 'medusa') {
+        // For Miles Republic / Medusa databases, use the specialized client
+        try {
+          // Try to import from the agents app directory
+          const path = require('path')
+          const agentsDir = path.resolve(__dirname, '../../../apps/agents')
+          const milesClient = await import(`${agentsDir}/node_modules/.prisma/client/index.js`)
+          PrismaClient = milesClient.PrismaClient
+          this.logger.info('Using Miles Republic Prisma client')
+        } catch (error) {
+          this.logger.error('Miles Republic Prisma client not found, cannot connect to Miles Republic database', { error: String(error) })
+          throw new Error('Miles Republic Prisma client not generated. Run: cd apps/agents && npx prisma generate')
+        }
+      } else {
+        // For other databases, use the default client
+        const defaultClient = await import('@prisma/client')
+        PrismaClient = defaultClient.PrismaClient
       }
 
       const client = new PrismaClient({
