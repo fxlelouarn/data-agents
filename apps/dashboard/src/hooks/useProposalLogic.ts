@@ -103,7 +103,8 @@ export const useProposalLogic = () => {
       if (isNaN(date.getTime())) {
         return dateString
       }
-      return format(date, 'dd/MM/yyyy HH:mm', { locale: fr })
+      // Inclure le jour de la semaine dans le format
+      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
     } catch (error) {
       return dateString
     }

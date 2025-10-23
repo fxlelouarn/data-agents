@@ -47,6 +47,7 @@ interface ChangesTableProps {
   changes: ConsolidatedChange[]
   isNewEvent: boolean
   selectedChanges: Record<string, any>
+  onFieldSelect?: (fieldName: string, value: any) => void
   onFieldApprove: (fieldName: string, value: any) => void
   onFieldReject?: (fieldName: string) => void
   formatValue: (value: any, isSimple?: boolean) => React.ReactNode
@@ -60,6 +61,7 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
   changes,
   isNewEvent,
   selectedChanges,
+  onFieldSelect,
   onFieldApprove,
   onFieldReject,
   formatValue,
@@ -144,7 +146,9 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
                 onChange={(e) => {
                   try {
                     const parsedValue = JSON.parse(e.target.value as string)
-                    onFieldApprove(fieldName, parsedValue)
+                    if (onFieldSelect) {
+                      onFieldSelect(fieldName, parsedValue)
+                    }
                   } catch (error) {
                     console.error('Error parsing selected value:', error)
                   }
@@ -198,12 +202,7 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
               <IconButton 
                 size="small" 
                 color="success"
-                onClick={() => {
-                  const valueToApprove = hasMultipleValues ? 
-                    (selectedChanges[fieldName] || (sortedOptions.length > 0 ? sortedOptions[0].value : null)) : 
-                    change.options[0].proposedValue
-                  onFieldApprove(fieldName, valueToApprove)
-                }}
+                onClick={() => onFieldApprove(fieldName, selectedValue)}
                 disabled={disabled}
               >
                 <ApproveIcon />
