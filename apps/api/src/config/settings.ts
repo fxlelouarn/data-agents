@@ -1,3 +1,5 @@
+import { PrismaClient } from '@prisma/client'
+
 interface SystemSettings {
   /**
    * Nombre maximum d'échecs consécutifs avant désactivation automatique d'un agent
@@ -39,117 +41,144 @@ const defaultSettings: SystemSettings = {
 }
 
 class SettingsService {
-  private settings: SystemSettings
+  private prisma: PrismaClient
+  private settings: SystemSettings | null = null
 
   constructor() {
-    // Charger les settings depuis les variables d'environnement ou utiliser les défauts
-    this.settings = {
-      maxConsecutiveFailures: parseInt(process.env.MAX_CONSECUTIVE_FAILURES || '3', 10),
-      enableAutoDisabling: process.env.ENABLE_AUTO_DISABLING !== 'false',
-      checkIntervalMinutes: parseInt(process.env.CHECK_INTERVAL_MINUTES || '5', 10),
-      meilisearchUrl: process.env.MEILISEARCH_URL || null,
-      meilisearchApiKey: process.env.MEILISEARCH_API_KEY || null
+    this.prisma = new PrismaClient()
+    this.initSettings()
+  }
+
+  private async initSettings() {
+    try {
+      // Upsert settings avec les valeurs par défaut
+      const settings = await this.prisma.settings.upsert({
+        where: { id: 'singleton' },
+        update: {},
+        create: {
+          id: 'singleton',
+          ...defaultSettings
+        }
+      })
+      
+      this.settings = {
+        maxConsecutiveFailures: settings.maxConsecutiveFailures,
+        enableAutoDisabling: settings.enableAutoDisabling,
+        checkIntervalMinutes: settings.checkIntervalMinutes,
+        meilisearchUrl: settings.meilisearchUrl,
+        meilisearchApiKey: settings.meilisearchApiKey
+      }
+      
+      console.log('⚙️ System Settings loaded from database')
+    } catch (error) {
+      console.error('❌ Failed to load settings from database:', error)
+      this.settings = { ...defaultSettings }
     }
+  }
 
-    // Validation des valeurs
-    if (this.settings.maxConsecutiveFailures < 1) {
-      console.warn('⚠️ MAX_CONSECUTIVE_FAILURES must be >= 1, using default value: 3')
-      this.settings.maxConsecutiveFailures = defaultSettings.maxConsecutiveFailures
+  async getSettings(): Promise<SystemSettings> {
+    const settings = await this.prisma.settings.findUnique({ where: { id: 'singleton' } })
+    
+    if (!settings) {
+      // Créer les settings s'ils n'existent pas
+      const created = await this.prisma.settings.create({
+        data: {
+          id: 'singleton',
+          ...defaultSettings
+        }
+      })
+      
+      return {
+        maxConsecutiveFailures: created.maxConsecutiveFailures,
+        enableAutoDisabling: created.enableAutoDisabling,
+        checkIntervalMinutes: created.checkIntervalMinutes,
+        meilisearchUrl: created.meilisearchUrl,
+        meilisearchApiKey: created.meilisearchApiKey
+      }
     }
-
-    if (this.settings.checkIntervalMinutes < 1) {
-      console.warn('⚠️ CHECK_INTERVAL_MINUTES must be >= 1, using default value: 5')
-      this.settings.checkIntervalMinutes = defaultSettings.checkIntervalMinutes
+    
+    return {
+      maxConsecutiveFailures: settings.maxConsecutiveFailures,
+      enableAutoDisabling: settings.enableAutoDisabling,
+      checkIntervalMinutes: settings.checkIntervalMinutes,
+      meilisearchUrl: settings.meilisearchUrl,
+      meilisearchApiKey: settings.meilisearchApiKey
     }
-
-    console.log('⚙️ System Settings loaded:', {
-      maxConsecutiveFailures: this.settings.maxConsecutiveFailures,
-      enableAutoDisabling: this.settings.enableAutoDisabling,
-      checkIntervalMinutes: this.settings.checkIntervalMinutes
-    })
   }
 
-  getSettings(): SystemSettings {
-    return { ...this.settings }
+  async getMaxConsecutiveFailures(): Promise<number> {
+    const settings = await this.getSettings()
+    return settings.maxConsecutiveFailures
   }
 
-  getMaxConsecutiveFailures(): number {
-    return this.settings.maxConsecutiveFailures
+  async isAutoDisablingEnabled(): Promise<boolean> {
+    const settings = await this.getSettings()
+    return settings.enableAutoDisabling
   }
 
-  isAutoDisablingEnabled(): boolean {
-    return this.settings.enableAutoDisabling
+  async getCheckIntervalMinutes(): Promise<number> {
+    const settings = await this.getSettings()
+    return settings.checkIntervalMinutes
   }
 
-  getCheckIntervalMinutes(): number {
-    return this.settings.checkIntervalMinutes
+  async getMeilisearchUrl(): Promise<string | null> {
+    const settings = await this.getSettings()
+    return settings.meilisearchUrl
   }
 
-  getMeilisearchUrl(): string | null {
-    return this.settings.meilisearchUrl
+  async getMeilisearchApiKey(): Promise<string | null> {
+    const settings = await this.getSettings()
+    return settings.meilisearchApiKey
   }
 
-  getMeilisearchApiKey(): string | null {
-    return this.settings.meilisearchApiKey
-  }
-
-  isMeilisearchConfigured(): boolean {
-    return !!(this.settings.meilisearchUrl && this.settings.meilisearchApiKey)
+  async isMeilisearchConfigured(): Promise<boolean> {
+    const settings = await this.getSettings()
+    return !!(settings.meilisearchUrl && settings.meilisearchApiKey)
   }
 
   /**
    * Met à jour un paramètre spécifique
    */
-  updateSetting(key: keyof SystemSettings, value: any): void {
+  async updateSetting(key: keyof SystemSettings, value: any): Promise<void> {
+    // Validation
     switch (key) {
       case 'maxConsecutiveFailures':
-        if (typeof value === 'number' && value >= 1) {
-          this.settings.maxConsecutiveFailures = value
-          console.log(`⚙️ Updated maxConsecutiveFailures to: ${value}`)
-        } else {
+        if (typeof value !== 'number' || value < 1) {
           throw new Error('maxConsecutiveFailures must be a number >= 1')
         }
         break
-
       case 'enableAutoDisabling':
-        if (typeof value === 'boolean') {
-          this.settings.enableAutoDisabling = value
-          console.log(`⚙️ Updated enableAutoDisabling to: ${value}`)
-        } else {
+        if (typeof value !== 'boolean') {
           throw new Error('enableAutoDisabling must be a boolean')
         }
         break
-
       case 'checkIntervalMinutes':
-        if (typeof value === 'number' && value >= 1) {
-          this.settings.checkIntervalMinutes = value
-          console.log(`⚙️ Updated checkIntervalMinutes to: ${value}`)
-        } else {
+        if (typeof value !== 'number' || value < 1) {
           throw new Error('checkIntervalMinutes must be a number >= 1')
         }
         break
-
       case 'meilisearchUrl':
-        if (typeof value === 'string' || value === null) {
-          this.settings.meilisearchUrl = value
-          console.log(`⚙️ Updated meilisearchUrl to: ${value}`)
-        } else {
-          throw new Error('meilisearchUrl must be a string or null')
-        }
-        break
-
       case 'meilisearchApiKey':
-        if (typeof value === 'string' || value === null) {
-          this.settings.meilisearchApiKey = value
-          console.log(`⚙️ Updated meilisearchApiKey to: [${value ? 'REDACTED' : 'null'}]`)
-        } else {
-          throw new Error('meilisearchApiKey must be a string or null')
+        if (value !== null && typeof value !== 'string') {
+          throw new Error(`${key} must be a string or null`)
         }
         break
-
       default:
         throw new Error(`Unknown setting: ${key}`)
     }
+
+    // Update in database
+    await this.prisma.settings.upsert({
+      where: { id: 'singleton' },
+      update: { [key]: value },
+      create: {
+        id: 'singleton',
+        ...defaultSettings,
+        [key]: value
+      }
+    })
+
+    console.log(`⚙️ Updated ${key} to: ${key.includes('ApiKey') && value ? '[REDACTED]' : value}`)
   }
 }
 

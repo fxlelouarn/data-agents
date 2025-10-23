@@ -61,7 +61,7 @@ router.get('/:id', [
 router.post('/', [
   body('name').isString().notEmpty().withMessage('Name is required'),
   body('description').optional().isString(),
-  body('type').isIn(['POSTGRESQL', 'MYSQL', 'SQLITE', 'MONGODB', 'EXTERNAL_API', 'MILES_REPUBLIC']),
+  body('type').isIn(['POSTGRESQL', 'MILES_REPUBLIC']),
   body('host').optional().isString(),
   body('port').optional().isInt({ min: 1, max: 65535 }),
   body('database').optional().isString(),
@@ -91,7 +91,7 @@ router.put('/:id', [
   param('id').isString().notEmpty(),
   body('name').optional().isString().notEmpty(),
   body('description').optional().isString(),
-  body('type').optional().isIn(['POSTGRESQL', 'MYSQL', 'SQLITE', 'MONGODB', 'EXTERNAL_API', 'MILES_REPUBLIC']),
+  body('type').optional().isIn(['POSTGRESQL', 'MILES_REPUBLIC']),
   body('host').optional().isString(),
   body('port').optional().isInt({ min: 1, max: 65535 }),
   body('database').optional().isString(),

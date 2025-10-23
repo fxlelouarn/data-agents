@@ -11,7 +11,7 @@ const failureMonitor = new AgentFailureMonitor()
  */
 router.get('/', async (req: Request, res: Response) => {
   try {
-    const settings = settingsService.getSettings()
+    const settings = await settingsService.getSettings()
     
     res.json({
       success: true,
@@ -43,7 +43,7 @@ router.put('/', async (req: Request, res: Response) => {
           message: 'maxConsecutiveFailures must be a number >= 1'
         })
       }
-      settingsService.updateSetting('maxConsecutiveFailures', maxConsecutiveFailures)
+      await settingsService.updateSetting('maxConsecutiveFailures', maxConsecutiveFailures)
     }
 
     if (enableAutoDisabling !== undefined) {
@@ -53,7 +53,7 @@ router.put('/', async (req: Request, res: Response) => {
           message: 'enableAutoDisabling must be a boolean'
         })
       }
-      settingsService.updateSetting('enableAutoDisabling', enableAutoDisabling)
+      await settingsService.updateSetting('enableAutoDisabling', enableAutoDisabling)
     }
 
     if (checkIntervalMinutes !== undefined) {
@@ -63,7 +63,7 @@ router.put('/', async (req: Request, res: Response) => {
           message: 'checkIntervalMinutes must be a number >= 1'
         })
       }
-      settingsService.updateSetting('checkIntervalMinutes', checkIntervalMinutes)
+      await settingsService.updateSetting('checkIntervalMinutes', checkIntervalMinutes)
     }
 
     if (meilisearchUrl !== undefined) {
@@ -73,7 +73,7 @@ router.put('/', async (req: Request, res: Response) => {
           message: 'meilisearchUrl must be a non-empty string or null'
         })
       }
-      settingsService.updateSetting('meilisearchUrl', meilisearchUrl)
+      await settingsService.updateSetting('meilisearchUrl', meilisearchUrl)
     }
 
     if (meilisearchApiKey !== undefined) {
@@ -83,10 +83,10 @@ router.put('/', async (req: Request, res: Response) => {
           message: 'meilisearchApiKey must be a non-empty string or null'
         })
       }
-      settingsService.updateSetting('meilisearchApiKey', meilisearchApiKey)
+      await settingsService.updateSetting('meilisearchApiKey', meilisearchApiKey)
     }
 
-    const updatedSettings = settingsService.getSettings()
+    const updatedSettings = await settingsService.getSettings()
 
     res.json({
       success: true,
@@ -110,20 +110,22 @@ router.put('/', async (req: Request, res: Response) => {
 router.get('/failure-report', async (req: Request, res: Response) => {
   try {
     const report = await failureMonitor.getFailureReport()
+    const maxConsecutiveFailures = await settingsService.getMaxConsecutiveFailures()
+    const enableAutoDisabling = await settingsService.isAutoDisablingEnabled()
     
     res.json({
       success: true,
       data: {
         settings: {
-          maxConsecutiveFailures: settingsService.getMaxConsecutiveFailures(),
-          enableAutoDisabling: settingsService.isAutoDisablingEnabled()
+          maxConsecutiveFailures,
+          enableAutoDisabling
         },
         agents: report,
         summary: {
           totalAgentsWithFailures: report.length,
           agentsAtRisk: report.filter(agent => agent.shouldDisable).length,
           agentsWithWarnings: report.filter(agent => 
-            agent.consecutiveFailures >= settingsService.getMaxConsecutiveFailures() / 2 && 
+            agent.consecutiveFailures >= maxConsecutiveFailures / 2 && 
             !agent.shouldDisable
           ).length
         }
@@ -188,8 +190,8 @@ router.get('/agent/:agentId/failures', async (req: Request, res: Response) => {
       data: {
         ...failureCheck,
         settings: {
-          maxConsecutiveFailures: settingsService.getMaxConsecutiveFailures(),
-          enableAutoDisabling: settingsService.isAutoDisablingEnabled()
+          maxConsecutiveFailures: await settingsService.getMaxConsecutiveFailures(),
+          enableAutoDisabling: await settingsService.isAutoDisablingEnabled()
         }
       }
     })
