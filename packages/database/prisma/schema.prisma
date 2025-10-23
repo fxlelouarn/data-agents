@@ -78,6 +78,11 @@ model Proposal {
   changes       Json
   justification Json
   confidence    Float?
+  // Champs de contexte pour affichage
+  eventName     String?
+  eventCity     String?
+  editionYear   Int?
+  raceName      String?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   reviewedAt    DateTime?
@@ -129,105 +134,17 @@ model DatabaseConnection {
   @@map("database_connections")
 }
 
-model EventCache {
-  id                                  String         @id
-  name                                String
-  city                                String
-  lastSyncAt                          DateTime       @default(now())
-  country                             String
-  countrySubdivisionDisplayCodeLevel1 String?
-  countrySubdivisionDisplayCodeLevel2 String?
-  countrySubdivisionNameLevel1        String
-  countrySubdivisionNameLevel2        String
-  coverImage                          String?
-  dataSource                          String?
-  facebookUrl                         String?
-  fullAddress                         String?
-  images                              String[]       @default([])
-  instagramUrl                        String?
-  isFeatured                          Boolean        @default(false)
-  isPrivate                           Boolean        @default(false)
-  isRecommended                       Boolean        @default(false)
-  latitude                            Float?
-  longitude                           Float?
-  slug                                String?
-  status                              String         @default("DRAFT")
-  twitterUrl                          String?
-  websiteUrl                          String?
-  editions                            EditionCache[]
+model Settings {
+  id                      String   @id @default("singleton") // Un seul enregistrement de settings
+  maxConsecutiveFailures  Int      @default(3)
+  enableAutoDisabling     Boolean  @default(true)
+  checkIntervalMinutes    Int      @default(5)
+  meilisearchUrl          String?
+  meilisearchApiKey       String?
+  createdAt               DateTime @default(now())
+  updatedAt               DateTime @updatedAt
 
-  @@map("event_cache")
-}
-
-model EditionCache {
-  id                      String      @id
-  eventId                 String
-  year                    String
-  calendarStatus          String      @default("CONFIRMED")
-  registrantsNumber       Int?
-  lastSyncAt              DateTime    @default(now())
-  clientStatus            String?
-  currency                String      @default("EUR")
-  customerType            String?
-  dataSource              String?
-  endDate                 DateTime?
-  federationId            String?
-  medusaVersion           String      @default("V1")
-  registrationClosingDate DateTime?
-  registrationOpeningDate DateTime?
-  startDate               DateTime?
-  status                  String      @default("DRAFT")
-  timeZone                String?     @default("Europe/Paris")
-  event                   EventCache  @relation(fields: [eventId], references: [id], onDelete: Cascade)
-  races                   RaceCache[]
-
-  @@map("edition_cache")
-}
-
-model RaceCache {
-  id                        String       @id
-  editionId                 String
-  name                      String
-  startDate                 DateTime?
-  price                     Float?
-  lastSyncAt                DateTime     @default(now())
-  adultJustificativeOptions String?
-  bikeDistance              Float        @default(0)
-  bikeNegativeElevation     Float?
-  bikePositiveElevation     Float?
-  bikeRunDistance           Float        @default(0)
-  categoryLevel1            String?
-  categoryLevel2            String?
-  dataSource                String?
-  distanceCategory          String?
-  externalFunnelURL         String?
-  federationId              String?
-  isActive                  Boolean      @default(true)
-  isArchived                Boolean      @default(false)
-  licenseNumberType         String       @default("FFA")
-  maxTeamSize               Int?
-  medusaProductId           String?
-  minTeamSize               Int?
-  minorJustificativeOptions String?
-  paymentCollectionType     String       @default("SINGLE")
-  priceType                 String       @default("PER_TEAM")
-  raceVariantStoreId        String?
-  registrationClosingDate   DateTime?
-  registrationOpeningDate   DateTime?
-  resaleEnabled             Boolean      @default(false)
-  runDistance               Float        @default(0)
-  runDistance2              Float        @default(0)
-  runNegativeElevation      Float?
-  runPositiveElevation      Float?
-  swimDistance              Float        @default(0)
-  swimRunDistance           Float        @default(0)
-  timeZone                  String?
-  walkDistance              Float        @default(0)
-  walkNegativeElevation     Float?
-  walkPositiveElevation     Float?
-  edition                   EditionCache @relation(fields: [editionId], references: [id], onDelete: Cascade)
-
-  @@map("race_cache")
+  @@map("settings")
 }
 
 enum AgentType {
@@ -270,10 +187,6 @@ enum ProposalStatus {
 
 enum DatabaseType {
   POSTGRESQL
-  MYSQL
-  SQLITE
-  MONGODB
-  EXTERNAL_API
   MILES_REPUBLIC
 }
 

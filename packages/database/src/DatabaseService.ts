@@ -228,18 +228,4 @@ export class DatabaseService {
   async reinstallAgent(id: string) {
     return this.agentService.reinstallAgent(id)
   }
-  
-  // Cache operations for Miles Republic sync
-  async syncEventCache(events: any[]) {
-    // Implementation for syncing with Miles Republic database
-    return this.db.$transaction(
-      events.map(event =>
-        this.db.eventCache.upsert({
-          where: { id: event.id },
-          update: { ...event, lastSyncAt: new Date() },
-          create: { ...event, lastSyncAt: new Date() }
-        })
-      )
-    )
-  }
 }

@@ -193,27 +193,7 @@ export class ConnectionService implements IConnectionService {
           }
           break
           
-        case 'EXTERNAL_API':
-          if (connection.connectionUrl) {
-            const controller = new AbortController()
-            const timeoutId = setTimeout(() => controller.abort(), connection.timeout || 30000)
-            
-            try {
-              const response = await fetch(connection.connectionUrl, {
-                method: 'HEAD',
-                signal: controller.signal
-              })
-              isHealthy = response.ok
-            } finally {
-              clearTimeout(timeoutId)
-            }
-          }
-          break
-          
         case 'POSTGRESQL':
-        case 'MYSQL':
-        case 'SQLITE':
-        case 'MONGODB':
         default:
           // For database connections, we would need specific drivers
           // For now, mark as healthy if we have connection info (either individual fields or connection URL)

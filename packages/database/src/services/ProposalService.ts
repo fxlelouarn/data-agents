@@ -40,10 +40,40 @@ export class ProposalService implements IProposalService {
     justification: any
     confidence?: number
   }) {
+    // Extraire les informations de contexte depuis la justification
+    let eventName: string | undefined
+    let eventCity: string | undefined
+    let editionYear: number | undefined
+    let raceName: string | undefined
+    
+    // La justification peut être un tableau ou un objet
+    if (Array.isArray(data.justification) && data.justification.length > 0) {
+      const firstJustification = data.justification[0]
+      if (firstJustification.metadata) {
+        eventName = firstJustification.metadata.eventName
+        eventCity = firstJustification.metadata.eventCity
+        // Convertir l'année en nombre si c'est une chaîne
+        const yearValue = firstJustification.metadata.editionYear
+        editionYear = yearValue ? (typeof yearValue === 'string' ? parseInt(yearValue) : yearValue) : undefined
+        raceName = firstJustification.metadata.raceName
+      }
+    } else if (data.justification && typeof data.justification === 'object') {
+      // Gestion du cas où justification est un objet direct
+      eventName = data.justification.eventName
+      eventCity = data.justification.eventCity
+      const yearValue = data.justification.editionYear
+      editionYear = yearValue ? (typeof yearValue === 'string' ? parseInt(yearValue) : yearValue) : undefined
+      raceName = data.justification.raceName
+    }
+    
     return this.prisma.proposal.create({
       data: {
         ...data,
-        type: data.type as any
+        type: data.type as any,
+        eventName,
+        eventCity,
+        editionYear,
+        raceName
       }
     })
   }
