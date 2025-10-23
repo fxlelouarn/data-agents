@@ -15,6 +15,11 @@ import {
   Divider,
   LinearProgress,
   Alert,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from '@mui/material'
 import {
   PlayArrow as ApplyIcon,
@@ -36,6 +41,7 @@ const UpdateDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const [replayError, setReplayError] = useState<string | null>(null)
+  const [confirmDeleteOpen, setConfirmDeleteOpen] = useState(false)
   
   const { data: updateData, isLoading, error } = useUpdate(id!)
   const { data: logsData } = useUpdateLogs(id!)
@@ -59,12 +65,22 @@ const UpdateDetail: React.FC = () => {
     }
   }
 
+  const openDeleteConfirm = () => {
+    setConfirmDeleteOpen(true)
+  }
+
+  const closeDeleteConfirm = () => {
+    setConfirmDeleteOpen(false)
+  }
+
   const handleDeleteUpdate = async () => {
     try {
       await deleteUpdateMutation.mutateAsync(id!)
       navigate('/updates')
     } catch (error) {
       console.error('Error deleting update:', error)
+    } finally {
+      closeDeleteConfirm()
     }
   }
 
@@ -208,7 +224,7 @@ const UpdateDetail: React.FC = () => {
                 variant="outlined"
                 size="small"
                 startIcon={<DeleteIcon />}
-                onClick={handleDeleteUpdate}
+                onClick={openDeleteConfirm}
                 disabled={applyUpdateMutation.isPending || deleteUpdateMutation.isPending || replayUpdateMutation.isPending}
                 color="error"
               >
@@ -233,7 +249,7 @@ const UpdateDetail: React.FC = () => {
                 variant="outlined"
                 size="small"
                 startIcon={<DeleteIcon />}
-                onClick={handleDeleteUpdate}
+                onClick={openDeleteConfirm}
                 disabled={applyUpdateMutation.isPending || deleteUpdateMutation.isPending || replayUpdateMutation.isPending}
                 color="error"
               >
@@ -258,8 +274,8 @@ const UpdateDetail: React.FC = () => {
                 variant="outlined"
                 size="small"
                 startIcon={<DeleteIcon />}
-                onClick={handleDeleteUpdate}
-              disabled={deleteUpdateMutation.isPending || replayUpdateMutation.isPending}
+                onClick={openDeleteConfirm}
+                disabled={deleteUpdateMutation.isPending || replayUpdateMutation.isPending}
                 color="error"
               >
                 Supprimer
@@ -439,6 +455,27 @@ const UpdateDetail: React.FC = () => {
           </Card>
         </Grid>
       </Grid>
+
+      {/* Dialog de confirmation de suppression */}
+      <Dialog open={confirmDeleteOpen} onClose={closeDeleteConfirm}>
+        <DialogTitle>Confirmer la suppression</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Êtes-vous sûr de vouloir supprimer cette mise à jour ? Cette action est irréversible.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={closeDeleteConfirm}>Annuler</Button>
+          <Button 
+            onClick={handleDeleteUpdate} 
+            color="error"
+            variant="contained"
+            disabled={deleteUpdateMutation.isPending}
+          >
+            Supprimer
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }

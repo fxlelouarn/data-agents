@@ -21,13 +21,20 @@ import {
   Grid,
   LinearProgress,
   Alert,
+  Checkbox,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from '@mui/material'
 import {
   Visibility as ViewIcon,
   PlayArrow as ApplyIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material'
-import { useUpdates, useApplyUpdate, useDeleteUpdate } from '@/hooks/useApi'
+import { useUpdates, useApplyUpdate, useDeleteUpdate, useBulkDeleteUpdates, useBulkApplyUpdates } from '@/hooks/useApi'
 import { DataUpdate, UpdateStatus } from '@/types'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -38,6 +45,12 @@ const UpdateList: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [statusFilter, setStatusFilter] = useState<UpdateStatus | ''>("")
   const [searchQuery, setSearchQuery] = useState('')
+  const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [confirmDialog, setConfirmDialog] = useState<{
+    open: boolean
+    action: 'delete' | 'apply' | null
+    count: number
+  }>({ open: false, action: null, count: 0 })
 
   const { data: updatesData, isLoading, error } = useUpdates(
     {
@@ -50,6 +63,8 @@ const UpdateList: React.FC = () => {
 
   const applyUpdateMutation = useApplyUpdate()
   const deleteUpdateMutation = useDeleteUpdate()
+  const bulkDeleteMutation = useBulkDeleteUpdates()
+  const bulkApplyMutation = useBulkApplyUpdates()
 
   const handleChangePage = (_: unknown, newPage: number) => {
     setPage(newPage)
@@ -74,6 +89,50 @@ const UpdateList: React.FC = () => {
     } catch (error) {
       console.error('Error deleting update:', error)
     }
+  }
+
+  const handleSelectAll = (event: React.ChangeEvent<HTMLInputElement>) => {
+    if (event.target.checked) {
+      const allIds = updates.map((update: DataUpdate) => update.id)
+      setSelectedIds(allIds)
+    } else {
+      setSelectedIds([])
+    }
+  }
+
+  const handleSelectOne = (id: string) => {
+    setSelectedIds(prev => 
+      prev.includes(id) 
+        ? prev.filter(selectedId => selectedId !== id)
+        : [...prev, id]
+    )
+  }
+
+  const handleBulkDelete = () => {
+    setConfirmDialog({ open: true, action: 'delete', count: selectedIds.length })
+  }
+
+  const handleBulkApply = () => {
+    setConfirmDialog({ open: true, action: 'apply', count: selectedIds.length })
+  }
+
+  const confirmBulkAction = async () => {
+    try {
+      if (confirmDialog.action === 'delete') {
+        await bulkDeleteMutation.mutateAsync(selectedIds)
+      } else if (confirmDialog.action === 'apply') {
+        await bulkApplyMutation.mutateAsync(selectedIds)
+      }
+      setSelectedIds([])
+    } catch (error) {
+      console.error('Error performing bulk action:', error)
+    } finally {
+      setConfirmDialog({ open: false, action: null, count: 0 })
+    }
+  }
+
+  const cancelBulkAction = () => {
+    setConfirmDialog({ open: false, action: null, count: 0 })
   }
 
   const getStatusColor = (status: UpdateStatus) => {
@@ -117,6 +176,26 @@ const UpdateList: React.FC = () => {
     }
   }
 
+  const getUpdatePrimaryText = (update: DataUpdate) => {
+    const { context } = update
+    
+    if (!context?.eventName) {
+      return 'Mise à jour'
+    }
+
+    const parts = [context.eventName]
+    
+    if (context.editionYear) {
+      parts.push(context.editionYear)
+    }
+
+    return parts.join(' - ')
+  }
+
+  const getUpdateSecondaryText = (update: DataUpdate) => {
+    return getProposalTypeLabel(update.proposal.type)
+  }
+
   if (isLoading) return <LinearProgress />
 
   if (error) {
@@ -142,6 +221,11 @@ const UpdateList: React.FC = () => {
 
   const updates = updatesData?.data || []
   const totalCount = updatesData?.meta?.total || 0
+  const numSelected = selectedIds.length
+  const numPendingSelected = selectedIds.filter(id => {
+    const update = updates.find((u: DataUpdate) => u.id === id)
+    return update?.status === 'PENDING'
+  }).length
 
   return (
     <Box>
@@ -182,6 +266,42 @@ const UpdateList: React.FC = () => {
         </CardContent>
       </Card>
 
+      {/* Actions bulk */}
+      {numSelected > 0 && (
+        <Card sx={{ mb: 2, bgcolor: 'primary.50', borderColor: 'primary.main', borderWidth: 1, borderStyle: 'solid' }}>
+          <CardContent>
+            <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+              <Typography variant="body1" sx={{ fontWeight: 500 }}>
+                {numSelected} mise(s) à jour sélectionnée(s)
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                {numPendingSelected > 0 && (
+                  <Button
+                    variant="contained"
+                    size="small"
+                    startIcon={<ApplyIcon />}
+                    onClick={handleBulkApply}
+                    disabled={bulkApplyMutation.isPending || bulkDeleteMutation.isPending}
+                  >
+                    Appliquer ({numPendingSelected})
+                  </Button>
+                )}
+                <Button
+                  variant="outlined"
+                  size="small"
+                  color="error"
+                  startIcon={<DeleteIcon />}
+                  onClick={handleBulkDelete}
+                  disabled={bulkApplyMutation.isPending || bulkDeleteMutation.isPending}
+                >
+                  Supprimer ({numSelected})
+                </Button>
+              </Box>
+            </Box>
+          </CardContent>
+        </Card>
+      )}
+
       {/* Tableau des mises à jour */}
       <Card>
         <CardContent sx={{ p: 0 }}>
@@ -189,7 +309,14 @@ const UpdateList: React.FC = () => {
             <Table>
               <TableHead>
                 <TableRow>
-                  <TableCell>Proposition</TableCell>
+                  <TableCell padding="checkbox">
+                    <Checkbox
+                      indeterminate={numSelected > 0 && numSelected < updates.length}
+                      checked={updates.length > 0 && numSelected === updates.length}
+                      onChange={handleSelectAll}
+                    />
+                  </TableCell>
+                  <TableCell>Mise à jour</TableCell>
                   <TableCell>Agent</TableCell>
                   <TableCell>Type</TableCell>
                   <TableCell>Statut</TableCell>
@@ -199,12 +326,31 @@ const UpdateList: React.FC = () => {
                 </TableRow>
               </TableHead>
               <TableBody>
-                {updates.map((update: DataUpdate) => (
-                  <TableRow key={update.id} hover>
+                {updates.map((update: DataUpdate) => {
+                  const isSelected = selectedIds.includes(update.id)
+                  return (
+                  <TableRow key={update.id} hover selected={isSelected}>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        checked={isSelected}
+                        onChange={() => handleSelectOne(update.id)}
+                      />
+                    </TableCell>
                     <TableCell>
-                      <Typography variant="body2" component={Link} to={`/proposals/${update.proposalId}`} sx={{ textDecoration: 'none', color: 'primary.main' }}>
-                        {update.proposalId.slice(-8)}
-                      </Typography>
+                      <Box component={Link} to={`/proposals/${update.proposalId}`} sx={{ textDecoration: 'none', display: 'block' }}>
+                        <Typography 
+                          variant="body1" 
+                          sx={{ color: 'primary.main', fontWeight: 600, mb: 0.5 }}
+                        >
+                          {getUpdatePrimaryText(update)}
+                        </Typography>
+                        <Typography 
+                          variant="caption" 
+                          sx={{ color: 'text.secondary' }}
+                        >
+                          {getUpdateSecondaryText(update)}
+                        </Typography>
+                      </Box>
                     </TableCell>
                     <TableCell>
                       <Typography variant="body2">{update.proposal.agent.name}</Typography>
@@ -280,10 +426,11 @@ const UpdateList: React.FC = () => {
                       </Box>
                     </TableCell>
                   </TableRow>
-                ))}
+                  )
+                })}
                 {updates.length === 0 && (
                   <TableRow>
-                    <TableCell colSpan={7} align="center">
+                    <TableCell colSpan={8} align="center">
                       <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
                         Aucune mise à jour trouvée
                       </Typography>
@@ -307,6 +454,32 @@ const UpdateList: React.FC = () => {
           />
         </CardContent>
       </Card>
+
+      {/* Dialog de confirmation */}
+      <Dialog open={confirmDialog.open} onClose={cancelBulkAction}>
+        <DialogTitle>
+          {confirmDialog.action === 'delete' ? 'Confirmer la suppression' : 'Confirmer l\'application'}
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            {confirmDialog.action === 'delete' 
+              ? `Êtes-vous sûr de vouloir supprimer ${confirmDialog.count} mise(s) à jour ? Cette action est irréversible.`
+              : `Êtes-vous sûr de vouloir appliquer ${numPendingSelected} mise(s) à jour en attente ?`
+            }
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={cancelBulkAction}>Annuler</Button>
+          <Button 
+            onClick={confirmBulkAction} 
+            color={confirmDialog.action === 'delete' ? 'error' : 'primary'}
+            variant="contained"
+            disabled={bulkApplyMutation.isPending || bulkDeleteMutation.isPending}
+          >
+            Confirmer
+          </Button>
+        </DialogActions>
+      </Dialog>
     </Box>
   )
 }
