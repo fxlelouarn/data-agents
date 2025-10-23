@@ -1,13 +1,11 @@
 import { PrismaClient } from '@prisma/client'
 import { IProposalApplicationService, ProposalApplicationResult, ApplyOptions } from './interfaces'
 import { DatabaseManager } from '@data-agents/agent-framework'
-import { prisma } from '../prisma'
 
 export class ProposalApplicationService implements IProposalApplicationService {
   private dbManager: DatabaseManager
   
   constructor(private prisma: PrismaClient) {
-    // Utiliser un logger simple pour le DatabaseManager
     const logger = {
       info: (msg: string, data?: any) => console.log(`[INFO] ${msg}`, data || ''),
       error: (msg: string, data?: any) => console.error(`[ERROR] ${msg}`, data || ''),
@@ -15,105 +13,6 @@ export class ProposalApplicationService implements IProposalApplicationService {
       debug: (msg: string, data?: any) => console.debug(`[DEBUG] ${msg}`, data || '')
     }
     this.dbManager = DatabaseManager.getInstance(logger)
-  }
-
-  /**
-   * Résoudre l'ID d'une édition (supporte les IDs numériques et les IDs cache)
-   */
-  private async resolveEditionId(editionId: string): Promise<string | null> {
-    console.log(`[DEBUG] Tentative de résolution d'ID édition: ${editionId}`)
-    
-    // Si l'ID commence par "edition-", c'est déjà un ID cache
-    if (editionId.startsWith('edition-')) {
-      const exists = await this.prisma.editionCache.findUnique({ where: { id: editionId } })
-      console.log(`[DEBUG] Recherche ID cache direct: ${exists ? 'trouvé' : 'non trouvé'}`)
-      return exists ? editionId : null
-    }
-    
-    // Si c'est un ID numérique, chercher dans le cache par ID Miles Republic
-    if (/^\d+$/.test(editionId)) {
-      console.log(`[DEBUG] ID numérique détecté, recherche dans cache...`)
-      
-      // D'abord, lister quelques éditions pour debug
-      const sampleEditions = await this.prisma.editionCache.findMany({ take: 5 })
-      console.log(`[DEBUG] Échantillon d'éditions dans le cache:`, sampleEditions.map(e => e.id))
-      
-      // Essayer de trouver une édition cache qui correspond à cet ID numérique
-      const cacheEdition = await this.prisma.editionCache.findFirst({
-        where: {
-          OR: [
-            { id: { contains: editionId } }, // ID contient le numéro
-            { id: { endsWith: `-${editionId}` } } // ID se termine par le numéro
-          ]
-        }
-      })
-      console.log(`[DEBUG] Recherche par motifs: ${cacheEdition ? `trouvé ${cacheEdition.id}` : 'non trouvé'}`)
-      
-      // Si pas trouvé, essayer une recherche plus large
-      if (!cacheEdition) {
-        const allEditions = await this.prisma.editionCache.findMany()
-        console.log(`[DEBUG] Total éditions dans le cache: ${allEditions.length}`)
-        const matching = allEditions.filter(e => e.id.includes(editionId))
-        console.log(`[DEBUG] Éditions contenant '${editionId}':`, matching.map(e => e.id))
-      }
-      
-      return cacheEdition?.id || null
-    }
-    
-    // Sinon, essayer tel quel
-    const exists = await this.prisma.editionCache.findUnique({ where: { id: editionId } })
-    console.log(`[DEBUG] Recherche directe: ${exists ? 'trouvé' : 'non trouvé'}`)
-    return exists ? editionId : null
-  }
-
-  /**
-   * Résoudre l'ID d'un événement (supporte les IDs numériques et les IDs cache)
-   */
-  private async resolveEventId(eventId: string): Promise<string | null> {
-    if (eventId.startsWith('event-')) {
-      const exists = await this.prisma.eventCache.findUnique({ where: { id: eventId } })
-      return exists ? eventId : null
-    }
-    
-    if (/^\d+$/.test(eventId)) {
-      const cacheEvent = await this.prisma.eventCache.findFirst({
-        where: {
-          OR: [
-            { id: { contains: eventId } },
-            { id: { endsWith: `-${eventId}` } }
-          ]
-        }
-      })
-      return cacheEvent?.id || null
-    }
-    
-    const exists = await this.prisma.eventCache.findUnique({ where: { id: eventId } })
-    return exists ? eventId : null
-  }
-
-  /**
-   * Résoudre l'ID d'une course (supporte les IDs numériques et les IDs cache)
-   */
-  private async resolveRaceId(raceId: string): Promise<string | null> {
-    if (raceId.includes('event-') || raceId.includes('edition-')) {
-      const exists = await this.prisma.raceCache.findUnique({ where: { id: raceId } })
-      return exists ? raceId : null
-    }
-    
-    if (/^\d+$/.test(raceId)) {
-      const cacheRace = await this.prisma.raceCache.findFirst({
-        where: {
-          OR: [
-            { id: { contains: raceId } },
-            { id: { endsWith: `-${raceId}` } }
-          ]
-        }
-      })
-      return cacheRace?.id || null
-    }
-    
-    const exists = await this.prisma.raceCache.findUnique({ where: { id: raceId } })
-    return exists ? raceId : null
   }
 
   /**
@@ -133,134 +32,6 @@ export class ProposalApplicationService implements IProposalApplicationService {
     }
     
     return await this.dbManager.getConnection(milesDb.id)
-  }
-
-  /**
-   * Synchroniser un événement avec Miles Republic
-   */
-  private async syncEventToMilesRepublic(eventId: string, eventData: any, milesDb: any): Promise<void> {
-    try {
-      // Mapper les données du cache vers le format Miles Republic
-      const milesEventData = {
-        name: eventData.name,
-        city: eventData.city,
-        country: eventData.country,
-        countrySubdivisionNameLevel1: eventData.countrySubdivisionNameLevel1,
-        countrySubdivisionNameLevel2: eventData.countrySubdivisionNameLevel2,
-        websiteUrl: eventData.websiteUrl,
-        facebookUrl: eventData.facebookUrl,
-        instagramUrl: eventData.instagramUrl,
-        twitterUrl: eventData.twitterUrl,
-        fullAddress: eventData.fullAddress,
-        latitude: eventData.latitude,
-        longitude: eventData.longitude,
-        coverImage: eventData.coverImage,
-        isFeatured: eventData.isFeatured,
-        isPrivate: eventData.isPrivate,
-        isRecommended: eventData.isRecommended,
-        status: 'DRAFT',
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents'
-      }
-
-      // Upsert dans Miles Republic
-      await milesDb.event.upsert({
-        where: { id: parseInt(eventId.replace('event-', '')) },
-        update: milesEventData,
-        create: {
-          ...milesEventData,
-          id: parseInt(eventId.replace('event-', ''))
-        }
-      })
-    } catch (error) {
-      throw new Error(`Erreur sync événement: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
-    }
-  }
-
-  /**
-   * Synchroniser une édition avec Miles Republic
-   */
-  private async syncEditionToMilesRepublic(editionId: string, editionData: any, milesDb: any): Promise<void> {
-    try {
-      const milesEditionData = {
-        year: editionData.year,
-        startDate: editionData.startDate,
-        endDate: editionData.endDate,
-        registrationOpeningDate: editionData.registrationOpeningDate,
-        registrationClosingDate: editionData.registrationClosingDate,
-        registrantsNumber: editionData.registrantsNumber,
-        currency: editionData.currency,
-        medusaVersion: editionData.medusaVersion === 'V1' ? 'V1' : 'V2',
-        federationId: editionData.federationId,
-        timeZone: editionData.timeZone,
-        calendarStatus: editionData.calendarStatus,
-        clientStatus: editionData.clientStatus,
-        status: 'DRAFT',
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents',
-        eventId: parseInt(editionData.eventId.replace('event-', ''))
-      }
-
-      await milesDb.edition.upsert({
-        where: { id: parseInt(editionId.replace('edition-', '')) },
-        update: milesEditionData,
-        create: {
-          ...milesEditionData,
-          id: parseInt(editionId.replace('edition-', ''))
-        }
-      })
-    } catch (error) {
-      throw new Error(`Erreur sync édition: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
-    }
-  }
-
-  /**
-   * Synchroniser une course avec Miles Republic
-   */
-  private async syncRaceToMilesRepublic(raceId: string, raceData: any, milesDb: any): Promise<void> {
-    try {
-      const milesRaceData = {
-        name: raceData.name,
-        startDate: raceData.startDate,
-        price: raceData.price,
-        runDistance: raceData.runDistance,
-        runDistance2: raceData.runDistance2,
-        bikeDistance: raceData.bikeDistance,
-        swimDistance: raceData.swimDistance,
-        walkDistance: raceData.walkDistance,
-        bikeRunDistance: raceData.bikeRunDistance,
-        swimRunDistance: raceData.swimRunDistance,
-        runPositiveElevation: raceData.runPositiveElevation,
-        runNegativeElevation: raceData.runNegativeElevation,
-        bikePositiveElevation: raceData.bikePositiveElevation,
-        bikeNegativeElevation: raceData.bikeNegativeElevation,
-        walkPositiveElevation: raceData.walkPositiveElevation,
-        walkNegativeElevation: raceData.walkNegativeElevation,
-        categoryLevel1: raceData.categoryLevel1,
-        categoryLevel2: raceData.categoryLevel2,
-        distanceCategory: raceData.distanceCategory,
-        registrationOpeningDate: raceData.registrationOpeningDate,
-        registrationClosingDate: raceData.registrationClosingDate,
-        federationId: raceData.federationId,
-        isActive: raceData.isActive !== false,
-        isArchived: raceData.isArchived || false,
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents',
-        editionId: parseInt(raceData.editionId.replace('edition-', '')),
-        eventId: parseInt(raceData.eventId?.replace('event-', '') || '0')
-      }
-
-      await milesDb.race.upsert({
-        where: { id: parseInt(raceId.replace('race-', '')) },
-        update: milesRaceData,
-        create: {
-          ...milesRaceData,
-          id: parseInt(raceId.replace('race-', ''))
-        }
-      })
-    } catch (error) {
-      throw new Error(`Erreur sync course: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
-    }
   }
 
   async applyProposal(proposalId: string, selectedChanges: Record<string, any>, options: ApplyOptions = {}): Promise<ProposalApplicationResult> {
@@ -352,24 +123,22 @@ export class ProposalApplicationService implements IProposalApplicationService {
   }
 
   async applyNewEvent(changes: any, selectedChanges: Record<string, any>, options: ApplyOptions = {}): Promise<ProposalApplicationResult> {
-    const transaction = await this.prisma.$transaction(async (tx) => {
-      // Extraire les données de l'événement des changements sélectionnés
+    try {
+      const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
+      
+      // Extraire les données
       const eventData = this.extractEventData(selectedChanges)
       const editionsData = this.extractEditionsData(selectedChanges)
       const racesData = this.extractRacesData(selectedChanges)
 
-      // Générer un ID pour l'événement
-      const eventId = this.generateEventId(eventData.name, eventData.city)
-
-      // Créer l'événement
-      const event = await tx.eventCache.create({
+      // Créer l'événement dans Miles Republic
+      const event = await milesDb.event.create({
         data: {
-          id: eventId,
           name: eventData.name,
           city: eventData.city,
           country: eventData.country || 'FR',
-          countrySubdivisionNameLevel1: eventData.countrySubdivisionNameLevel1 || '',
-          countrySubdivisionNameLevel2: eventData.countrySubdivisionNameLevel2 || '',
+          countrySubdivisionNameLevel1: eventData.countrySubdivisionNameLevel1,
+          countrySubdivisionNameLevel2: eventData.countrySubdivisionNameLevel2,
           websiteUrl: eventData.websiteUrl,
           facebookUrl: eventData.facebookUrl,
           instagramUrl: eventData.instagramUrl,
@@ -381,21 +150,20 @@ export class ProposalApplicationService implements IProposalApplicationService {
           isPrivate: eventData.isPrivate || false,
           isFeatured: eventData.isFeatured || false,
           isRecommended: eventData.isRecommended || false,
-          lastSyncAt: new Date()
+          status: 'DRAFT',
+          createdBy: 'data-agents',
+          updatedBy: 'data-agents'
         }
       })
 
-      const createdEditionIds: string[] = []
-      const createdRaceIds: string[] = []
+      const createdEditionIds: number[] = []
+      const createdRaceIds: number[] = []
 
-      // Créer les éditions associées
+      // Créer les éditions
       for (const editionData of editionsData) {
-        const editionId = this.generateEditionId(eventId, editionData.year)
-        
-        const edition = await tx.editionCache.create({
+        const edition = await milesDb.edition.create({
           data: {
-            id: editionId,
-            eventId: eventId,
+            eventId: event.id,
             year: editionData.year,
             calendarStatus: editionData.calendarStatus || 'TO_BE_CONFIRMED',
             clientStatus: editionData.clientStatus,
@@ -408,23 +176,22 @@ export class ProposalApplicationService implements IProposalApplicationService {
             registrationClosingDate: editionData.registrationClosingDate,
             registrantsNumber: editionData.registrantsNumber,
             federationId: editionData.federationId,
-            dataSource: editionData.dataSource,
             timeZone: editionData.timeZone || 'Europe/Paris',
-            lastSyncAt: new Date()
+            status: 'DRAFT',
+            createdBy: 'data-agents',
+            updatedBy: 'data-agents'
           }
         })
 
         createdEditionIds.push(edition.id)
 
-        // Créer les courses associées à cette édition
+        // Créer les courses pour cette édition
         const editionRaces = racesData.filter(race => race.editionYear === editionData.year)
         for (const raceData of editionRaces) {
-          const raceId = this.generateRaceId(editionId, raceData.name)
-          
-          const race = await tx.raceCache.create({
+          const race = await milesDb.race.create({
             data: {
-              id: raceId,
-              editionId: editionId,
+              editionId: edition.id,
+              eventId: event.id,
               name: raceData.name,
               startDate: raceData.startDate,
               price: raceData.price,
@@ -447,10 +214,9 @@ export class ProposalApplicationService implements IProposalApplicationService {
               registrationOpeningDate: raceData.registrationOpeningDate,
               registrationClosingDate: raceData.registrationClosingDate,
               federationId: raceData.federationId,
-              dataSource: raceData.dataSource,
-              timeZone: raceData.timeZone,
               isActive: raceData.isActive !== false,
-              lastSyncAt: new Date()
+              createdBy: 'data-agents',
+              updatedBy: 'data-agents'
             }
           })
 
@@ -462,180 +228,69 @@ export class ProposalApplicationService implements IProposalApplicationService {
         success: true,
         appliedChanges: selectedChanges,
         createdIds: {
-          eventId: eventId,
-          editionId: createdEditionIds[0], // Premier ID d'édition créé
-          raceIds: createdRaceIds
-        },
-        eventData,
-        editionsData,
-        racesData
+          eventId: event.id.toString(),
+          editionId: createdEditionIds[0]?.toString(),
+          raceIds: createdRaceIds.map(id => id.toString())
+        }
       }
-    })
-
-    // Par défaut, synchroniser avec Miles Republic (sauf si explicitement désactivé)
-    const shouldSyncToDatabase = options.applyToDatabase !== false
-    if (shouldSyncToDatabase && transaction.success) {
-      try {
-        const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
-        
-        // Synchroniser l'événement
-        await this.syncEventToMilesRepublic(transaction.createdIds.eventId, transaction.eventData, milesDb)
-        
-        // Synchroniser les éditions
-        for (let i = 0; i < transaction.editionsData.length; i++) {
-          const editionData = { ...transaction.editionsData[i], eventId: transaction.createdIds.eventId }
-          const editionId = this.generateEditionId(transaction.createdIds.eventId, editionData.year)
-          await this.syncEditionToMilesRepublic(editionId, editionData, milesDb)
-        }
-        
-        // Synchroniser les courses
-        const raceIds = transaction.createdIds.raceIds
-        for (let i = 0; i < transaction.racesData.length; i++) {
-          const raceData = {
-            ...transaction.racesData[i],
-            eventId: transaction.createdIds.eventId,
-            editionId: this.generateEditionId(transaction.createdIds.eventId, transaction.racesData[i].editionYear || new Date().getFullYear().toString())
-          }
-          if (raceIds[i]) {
-            await this.syncRaceToMilesRepublic(raceIds[i], raceData, milesDb)
-          }
-        }
-        
-        return {
-          ...transaction,
-          syncedToDatabase: true
-        }
-      } catch (syncError) {
-        return {
-          ...transaction,
-          syncError: syncError instanceof Error ? syncError.message : 'Erreur de synchronisation inconnue',
-          warnings: [{
-            field: 'sync',
-            message: `Création réussie dans le cache mais échec de synchronisation: ${syncError instanceof Error ? syncError.message : 'Erreur inconnue'}`,
-            severity: 'warning'
-          }]
-        }
+    } catch (error) {
+      return {
+        success: false,
+        appliedChanges: {},
+        errors: [{
+          field: 'create',
+          message: `Erreur lors de la création: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
+          severity: 'error'
+        }]
       }
     }
-
-    return transaction
   }
 
   async applyEventUpdate(eventId: string, changes: any, selectedChanges: Record<string, any>, options: ApplyOptions = {}): Promise<ProposalApplicationResult> {
     try {
-      // Résoudre l'ID d'événement
-      const resolvedEventId = await this.resolveEventId(eventId)
-      
-      if (!resolvedEventId) {
+      const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
+      const numericEventId = parseInt(eventId)
+
+      if (isNaN(numericEventId)) {
         return {
           success: false,
           appliedChanges: {},
           errors: [{
             field: 'eventId',
-            message: `Événement non trouvé avec l'ID: ${eventId} (vérifiez que l'événement existe dans le cache)`,
+            message: `ID d'événement invalide: ${eventId}`,
             severity: 'error'
           }]
         }
       }
-      
+
       // Construire les données de mise à jour
-      const updateData: any = {}
+      const updateData: any = {
+        updatedBy: 'data-agents'
+      }
       
       for (const [field, value] of Object.entries(selectedChanges)) {
-        // Mapper les champs selon le schéma EventCache
-        switch (field) {
-          case 'name':
-          case 'city':
-          case 'country':
-          case 'websiteUrl':
-          case 'facebookUrl':
-          case 'instagramUrl':
-          case 'twitterUrl':
-          case 'fullAddress':
-          case 'coverImage':
-          case 'countrySubdivisionNameLevel1':
-          case 'countrySubdivisionNameLevel2':
-            updateData[field] = value
-            break
-          case 'latitude':
-          case 'longitude':
-            updateData[field] = typeof value === 'number' ? value : parseFloat(value)
-            break
-          case 'isPrivate':
-          case 'isFeatured':
-          case 'isRecommended':
-            updateData[field] = Boolean(value)
-            break
+        if (value !== undefined && value !== null) {
+          updateData[field] = value
         }
       }
 
-      if (Object.keys(updateData).length === 0) {
-        return {
-          success: true,
-          appliedChanges: {},
-          errors: [{
-            field: 'changes',
-            message: 'Aucun changement à appliquer',
-            severity: 'warning'
-          }]
-        }
-      }
-
-      updateData.lastSyncAt = new Date()
-
-      // Récupérer l'événement existant
-      const existingEvent = await this.prisma.eventCache.findUnique({
-        where: { id: resolvedEventId }
-      })
-
-      if (!existingEvent) {
-        return {
-          success: false,
-          appliedChanges: {},
-          errors: [{
-            field: 'eventId',
-            message: `Événement non trouvé avec l'ID résolu: ${resolvedEventId}`,
-            severity: 'error'
-          }]
-        }
-      }
-
-      // Mettre à jour l'événement
-      await this.prisma.eventCache.update({
-        where: { id: resolvedEventId },
+      // Mettre à jour dans Miles Republic
+      await milesDb.event.update({
+        where: { id: numericEventId },
         data: updateData
       })
 
-      let result: ProposalApplicationResult = {
+      return {
         success: true,
         appliedChanges: selectedChanges
       }
-
-      // Par défaut, synchroniser avec Miles Republic (sauf si explicitement désactivé)
-      const shouldSyncToDatabase = options.applyToDatabase !== false
-      if (shouldSyncToDatabase) {
-        try {
-          const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
-          await this.syncEventToMilesRepublic(eventId, { ...existingEvent, ...updateData }, milesDb)
-          result.syncedToDatabase = true
-        } catch (syncError) {
-          result.syncError = syncError instanceof Error ? syncError.message : 'Erreur de synchronisation inconnue'
-          result.warnings = [{
-            field: 'sync',
-            message: `Mise à jour réussie dans le cache mais échec de synchronisation: ${syncError instanceof Error ? syncError.message : 'Erreur inconnue'}`,
-            severity: 'warning'
-          }]
-        }
-      }
-
-      return result
     } catch (error) {
       return {
         success: false,
         appliedChanges: {},
         errors: [{
           field: 'update',
-          message: `Erreur lors de la mise à jour de l'événement: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
+          message: `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
           severity: 'error'
         }]
       }
@@ -644,135 +299,98 @@ export class ProposalApplicationService implements IProposalApplicationService {
 
   async applyEditionUpdate(editionId: string, changes: any, selectedChanges: Record<string, any>, options: ApplyOptions = {}): Promise<ProposalApplicationResult> {
     try {
-      // Résoudre l'ID d'édition (supporte les IDs numériques et cache)
-      const resolvedEditionId = await this.resolveEditionId(editionId)
-      
-      if (!resolvedEditionId) {
+      const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
+      const numericEditionId = parseInt(editionId)
+
+      if (isNaN(numericEditionId)) {
         return {
           success: false,
           appliedChanges: {},
           errors: [{
             field: 'editionId',
-            message: `Édition non trouvée avec l'ID: ${editionId} (vérifiez que l'édition existe dans le cache)`,
+            message: `ID d'édition invalide: ${editionId}`,
             severity: 'error'
           }]
         }
       }
+
+      const updateData: any = {
+        updatedBy: 'data-agents'
+      }
       
-      const updateData: any = {}
+      // Séparer les races des autres changements
+      let racesChanges: any[] | undefined
       
       for (const [field, value] of Object.entries(selectedChanges)) {
-        switch (field) {
-          case 'year':
-          case 'calendarStatus':
-          case 'clientStatus':
-          case 'currency':
-          case 'customerType':
-          case 'medusaVersion':
-          case 'federationId':
-          case 'dataSource':
-          case 'timeZone':
-            // Handle both direct strings and {old, new, confidence} objects
-            if (value && typeof value === 'object' && value.new !== undefined) {
-              updateData[field] = value.new
-            } else {
-              updateData[field] = value
-            }
-            break
-          case 'startDate':
-          case 'endDate':
-          case 'registrationOpeningDate':
-          case 'registrationClosingDate':
-            // Handle both direct date strings and {old, new, confidence} objects
-            if (value && typeof value === 'object' && value.new) {
-              updateData[field] = new Date(value.new)
-            } else if (value && typeof value === 'string') {
-              updateData[field] = new Date(value)
-            } else {
-              updateData[field] = null
-            }
-            break
-          case 'registrantsNumber':
-            // Handle both direct numbers and {old, new, confidence} objects
-            if (value && typeof value === 'object' && value.new !== undefined) {
-              updateData[field] = typeof value.new === 'number' ? value.new : parseInt(value.new)
-            } else if (typeof value === 'number') {
-              updateData[field] = value
-            } else if (value) {
-              updateData[field] = parseInt(value)
-            } else {
-              updateData[field] = null
-            }
-            break
+        // Ignorer le champ 'races' - sera traité séparément
+        if (field === 'races') {
+          racesChanges = value as any[]
+          continue
+        }
+        
+        // Gérer les objets {old, new, confidence}
+        if (value && typeof value === 'object' && 'new' in value) {
+          if (value.new !== undefined && value.new !== null) {
+            updateData[field] = value.new
+          }
+        } else if (value !== undefined && value !== null) {
+          updateData[field] = value
         }
       }
 
-      if (Object.keys(updateData).length === 0) {
-        return {
-          success: true,
-          appliedChanges: {},
-          errors: [{
-            field: 'changes',
-            message: 'Aucun changement à appliquer',
-            severity: 'warning'
-          }]
-        }
-      }
-
-      updateData.lastSyncAt = new Date()
-
-      // Récupérer l'édition existante
-      const existingEdition = await this.prisma.editionCache.findUnique({
-        where: { id: resolvedEditionId }
-      })
-
-      if (!existingEdition) {
-        return {
-          success: false,
-          appliedChanges: {},
-          errors: [{
-            field: 'editionId',
-            message: `Édition non trouvée avec l'ID résolu: ${resolvedEditionId}`,
-            severity: 'error'
-          }]
-        }
-      }
-
-      await this.prisma.editionCache.update({
-        where: { id: resolvedEditionId },
+      // Mettre à jour l'édition dans Miles Republic
+      await milesDb.edition.update({
+        where: { id: numericEditionId },
         data: updateData
       })
+      
+      // Mettre à jour les races séparément si nécessaire
+      if (racesChanges && Array.isArray(racesChanges)) {
+        for (const raceChange of racesChanges) {
+          const raceId = parseInt(raceChange.raceId)
+          if (isNaN(raceId)) {
+            console.warn(`ID de course invalide: ${raceChange.raceId}`)
+            continue
+          }
+          
+          const raceUpdateData: any = {
+            updatedBy: 'data-agents'
+          }
+          
+          // Extraire les changements de la course (tout sauf raceId et raceName)
+          for (const [field, value] of Object.entries(raceChange)) {
+            if (field === 'raceId' || field === 'raceName') continue
+            
+            // Gérer les objets {old, new, confidence}
+            if (value && typeof value === 'object' && 'new' in (value as any)) {
+              const val = value as any
+              if (val.new !== undefined && val.new !== null) {
+                raceUpdateData[field] = val.new
+              }
+            } else if (value !== undefined && value !== null) {
+              raceUpdateData[field] = value
+            }
+          }
+          
+          // Mettre à jour la course
+          await milesDb.race.update({
+            where: { id: raceId },
+            data: raceUpdateData
+          })
+        }
+      }
 
-      let result: ProposalApplicationResult = {
+      return {
         success: true,
         appliedChanges: selectedChanges
       }
-
-      // Par défaut, synchroniser avec Miles Republic (sauf si explicitement désactivé)
-      const shouldSyncToDatabase = options.applyToDatabase !== false
-      if (shouldSyncToDatabase) {
-        try {
-          const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
-          await this.syncEditionToMilesRepublic(editionId, { ...existingEdition, ...updateData }, milesDb)
-          result.syncedToDatabase = true
-        } catch (syncError) {
-          result.syncError = syncError instanceof Error ? syncError.message : 'Erreur de synchronisation inconnue'
-          result.warnings = [{
-            field: 'sync',
-            message: `Mise à jour réussie dans le cache mais échec de synchronisation: ${syncError instanceof Error ? syncError.message : 'Erreur inconnue'}`,
-            severity: 'warning'
-          }]
-        }
-      }
-
-      return result
     } catch (error) {
       return {
         success: false,
         appliedChanges: {},
         errors: [{
           field: 'update',
-          message: `Erreur lors de la mise à jour de l'édition: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
+          message: `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
           severity: 'error'
         }]
       }
@@ -781,148 +399,53 @@ export class ProposalApplicationService implements IProposalApplicationService {
 
   async applyRaceUpdate(raceId: string, changes: any, selectedChanges: Record<string, any>, options: ApplyOptions = {}): Promise<ProposalApplicationResult> {
     try {
-      // Résoudre l'ID de course
-      const resolvedRaceId = await this.resolveRaceId(raceId)
-      
-      if (!resolvedRaceId) {
+      const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
+      const numericRaceId = parseInt(raceId)
+
+      if (isNaN(numericRaceId)) {
         return {
           success: false,
           appliedChanges: {},
           errors: [{
             field: 'raceId',
-            message: `Course non trouvée avec l'ID: ${raceId} (vérifiez que la course existe dans le cache)`,
+            message: `ID de course invalide: ${raceId}`,
             severity: 'error'
           }]
         }
       }
-      
-      const updateData: any = {}
+
+      const updateData: any = {
+        updatedBy: 'data-agents'
+      }
       
       for (const [field, value] of Object.entries(selectedChanges)) {
-        switch (field) {
-          case 'name':
-          case 'categoryLevel1':
-          case 'categoryLevel2':
-          case 'distanceCategory':
-          case 'federationId':
-          case 'dataSource':
-          case 'timeZone':
-          case 'adultJustificativeOptions':
-          case 'minorJustificativeOptions':
-          case 'licenseNumberType':
-          case 'paymentCollectionType':
-          case 'priceType':
-          case 'medusaProductId':
-          case 'raceVariantStoreId':
-          case 'externalFunnelURL':
-            updateData[field] = value
-            break
-          case 'startDate':
-          case 'registrationOpeningDate':
-          case 'registrationClosingDate':
-            // Handle both direct date strings and {old, new, confidence} objects
-            if (value && typeof value === 'object' && value.new) {
-              updateData[field] = new Date(value.new)
-            } else if (value && typeof value === 'string') {
-              updateData[field] = new Date(value)
-            } else {
-              updateData[field] = null
-            }
-            break
-          case 'price':
-          case 'runDistance':
-          case 'runDistance2':
-          case 'bikeDistance':
-          case 'swimDistance':
-          case 'walkDistance':
-          case 'bikeRunDistance':
-          case 'swimRunDistance':
-          case 'runPositiveElevation':
-          case 'runNegativeElevation':
-          case 'bikePositiveElevation':
-          case 'bikeNegativeElevation':
-          case 'walkPositiveElevation':
-          case 'walkNegativeElevation':
-            updateData[field] = typeof value === 'number' ? value : (value ? parseFloat(value) : 0)
-            break
-          case 'maxTeamSize':
-          case 'minTeamSize':
-            updateData[field] = typeof value === 'number' ? value : (value ? parseInt(value) : null)
-            break
-          case 'isActive':
-          case 'isArchived':
-          case 'resaleEnabled':
-            updateData[field] = Boolean(value)
-            break
+        // Gérer les objets {old, new, confidence}
+        if (value && typeof value === 'object' && 'new' in value) {
+          if (value.new !== undefined && value.new !== null) {
+            updateData[field] = value.new
+          }
+        } else if (value !== undefined && value !== null) {
+          updateData[field] = value
         }
       }
 
-      if (Object.keys(updateData).length === 0) {
-        return {
-          success: true,
-          appliedChanges: {},
-          errors: [{
-            field: 'changes',
-            message: 'Aucun changement à appliquer',
-            severity: 'warning'
-          }]
-        }
-      }
-
-      updateData.lastSyncAt = new Date()
-
-      // Récupérer la course existante
-      const existingRace = await this.prisma.raceCache.findUnique({
-        where: { id: resolvedRaceId }
-      })
-
-      if (!existingRace) {
-        return {
-          success: false,
-          appliedChanges: {},
-          errors: [{
-            field: 'raceId',
-            message: `Course non trouvée avec l'ID résolu: ${resolvedRaceId}`,
-            severity: 'error'
-          }]
-        }
-      }
-
-      await this.prisma.raceCache.update({
-        where: { id: resolvedRaceId },
+      // Mettre à jour dans Miles Republic
+      await milesDb.race.update({
+        where: { id: numericRaceId },
         data: updateData
       })
 
-      let result: ProposalApplicationResult = {
+      return {
         success: true,
         appliedChanges: selectedChanges
       }
-
-      // Par défaut, synchroniser avec Miles Republic (sauf si explicitement désactivé)
-      const shouldSyncToDatabase = options.applyToDatabase !== false
-      if (shouldSyncToDatabase) {
-        try {
-          const milesDb = await this.getMilesRepublicConnection(options.milesRepublicDatabaseId)
-          await this.syncRaceToMilesRepublic(raceId, { ...existingRace, ...updateData }, milesDb)
-          result.syncedToDatabase = true
-        } catch (syncError) {
-          result.syncError = syncError instanceof Error ? syncError.message : 'Erreur de synchronisation inconnue'
-          result.warnings = [{
-            field: 'sync',
-            message: `Mise à jour réussie dans le cache mais échec de synchronisation: ${syncError instanceof Error ? syncError.message : 'Erreur inconnue'}`,
-            severity: 'warning'
-          }]
-        }
-      }
-
-      return result
     } catch (error) {
       return {
         success: false,
         appliedChanges: {},
         errors: [{
           field: 'update',
-          message: `Erreur lors de la mise à jour de la course: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
+          message: `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
           severity: 'error'
         }]
       }
@@ -968,12 +491,11 @@ export class ProposalApplicationService implements IProposalApplicationService {
         registrationClosingDate: selectedChanges.registrationClosingDate ? new Date(selectedChanges.registrationClosingDate) : null,
         registrantsNumber: selectedChanges.registrantsNumber,
         federationId: selectedChanges.federationId,
-        dataSource: selectedChanges.dataSource,
         timeZone: selectedChanges.timeZone
       }]
     }
 
-    // Chercher des éditions dans un format structuré (si applicable)
+    // Chercher des éditions dans un format structuré
     const editions = []
     for (const [key, value] of Object.entries(selectedChanges)) {
       if (key.startsWith('edition_') && typeof value === 'object') {
@@ -1014,129 +536,23 @@ export class ProposalApplicationService implements IProposalApplicationService {
         categoryLevel1: selectedChanges.categoryLevel1,
         categoryLevel2: selectedChanges.categoryLevel2,
         distanceCategory: selectedChanges.distanceCategory,
-        federationId: selectedChanges.federationId,
-        dataSource: selectedChanges.dataSource,
-        timeZone: selectedChanges.timeZone
+        federationId: selectedChanges.federationId
       })
     }
 
     return races
   }
 
-  // Méthodes de génération d'IDs
-
-  private generateEventId(name: string, city: string): string {
-    const slug = this.slugify(`${name}-${city}`)
-    return `event-${slug}-${Date.now()}`
-  }
-
-  private generateEditionId(eventId: string, year: string): string {
-    return `${eventId}-${year}`
-  }
-
-  private generateRaceId(editionId: string, raceName: string): string {
-    const slug = this.slugify(raceName)
-    return `${editionId}-${slug}`
-  }
-
-  private slugify(text: string): string {
-    return text
-      .toLowerCase()
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '') // Supprimer les accents
-      .replace(/[^a-z0-9\s-]/g, '') // Supprimer les caractères spéciaux
-      .replace(/\s+/g, '-') // Remplacer les espaces par des tirets
-      .replace(/-+/g, '-') // Fusionner les tirets multiples
-      .trim()
-  }
-
-  // Méthode de rollback pour annuler une application
-  async rollbackProposal(proposalId: string, rollbackData: {
-    createdIds?: {
-      eventId?: string
-      editionId?: string
-      raceIds?: string[]
-    }
-    originalValues?: Record<string, any>
-  }): Promise<ProposalApplicationResult> {
-    try {
-      await this.prisma.$transaction(async (tx) => {
-        // Supprimer les entités créées
-        if (rollbackData.createdIds?.raceIds) {
-          await tx.raceCache.deleteMany({
-            where: { id: { in: rollbackData.createdIds.raceIds } }
-          })
-        }
-
-        if (rollbackData.createdIds?.editionId) {
-          await tx.editionCache.delete({
-            where: { id: rollbackData.createdIds.editionId }
-          })
-        }
-
-        if (rollbackData.createdIds?.eventId) {
-          await tx.eventCache.delete({
-            where: { id: rollbackData.createdIds.eventId }
-          })
-        }
-
-        // Restaurer les valeurs originales pour les mises à jour
-        if (rollbackData.originalValues) {
-          const proposal = await tx.proposal.findUnique({
-            where: { id: proposalId }
-          })
-
-          if (!proposal) {
-            throw new Error('Proposition non trouvée pour le rollback')
-          }
-
-          const updateData = { ...rollbackData.originalValues, lastSyncAt: new Date() }
-
-          switch (proposal.type) {
-            case 'EVENT_UPDATE':
-              if (proposal.eventId) {
-                await tx.eventCache.update({
-                  where: { id: proposal.eventId },
-                  data: updateData
-                })
-              }
-              break
-
-            case 'EDITION_UPDATE':
-              if (proposal.editionId) {
-                await tx.editionCache.update({
-                  where: { id: proposal.editionId },
-                  data: updateData
-                })
-              }
-              break
-
-            case 'RACE_UPDATE':
-              if (proposal.raceId) {
-                await tx.raceCache.update({
-                  where: { id: proposal.raceId },
-                  data: updateData
-                })
-              }
-              break
-          }
-        }
-      })
-
-      return {
-        success: true,
-        appliedChanges: rollbackData.originalValues || {}
-      }
-    } catch (error) {
-      return {
-        success: false,
-        appliedChanges: {},
-        errors: [{
-          field: 'rollback',
-          message: `Erreur lors du rollback: ${error instanceof Error ? error.message : 'Erreur inconnue'}`,
-          severity: 'error'
-        }]
-      }
+  // Méthode de rollback (non implémentée pour l'instant - nécessiterait de stocker l'état avant)
+  async rollbackProposal(proposalId: string, rollbackData: any): Promise<ProposalApplicationResult> {
+    return {
+      success: false,
+      appliedChanges: {},
+      errors: [{
+        field: 'rollback',
+        message: 'Le rollback n\'est pas encore implémenté pour le mode direct',
+        severity: 'error'
+      }]
     }
   }
 }

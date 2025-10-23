@@ -17,8 +17,28 @@ const validateRequest = (req: any, res: any, next: any) => {
   next()
 }
 
+// Helper pour résoudre les IDs avec ou sans préfixe
+const resolveId = (id: string, prefix: string): string => {
+  if (id.startsWith(prefix)) return id
+  return `${prefix}${id}`
+}
+
 // Helper function to transform Prisma data for frontend
 const transformApplicationForAPI = (app: any) => {
+  // Construire le contexte depuis les champs de la proposition
+  let contextInfo: any = null
+  
+  const { eventName, eventCity, editionYear, raceName } = app.proposal
+  
+  if (eventName || editionYear || raceName) {
+    contextInfo = {
+      eventName,
+      eventCity,
+      editionYear: editionYear ? String(editionYear) : undefined,
+      raceName
+    }
+  }
+  
   return {
     id: app.id,
     proposalId: app.proposalId,
@@ -34,11 +54,15 @@ const transformApplicationForAPI = (app: any) => {
       type: app.proposal.type,
       status: app.proposal.status,
       changes: app.proposal.changes,
+      eventId: app.proposal.eventId,
+      editionId: app.proposal.editionId,
+      raceId: app.proposal.raceId,
       agent: {
         name: app.proposal.agent.name,
         type: app.proposal.agent.type
       }
-    }
+    },
+    context: contextInfo
   }
 }
 
@@ -89,7 +113,7 @@ router.get('/', [
 
   const total = await db.prisma.proposalApplication.count({ where })
   
-  const transformedUpdates = applications.map(transformApplicationForAPI)
+  const transformedUpdates = applications.map(app => transformApplicationForAPI(app))
 
   res.json({
     success: true,
@@ -127,9 +151,11 @@ router.get('/:id', [
     throw createError(404, 'Update not found', 'UPDATE_NOT_FOUND')
   }
 
+  const transformedData = transformApplicationForAPI(application)
+
   res.json({
     success: true,
-    data: transformApplicationForAPI(application)
+    data: transformedData
   })
 }))
 
@@ -184,9 +210,11 @@ router.post('/', [
     }
   })
 
+  const transformedData = transformApplicationForAPI(application)
+
   res.json({
     success: true,
-    data: transformApplicationForAPI(application),
+    data: transformedData,
     message: 'Update created successfully'
   })
 }))
@@ -309,6 +337,147 @@ router.delete('/:id', [
   res.json({
     success: true,
     message: 'Update deleted successfully'
+  })
+}))
+
+// POST /api/updates/bulk/delete - Delete multiple updates
+router.post('/bulk/delete', [
+  body('ids').isArray().notEmpty(),
+  body('ids.*').isString(),
+  validateRequest
+], asyncHandler(async (req: any, res: any) => {
+  const { ids } = req.body
+
+  // Vérifier que toutes les mises à jour existent
+  const applications = await db.prisma.proposalApplication.findMany({
+    where: { id: { in: ids } },
+    select: { id: true }
+  })
+
+  const foundIds = applications.map(app => app.id)
+  const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
+
+  if (notFoundIds.length > 0) {
+    throw createError(404, `Updates not found: ${notFoundIds.join(', ')}`, 'UPDATES_NOT_FOUND')
+  }
+
+  // Supprimer toutes les mises à jour
+  const result = await db.prisma.proposalApplication.deleteMany({
+    where: { id: { in: ids } }
+  })
+
+  res.json({
+    success: true,
+    message: `${result.count} update(s) deleted successfully`,
+    data: { deletedCount: result.count }
+  })
+}))
+
+// POST /api/updates/bulk/apply - Apply multiple updates
+router.post('/bulk/apply', [
+  body('ids').isArray().notEmpty(),
+  body('ids.*').isString(),
+  validateRequest
+], asyncHandler(async (req: any, res: any) => {
+  const { ids } = req.body
+
+  // Récupérer toutes les mises à jour
+  const applications = await db.prisma.proposalApplication.findMany({
+    where: { id: { in: ids } },
+    include: {
+      proposal: {
+        include: {
+          agent: {
+            select: { name: true, type: true }
+          }
+        }
+      }
+    }
+  })
+
+  const foundIds = applications.map(app => app.id)
+  const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
+
+  if (notFoundIds.length > 0) {
+    throw createError(404, `Updates not found: ${notFoundIds.join(', ')}`, 'UPDATES_NOT_FOUND')
+  }
+
+  // Vérifier que toutes les mises à jour sont PENDING
+  const nonPendingApps = applications.filter(app => app.status !== 'PENDING')
+  if (nonPendingApps.length > 0) {
+    throw createError(400, `Some updates are not pending: ${nonPendingApps.map(a => a.id).join(', ')}`, 'INVALID_STATUS')
+  }
+
+  // Appliquer toutes les mises à jour
+  const results = {
+    successful: [] as string[],
+    failed: [] as { id: string; error: string }[]
+  }
+
+  for (const application of applications) {
+    const logs: string[] = []
+    let success = false
+    let errorMessage: string | null = null
+
+    try {
+      logs.push(`[${new Date().toISOString()}] Starting bulk update application...`)
+      logs.push('Validating proposal changes...')
+      
+      // Appliquer la proposition
+      const result = await applicationService.applyProposal(
+        application.proposalId,
+        application.proposal.changes as Record<string, any>
+      )
+
+      if (result.success) {
+        success = true
+        logs.push('Successfully applied all changes')
+        logs.push(`Applied changes: ${Object.keys(result.appliedChanges).join(', ')}`)
+        results.successful.push(application.id)
+      } else {
+        errorMessage = result.errors?.map(e => e.message).join('; ') || 'Unknown error'
+        logs.push(`Application failed: ${errorMessage}`)
+        results.failed.push({ id: application.id, error: errorMessage })
+      }
+      
+      // Mettre à jour l'enregistrement
+      await db.prisma.proposalApplication.update({
+        where: { id: application.id },
+        data: {
+          status: success ? 'APPLIED' : 'FAILED',
+          appliedAt: success ? new Date() : null,
+          errorMessage: errorMessage,
+          logs: logs,
+          appliedChanges: success ? (result.appliedChanges as any) : null,
+          rollbackData: success ? (result.createdIds as any) || null : null
+        }
+      })
+
+    } catch (error) {
+      const errMsg = error instanceof Error ? error.message : 'Unexpected error'
+      logs.push(`Unexpected error: ${errMsg}`)
+      results.failed.push({ id: application.id, error: errMsg })
+      
+      // Mettre à jour l'enregistrement avec l'erreur
+      await db.prisma.proposalApplication.update({
+        where: { id: application.id },
+        data: {
+          status: 'FAILED',
+          errorMessage: errMsg,
+          logs: logs
+        }
+      })
+    }
+  }
+
+  res.json({
+    success: true,
+    message: `Bulk apply completed: ${results.successful.length} successful, ${results.failed.length} failed`,
+    data: {
+      successful: results.successful,
+      failed: results.failed,
+      totalProcessed: applications.length
+    }
   })
 }))
 
