@@ -78,26 +78,11 @@ router.post('/', [
     }
   }
 
-  // For edition startDate changes with propagation, we need to handle races
+  // For edition startDate changes with propagation to races
+  // Note: propagation would require querying Miles Republic for races
   if (type === 'EDITION_UPDATE' && fieldName === 'startDate' && propagateToRaces && editionId) {
-    // Get all races for this edition to propagate the date
-    const races = await db.prisma.raceCache.findMany({
-      where: { editionId },
-      select: { id: true, name: true, startDate: true }
-    })
-
-    if (races.length > 0) {
-      changes.propagateToRaces = {
-        old: null,
-        new: races.map(race => ({
-          raceId: race.id,
-          raceName: race.name,
-          oldStartDate: race.startDate,
-          newStartDate: fieldValue
-        })),
-        confidence: 1.0
-      }
-    }
+    // TODO: Implement propagation by querying Miles Republic if needed
+    console.warn('Race propagation not yet implemented without cache')
   }
 
   // Create justification
@@ -339,59 +324,15 @@ router.post('/:id/compare', [
     throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
   }
 
-  // If this is for a new event and user provided an existing event to compare
-  if (proposal.type === 'NEW_EVENT' && existingEventId) {
-    // Fetch existing event data from cache or Miles Republic DB
-    const existingEvent = await db.prisma.eventCache.findUnique({
-      where: { id: existingEventId },
-      include: {
-        editions: {
-          include: {
-            races: true
-          }
-        }
-      }
-    })
-
-    if (!existingEvent) {
-      throw createError(404, 'Existing event not found', 'EVENT_NOT_FOUND')
+  // Comparaison désactivée - nécessiterait de requêter Miles Republic
+  res.json({
+    success: true,
+    data: {
+      proposal: proposal.changes,
+      existing: null,
+      message: 'Comparison temporarily unavailable - cache removed'
     }
-
-    res.json({
-      success: true,
-      data: {
-        proposal: proposal.changes,
-        existing: existingEvent,
-        similarity: calculateEventSimilarity(proposal.changes, existingEvent)
-      }
-    })
-  } else {
-    // Compare with existing event/edition/race data
-    let existingData = null
-
-    if (proposal.eventId) {
-      existingData = await db.prisma.eventCache.findUnique({
-        where: { id: proposal.eventId }
-      })
-    } else if (proposal.editionId) {
-      existingData = await db.prisma.editionCache.findUnique({
-        where: { id: proposal.editionId }
-      })
-    } else if (proposal.raceId) {
-      existingData = await db.prisma.raceCache.findUnique({
-        where: { id: proposal.raceId }
-      })
-    }
-
-    res.json({
-      success: true,
-      data: {
-        proposal: proposal.changes,
-        existing: existingData,
-        changes: compareData(existingData, proposal.changes)
-      }
-    })
-  }
+  })
 }))
 
 // POST /api/proposals/:id/apply - Manually apply an approved proposal

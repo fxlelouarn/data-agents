@@ -432,13 +432,13 @@ export class AgentScheduler {
   /**
    * Démarre le monitoring périodique des échecs consécutifs
    */
-  private startFailureMonitoring(): void {
-    if (!settingsService.isAutoDisablingEnabled()) {
+  private async startFailureMonitoring(): Promise<void> {
+    if (!(await settingsService.isAutoDisablingEnabled())) {
       console.log('📋 Auto-disabling is disabled, skipping failure monitoring')
       return
     }
 
-    const intervalMinutes = settingsService.getCheckIntervalMinutes()
+    const intervalMinutes = await settingsService.getCheckIntervalMinutes()
     const intervalMs = intervalMinutes * 60 * 1000
 
     console.log(`📋 Starting failure monitoring (checking every ${intervalMinutes} minutes)`)

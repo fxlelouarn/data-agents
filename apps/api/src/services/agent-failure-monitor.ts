@@ -33,7 +33,7 @@ export class AgentFailureMonitor {
         return null
       }
 
-      const maxFailures = settingsService.getMaxConsecutiveFailures()
+      const maxFailures = await settingsService.getMaxConsecutiveFailures()
       
       // Récupérer les derniers runs de l'agent, triés par date décroissante
       const recentRuns = await this.db.getAgentRuns(agentId, maxFailures + 5) // On prend un peu plus pour être sûr
@@ -90,7 +90,7 @@ export class AgentFailureMonitor {
    * Désactive automatiquement un agent en cas de trop d'échecs consécutifs
    */
   async autoDisableAgentIfNeeded(agentId: string): Promise<boolean> {
-    if (!settingsService.isAutoDisablingEnabled()) {
+    if (!(await settingsService.isAutoDisablingEnabled())) {
       return false
     }
 
@@ -109,7 +109,7 @@ export class AgentFailureMonitor {
       const logDetails = {
         reason: 'AUTO_DISABLED_CONSECUTIVE_FAILURES',
         consecutiveFailures: failureCheck.consecutiveFailures,
-        maxAllowed: settingsService.getMaxConsecutiveFailures(),
+        maxAllowed: await settingsService.getMaxConsecutiveFailures(),
         lastFailureAt: failureCheck.lastFailureAt,
         recentFailedRuns: failureCheck.recentRuns.map(run => ({
           id: run.id,
@@ -129,7 +129,7 @@ export class AgentFailureMonitor {
         agentId,
         agentName: failureCheck.agentName,
         consecutiveFailures: failureCheck.consecutiveFailures,
-        maxAllowed: settingsService.getMaxConsecutiveFailures()
+        maxAllowed: await settingsService.getMaxConsecutiveFailures()
       })
       
       return true
@@ -158,7 +158,7 @@ export class AgentFailureMonitor {
     checkedAgents: number
     disabledAgents: string[]
   }> {
-    if (!settingsService.isAutoDisablingEnabled()) {
+    if (!(await settingsService.isAutoDisablingEnabled())) {
       return { checkedAgents: 0, disabledAgents: [] }
     }
 
@@ -240,7 +240,7 @@ export class AgentFailureMonitor {
       }
       
       // Si pas d'échecs ou si les échecs ne justifient pas une auto-désactivation, ignorer
-      if (consecutiveFailures < settingsService.getMaxConsecutiveFailures()) {
+      if (consecutiveFailures < (await settingsService.getMaxConsecutiveFailures())) {
         return null
       }
       
