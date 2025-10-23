@@ -12,11 +12,15 @@ import {
   DialogTitle,
   DialogContent,
   DialogActions,
-  TextField
+  TextField,
+  Typography
 } from '@mui/material'
 import {
   CheckCircle as ApproveIcon,
-  Cancel as RejectIcon
+  Cancel as RejectIcon,
+  Language as WebsiteIcon,
+  Facebook as FacebookIcon,
+  Instagram as InstagramIcon
 } from '@mui/icons-material'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ChangesTable from '@/components/proposals/ChangesTable'
@@ -45,9 +49,50 @@ const GroupedProposalDetail: React.FC = () => {
     getEventTitle,
     getEditionYear,
     consolidateChanges,
-    consolidateRaceChanges,
-    handleApproveField
+    consolidateRaceChanges
   } = useProposalLogic()
+  
+  // Gérer la sélection d'une valeur dans le dropdown (pas d'approbation)
+  const handleSelectField = (fieldName: string, selectedValue: any) => {
+    setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+  }
+  
+  // Gérer l'approbation du champ (bouton "Approuver")
+  const handleApproveField = async (fieldName: string) => {
+    const selectedValue = selectedChanges[fieldName]
+    if (selectedValue === undefined) return
+    
+    // Trouver le changement correspondant
+    const change = consolidatedChanges.find(c => c.field === fieldName)
+    if (!change) return
+    
+    try {
+      // Pour chaque option de ce champ
+      for (const option of change.options) {
+        const optionValueStr = JSON.stringify(option.proposedValue)
+        const selectedValueStr = JSON.stringify(selectedValue)
+        
+        // Approuver les propositions qui correspondent à la valeur sélectionnée
+        if (optionValueStr === selectedValueStr) {
+          await updateProposalMutation.mutateAsync({
+            id: option.proposalId,
+            status: 'APPROVED',
+            reviewedBy: 'Utilisateur',
+            appliedChanges: { [fieldName]: selectedValue }
+          })
+        } else {
+          // Rejeter les autres propositions du même champ
+          await updateProposalMutation.mutateAsync({
+            id: option.proposalId,
+            status: 'REJECTED',
+            reviewedBy: 'Utilisateur'
+          })
+        }
+      }
+    } catch (error) {
+      console.error('Error approving/rejecting field:', error)
+    }
+  }
 
   // Déterminer si c'est un nouvel événement
   const isNewEvent = Boolean(groupKey?.startsWith('new-event-'))
@@ -209,21 +254,35 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleApproveAll = async () => {
     try {
-      for (const proposal of groupProposals) {
-        const changesToApprove = { ...proposal.changes }
-        // Appliquer les valeurs sélectionnées
-        Object.entries(selectedChanges).forEach(([field, selectedValue]) => {
-          if (changesToApprove[field]) {
-            changesToApprove[field] = selectedValue
-          }
-        })
+      // Pour chaque champ avec une valeur sélectionnée, approuver/rejeter les propositions correspondantes
+      for (const change of consolidatedChanges) {
+        const fieldName = change.field
+        const selectedValue = selectedChanges[fieldName]
         
-        await updateProposalMutation.mutateAsync({
-          id: proposal.id,
-          status: 'APPROVED',
-          reviewedBy: 'Utilisateur',
-          appliedChanges: changesToApprove
-        })
+        if (selectedValue === undefined) continue
+        
+        // Pour chaque option de ce champ
+        for (const option of change.options) {
+          const optionValueStr = JSON.stringify(option.proposedValue)
+          const selectedValueStr = JSON.stringify(selectedValue)
+          
+          // Approuver les propositions qui correspondent à la valeur sélectionnée
+          if (optionValueStr === selectedValueStr) {
+            await updateProposalMutation.mutateAsync({
+              id: option.proposalId,
+              status: 'APPROVED',
+              reviewedBy: 'Utilisateur',
+              appliedChanges: { [fieldName]: selectedValue }
+            })
+          } else {
+            // Rejeter les autres propositions du même champ
+            await updateProposalMutation.mutateAsync({
+              id: option.proposalId,
+              status: 'REJECTED',
+              reviewedBy: 'Utilisateur'
+            })
+          }
+        }
       }
     } catch (error) {
       console.error('Error approving proposals:', error)
@@ -324,6 +383,7 @@ const GroupedProposalDetail: React.FC = () => {
             changes={consolidatedChanges}
             isNewEvent={isNewEvent}
             selectedChanges={selectedChanges}
+            onFieldSelect={handleSelectField}
             onFieldApprove={handleApproveField}
             formatValue={formatValue}
             formatAgentsList={formatAgentsList}
@@ -369,6 +429,113 @@ const GroupedProposalDetail: React.FC = () => {
         
         <Grid item xs={12} md={4}>
           <AgentInfoSection proposals={groupProposals.map(p => ({ ...p, confidence: p.confidence || 0 }))} />
+          
+          {/* URLs de l'événement */}
+          {firstProposal && (
+            <Card sx={{ mt: 3 }}>
+              <CardContent>
+                <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                  <WebsiteIcon color="primary" />
+                  Liens de l'événement
+                </Typography>
+                
+                {!firstProposal.changes.websiteUrl && !firstProposal.changes.facebookUrl && !firstProposal.changes.instagramUrl ? (
+                  <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                    Aucun lien disponible
+                  </Typography>
+                ) : (
+                  <>
+                    {firstProposal.changes.websiteUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <WebsiteIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Site web</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof firstProposal.changes.websiteUrl === 'string' 
+                            ? firstProposal.changes.websiteUrl 
+                            : (firstProposal.changes.websiteUrl as any)?.new || (firstProposal.changes.websiteUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof firstProposal.changes.websiteUrl === 'string' 
+                            ? firstProposal.changes.websiteUrl 
+                            : (firstProposal.changes.websiteUrl as any)?.new || (firstProposal.changes.websiteUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                
+                {firstProposal.changes.facebookUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <FacebookIcon sx={{ fontSize: '1rem', color: '#1877f2' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Facebook</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof firstProposal.changes.facebookUrl === 'string' 
+                            ? firstProposal.changes.facebookUrl 
+                            : (firstProposal.changes.facebookUrl as any)?.new || (firstProposal.changes.facebookUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof firstProposal.changes.facebookUrl === 'string' 
+                            ? firstProposal.changes.facebookUrl 
+                            : (firstProposal.changes.facebookUrl as any)?.new || (firstProposal.changes.facebookUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                
+                {firstProposal.changes.instagramUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <InstagramIcon sx={{ fontSize: '1rem', color: '#E4405F' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Instagram</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof firstProposal.changes.instagramUrl === 'string' 
+                            ? firstProposal.changes.instagramUrl 
+                            : (firstProposal.changes.instagramUrl as any)?.new || (firstProposal.changes.instagramUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof firstProposal.changes.instagramUrl === 'string' 
+                            ? firstProposal.changes.instagramUrl 
+                            : (firstProposal.changes.instagramUrl as any)?.new || (firstProposal.changes.instagramUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                    )}
+                  </>
+                )}
+              </CardContent>
+            </Card>
+          )}
         </Grid>
       </Grid>
 

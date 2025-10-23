@@ -23,6 +23,9 @@ import {
   Person as PersonIcon,
   Schedule as ScheduleIcon,
   Search as SearchIcon,
+  Language as WebsiteIcon,
+  Facebook as FacebookIcon,
+  Instagram as InstagramIcon,
 } from '@mui/icons-material'
 import { useProposal, useUpdateProposal, useProposals } from '@/hooks/useApi'
 import { format } from 'date-fns'
@@ -565,6 +568,111 @@ const ProposalDetail: React.FC = () => {
                     />
                   )}
                 </Box>
+              )}
+            </CardContent>
+          </Card>
+          
+          {/* URLs de l'événement */}
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
+                <WebsiteIcon color="primary" />
+                Liens de l'événement
+              </Typography>
+              
+              {!safeProposal.changes.websiteUrl && !safeProposal.changes.facebookUrl && !safeProposal.changes.instagramUrl ? (
+                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+                  Aucun lien disponible
+                </Typography>
+              ) : (
+                <>
+                  {safeProposal.changes.websiteUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <WebsiteIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Site web</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof safeProposal.changes.websiteUrl === 'string' 
+                            ? safeProposal.changes.websiteUrl 
+                            : (safeProposal.changes.websiteUrl as any)?.new || (safeProposal.changes.websiteUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof safeProposal.changes.websiteUrl === 'string' 
+                            ? safeProposal.changes.websiteUrl 
+                            : (safeProposal.changes.websiteUrl as any)?.new || (safeProposal.changes.websiteUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                
+                {safeProposal.changes.facebookUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
+                    <FacebookIcon sx={{ fontSize: '1rem', color: '#1877f2' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Facebook</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof safeProposal.changes.facebookUrl === 'string' 
+                            ? safeProposal.changes.facebookUrl 
+                            : (safeProposal.changes.facebookUrl as any)?.new || (safeProposal.changes.facebookUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof safeProposal.changes.facebookUrl === 'string' 
+                            ? safeProposal.changes.facebookUrl 
+                            : (safeProposal.changes.facebookUrl as any)?.new || (safeProposal.changes.facebookUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                )}
+                
+                {safeProposal.changes.instagramUrl && (
+                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+                    <InstagramIcon sx={{ fontSize: '1rem', color: '#E4405F' }} />
+                    <Box sx={{ minWidth: 0, flex: 1 }}>
+                      <Typography variant="caption" color="text.secondary">Instagram</Typography>
+                      <Typography 
+                        variant="body2" 
+                        sx={{ 
+                          fontWeight: 500,
+                          wordBreak: 'break-all',
+                          '& a': { color: 'primary.main', textDecoration: 'none' }
+                        }}
+                      >
+                        <a 
+                          href={typeof safeProposal.changes.instagramUrl === 'string' 
+                            ? safeProposal.changes.instagramUrl 
+                            : (safeProposal.changes.instagramUrl as any)?.new || (safeProposal.changes.instagramUrl as any)?.proposed}
+                          target="_blank" 
+                          rel="noopener noreferrer"
+                        >
+                          {typeof safeProposal.changes.instagramUrl === 'string' 
+                            ? safeProposal.changes.instagramUrl 
+                            : (safeProposal.changes.instagramUrl as any)?.new || (safeProposal.changes.instagramUrl as any)?.proposed}
+                        </a>
+                      </Typography>
+                    </Box>
+                  </Box>
+                  )}
+                </>
               )}
             </CardContent>
           </Card>
