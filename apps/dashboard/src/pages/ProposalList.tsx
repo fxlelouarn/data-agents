@@ -42,7 +42,8 @@ import {
   Add as AddIcon,
   ArrowDropDown as ArrowDropDownIcon,
   Event as EventIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  Refresh as RefreshIcon
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
@@ -81,7 +82,7 @@ const ProposalList: React.FC = () => {
   const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
   const [creationType, setCreationType] = useState<'NEW_EVENT' | 'EDIT_EVENT'>('NEW_EVENT')
 
-  const { data: proposalsData, isLoading } = useProposals({ 
+  const { data: proposalsData, isLoading, refetch } = useProposals({ 
     status: statusFilter !== 'ALL' ? statusFilter : undefined,
     type: typeFilter !== 'ALL' ? typeFilter : undefined,
   })
@@ -290,16 +291,45 @@ const ProposalList: React.FC = () => {
 
   const columns: GridColDef[] = [
     {
-      field: 'type',
-      headerName: 'Type',
-      width: 160,
+      field: 'eventInfo',
+      headerName: 'Événement / Édition',
+      width: 250,
+      valueGetter: (params) => {
+        const proposal = params.row
+        // Pour les nouveaux événements
+        if (proposal.type === 'NEW_EVENT') {
+          return proposal.changes.name || proposal.changes.eventName || 'Nouvel événement'
+        }
+        
+        // Essayer d'extraire depuis les métadonnées de justification
+        if (proposal.justification && Array.isArray(proposal.justification)) {
+          for (const justif of proposal.justification) {
+            if (justif.metadata?.eventName) {
+              const eventName = justif.metadata.eventName
+              const year = justif.metadata.editionYear
+              return year ? `${eventName} - ${year}` : eventName
+            }
+          }
+        }
+        
+        // Fallback sur les IDs
+        if (proposal.editionId) {
+          return `Édition ${proposal.editionId}`
+        }
+        if (proposal.eventId) {
+          return `Événement ${proposal.eventId}`
+        }
+        return 'Inconnu'
+      },
       renderCell: (params) => (
-        <Chip
-          size="small"
-          label={proposalTypeLabels[params.value as ProposalType]}
-          color="primary"
-          variant="outlined"
-        />
+        <Box>
+          <Typography variant="body2" sx={{ fontWeight: 500 }}>
+            {params.value}
+          </Typography>
+          <Typography variant="caption" color="text.secondary">
+            {proposalTypeLabels[params.row.type as ProposalType]}
+          </Typography>
+        </Box>
       ),
     },
     {
@@ -444,6 +474,17 @@ const ProposalList: React.FC = () => {
         </Box>
         
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {/* Bouton de rafraîchissement */}
+          <Tooltip title="Rafraîchir">
+            <IconButton
+              onClick={() => refetch()}
+              disabled={isLoading}
+              color="primary"
+            >
+              <RefreshIcon />
+            </IconButton>
+          </Tooltip>
+          
           {/* Créer une proposition dropdown button */}
           <ButtonGroup variant="contained" color="primary">
             <Button
@@ -687,7 +728,7 @@ const ProposalList: React.FC = () => {
                       <ListItem>
                         <ListItemText
                           primary={
-                            <span style={{ display: 'flex', alignItems: 'center', gap: '8px', marginBottom: '8px' }}>
+                            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                               <Chip
                                 size="small"
                                 label={proposalTypeLabels[proposal.type as ProposalType]}
@@ -703,11 +744,11 @@ const ProposalList: React.FC = () => {
                               <Typography component="span" variant="caption" color="text.secondary">
                                 {new Date(proposal.createdAt).toLocaleDateString('fr-FR')}
                               </Typography>
-                            </span>
+                            </Box>
                           }
                           secondary={
-                            <span>
-                              <Typography component="span" variant="body2" sx={{ display: 'block', mb: 1 }}>
+                            <Box>
+                              <Typography component="div" variant="body2" sx={{ display: 'block', mb: 1 }}>
                                 {getChangesSummary(proposal.changes)}
                               </Typography>
                               
@@ -728,7 +769,7 @@ const ProposalList: React.FC = () => {
                                   )
                                 } else if (key === 'races' && Array.isArray(value)) {
                                   return (
-                                    <span key={key} style={{ display: 'block', marginTop: '8px' }}>
+                                    <Box key={key} sx={{ display: 'block', mt: 1 }}>
                                       <Chip
                                         size="small"
                                         label={`${value.length} course(s) incluse(s)`}
@@ -737,11 +778,11 @@ const ProposalList: React.FC = () => {
                                         sx={{ mr: 1, mb: 0.5 }}
                                       />
                                       {/* Afficher un aperçu des courses */}
-                                      <Typography component="span" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
+                                      <Typography component="div" variant="caption" color="text.secondary" sx={{ display: 'block', mt: 0.5 }}>
                                         Courses: {value.map((race: any) => race.raceName).slice(0, 3).join(', ')}
                                         {value.length > 3 && ` et ${value.length - 3} autre(s)...`}
                                       </Typography>
-                                    </span>
+                                    </Box>
                                   )
                                 } else if (typeof value === 'object' && value.field) {
                                   return (
@@ -768,8 +809,9 @@ const ProposalList: React.FC = () => {
                                 }
                                 return null
                               })}
-                            </span>
+                            </Box>
                           }
+                          secondaryTypographyProps={{ component: 'div' }}
                         />
                         <ListItemSecondaryAction>
                           <Box sx={{ display: 'flex', gap: 1 }}>
