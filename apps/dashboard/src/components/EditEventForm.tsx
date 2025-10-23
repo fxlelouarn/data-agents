@@ -75,23 +75,29 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
   const allEditions = editionsData?.data || []
   const editions = useMemo(() => {
     const now = new Date()
-    return allEditions.filter(edition => {
-      if (!edition.startDate) return false
+    console.log('[EditEventForm] All editions from API:', allEditions)
+    console.log('[EditEventForm] Current date:', now)
+    
+    const filtered = allEditions.filter(edition => {
+      if (!edition.startDate) {
+        console.log(`[EditEventForm] Édition ${edition.year} exclue : pas de startDate`)
+        return false
+      }
       const startDate = new Date(edition.startDate)
-      return startDate > now
+      const isFuture = startDate > now
+      console.log(`[EditEventForm] Édition ${edition.year} : startDate=${startDate.toISOString()}, isFuture=${isFuture}`)
+      return isFuture
     })
+    
+    console.log('[EditEventForm] Filtered editions:', filtered)
+    return filtered
   }, [allEditions])
   
   const races = racesData?.data || []
 
-  const selectedEvent = selectedEventData
-
-  const selectedEdition = useMemo(() => {
-    return editions.find(e => e.id === selectedEditionId)
-  }, [editions, selectedEditionId])
-
   // Gestion de la sélection d'événement via Meilisearch
   const handleEventSelect = (eventId: string, eventData: any) => {
+    console.log('[EditEventForm] Event selected:', eventId, eventData)
     setSelectedEventId(eventId)
     setSelectedEventData(eventData)
     setSelectedEditionId('') // Reset edition selection
@@ -99,6 +105,13 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
     setEditionChanges({})
     setRaceChanges({})
   }
+
+  const selectedEvent = selectedEventData
+
+  const selectedEdition = useMemo(() => {
+    return editions.find(e => e.id === selectedEditionId)
+  }, [editions, selectedEditionId])
+
 
   // Event fields
   const eventFields = [

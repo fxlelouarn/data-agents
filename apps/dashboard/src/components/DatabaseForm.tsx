@@ -123,7 +123,7 @@ const DatabaseForm: React.FC<DatabaseFormProps> = ({
     setFormData(prev => ({
       ...prev,
       type,
-      port: type === 'MYSQL' ? 3306 : 5432
+      port: 5432 // PostgreSQL et Miles Republic utilisent le même port
     }))
   }
 
@@ -165,9 +165,7 @@ const DatabaseForm: React.FC<DatabaseFormProps> = ({
                 onChange={handleTypeChange}
               >
                 <MenuItem value="POSTGRESQL">PostgreSQL</MenuItem>
-                <MenuItem value="MYSQL">MySQL</MenuItem>
-                <MenuItem value="MILES_REPUBLIC">Medusa</MenuItem>
-                <MenuItem value="MONGODB">MongoDB</MenuItem>
+                <MenuItem value="MILES_REPUBLIC">Miles Republic</MenuItem>
               </Select>
             </FormControl>
           </Grid>

@@ -79,6 +79,7 @@ const MeilisearchEventSelector: React.FC<MeilisearchEventSelectorProps> = ({
       <Autocomplete
         options={events}
         getOptionLabel={getEventLabel}
+        isOptionEqualToValue={(option, value) => option.objectID === value.objectID}
         value={selectedEvent}
         onChange={handleEventSelect}
         onInputChange={(_, newInputValue) => {
