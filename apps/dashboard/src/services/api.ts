@@ -334,9 +334,19 @@ export const updatesApi = {
 
   getLogs: (id: string): Promise<ApiResponse<{ logs: string[] }>> =>
     api.get(`/updates/${id}/logs`).then(res => res.data),
+
+  bulkDelete: (ids: string[]): Promise<ApiResponse<{ deletedCount: number }>> =>
+    api.post('/updates/bulk/delete', { ids }).then(res => res.data),
+
+  bulkApply: (ids: string[]): Promise<ApiResponse<{
+    successful: string[]
+    failed: Array<{ id: string; error: string }>
+    totalProcessed: number
+  }>> =>
+    api.post('/updates/bulk/apply', { ids }).then(res => res.data),
 }
 
-// Cache API
+// Events API (interroge directement Miles Republic)
 export const cacheApi = {
   getEvents: (filters: { limit?: number; search?: string } = {}): Promise<ApiResponse<Array<{
     id: string
@@ -345,7 +355,7 @@ export const cacheApi = {
     country: string
     _count: { editions: number }
   }>>> =>
-    api.get('/cache/events', { params: filters }).then(res => res.data),
+    api.get('/events', { params: filters }).then(res => res.data),
 
   getEditions: (filters: { eventId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
     id: string
@@ -359,7 +369,7 @@ export const cacheApi = {
     }
     _count: { races: number }
   }>>> =>
-    api.get('/cache/editions', { params: filters }).then(res => res.data),
+    api.get('/events/editions', { params: filters }).then(res => res.data),
 
   getRaces: (filters: { editionId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
     id: string
@@ -376,9 +386,9 @@ export const cacheApi = {
       }
     }
   }>>> =>
-    api.get('/cache/races', { params: filters }).then(res => res.data),
+    api.get('/events/races', { params: filters }).then(res => res.data),
 
-  // Miles Republic direct access
+  // Alias pour compatibilité (mêmes routes)
   getMilesRepublicEvents: (filters: { limit?: number; search?: string } = {}): Promise<ApiResponse<Array<{
     id: string
     name: string
@@ -386,7 +396,7 @@ export const cacheApi = {
     country: string
     _count: { editions: number }
   }>>> =>
-    api.get('/cache/miles-republic/events', { params: filters }).then(res => res.data),
+    api.get('/events', { params: filters }).then(res => res.data),
 
   getMilesRepublicEditions: (filters: { eventId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
     id: string
@@ -400,7 +410,7 @@ export const cacheApi = {
     }
     _count: { races: number }
   }>>> =>
-    api.get('/cache/miles-republic/editions', { params: filters }).then(res => res.data),
+    api.get('/events/editions', { params: filters }).then(res => res.data),
 
   getMilesRepublicRaces: (filters: { editionId?: string; limit?: number } = {}): Promise<ApiResponse<Array<{
     id: string
@@ -417,7 +427,7 @@ export const cacheApi = {
       }
     }
   }>>> =>
-    api.get('/cache/miles-republic/races', { params: filters }).then(res => res.data),
+    api.get('/events/races', { params: filters }).then(res => res.data),
 }
 
 // Health API

@@ -221,6 +221,9 @@ export interface DataUpdate {
     id: string
     type: ProposalType
     status: ProposalStatus
+    eventId?: string
+    editionId?: string
+    raceId?: string
     changes: Record<string, {
       old?: any
       new: any
@@ -230,6 +233,12 @@ export interface DataUpdate {
       name: string
       type: AgentType
     }
+  }
+  context?: {
+    eventName?: string
+    eventCity?: string
+    editionYear?: string
+    raceName?: string
   }
 }
 

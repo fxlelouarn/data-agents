@@ -125,6 +125,8 @@ export const useRunAgent = () => {
     onSuccess: (response, id) => {
       queryClient.invalidateQueries({ queryKey: ['agents', id] })
       queryClient.invalidateQueries({ queryKey: ['runs'] })
+      // Invalider les propositions car l'agent va potentiellement en créer de nouvelles
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
       enqueueSnackbar(response.message || "Exécution de l'agent démarrée", { variant: 'success' })
     },
     onError: (error: any) => {
@@ -200,7 +202,9 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   return useQuery({
     queryKey: ['proposals', filters, limit, offset],
     queryFn: () => proposalsApi.getAll(filters, limit, offset),
-    staleTime: 30000,
+    staleTime: 10000, // Réduire à 10 secondes pour des données plus fraîches
+    refetchInterval: 30000, // Auto-refresh toutes les 30 secondes
+    refetchOnWindowFocus: true, // Rafraîchir quand l'utilisateur revient sur l'onglet
   })
 }
 
@@ -726,6 +730,58 @@ export const useUpdateLogs = (id: string) => {
   })
 }
 
+export const useBulkDeleteUpdates = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (ids: string[]) => updatesApi.bulkDelete(ids),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      enqueueSnackbar(
+        response.message || `${response.data.deletedCount} mise(s) à jour supprimée(s)`,
+        { variant: 'success' }
+      )
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la suppression en masse',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useBulkApplyUpdates = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (ids: string[]) => updatesApi.bulkApply(ids),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+      const { successful, failed } = response.data
+      if (failed.length === 0) {
+        enqueueSnackbar(
+          response.message || `${successful.length} mise(s) à jour appliquée(s)`,
+          { variant: 'success' }
+        )
+      } else {
+        enqueueSnackbar(
+          `${successful.length} appliquée(s), ${failed.length} échec(s)`,
+          { variant: 'warning' }
+        )
+      }
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de l\'application en masse',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 // Cache hooks
 export const useEvents = (filters: { limit?: number; search?: string } = {}) => {
   return useQuery({
@@ -740,7 +796,7 @@ export const useEditions = (filters: { eventId?: string; limit?: number } = {}) 
     queryKey: ['cache', 'editions', filters],
     queryFn: () => cacheApi.getEditions(filters),
     staleTime: 300000, // 5 minutes
-    enabled: !filters.eventId || !!filters.eventId, // Only run if eventId is provided or no eventId filter
+    enabled: !!filters.eventId, // Only run if eventId is provided
   })
 }
 
@@ -749,7 +805,7 @@ export const useRaces = (filters: { editionId?: string; limit?: number } = {}) =
     queryKey: ['cache', 'races', filters],
     queryFn: () => cacheApi.getRaces(filters),
     staleTime: 300000, // 5 minutes
-    enabled: !filters.editionId || !!filters.editionId, // Only run if editionId is provided or no editionId filter
+    enabled: !!filters.editionId, // Only run if editionId is provided
   })
 }
 
@@ -767,7 +823,7 @@ export const useMilesRepublicEditions = (filters: { eventId?: string; limit?: nu
     queryKey: ['miles-republic', 'editions', filters],
     queryFn: () => cacheApi.getMilesRepublicEditions(filters),
     staleTime: 60000, // 1 minute
-    enabled: !filters.eventId || !!filters.eventId,
+    enabled: !!filters.eventId, // Only enable when eventId is provided
   })
 }
 
@@ -776,6 +832,6 @@ export const useMilesRepublicRaces = (filters: { editionId?: string; limit?: num
     queryKey: ['miles-republic', 'races', filters],
     queryFn: () => cacheApi.getMilesRepublicRaces(filters),
     staleTime: 60000, // 1 minute
-    enabled: !filters.editionId || !!filters.editionId,
+    enabled: !!filters.editionId, // Only enable when editionId is provided
   })
 }
