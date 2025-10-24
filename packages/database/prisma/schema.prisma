@@ -78,6 +78,11 @@ model Proposal {
   changes       Json
   justification Json
   confidence    Float?
+  // Modifications utilisateur
+  userModifiedChanges Json?
+  modificationReason  String?
+  modifiedBy          String?
+  modifiedAt          DateTime?
   // Champs de contexte pour affichage
   eventName     String?
   eventCity     String?

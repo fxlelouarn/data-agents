@@ -48,6 +48,7 @@ const ProposalDetail: React.FC = () => {
   // Hooks MUST be called before any conditional returns
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
   
   // Use the proposal logic hook
   const {
@@ -155,6 +156,19 @@ const ProposalDetail: React.FC = () => {
     }
   }, [proposalData, updateProposalMutation])
 
+  const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
+    setUserModifiedChanges(prev => ({
+      ...prev,
+      [fieldName]: newValue
+    }))
+    
+    // Aussi mettre à jour dans selectedChanges
+    setSelectedChanges(prev => ({
+      ...prev,
+      [fieldName]: newValue
+    }))
+  }
+  
   const handleApproveAll = React.useCallback(async () => {
     try {
       // Construire les changements appliqués en mergant les changements avec les valeurs sélectionnées
@@ -169,12 +183,15 @@ const ProposalDetail: React.FC = () => {
         id: proposalData!.data!.id,
         status: 'APPROVED',
         reviewedBy: 'Utilisateur',
-        appliedChanges: changesToApprove
+        appliedChanges: changesToApprove,
+        userModifiedChanges: Object.keys(userModifiedChanges).length > 0 ? userModifiedChanges : undefined,
+        modificationReason: 'Modifications manuelles appliquées',
+        modifiedBy: 'Utilisateur'
       })
     } catch (error) {
       console.error('Error approving proposal:', error)
     }
-  }, [proposalData, selectedChanges, updateProposalMutation])
+  }, [proposalData, selectedChanges, userModifiedChanges, updateProposalMutation])
 
   const handleRejectAll = React.useCallback(async () => {
     try {
@@ -441,7 +458,7 @@ const ProposalDetail: React.FC = () => {
           )}
           
           <ChangesTable
-            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'édition'}
+            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\u00e9dition'}
             changes={consolidatedChanges}
             isNewEvent={isNewEvent}
             selectedChanges={selectedChanges}
@@ -455,6 +472,8 @@ const ProposalDetail: React.FC = () => {
               delete newSelected[fieldName]
               setSelectedChanges(newSelected)
             }}
+            onFieldModify={handleFieldModify}
+            userModifiedChanges={userModifiedChanges}
             disabled={safeProposal.status !== 'PENDING'}
             actions={safeProposal.status === 'PENDING' ? (
               <Box sx={{ display: 'flex', gap: 1 }}>

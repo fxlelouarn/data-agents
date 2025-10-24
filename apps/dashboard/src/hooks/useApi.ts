@@ -225,13 +225,19 @@ export const useUpdateProposal = () => {
       id, 
       status, 
       reviewedBy, 
-      appliedChanges 
+      appliedChanges,
+      userModifiedChanges,
+      modificationReason,
+      modifiedBy
     }: { 
       id: string
       status?: string
       reviewedBy?: string
       appliedChanges?: Record<string, any>
-    }) => proposalsApi.update(id, { status, reviewedBy, appliedChanges }),
+      userModifiedChanges?: Record<string, any>
+      modificationReason?: string
+      modifiedBy?: string
+    }) => proposalsApi.update(id, { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy }),
     onSuccess: (response, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['proposals'] })
       queryClient.invalidateQueries({ queryKey: ['proposals', id] })

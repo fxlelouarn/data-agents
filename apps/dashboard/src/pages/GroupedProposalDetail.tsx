@@ -36,6 +36,7 @@ const GroupedProposalDetail: React.FC = () => {
   const navigate = useNavigate()
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
+  const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
   
   const { data: proposalsData, isLoading } = useProposals({})
   const updateProposalMutation = useUpdateProposal()
@@ -55,6 +56,20 @@ const GroupedProposalDetail: React.FC = () => {
   // Gérer la sélection d'une valeur dans le dropdown (pas d'approbation)
   const handleSelectField = (fieldName: string, selectedValue: any) => {
     setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+  }
+  
+  // Gérer les modifications manuelles
+  const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
+    setUserModifiedChanges(prev => ({
+      ...prev,
+      [fieldName]: newValue
+    }))
+    
+    // Aussi mettre à jour dans selectedChanges
+    setSelectedChanges(prev => ({
+      ...prev,
+      [fieldName]: newValue
+    }))
   }
   
   // Gérer l'approbation du champ (bouton "Approuver")
@@ -272,7 +287,10 @@ const GroupedProposalDetail: React.FC = () => {
               id: option.proposalId,
               status: 'APPROVED',
               reviewedBy: 'Utilisateur',
-              appliedChanges: { [fieldName]: selectedValue }
+              appliedChanges: { [fieldName]: selectedValue },
+              userModifiedChanges: Object.keys(userModifiedChanges).length > 0 ? userModifiedChanges : undefined,
+              modificationReason: 'Modifications manuelles appliquées',
+              modifiedBy: 'Utilisateur'
             })
           } else {
             // Rejeter les autres propositions du même champ
@@ -379,12 +397,14 @@ const GroupedProposalDetail: React.FC = () => {
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
           <ChangesTable
-            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'édition'}
+            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\u00e9dition'}
             changes={consolidatedChanges}
             isNewEvent={isNewEvent}
             selectedChanges={selectedChanges}
             onFieldSelect={handleSelectField}
             onFieldApprove={handleApproveField}
+            onFieldModify={handleFieldModify}
+            userModifiedChanges={userModifiedChanges}
             formatValue={formatValue}
             formatAgentsList={formatAgentsList}
             disabled={!allPending || updateProposalMutation.isPending || bulkArchiveMutation.isPending}

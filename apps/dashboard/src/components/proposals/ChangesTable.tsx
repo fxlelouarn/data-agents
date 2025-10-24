@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Typography,
@@ -25,8 +25,10 @@ import {
   Speed as DistanceIcon,
   Info as InfoIcon,
   Groups as GroupsIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  EditNote as EditNoteIcon
 } from '@mui/icons-material'
+import FieldEditor from './FieldEditor'
 
 interface ChangeOption {
   proposalId: string
@@ -50,6 +52,8 @@ interface ChangesTableProps {
   onFieldSelect?: (fieldName: string, value: any) => void
   onFieldApprove: (fieldName: string, value: any) => void
   onFieldReject?: (fieldName: string) => void
+  onFieldModify?: (fieldName: string, newValue: any, reason?: string) => void
+  userModifiedChanges?: Record<string, any>
   formatValue: (value: any, isSimple?: boolean) => React.ReactNode
   formatAgentsList: (agents: Array<{ agentName: string, confidence: number }>) => string
   disabled?: boolean
@@ -64,11 +68,38 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
   onFieldSelect,
   onFieldApprove,
   onFieldReject,
+  onFieldModify,
+  userModifiedChanges = {},
   formatValue,
   formatAgentsList,
   disabled = false,
   actions
 }) => {
+  const [editingField, setEditingField] = useState<string | null>(null)
+  
+  const handleStartEdit = (fieldName: string) => {
+    if (!disabled && onFieldModify) {
+      setEditingField(fieldName)
+    }
+  }
+  
+  const handleSaveEdit = (fieldName: string, newValue: any) => {
+    if (onFieldModify) {
+      onFieldModify(fieldName, newValue, 'Modifié manuellement')
+    }
+    setEditingField(null)
+  }
+  
+  const handleCancelEdit = () => {
+    setEditingField(null)
+  }
+  
+  const getFieldType = (fieldName: string): 'text' | 'number' | 'date' | 'datetime-local' => {
+    if (fieldName.includes('Date')) return 'datetime-local'
+    if (fieldName.includes('Distance') || fieldName.includes('Elevation') || fieldName.includes('price')) return 'number'
+    return 'text'
+  }
+  
   const getFieldIcon = (fieldName: string) => {
     if (fieldName.includes('Date')) return <ScheduleIcon fontSize="small" />
     if (fieldName === 'location') return <LocationIcon fontSize="small" />
@@ -139,58 +170,94 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
           </TableCell>
         )}
         <TableCell sx={{ width: isNewEvent ? '40%' : '35%', minWidth: 200 }}>
-          {hasMultipleValues ? (
-            <FormControl size="small" sx={{ minWidth: 200, maxWidth: '100%', width: '100%' }}>
-              <Select
-                value={selectedChanges[fieldName] !== undefined ? JSON.stringify(selectedChanges[fieldName]) : (sortedOptions.length > 0 ? JSON.stringify(sortedOptions[0].value) : '')}
-                onChange={(e) => {
-                  try {
-                    const parsedValue = JSON.parse(e.target.value as string)
-                    if (onFieldSelect) {
-                      onFieldSelect(fieldName, parsedValue)
-                    }
-                  } catch (error) {
-                    console.error('Error parsing selected value:', error)
-                  }
-                }}
-              >
-                {sortedOptions.map(({ value, supportingAgents, hasConsensus }, index) => (
-                  <MenuItem key={index} value={JSON.stringify(value)}>
-                    <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
-                      <Box sx={{ flexGrow: 1 }}>
-                        <Typography variant="body2" sx={{ fontWeight: hasConsensus ? 'bold' : 'normal' }}>
-                          {formatValue(value, true)}
-                        </Typography>
-                        <Typography variant="caption" color="textSecondary">
-                          {formatAgentsList(supportingAgents)}
-                        </Typography>
-                      </Box>
-                      {hasConsensus && (
-                        <Chip
-                          size="small"
-                          label={`${supportingAgents.length} agents`}
-                          color="success"
-                          variant="filled"
-                          sx={{ ml: 1, fontSize: '0.75rem', height: '20px' }}
-                        />
-                      )}
-                    </Box>
-                  </MenuItem>
-                ))}
-              </Select>
-            </FormControl>
+          {editingField === fieldName ? (
+            <FieldEditor
+              fieldName={fieldName}
+              initialValue={selectedValue}
+              fieldType={getFieldType(fieldName)}
+              onSave={handleSaveEdit}
+              onCancel={handleCancelEdit}
+            />
           ) : (
-            <Box
-              sx={{ 
-                color: change.options[0].proposedValue !== change.currentValue ? 'primary.main' : 'text.secondary',
-                fontWeight: change.options[0].proposedValue !== change.currentValue ? 500 : 400,
-                maxWidth: '100%'
-              }}
-            >
-              {formatValue(change.options[0].proposedValue)}
+            <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+              {hasMultipleValues ? (
+                <FormControl size="small" sx={{ minWidth: 200, maxWidth: '100%', width: '100%' }}>
+                  <Select
+                    value={selectedChanges[fieldName] !== undefined ? JSON.stringify(selectedChanges[fieldName]) : (sortedOptions.length > 0 ? JSON.stringify(sortedOptions[0].value) : '')}
+                    onChange={(e) => {
+                      try {
+                        const parsedValue = JSON.parse(e.target.value as string)
+                        if (onFieldSelect) {
+                          onFieldSelect(fieldName, parsedValue)
+                        }
+                      } catch (error) {
+                        console.error('Error parsing selected value:', error)
+                      }
+                    }}
+                    disabled={disabled}
+                  >
+                    {sortedOptions.map(({ value, supportingAgents, hasConsensus }, index) => (
+                      <MenuItem key={index} value={JSON.stringify(value)}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
+                          <Box sx={{ flexGrow: 1 }}>
+                            <Typography variant="body2" sx={{ fontWeight: hasConsensus ? 'bold' : 'normal' }}>
+                              {formatValue(value, true)}
+                            </Typography>
+                            <Typography variant="caption" color="textSecondary">
+                              {formatAgentsList(supportingAgents)}
+                            </Typography>
+                          </Box>
+                          {hasConsensus && (
+                            <Chip
+                              size="small"
+                              label={`${supportingAgents.length} agents`}
+                              color="success"
+                              variant="filled"
+                              sx={{ ml: 1, fontSize: '0.75rem', height: '20px' }}
+                            />
+                          )}
+                        </Box>
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              ) : (
+                <Box
+                  sx={{ 
+                    color: change.options[0].proposedValue !== change.currentValue ? 'primary.main' : 'text.secondary',
+                    fontWeight: change.options[0].proposedValue !== change.currentValue ? 500 : 400,
+                    maxWidth: '100%'
+                  }}
+                >
+                  {formatValue(change.options[0].proposedValue)}
+                </Box>
+              )}
+              
+              {/* Badge si modifié manuellement */}
+              {userModifiedChanges[fieldName] && (
+                <Chip
+                  icon={<EditNoteIcon />}
+                  label="Modifié"
+                  size="small"
+                  color="warning"
+                  variant="outlined"
+                />
+              )}
+              
+              {/* Bouton modifier */}
+              {onFieldModify && !disabled && (
+                <Tooltip title="Modifier manuellement">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleStartEdit(fieldName)}
+                  >
+                    <EditIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
             </Box>
-          )
-        }</TableCell>
+          )}
+        </TableCell>
         <TableCell sx={{ width: '15%', minWidth: 100 }}>
           <Typography variant="body2" color={selectedOption?.hasConsensus ? 'success.main' : 'text.primary'}>
             {confidenceDisplay}

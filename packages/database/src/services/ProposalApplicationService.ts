@@ -64,6 +64,12 @@ export class ProposalApplicationService implements IProposalApplicationService {
         }]
       }
     }
+    
+    // Prioriser userModifiedChanges sur changes
+    const finalChanges = {
+      ...(proposal.changes as Record<string, any>),
+      ...(proposal.userModifiedChanges ? (proposal.userModifiedChanges as Record<string, any>) : {})
+    }
 
     try {
       // Si dryRun, retourner sans appliquer
@@ -78,25 +84,25 @@ export class ProposalApplicationService implements IProposalApplicationService {
       // Appliquer selon le type de proposition
       switch (proposal.type) {
         case 'NEW_EVENT':
-          return await this.applyNewEvent(proposal.changes, selectedChanges, options)
+          return await this.applyNewEvent(finalChanges, selectedChanges, options)
         
         case 'EVENT_UPDATE':
           if (!proposal.eventId) {
             throw new Error('EventId manquant pour EVENT_UPDATE')
           }
-          return await this.applyEventUpdate(proposal.eventId, proposal.changes, selectedChanges, options)
+          return await this.applyEventUpdate(proposal.eventId, finalChanges, selectedChanges, options)
         
         case 'EDITION_UPDATE':
           if (!proposal.editionId) {
             throw new Error('EditionId manquant pour EDITION_UPDATE')
           }
-          return await this.applyEditionUpdate(proposal.editionId, proposal.changes, selectedChanges, options)
+          return await this.applyEditionUpdate(proposal.editionId, finalChanges, selectedChanges, options)
         
         case 'RACE_UPDATE':
           if (!proposal.raceId) {
             throw new Error('RaceId manquant pour RACE_UPDATE')
           }
-          return await this.applyRaceUpdate(proposal.raceId, proposal.changes, selectedChanges, options)
+          return await this.applyRaceUpdate(proposal.raceId, finalChanges, selectedChanges, options)
         
         default:
           return {

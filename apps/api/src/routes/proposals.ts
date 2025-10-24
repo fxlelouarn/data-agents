@@ -244,10 +244,13 @@ router.put('/:id', [
   body('status').optional().isIn(['PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED']),
   body('reviewedBy').optional().isString(),
   body('appliedChanges').optional().isObject(),
+  body('userModifiedChanges').optional().isObject(),
+  body('modificationReason').optional().isString(),
+  body('modifiedBy').optional().isString(),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
-  const { status, reviewedBy, appliedChanges } = req.body
+  const { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy } = req.body
 
   const updates: any = {}
   
@@ -257,6 +260,14 @@ router.put('/:id', [
     if (reviewedBy) {
       updates.reviewedBy = reviewedBy
     }
+  }
+  
+  // Gérer les modifications utilisateur
+  if (userModifiedChanges) {
+    updates.userModifiedChanges = userModifiedChanges
+    updates.modificationReason = modificationReason
+    updates.modifiedBy = modifiedBy || reviewedBy
+    updates.modifiedAt = new Date()
   }
 
   const proposal = await db.updateProposal(id, updates)

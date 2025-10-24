@@ -82,6 +82,10 @@ export class ProposalService implements IProposalService {
     status?: string
     reviewedAt?: Date
     reviewedBy?: string
+    userModifiedChanges?: any
+    modificationReason?: string
+    modifiedBy?: string
+    modifiedAt?: Date
   }) {
     return this.prisma.proposal.update({
       where: { id },

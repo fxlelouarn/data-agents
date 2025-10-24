@@ -106,7 +106,10 @@ export const proposalsApi = {
     data: { 
       status?: string; 
       reviewedBy?: string; 
-      appliedChanges?: Record<string, any> 
+      appliedChanges?: Record<string, any>;
+      userModifiedChanges?: Record<string, any>;
+      modificationReason?: string;
+      modifiedBy?: string;
     }
   ): Promise<ApiResponse<Proposal>> =>
     api.put(`/proposals/${id}`, data).then(res => res.data),
