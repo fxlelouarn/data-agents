@@ -423,6 +423,80 @@ router.post('/:id/apply', [
   }
 }))
 
+// POST /api/proposals/:id/unapprove - Cancel an approval and revert to PENDING
+router.post('/:id/unapprove', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id },
+    include: {
+      applications: true,
+      agent: true
+    }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  if (proposal.status !== 'APPROVED') {
+    throw createError(400, 'Only approved proposals can be unapproved', 'PROPOSAL_NOT_APPROVED')
+  }
+
+  // Vérifier si l'application a déjà été appliquée
+  const appliedApplication = proposal.applications.find(app => app.status === 'APPLIED')
+  if (appliedApplication) {
+    throw createError(400, 'Cannot unapprove a proposal that has already been applied', 'PROPOSAL_ALREADY_APPLIED')
+  }
+
+  // Supprimer les applications PENDING
+  const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+  
+  await db.prisma.$transaction(async (tx) => {
+    // Supprimer les applications en attente
+    if (pendingApplications.length > 0) {
+      await tx.proposalApplication.deleteMany({
+        where: {
+          id: { in: pendingApplications.map(app => app.id) }
+        }
+      })
+    }
+
+    // Remettre la proposition à PENDING
+    await tx.proposal.update({
+      where: { id },
+      data: {
+        status: 'PENDING',
+        reviewedAt: null,
+        reviewedBy: null
+      }
+    })
+  })
+
+  await db.createLog({
+    agentId: proposal.agentId,
+    level: 'INFO',
+    message: `Proposal ${id} approval cancelled - reverted to PENDING`,
+    data: { 
+      proposalId: id,
+      deletedApplications: pendingApplications.length
+    }
+  })
+
+  res.json({
+    success: true,
+    message: 'Proposal approval cancelled successfully',
+    data: {
+      proposalId: id,
+      newStatus: 'PENDING',
+      deletedApplications: pendingApplications.length
+    }
+  })
+}))
+
 // POST /api/proposals/:id/preview - Preview what changes would be applied
 router.post('/:id/preview', [
   param('id').isString().notEmpty(),

@@ -9,7 +9,11 @@ import {
 import { 
   Person as PersonIcon, 
   Schedule as ScheduleIcon,
-  Info as InfoIcon
+  Info as InfoIcon,
+  CheckCircle as CheckIcon,
+  Cancel as CancelIcon,
+  HourglassEmpty as PendingIcon,
+  Archive as ArchiveIcon
 } from '@mui/icons-material'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
@@ -23,6 +27,7 @@ interface Proposal {
   confidence: number
   createdAt: string
   type: string
+  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
 }
 
 interface AgentInfoSectionProps {
@@ -42,6 +47,30 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
     }
   }
 
+  const getStatusIcon = (status: string) => {
+    switch (status) {
+      case 'APPROVED':
+        return <CheckIcon sx={{ fontSize: '1rem', color: 'success.main' }} />
+      case 'REJECTED':
+        return <CancelIcon sx={{ fontSize: '1rem', color: 'error.main' }} />
+      case 'ARCHIVED':
+        return <ArchiveIcon sx={{ fontSize: '1rem', color: 'text.disabled' }} />
+      case 'PENDING':
+      default:
+        return <PendingIcon sx={{ fontSize: '1rem', color: 'warning.main' }} />
+    }
+  }
+
+  const getStatusLabel = (status: string) => {
+    switch (status) {
+      case 'APPROVED': return 'Approuvée'
+      case 'REJECTED': return 'Rejetée'
+      case 'ARCHIVED': return 'Archivée'
+      case 'PENDING': return 'En attente'
+      default: return status
+    }
+  }
+
   return (
     <Card sx={{ mb: 2 }}>
       <CardContent>
@@ -53,13 +82,20 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
         {proposals.map((proposal, index) => (
           <Box key={proposal.id} sx={{ mb: 1.5, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-              <Typography variant="subtitle2">
-                Proposition {index + 1}
-              </Typography>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+                {getStatusIcon(proposal.status)}
+                <Typography variant="subtitle2">
+                  Proposition {index + 1}
+                </Typography>
+              </Box>
               <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
                 {`${Math.round((proposal.confidence || 0) * 100)}%`}
               </Typography>
             </Box>
+            
+            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5, ml: 3 }}>
+              Statut : {getStatusLabel(proposal.status)}
+            </Typography>
             
             <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
               <PersonIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />

@@ -103,3 +103,42 @@ Les agents sont des processus qui :
 - Proposent des modifications aux données
 - S'exécutent selon un calendrier défini
 - Peuvent être activés/désactivés depuis l'interface d'administration
+
+## Changelog
+
+### 2025-01-25 - Annulation d'approbation des propositions
+
+**Nouvelle fonctionnalité :** Possibilité d'annuler l'approbation d'une proposition avant son application.
+
+#### Backend
+- Nouvel endpoint `POST /api/proposals/:id/unapprove`
+  - Vérifie que la proposition est `APPROVED`
+  - Vérifie qu'elle n'a pas été appliquée (`status ≠ APPLIED`)
+  - Supprime les `ProposalApplication` en attente
+  - Remet la proposition au statut `PENDING`
+
+#### Frontend - Dashboard
+- **Navigation améliorée**
+  - Bouton "Annuler l'approbation" ajouté dans `ProposalNavigation`
+  - Visible uniquement pour les propositions `APPROVED`
+  - Positionné à droite, à côté du bouton "Archiver"
+
+- **Icônes de statut** dans les vues groupées
+  - ✅ Check vert pour `APPROVED`
+  - ❌ Croix rouge pour `REJECTED`
+  - ⏳ Sablier orange pour `PENDING`
+  - 📦 Archive gris pour `ARCHIVED`
+  - Label textuel du statut affiché pour chaque proposition
+
+- **Hooks et services**
+  - `useUnapproveProposal()` dans `useApi.ts`
+  - `proposalsApi.unapprove(id)` dans `api.ts`
+  - Gestion des notifications et invalidation du cache
+
+#### Sécurité
+- ❌ Impossible d'annuler une approbation déjà appliquée
+- ✅ Transaction atomique pour garantir la cohérence
+- 📋 Logging complet pour audit
+
+#### Documentation
+- Mise à jour de `docs/PROPOSAL-APPLICATION.md`

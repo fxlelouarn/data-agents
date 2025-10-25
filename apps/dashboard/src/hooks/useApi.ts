@@ -331,6 +331,26 @@ export const useBulkArchiveProposals = () => {
   })
 }
 
+export const useUnapproveProposal = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => proposalsApi.unapprove(id),
+    onSuccess: (response, id) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['proposals', id] })
+      enqueueSnackbar(response.message || 'Approbation annulée', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || "Erreur lors de l'annulation de l'approbation",
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useCreateManualProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

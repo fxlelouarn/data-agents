@@ -17,7 +17,12 @@ Quand une proposition est marquée comme `APPROVED` via l'API, le service appliq
     "name": "Marathon de Paris 2024",
     "startDate": "2024-04-14T08:00:00Z",
     "price": 85.00
-  }
+  },
+  "userModifiedChanges": {  // ✨ Modifications manuelles utilisateur
+    "startDate": "2024-04-15T08:00:00Z"  // Override la valeur agent
+  },
+  "modificationReason": "Vérifié sur le site officiel",
+  "modifiedBy": "user@example.com"
 }
 ```
 
@@ -37,7 +42,34 @@ Vous pouvez appliquer une proposition manuellement via l'endpoint dédié :
 }
 ```
 
-### 3. Prévisualisation
+### 3. Annulation d'approbation
+
+Vous pouvez annuler l'approbation d'une proposition si elle n'a pas encore été appliquée :
+
+```typescript
+// POST /api/proposals/:id/unapprove
+```
+
+**Conditions :**
+- La proposition doit être au statut `APPROVED`
+- Aucune application ne doit être au statut `APPLIED`
+- Les applications `PENDING` seront supprimées
+- La proposition repassera au statut `PENDING`
+
+Réponse :
+```json
+{
+  "success": true,
+  "message": "Proposal approval cancelled successfully",
+  "data": {
+    "proposalId": "clxxx...",
+    "newStatus": "PENDING",
+    "deletedApplications": 1
+  }
+}
+```
+
+### 4. Prévisualisation
 
 Avant d'appliquer, vous pouvez prévisualiser les changements :
 
@@ -126,6 +158,54 @@ Met à jour une course spécifique.
 - Dénivelés : `runPositiveElevation`, `runNegativeElevation`, etc.
 - `categoryLevel1`, `categoryLevel2`, `distanceCategory`
 
+## Modifications Utilisateur
+
+### Principe
+
+Les utilisateurs peuvent **modifier manuellement** les valeurs proposées par les agents avant l'approbation. Ces modifications sont enregistrées séparément et **prioritaires** lors de l'application.
+
+### Flux de modification
+
+```
+Agent propose: startDate = "2024-04-14"
+     ↓
+User vérifie et modifie: startDate = "2024-04-15"
+     ↓
+Sauvegarde:
+  - changes: { startDate: "2024-04-14" }          // Proposition originale agent
+  - userModifiedChanges: { startDate: "2024-04-15" } // Modification utilisateur
+     ↓
+Application:
+  finalChanges = { ...changes, ...userModifiedChanges }
+  → Résultat: "2024-04-15" est appliqué
+```
+
+### Champs de traçabilité
+
+```prisma
+model Proposal {
+  changes             Json      // Propositions agent originales
+  userModifiedChanges Json?     // Modifications utilisateur
+  modificationReason  String?   // Justification de la modification
+  modifiedBy          String?   // Qui a modifié
+  modifiedAt          DateTime? // Quand modifié
+}
+```
+
+### Interface utilisateur
+
+Dans le dashboard React :
+1. **Bouton "✏️ Modifier"** : À côté de chaque valeur proposée
+2. **Édition inline** : Champ adapté au type (date/nombre/texte)
+3. **Badge "Modifié"** : Visible sur les valeurs modifiées manuellement
+4. **Validation** : ✓ Enregistrer ou ✕ Annuler
+
+### Types de champs éditables
+
+- **Dates** : `datetime-local` picker pour `startDate`, `endDate`, etc.
+- **Nombres** : Input numérique pour `price`, `runDistance`, `runPositiveElevation`, etc.
+- **Texte** : Input texte pour `name`, `city`, etc.
+
 ## Gestion des Erreurs
 
 ### Logging Automatique
@@ -192,6 +272,7 @@ Le service utilise des transactions Prisma pour garantir la cohérence des donn�
 
 - Validation des types de propositions
 - Vérification du statut `APPROVED` (sauf avec `force: true`)
-- Transactions atomiques
+- Impossibilité d'annuler une approbation déjà appliquée
+- Transactions atomiques pour garantir la cohérence
 - Logging complet pour audit
 - Gestion des erreurs avec messages explicites

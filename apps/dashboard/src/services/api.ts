@@ -136,6 +136,9 @@ export const proposalsApi = {
 
   bulkDelete: (proposalIds: string[], reviewedBy?: string): Promise<ApiResponse<{ deleted: number }>> =>
     api.post('/proposals/bulk-delete', { proposalIds, reviewedBy }).then(res => res.data),
+
+  unapprove: (id: string): Promise<ApiResponse<{ proposalId: string; newStatus: string; deletedApplications: number }>> =>
+    api.post(`/proposals/${id}/unapprove`).then(res => res.data),
 }
 
 // Runs API

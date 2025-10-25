@@ -29,7 +29,7 @@ import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
-import { useProposals, useUpdateProposal, useBulkArchiveProposals } from '@/hooks/useApi'
+import { useProposals, useUpdateProposal, useBulkArchiveProposals, useUnapproveProposal } from '@/hooks/useApi'
 
 const GroupedProposalDetail: React.FC = () => {
   const { groupKey } = useParams<{ groupKey: string }>()
@@ -41,6 +41,7 @@ const GroupedProposalDetail: React.FC = () => {
   const { data: proposalsData, isLoading } = useProposals({})
   const updateProposalMutation = useUpdateProposal()
   const bulkArchiveMutation = useBulkArchiveProposals()
+  const unapproveProposalMutation = useUnapproveProposal()
   
   const {
     selectedChanges,
@@ -150,12 +151,51 @@ const GroupedProposalDetail: React.FC = () => {
       }
     })
   }, [proposalsData?.data, groupKey])
+  
+  // Extraire la timezone de l'édition (prend en compte les modifications utilisateur)
+  const editionTimezone = useMemo(() => {
+    // Si l'utilisateur a modifié la timezone, l'utiliser
+    if (selectedChanges.timeZone) {
+      return selectedChanges.timeZone
+    }
+    
+    if (groupProposals.length === 0) return 'Europe/Paris'
+    const firstProposal = groupProposals[0]
+    if (!firstProposal?.changes) return 'Europe/Paris'
+    const changes = firstProposal.changes as any
+    // Chercher le timeZone dans les changements
+    if (changes.timeZone) {
+      if (typeof changes.timeZone === 'string') return changes.timeZone
+      if (typeof changes.timeZone === 'object' && 'proposed' in changes.timeZone) return changes.timeZone.proposed
+      if (typeof changes.timeZone === 'object' && 'new' in changes.timeZone) return changes.timeZone.new
+      if (typeof changes.timeZone === 'object' && 'current' in changes.timeZone) return changes.timeZone.current
+    }
+    return 'Europe/Paris'
+  }, [groupProposals, selectedChanges.timeZone])
 
   // Consolider les changements en utilisant le hook
-  const consolidatedChanges = useMemo(() => 
-    consolidateChanges(groupProposals, isNewEvent),
-    [groupProposals, isNewEvent, consolidateChanges]
-  )
+  const consolidatedChanges = useMemo(() => {
+    const changes = consolidateChanges(groupProposals, isNewEvent)
+    
+    // Ajouter le champ timeZone comme premier champ pour visibilité
+    const hasTimezone = changes.some(c => c.field === 'timeZone')
+    if (!hasTimezone && groupProposals.length > 0) {
+      const firstProposal = groupProposals[0]
+      changes.unshift({
+        field: 'timeZone',
+        options: [{
+          proposalId: firstProposal.id,
+          agentName: firstProposal.agent.name,
+          proposedValue: editionTimezone,
+          confidence: 1,
+          createdAt: firstProposal.createdAt
+        }],
+        currentValue: editionTimezone
+      })
+    }
+    
+    return changes
+  }, [groupProposals, isNewEvent, consolidateChanges, editionTimezone])
   
   const consolidatedRaceChanges = useMemo(() => 
     consolidateRaceChanges(groupProposals),
@@ -336,6 +376,18 @@ const GroupedProposalDetail: React.FC = () => {
     }
   }
 
+  const handleUnapproveAll = async () => {
+    try {
+      // Annuler l'approbation pour toutes les propositions APPROVED du groupe
+      const approvedProposals = groupProposals.filter(p => p.status === 'APPROVED')
+      for (const proposal of approvedProposals) {
+        await unapproveProposalMutation.mutateAsync(proposal.id)
+      }
+    } catch (error) {
+      console.error('Error unapproving proposals:', error)
+    }
+  }
+
 
 
   // Calculs pour l'interface
@@ -345,6 +397,8 @@ const GroupedProposalDetail: React.FC = () => {
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
   const allPending = groupProposals.every(p => p.status === 'PENDING')
+  const hasApproved = groupProposals.some(p => p.status === 'APPROVED')
+  const allApproved = groupProposals.every(p => p.status === 'APPROVED')
 
   if (isLoading) return <LinearProgress />
 
@@ -369,7 +423,9 @@ const GroupedProposalDetail: React.FC = () => {
         }}
         showArchiveButton={allPending}
         onArchive={() => setArchiveDialogOpen(true)}
-        disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
+        showUnapproveButton={hasApproved}
+        onUnapprove={handleUnapproveAll}
+        disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || unapproveProposalMutation.isPending}
         showBackButton={true}
       />
       
@@ -397,7 +453,7 @@ const GroupedProposalDetail: React.FC = () => {
       <Grid container spacing={3}>
         <Grid item xs={12} md={8}>
           <ChangesTable
-            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\u00e9dition'}
+            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\\u00e9dition'}
             changes={consolidatedChanges}
             isNewEvent={isNewEvent}
             selectedChanges={selectedChanges}
@@ -407,6 +463,7 @@ const GroupedProposalDetail: React.FC = () => {
             userModifiedChanges={userModifiedChanges}
             formatValue={formatValue}
             formatAgentsList={formatAgentsList}
+            timezone={editionTimezone}
             disabled={!allPending || updateProposalMutation.isPending || bulkArchiveMutation.isPending}
             actions={allPending ? (
               <Box sx={{ display: 'flex', gap: 1 }}>
@@ -437,6 +494,7 @@ const GroupedProposalDetail: React.FC = () => {
           <RaceChangesSection
             raceChanges={consolidatedRaceChangesWithCascade}
             formatValue={formatValue}
+            timezone={editionTimezone}
             onRaceApprove={handleApproveRace}
             onApproveAll={allPending ? handleApproveAllRaces : undefined}
             onRejectAll={allPending ? handleRejectAllRaces : undefined}
@@ -448,7 +506,7 @@ const GroupedProposalDetail: React.FC = () => {
         </Grid>
         
         <Grid item xs={12} md={4}>
-          <AgentInfoSection proposals={groupProposals.map(p => ({ ...p, confidence: p.confidence || 0 }))} />
+          <AgentInfoSection proposals={groupProposals.map(p => ({ ...p, confidence: p.confidence || 0, status: p.status }))} />
           
           {/* URLs de l'événement */}
           {firstProposal && (

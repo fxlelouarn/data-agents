@@ -5,7 +5,8 @@ import {
 } from '@mui/material'
 import {
   ChevronLeft as ChevronLeftIcon,
-  Archive as ArchiveIcon
+  Archive as ArchiveIcon,
+  Undo as UndoIcon
 } from '@mui/icons-material'
 
 interface ProposalNavigationProps {
@@ -19,6 +20,8 @@ interface ProposalNavigationProps {
   // Actions
   showArchiveButton?: boolean
   onArchive?: () => void
+  showUnapproveButton?: boolean
+  onUnapprove?: () => void
   disabled?: boolean
   // Bouton retour
   showBackButton?: boolean
@@ -29,6 +32,8 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   navigation,
   showArchiveButton = false,
   onArchive,
+  showUnapproveButton = false,
+  onUnapprove,
   disabled = false,
   showBackButton = true,
   onBack
@@ -78,17 +83,31 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
         )}
       </Box>
       
-      {showArchiveButton && onArchive && (
-        <Button
-          variant="outlined"
-          size="small"
-          startIcon={<ArchiveIcon />}
-          onClick={onArchive}
-          disabled={disabled}
-        >
-          Archiver
-        </Button>
-      )}
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        {showUnapproveButton && onUnapprove && (
+          <Button
+            variant="outlined"
+            color="warning"
+            size="small"
+            startIcon={<UndoIcon />}
+            onClick={onUnapprove}
+            disabled={disabled}
+          >
+            Annuler l'approbation
+          </Button>
+        )}
+        {showArchiveButton && onArchive && (
+          <Button
+            variant="outlined"
+            size="small"
+            startIcon={<ArchiveIcon />}
+            onClick={onArchive}
+            disabled={disabled}
+          >
+            Archiver
+          </Button>
+        )}
+      </Box>
     </Box>
   )
 }

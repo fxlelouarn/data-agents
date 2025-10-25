@@ -27,7 +27,7 @@ import {
   Facebook as FacebookIcon,
   Instagram as InstagramIcon,
 } from '@mui/icons-material'
-import { useProposal, useUpdateProposal, useProposals } from '@/hooks/useApi'
+import { useProposal, useUpdateProposal, useProposals, useUnapproveProposal } from '@/hooks/useApi'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useNavigate } from 'react-router-dom'
@@ -44,6 +44,7 @@ const ProposalDetail: React.FC = () => {
   const { data: proposalData, isLoading } = useProposal(id!)
   const { data: proposalsData } = useProposals()
   const updateProposalMutation = useUpdateProposal()
+  const unapproveProposalMutation = useUnapproveProposal()
   
   // Hooks MUST be called before any conditional returns
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
@@ -64,11 +65,48 @@ const ProposalDetail: React.FC = () => {
     setSelectedChanges
   } = useProposalLogic()
   
+  // Extraire la timezone de l'édition (prend en compte les modifications utilisateur)
+  const editionTimezone = useMemo(() => {
+    // Si l'utilisateur a modifié la timezone, l'utiliser
+    if (selectedChanges.timeZone) {
+      return selectedChanges.timeZone
+    }
+    
+    if (!proposalData?.data?.changes) return 'Europe/Paris'
+    const changes = proposalData.data.changes as any
+    // Chercher le timeZone dans les changements
+    if (changes.timeZone) {
+      if (typeof changes.timeZone === 'string') return changes.timeZone
+      if (typeof changes.timeZone === 'object' && 'proposed' in changes.timeZone) return changes.timeZone.proposed
+      if (typeof changes.timeZone === 'object' && 'new' in changes.timeZone) return changes.timeZone.new
+      if (typeof changes.timeZone === 'object' && 'current' in changes.timeZone) return changes.timeZone.current
+    }
+    return 'Europe/Paris'
+  }, [proposalData, selectedChanges.timeZone])
+  
   // Consolidate changes using the hook - always call hooks, handle null gracefully
   const consolidatedChanges = useMemo(() => {
     if (!proposalData?.data) return []
-    return consolidateChanges([proposalData.data], proposalData.data.type === 'NEW_EVENT')
-  }, [proposalData, consolidateChanges])
+    const changes = consolidateChanges([proposalData.data], proposalData.data.type === 'NEW_EVENT')
+    
+    // Ajouter le champ timeZone comme premier champ pour visibilité
+    const hasTimezone = changes.some(c => c.field === 'timeZone')
+    if (!hasTimezone) {
+      changes.unshift({
+        field: 'timeZone',
+        options: [{
+          proposalId: proposalData.data.id,
+          agentName: proposalData.data.agent.name,
+          proposedValue: editionTimezone,
+          confidence: 1,
+          createdAt: proposalData.data.createdAt
+        }],
+        currentValue: editionTimezone
+      })
+    }
+    
+    return changes
+  }, [proposalData, consolidateChanges, editionTimezone])
   
   const consolidatedRaceChanges = useMemo(() => {
     if (!proposalData?.data) return []
@@ -217,6 +255,14 @@ const ProposalDetail: React.FC = () => {
       console.error('Error archiving proposal:', error)
     }
   }, [proposalData, updateProposalMutation])
+
+  const handleUnapprove = React.useCallback(async () => {
+    try {
+      await unapproveProposalMutation.mutateAsync(proposalData!.data!.id)
+    } catch (error) {
+      console.error('Error unapproving proposal:', error)
+    }
+  }, [proposalData, unapproveProposalMutation])
 
   if (isLoading) return <LinearProgress />
 
@@ -414,7 +460,9 @@ const ProposalDetail: React.FC = () => {
         }}
         showArchiveButton={safeProposal.status === 'PENDING'}
         onArchive={() => setArchiveDialogOpen(true)}
-        disabled={updateProposalMutation.isPending}
+        showUnapproveButton={safeProposal.status === 'APPROVED'}
+        onUnapprove={handleUnapprove}
+        disabled={updateProposalMutation.isPending || unapproveProposalMutation.isPending}
       />
       
       {/* En-tête */}
@@ -458,12 +506,13 @@ const ProposalDetail: React.FC = () => {
           )}
           
           <ChangesTable
-            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\u00e9dition'}
+            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\\u00e9dition'}
             changes={consolidatedChanges}
             isNewEvent={isNewEvent}
             selectedChanges={selectedChanges}
             formatValue={formatValue}
             formatAgentsList={formatAgentsList}
+            timezone={editionTimezone}
             onFieldApprove={(fieldName: string, value: any) => {
               setSelectedChanges({ ...selectedChanges, [fieldName]: value })
             }}
@@ -504,6 +553,7 @@ const ProposalDetail: React.FC = () => {
           <RaceChangesSection
             raceChanges={consolidatedRaceChangesWithCascade}
             formatValue={formatValue}
+            timezone={editionTimezone}
             onRaceApprove={handleApproveRace}
             onApproveAll={safeProposal.status === 'PENDING' ? handleApproveAllRaces : undefined}
             onRejectAll={safeProposal.status === 'PENDING' ? handleRejectAllRaces : undefined}
