@@ -168,7 +168,9 @@ model AgentLog
   id, agentId, runId, level, message, data, timestamp
 
 model Proposal
-  id, type, status, agentId, eventId, editionId, raceId, changes, justification
+  id, type, status, agentId, eventId, editionId, raceId, 
+  changes, userModifiedChanges, modificationReason, modifiedBy, modifiedAt,
+  justification, confidence
 
 model DatabaseConnection
   id, name, type, host, port, database, username, password, ssl, isActive
