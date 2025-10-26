@@ -1,6 +1,7 @@
 import React, { useState } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 
 export interface ChangeOption {
   proposalId: string
@@ -38,7 +39,7 @@ export const useProposalLogic = () => {
   const informationalFields = ['raceId', 'raceName']
 
   // Fonction pour formatter une valeur selon son type
-  const formatValue = (value: any, isSimple: boolean = false): React.ReactNode => {
+  const formatValue = (value: any, isSimple: boolean = false, timezone?: string): React.ReactNode => {
     if (value === null || value === undefined) return '-'
     
     // Si c'est une URL
@@ -54,7 +55,7 @@ export const useProposalLogic = () => {
     
     // Si c'est une date ISO
     if (typeof value === 'string' && value.includes('T')) {
-      return formatDateTime(value)
+      return formatDateTime(value, timezone)
     }
     
     // Si c'est un tableau
@@ -69,23 +70,23 @@ export const useProposalLogic = () => {
     if (typeof value === 'object' && value !== null) {
       // Gérer la structure {new: value, confidence: number} du GoogleSearchDateAgent
       if ('new' in value && 'confidence' in value && Object.keys(value).length === 2) {
-        return formatValue(value.new, isSimple)
+        return formatValue(value.new, isSimple, timezone)
       }
       
       if (isSimple) {
         // Pour les dropdowns, essayer de trouver un champ meaningful
         if ('new' in value && 'old' in value) {
-          return formatValue(value.new, true)
+          return formatValue(value.new, true, timezone)
         }
         if ('proposed' in value) {
-          return formatValue(value.proposed, true)
+          return formatValue(value.proposed, true, timezone)
         }
         if ('current' in value) {
-          return formatValue(value.current, true)
+          return formatValue(value.current, true, timezone)
         }
         const keys = Object.keys(value)
         if (keys.length === 1) {
-          return formatValue(value[keys[0]], true)
+          return formatValue(value[keys[0]], true, timezone)
         }
         return `Objet (${keys.length} propriétés)`
       }
@@ -97,13 +98,17 @@ export const useProposalLogic = () => {
     return String(value)
   }
 
-  const formatDateTime = (dateString: string) => {
+  const formatDateTime = (dateString: string, timezone?: string) => {
     try {
+      if (timezone) {
+        // Utiliser la timezone spécifiée
+        return formatDateInTimezone(dateString, timezone, 'EEEE dd/MM/yyyy HH:mm')
+      }
+      // Fallback: afficher en heure locale du navigateur
       const date = new Date(dateString)
       if (isNaN(date.getTime())) {
         return dateString
       }
-      // Inclure le jour de la semaine dans le format
       return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
     } catch (error) {
       return dateString

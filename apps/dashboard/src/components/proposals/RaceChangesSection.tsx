@@ -51,11 +51,12 @@ interface RaceChange {
 
 interface RaceChangesSectionProps {
   raceChanges: RaceChange[]
-  formatValue: (value: any, isSimple?: boolean) => React.ReactNode
+  formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
   onRaceApprove: (raceData: RaceChange) => void
   onApproveAll?: () => void
   onRejectAll?: () => void
   disabled?: boolean
+  timezone?: string // Timezone pour afficher les dates des courses
 }
 
 const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
@@ -64,7 +65,8 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   onRaceApprove,
   onApproveAll,
   onRejectAll,
-  disabled = false
+  disabled = false,
+  timezone = 'Europe/Paris'
 }) => {
   
   if (raceChanges.length === 0) return null
@@ -154,7 +156,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                         {key}
                       </Typography>
                       <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {formatValue(value)}
+                        {formatValue(value, false, timezone)}
                       </Typography>
                     </Box>
                   ))}
@@ -213,7 +215,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                           </TableCell>
                           <TableCell>
                             <Typography variant="body2" color="text.secondary">
-                              {formatValue(fieldData.currentValue) || '-'}
+                              {formatValue(fieldData.currentValue, false, timezone) || '-'}
                             </Typography>
                           </TableCell>
                           <TableCell>
@@ -224,7 +226,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                                     <MenuItem key={optIndex} value={JSON.stringify(value)}>
                                       <Box>
                                         <Typography variant="body2">
-                                          {formatValue(value, true)}
+                                          {formatValue(value, true, timezone)}
                                         </Typography>
                                         <Typography variant="caption" color="textSecondary">
                                           {supportingAgents.map((agent: any) => `${agent.agentName} (${Math.round(agent.confidence * 100)}%)`).join(', ')}
@@ -236,7 +238,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                               </FormControl>
                             ) : (
                               <Typography variant="body2">
-                                {formatValue(fieldData.options[0].proposedValue)}
+                                {formatValue(fieldData.options[0].proposedValue, false, timezone)}
                               </Typography>
                             )}
                           </TableCell>

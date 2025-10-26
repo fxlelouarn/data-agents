@@ -9,11 +9,13 @@ import {
   Check as CheckIcon,
   Close as CloseIcon
 } from '@mui/icons-material'
+import { utcToDatetimeLocal, datetimeLocalToUtc } from '@/utils/timezone'
 
 interface FieldEditorProps {
   fieldName: string
   initialValue: any
   fieldType?: 'text' | 'number' | 'date' | 'datetime-local'
+  timezone?: string // Timezone pour les dates
   onSave: (fieldName: string, newValue: any) => void
   onCancel: () => void
 }
@@ -22,6 +24,7 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
   fieldName,
   initialValue,
   fieldType = 'text',
+  timezone = 'Europe/Paris',
   onSave,
   onCancel
 }) => {
@@ -29,9 +32,8 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
     // Formatter la valeur initiale selon le type
     if (fieldType === 'datetime-local' && initialValue) {
       try {
-        const date = new Date(initialValue)
-        // Format ISO sans Z pour datetime-local input
-        return date.toISOString().slice(0, 16)
+        // Convertir la date UTC vers la timezone pour l'affichage
+        return utcToDatetimeLocal(initialValue, timezone)
       } catch {
         return initialValue
       }
@@ -46,8 +48,8 @@ const FieldEditor: React.FC<FieldEditorProps> = ({
     if (fieldType === 'number') {
       finalValue = parseFloat(value)
     } else if (fieldType === 'datetime-local') {
-      // Reconvertir en ISO string complet
-      finalValue = new Date(value).toISOString()
+      // Convertir la date locale (dans la timezone) vers UTC
+      finalValue = datetimeLocalToUtc(value, timezone)
     }
     
     onSave(fieldName, finalValue)

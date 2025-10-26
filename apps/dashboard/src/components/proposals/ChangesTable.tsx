@@ -29,6 +29,7 @@ import {
   EditNote as EditNoteIcon
 } from '@mui/icons-material'
 import FieldEditor from './FieldEditor'
+import TimezoneEditor from './TimezoneEditor'
 
 interface ChangeOption {
   proposalId: string
@@ -54,10 +55,11 @@ interface ChangesTableProps {
   onFieldReject?: (fieldName: string) => void
   onFieldModify?: (fieldName: string, newValue: any, reason?: string) => void
   userModifiedChanges?: Record<string, any>
-  formatValue: (value: any, isSimple?: boolean) => React.ReactNode
+  formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
   formatAgentsList: (agents: Array<{ agentName: string, confidence: number }>) => string
   disabled?: boolean
   actions?: React.ReactNode
+  timezone?: string // Timezone pour afficher les dates (Edition.timeZone ou Race.timeZone)
 }
 
 const ChangesTable: React.FC<ChangesTableProps> = ({
@@ -73,7 +75,8 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
   formatValue,
   formatAgentsList,
   disabled = false,
-  actions
+  actions,
+  timezone = 'Europe/Paris'
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   
@@ -164,20 +167,30 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
         </TableCell>
         {!isNewEvent && (
           <TableCell sx={{ width: '20%', minWidth: 120 }}>
-            {change.currentValue ? formatValue(change.currentValue) : (
+            {change.currentValue ? formatValue(change.currentValue, false, timezone) : (
               <Typography color="textSecondary">-</Typography>
             )}
           </TableCell>
         )}
         <TableCell sx={{ width: isNewEvent ? '40%' : '35%', minWidth: 200 }}>
           {editingField === fieldName ? (
-            <FieldEditor
-              fieldName={fieldName}
-              initialValue={selectedValue}
-              fieldType={getFieldType(fieldName)}
-              onSave={handleSaveEdit}
-              onCancel={handleCancelEdit}
-            />
+            fieldName === 'timeZone' ? (
+              <TimezoneEditor
+                fieldName={fieldName}
+                initialValue={selectedValue}
+                onSave={handleSaveEdit}
+                onCancel={handleCancelEdit}
+              />
+            ) : (
+              <FieldEditor
+                fieldName={fieldName}
+                initialValue={selectedValue}
+                fieldType={getFieldType(fieldName)}
+                timezone={timezone}
+                onSave={handleSaveEdit}
+                onCancel={handleCancelEdit}
+              />
+            )
           ) : (
             <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
               {hasMultipleValues ? (
@@ -201,7 +214,7 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
                         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%' }}>
                           <Box sx={{ flexGrow: 1 }}>
                             <Typography variant="body2" sx={{ fontWeight: hasConsensus ? 'bold' : 'normal' }}>
-                              {formatValue(value, true)}
+                              {formatValue(value, true, timezone)}
                             </Typography>
                             <Typography variant="caption" color="textSecondary">
                               {formatAgentsList(supportingAgents)}
@@ -229,7 +242,7 @@ const ChangesTable: React.FC<ChangesTableProps> = ({
                     maxWidth: '100%'
                   }}
                 >
-                  {formatValue(change.options[0].proposedValue)}
+                  {formatValue(change.options[0].proposedValue, false, timezone)}
                 </Box>
               )}
               
