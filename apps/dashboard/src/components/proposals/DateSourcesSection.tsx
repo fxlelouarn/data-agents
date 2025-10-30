@@ -19,8 +19,11 @@ interface DateSourcesSectionProps {
 }
 
 const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications }) => {
+  // S'assurer que justifications est un array
+  const justificationsArray = Array.isArray(justifications) ? justifications : [];
+  
   // Extraire les justifications avec métadonnées de date extraction
-  const dateExtractions = justifications
+  const dateExtractions = justificationsArray
     .filter((justif: any) => justif.metadata?.dateDetails || justif.metadata?.extractedDate)
     .flatMap((justif: any) => {
       const metadata = justif.metadata || {}

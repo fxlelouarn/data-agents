@@ -177,8 +177,18 @@ const UpdateList: React.FC = () => {
   }
 
   const getUpdatePrimaryText = (update: DataUpdate) => {
-    const { context } = update
+    const { context, proposal } = update
     
+    // Pour EVENT_UPDATE, utiliser le nom enrichi de la proposition
+    if (proposal.type === 'EVENT_UPDATE' && proposal.eventName) {
+      const parts = [proposal.eventName]
+      if (proposal.eventCity) {
+        parts.push(proposal.eventCity)
+      }
+      return parts.join(' - ')
+    }
+    
+    // Pour les autres types, utiliser le context
     if (!context?.eventName) {
       return 'Mise à jour'
     }

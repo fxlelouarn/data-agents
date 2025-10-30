@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Typography,
@@ -26,8 +26,10 @@ import {
   CheckCircle as ApproveIcon,
   Cancel as RejectIcon,
   ExpandMore as ExpandMoreIcon,
-  DirectionsRun as RaceIcon
+  DirectionsRun as RaceIcon,
+  Edit as EditIcon
 } from '@mui/icons-material'
+import FieldEditor from './FieldEditor'
 
 interface RaceChangeField {
   field: string
@@ -52,11 +54,14 @@ interface RaceChange {
 interface RaceChangesSectionProps {
   raceChanges: RaceChange[]
   formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
-  onRaceApprove: (raceData: RaceChange) => void
+  onRaceApprove?: (raceData: RaceChange) => void
   onApproveAll?: () => void
   onRejectAll?: () => void
+  onFieldModify?: (raceIndex: number, fieldName: string, newValue: any) => void
+  userModifiedRaceChanges?: Record<string, Record<string, any>> // { [raceIndex]: { [fieldName]: value } }
   disabled?: boolean
   timezone?: string // Timezone pour afficher les dates des courses
+  isEditionCanceled?: boolean // Désactiver tous les champs si l'édition est annulée
 }
 
 const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
@@ -65,149 +70,82 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   onRaceApprove,
   onApproveAll,
   onRejectAll,
+  onFieldModify,
+  userModifiedRaceChanges = {},
   disabled = false,
-  timezone = 'Europe/Paris'
+  timezone = 'Europe/Paris',
+  isEditionCanceled = false
 }) => {
+  const [editingField, setEditingField] = useState<string | null>(null)
+  
+  const handleStartEdit = (raceIndex: number, fieldName: string) => {
+    // Ne pas permettre d'éditer si désactivé globalement ou si l'édition est annulée
+    if (!disabled && !isEditionCanceled && onFieldModify) {
+      setEditingField(`${raceIndex}-${fieldName}`)
+    }
+  }
+  
+  const handleSaveEdit = (raceIndex: number, fieldName: string, newValue: any) => {
+    if (onFieldModify) {
+      onFieldModify(raceIndex, fieldName, newValue)
+    }
+    setEditingField(null)
+  }
+  
+  const handleCancelEdit = () => {
+    setEditingField(null)
+  }
+  
+  const getFieldType = (fieldName: string): 'text' | 'number' | 'date' | 'datetime-local' => {
+    if (fieldName.includes('Date')) return 'datetime-local'
+    if (fieldName.includes('Distance') || fieldName.includes('Elevation') || fieldName.includes('price')) return 'number'
+    return 'text'
+  }
   
   if (raceChanges.length === 0) return null
 
   return (
     <Card sx={{ mt: 2 }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
           <Typography variant="h6">
             <RaceIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
             Modifications des courses
           </Typography>
-          {(onApproveAll || onRejectAll) && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              {onApproveAll && (
-                <Button
-                  variant="contained"
-                  color="success"
-                  size="small"
-                  startIcon={<ApproveIcon />}
-                  onClick={onApproveAll}
-                  disabled={disabled}
-                >
-                  Tout approuver
-                </Button>
-              )}
-              {onRejectAll && (
-                <Button
-                  variant="outlined"
-                  color="error"
-                  size="small"
-                  startIcon={<RejectIcon />}
-                  onClick={onRejectAll}
-                  disabled={disabled}
-                >
-                  Tout rejeter
-                </Button>
-              )}
-            </Box>
-          )}
         </Box>
         
         {raceChanges.map((raceData, index) => (
-          <Accordion key={index} sx={{ mb: 1 }}>
+          <Accordion key={index} sx={{ mb: 1 }} defaultExpanded>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
-              <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', width: '100%', pr: 2 }}>
-                <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
-                  {raceData.raceName}
-                </Typography>
-                <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-                  <Chip 
-                    size="small" 
-                    label={`${Object.keys(raceData.fields).length} champ${Object.keys(raceData.fields).length > 1 ? 's' : ''}`}
-                    variant="outlined"
-                  />
-                  <Chip 
-                    size="small" 
-                    label={`${raceData.proposalIds.length} proposition${raceData.proposalIds.length > 1 ? 's' : ''}`}
-                    color="info"
-                  />
-                </Box>
-              </Box>
+              <Typography variant="subtitle1" sx={{ fontWeight: 500 }}>
+                {raceData.raceName}
+              </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              <Box sx={{ display: 'flex', justifyContent: 'flex-end', mb: 2 }}>
-                <Button
-                  variant="contained"
-                  color="success"
-                  size="small"
-                  startIcon={<ApproveIcon />}
-                  onClick={() => onRaceApprove(raceData)}
-                  disabled={disabled}
-                >
-                  Approuver toute la course
-                </Button>
-              </Box>
               
-              {/* Afficher les champs informationnels */}
-              {raceData.informationalData && Object.keys(raceData.informationalData).length > 0 && (
-                <Box sx={{ mb: 2, p: 1.5, bgcolor: 'grey.50', borderRadius: 1, border: '1px solid', borderColor: 'grey.200' }}>
-                  <Typography variant="subtitle2" sx={{ fontWeight: 600, mb: 1 }}>
-                    Informations
-                  </Typography>
-                  {Object.entries(raceData.informationalData).map(([key, value]) => (
-                    <Box key={key} sx={{ display: 'flex', justifyContent: 'space-between', py: 0.5 }}>
-                      <Typography variant="body2" sx={{ color: 'text.secondary' }}>
-                        {key}
-                      </Typography>
-                      <Typography variant="body2" sx={{ fontWeight: 500 }}>
-                        {formatValue(value, false, timezone)}
-                      </Typography>
-                    </Box>
-                  ))}
-                </Box>
-              )}
               
               <TableContainer component={Paper}>
                 <Table size="small">
                   <TableHead>
                     <TableRow>
-                      <TableCell sx={{ width: '15%' }}>Champ</TableCell>
-                      <TableCell sx={{ width: '20%' }}>Ancienne valeur</TableCell>
-                      <TableCell sx={{ width: '20%' }}>Nouvelle valeur</TableCell>
-                      <TableCell sx={{ width: '15%' }}>Confiance</TableCell>
-                      <TableCell sx={{ width: '15%' }}>Actions</TableCell>
+                      <TableCell sx={{ width: '25%' }}>Champ</TableCell>
+                      <TableCell sx={{ width: '35%' }}>Ancienne valeur</TableCell>
+                      <TableCell sx={{ width: '40%' }}>Nouvelle valeur</TableCell>
                     </TableRow>
                   </TableHead>
                   <TableBody>
-                    {Object.entries(raceData.fields).map(([fieldName, fieldData]: [string, RaceChangeField]) => {
-                      const uniqueValues = [...new Set(fieldData.options.map(opt => JSON.stringify(opt.proposedValue)))]
-                      const hasMultipleValues = uniqueValues.length > 1
-                      
-                      // Trier les options comme pour les champs normaux
-                      const sortedOptions = (uniqueValues as string[])
-                        .map((valueStr) => {
-                          const value = JSON.parse(valueStr)
-                          const supportingAgents = fieldData.options.filter(opt => 
-                            JSON.stringify(opt.proposedValue) === valueStr
-                          )
-                          const maxConfidence = Math.max(...supportingAgents.map(agent => agent.confidence))
-                          
-                          return {
-                            value,
-                            supportingAgents,
-                            consensusCount: supportingAgents.length,
-                            maxConfidence
-                          }
-                        })
-                        .sort((a, b) => {
-                          if (a.consensusCount !== b.consensusCount) {
-                            return b.consensusCount - a.consensusCount
-                          }
-                          return b.maxConfidence - a.maxConfidence
-                        })
-                      
-                      const selectedOption = sortedOptions[0]
-                      const confidenceDisplay = selectedOption ? 
-                        `${Math.round(selectedOption.maxConfidence * 100)}%${selectedOption.consensusCount > 1 ? ` (${selectedOption.consensusCount} agents)` : ''}` : '-'
+                    {Object.entries(raceData.fields)
+                      .filter(([fieldName]) => fieldName !== 'raceId') // Filtrer raceId
+                      .map(([fieldName, fieldData]: [string, RaceChangeField]) => {
                       
                       return (
-                        <TableRow key={fieldName}>
+                        <TableRow 
+                          key={fieldName}
+                          sx={{
+                            backgroundColor: isEditionCanceled ? 'action.hover' : 'inherit',
+                            opacity: isEditionCanceled ? 0.6 : 1
+                          }}
+                        >
                           <TableCell>
                             <Typography variant="body2" fontWeight={500}>
                               {fieldName}
@@ -219,47 +157,33 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                             </Typography>
                           </TableCell>
                           <TableCell>
-                            {hasMultipleValues ? (
-                              <FormControl size="small" sx={{ minWidth: 150 }}>
-                                <Select defaultValue={JSON.stringify(sortedOptions[0].value)}>
-                                  {sortedOptions.map(({ value, supportingAgents }, optIndex) => (
-                                    <MenuItem key={optIndex} value={JSON.stringify(value)}>
-                                      <Box>
-                                        <Typography variant="body2">
-                                          {formatValue(value, true, timezone)}
-                                        </Typography>
-                                        <Typography variant="caption" color="textSecondary">
-                                          {supportingAgents.map((agent: any) => `${agent.agentName} (${Math.round(agent.confidence * 100)}%)`).join(', ')}
-                                        </Typography>
-                                      </Box>
-                                    </MenuItem>
-                                  ))}
-                                </Select>
-                              </FormControl>
+                            {editingField === `${raceData.raceIndex}-${fieldName}` ? (
+                              <FieldEditor
+                                fieldName={fieldName}
+                                initialValue={userModifiedRaceChanges[raceData.raceIndex]?.[fieldName] || fieldData.options[0].proposedValue}
+                                fieldType={getFieldType(fieldName)}
+                                onSave={(_, newValue) => handleSaveEdit(raceData.raceIndex, fieldName, newValue)}
+                                onCancel={handleCancelEdit}
+                              />
                             ) : (
-                              <Typography variant="body2">
-                                {formatValue(fieldData.options[0].proposedValue, false, timezone)}
-                              </Typography>
+                              <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
+                                <Typography variant="body2">
+                                  {formatValue(userModifiedRaceChanges[raceData.raceIndex]?.[fieldName] || fieldData.options[0].proposedValue, false, timezone)}
+                                </Typography>
+                                
+                                {/* Bouton modifier pour les dates */}
+                                {fieldName === 'startDate' && onFieldModify && !disabled && !isEditionCanceled && (
+                                  <Tooltip title="Modifier manuellement">
+                                    <IconButton
+                                      size="small"
+                                      onClick={() => handleStartEdit(raceData.raceIndex, fieldName)}
+                                    >
+                                      <EditIcon fontSize="small" />
+                                    </IconButton>
+                                  </Tooltip>
+                                )}
+                              </Box>
                             )}
-                          </TableCell>
-                          <TableCell>
-                            <Typography variant="body2" color={selectedOption?.consensusCount > 1 ? 'success.main' : 'text.primary'}>
-                              {confidenceDisplay}
-                            </Typography>
-                          </TableCell>
-                          <TableCell>
-                            <Box sx={{ display: 'flex', gap: 1 }}>
-                              <Tooltip title="Approuver">
-                                <IconButton size="small" color="success" disabled={disabled}>
-                                  <ApproveIcon />
-                                </IconButton>
-                              </Tooltip>
-                              <Tooltip title="Rejeter">
-                                <IconButton size="small" color="error" disabled={disabled}>
-                                  <RejectIcon />
-                                </IconButton>
-                              </Tooltip>
-                            </Box>
                           </TableCell>
                         </TableRow>
                       )

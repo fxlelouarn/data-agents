@@ -154,6 +154,15 @@ const ProposalList: React.FC = () => {
       groups[groupKey].push(proposal)
     })
     
+    // Trier les propositions dans chaque groupe par confiance décroissante
+    Object.keys(groups).forEach(groupKey => {
+      groups[groupKey].sort((a, b) => {
+        const confidenceA = a.confidence || 0
+        const confidenceB = b.confidence || 0
+        return confidenceB - confidenceA
+      })
+    })
+    
     return groups
   }, [filteredProposals])
   

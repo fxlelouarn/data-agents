@@ -27,16 +27,19 @@ import {
   Facebook as FacebookIcon,
   Instagram as InstagramIcon,
 } from '@mui/icons-material'
-import { useProposal, useUpdateProposal, useProposals, useUnapproveProposal } from '@/hooks/useApi'
+import { useProposal, useUpdateProposal, useProposals, useUnapproveProposal, useKillEvent, useReviveEvent } from '@/hooks/useApi'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { useNavigate } from 'react-router-dom'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
-import ChangesTable from '@/components/proposals/ChangesTable'
+import EventChangesTable from '@/components/proposals/EventChangesTable'
+import EditionChangesTable from '@/components/proposals/EditionChangesTable'
 import RaceChangesSection from '@/components/proposals/RaceChangesSection'
 import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
+import EventLinksEditor from '@/components/proposals/EventLinksEditor'
+import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 
 const ProposalDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -49,7 +52,12 @@ const ProposalDetail: React.FC = () => {
   // Hooks MUST be called before any conditional returns
   const [searchDialogOpen, setSearchDialogOpen] = useState(false)
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
+  const [killDialogOpen, setKillDialogOpen] = useState(false)
   const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
+  const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
+  
+  const killEventMutation = useKillEvent()
+  const reviveEventMutation = useReviveEvent()
   
   // Use the proposal logic hook
   const {
@@ -88,25 +96,85 @@ const ProposalDetail: React.FC = () => {
   const consolidatedChanges = useMemo(() => {
     if (!proposalData?.data) return []
     const changes = consolidateChanges([proposalData.data], proposalData.data.type === 'NEW_EVENT')
+    const isEventUpdate = proposalData.data.type === 'EVENT_UPDATE'
     
-    // Ajouter le champ timeZone comme premier champ pour visibilité
-    const hasTimezone = changes.some(c => c.field === 'timeZone')
-    if (!hasTimezone) {
-      changes.unshift({
-        field: 'timeZone',
-        options: [{
-          proposalId: proposalData.data.id,
-          agentName: proposalData.data.agent.name,
-          proposedValue: editionTimezone,
-          confidence: 1,
-          createdAt: proposalData.data.createdAt
-        }],
-        currentValue: editionTimezone
-      })
+    // Ne PAS ajouter calendarStatus et timeZone pour les EVENT_UPDATE (ce sont des champs d'Edition)
+    if (!isEventUpdate) {
+      // Ajouter le champ timeZone comme premier champ pour visibilité
+      const hasTimezone = changes.some(c => c.field === 'timeZone')
+      if (!hasTimezone) {
+        changes.unshift({
+          field: 'timeZone',
+          options: [{
+            proposalId: proposalData.data.id,
+            agentName: proposalData.data.agent.name,
+            proposedValue: editionTimezone,
+            confidence: 1,
+            createdAt: proposalData.data.createdAt
+          }],
+          currentValue: editionTimezone
+        })
+      }
+      
+      // Ajouter le champ calendarStatus avec CONFIRMED par défaut
+      const hasCalendarStatus = changes.some(c => c.field === 'calendarStatus')
+      if (!hasCalendarStatus) {
+        // Récupérer la valeur actuelle de la base ou TO_BE_CONFIRMED par défaut
+        const calendarStatusChange = (proposalData.data.changes as any)?.calendarStatus
+        const currentCalendarStatus = calendarStatusChange?.current || 'TO_BE_CONFIRMED'
+        changes.unshift({
+          field: 'calendarStatus',
+          options: [
+            {
+              proposalId: proposalData.data.id,
+              agentName: 'Système',
+              proposedValue: 'CONFIRMED',
+              confidence: 1,
+              createdAt: proposalData.data.createdAt
+            }
+          ],
+          currentValue: currentCalendarStatus
+        })
+      }
+      
+      // Ajouter le champ endDate avec la même valeur que startDate si elle existe
+      const hasEndDate = changes.some(c => c.field === 'endDate')
+      const startDateChange = changes.find(c => c.field === 'startDate')
+      if (!hasEndDate && startDateChange) {
+        const proposedStartDate = startDateChange.options[0]?.proposedValue
+        const currentEndDate = proposalData.data.changes?.endDate
+        
+        changes.push({
+          field: 'endDate',
+          options: [{
+            proposalId: proposalData.data.id,
+            agentName: proposalData.data.agent.name,
+            proposedValue: proposedStartDate,
+            confidence: 1,
+            createdAt: proposalData.data.createdAt
+          }],
+          currentValue: currentEndDate || null
+        })
+      }
     }
     
-    return changes
+    // Filtrer calendarStatus et timeZone pour les EVENT_UPDATE
+    return isEventUpdate 
+      ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
+      : changes
   }, [proposalData, consolidateChanges, editionTimezone])
+  
+  // Déterminer si les champs doivent être disabled (si calendarStatus === CANCELED)
+  const isEditionCanceled = useMemo(() => {
+    // Chercher la valeur de calendarStatus dans l'ordre de priorité :
+    // 1. Modifications utilisateur
+    // 2. Changements sélectionnés
+    // 3. Valeur par défaut proposée
+    const calendarStatus = userModifiedChanges['calendarStatus'] || 
+                          selectedChanges['calendarStatus'] || 
+                          consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
+    return calendarStatus === 'CANCELED'
+  }, [selectedChanges, userModifiedChanges, consolidatedChanges])
   
   const consolidatedRaceChanges = useMemo(() => {
     if (!proposalData?.data) return []
@@ -115,9 +183,11 @@ const ProposalDetail: React.FC = () => {
   
   // Cascade startDate changes to races
   const consolidatedRaceChangesWithCascade = useMemo(() => {
-    if (!selectedChanges['startDate']) return consolidatedRaceChanges
+    // Utiliser la startDate de l'édition (modifiée ou proposée)
+    const startDateChange = consolidatedChanges.find(c => c.field === 'startDate')
+    const editionStartDate = selectedChanges['startDate'] || startDateChange?.options[0]?.proposedValue
     
-    const newStartDate = selectedChanges['startDate']
+    if (!editionStartDate) return consolidatedRaceChanges
     
     return consolidatedRaceChanges.map(raceChange => ({
       ...raceChange,
@@ -129,7 +199,7 @@ const ProposalDetail: React.FC = () => {
               ...fieldData,
               options: [{
                 ...fieldData.options[0],
-                proposedValue: newStartDate
+                proposedValue: editionStartDate
               }]
             }
           }
@@ -137,7 +207,7 @@ const ProposalDetail: React.FC = () => {
         return { ...acc, [fieldName]: fieldData }
       }, {})
     }))
-  }, [consolidatedRaceChanges, selectedChanges])
+  }, [consolidatedRaceChanges, consolidatedChanges, selectedChanges])
   
   // Format date for UI display
   const formatDate = (dateString: string) => {
@@ -207,6 +277,77 @@ const ProposalDetail: React.FC = () => {
     }))
   }
   
+  const handleRaceFieldModify = (raceIndex: number, fieldName: string, newValue: any) => {
+    setUserModifiedRaceChanges(prev => ({
+      ...prev,
+      [raceIndex]: {
+        ...prev[raceIndex],
+        [fieldName]: newValue
+      }
+    }))
+  }
+  
+  // Ref pour éviter les boucles infinies
+  const lastComputedDatesRef = React.useRef<{startDate?: string, endDate?: string}>({})
+  
+  // Ajuster automatiquement startDate et endDate si des courses sont modifiées
+  React.useEffect(() => {
+    // Vérifier si l'utilisateur a modifié manuellement les dates de l'édition
+    const hasManualStartDate = userModifiedChanges['startDate'] !== undefined
+    const hasManualEndDate = userModifiedChanges['endDate'] !== undefined
+    
+    // Si l'utilisateur a modifié manuellement les deux dates, ne rien faire
+    if (hasManualStartDate && hasManualEndDate) {
+      return
+    }
+    
+    // Récupérer toutes les startDate des courses (y compris celles modifiées)
+    const raceStartDates: Date[] = []
+    
+    consolidatedRaceChangesWithCascade.forEach(raceChange => {
+      const startDateField = raceChange.fields['startDate']
+      if (startDateField) {
+        const modifiedDate = userModifiedRaceChanges[raceChange.raceIndex]?.['startDate']
+        const dateValue = modifiedDate || startDateField.options[0]?.proposedValue
+        if (dateValue) {
+          raceStartDates.push(new Date(dateValue))
+        }
+      }
+    })
+    
+    if (raceStartDates.length > 0) {
+      // Trouver la date min et max des courses
+      const minRaceDate = new Date(Math.min(...raceStartDates.map(d => d.getTime())))
+      const maxRaceDate = new Date(Math.max(...raceStartDates.map(d => d.getTime())))
+      
+      const updates: Record<string, string> = {}
+      
+      // Ajuster startDate si pas modifiée manuellement
+      if (!hasManualStartDate) {
+        const newStartDate = minRaceDate.toISOString()
+        if (newStartDate !== lastComputedDatesRef.current.startDate) {
+          updates.startDate = newStartDate
+        }
+      }
+      
+      // Ajuster endDate si pas modifiée manuellement
+      if (!hasManualEndDate) {
+        const newEndDate = maxRaceDate.toISOString()
+        if (newEndDate !== lastComputedDatesRef.current.endDate) {
+          updates.endDate = newEndDate
+        }
+      }
+      
+      if (Object.keys(updates).length > 0) {
+        lastComputedDatesRef.current = { ...lastComputedDatesRef.current, ...updates }
+        setSelectedChanges(prev => ({
+          ...prev,
+          ...updates
+        }))
+      }
+    }
+  }, [consolidatedRaceChangesWithCascade, userModifiedRaceChanges, userModifiedChanges])
+  
   const handleApproveAll = React.useCallback(async () => {
     try {
       // Construire les changements appliqués en mergant les changements avec les valeurs sélectionnées
@@ -264,6 +405,33 @@ const ProposalDetail: React.FC = () => {
     }
   }, [proposalData, unapproveProposalMutation])
 
+  const handleKillEvent = React.useCallback(async () => {
+    try {
+      const eventId = proposalData?.data?.eventId
+      if (!eventId) {
+        console.error('No eventId found')
+        return
+      }
+      await killEventMutation.mutateAsync(eventId)
+      setKillDialogOpen(false)
+    } catch (error) {
+      console.error('Error killing event:', error)
+    }
+  }, [proposalData, killEventMutation])
+
+  const handleReviveEvent = React.useCallback(async () => {
+    try {
+      const eventId = proposalData?.data?.eventId
+      if (!eventId) {
+        console.error('No eventId found')
+        return
+      }
+      await reviveEventMutation.mutateAsync(eventId)
+    } catch (error) {
+      console.error('Error reviving event:', error)
+    }
+  }, [proposalData, reviveEventMutation])
+
   if (isLoading) return <LinearProgress />
 
   if (!proposalData?.data) {
@@ -280,6 +448,12 @@ const ProposalDetail: React.FC = () => {
   const safeProposal = proposalData.data as any
   const proposal = safeProposal
   const isNewEvent = proposal.type === 'NEW_EVENT'
+  const isEventUpdate = proposal.type === 'EVENT_UPDATE'
+  
+  // Extraire eventId et eventStatus
+  const eventId = proposal?.eventId
+  const eventStatus = proposal?.eventStatus
+  const isEventDead = eventStatus === 'DEAD'
   
   // Navigation logic
   const allProposals = proposalsData?.data || []
@@ -469,7 +643,7 @@ const ProposalDetail: React.FC = () => {
       <ProposalHeader
         title={isNewEvent ? 'Nouvel événement proposé' : 'Proposition de modification'}
         eventTitle={!isNewEvent ? getEventTitle(safeProposal, isNewEvent) : undefined}
-        editionYear={!isNewEvent ? getEditionYear(safeProposal) : undefined}
+        editionYear={!isNewEvent && !isEventUpdate ? getEditionYear(safeProposal) : undefined}
         chips={[
           {
             label: getTypeLabel(safeProposal.type),
@@ -505,50 +679,144 @@ const ProposalDetail: React.FC = () => {
             </Alert>
           )}
           
-          <ChangesTable
-            title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'\\u00e9dition'}
-            changes={consolidatedChanges}
-            isNewEvent={isNewEvent}
-            selectedChanges={selectedChanges}
-            formatValue={formatValue}
-            formatAgentsList={formatAgentsList}
-            timezone={editionTimezone}
-            onFieldApprove={(fieldName: string, value: any) => {
-              setSelectedChanges({ ...selectedChanges, [fieldName]: value })
-            }}
-            onFieldReject={(fieldName: string) => {
-              const newSelected = { ...selectedChanges }
-              delete newSelected[fieldName]
-              setSelectedChanges(newSelected)
-            }}
-            onFieldModify={handleFieldModify}
-            userModifiedChanges={userModifiedChanges}
-            disabled={safeProposal.status !== 'PENDING'}
-            actions={safeProposal.status === 'PENDING' ? (
-              <Box sx={{ display: 'flex', gap: 1 }}>
-                <Button
-                  variant="contained"
-                  color="success"
-                  size="small"
-                  startIcon={<ApproveIcon />}
-                  onClick={handleApproveAll}
-                  disabled={updateProposalMutation.isPending}
-                >
-                  Tout approuver
-                </Button>
-                <Button
-                  variant="outlined"
-                  color="error"
-                  size="small"
-                  startIcon={<RejectIcon />}
-                  onClick={handleRejectAll}
-                  disabled={updateProposalMutation.isPending}
-                >
-                  Tout rejeter
-                </Button>
-              </Box>
-            ) : undefined}
-          />
+          {isEventUpdate ? (
+            <EventChangesTable
+              title="Modification de l'événement"
+              changes={consolidatedChanges}
+              isNewEvent={false}
+              selectedChanges={selectedChanges}
+              formatValue={formatValue}
+              formatAgentsList={formatAgentsList}
+              timezone={editionTimezone}
+              onFieldApprove={(fieldName: string, value: any) => {
+                setSelectedChanges({ ...selectedChanges, [fieldName]: value })
+              }}
+              onFieldReject={(fieldName: string) => {
+                const newSelected = { ...selectedChanges }
+                delete newSelected[fieldName]
+                setSelectedChanges(newSelected)
+              }}
+              onFieldModify={handleFieldModify}
+              userModifiedChanges={userModifiedChanges}
+              disabled={safeProposal.status !== 'PENDING' || isEventDead}
+              actions={safeProposal.status === 'PENDING' ? (
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    startIcon={<ApproveIcon />}
+                    onClick={handleApproveAll}
+                    disabled={updateProposalMutation.isPending || isEventDead}
+                  >
+                    Tout approuver
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    startIcon={<RejectIcon />}
+                    onClick={handleRejectAll}
+                    disabled={updateProposalMutation.isPending || isEventDead}
+                  >
+                    Tout rejeter
+                  </Button>
+                  {!isNewEvent && eventId && (
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      size="small"
+                      onClick={() => setKillDialogOpen(true)}
+                      disabled={killEventMutation.isPending || isEventDead}
+                    >
+                      Tuer l'événement
+                    </Button>
+                  )}
+                </Box>
+              ) : isEventDead && !isNewEvent && eventId ? (
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="small"
+                    onClick={handleReviveEvent}
+                    disabled={reviveEventMutation.isPending}
+                  >
+                    Ressusciter l'événement
+                  </Button>
+                </Box>
+              ) : undefined}
+            />
+          ) : (
+            <EditionChangesTable
+              title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'édition'}
+              changes={consolidatedChanges}
+              isNewEvent={isNewEvent}
+              selectedChanges={selectedChanges}
+              formatValue={formatValue}
+              formatAgentsList={formatAgentsList}
+              timezone={editionTimezone}
+              onFieldApprove={(fieldName: string, value: any) => {
+                setSelectedChanges({ ...selectedChanges, [fieldName]: value })
+              }}
+              onFieldReject={(fieldName: string) => {
+                const newSelected = { ...selectedChanges }
+                delete newSelected[fieldName]
+                setSelectedChanges(newSelected)
+              }}
+              onFieldModify={handleFieldModify}
+              userModifiedChanges={userModifiedChanges}
+              disabled={safeProposal.status !== 'PENDING' || isEventDead}
+              isEditionCanceled={isEditionCanceled || isEventDead}
+              actions={safeProposal.status === 'PENDING' ? (
+                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                  <Button
+                    variant="contained"
+                    color="success"
+                    size="small"
+                    startIcon={<ApproveIcon />}
+                    onClick={handleApproveAll}
+                    disabled={updateProposalMutation.isPending || isEventDead}
+                  >
+                    Tout approuver
+                  </Button>
+                  <Button
+                    variant="outlined"
+                    color="error"
+                    size="small"
+                    startIcon={<RejectIcon />}
+                    onClick={handleRejectAll}
+                    disabled={updateProposalMutation.isPending || isEventDead}
+                  >
+                    Tout rejeter
+                  </Button>
+                  {!isNewEvent && eventId && (
+                    <Button
+                      variant="outlined"
+                      color="warning"
+                      size="small"
+                      onClick={() => setKillDialogOpen(true)}
+                      disabled={killEventMutation.isPending || isEventDead}
+                    >
+                      Tuer l'événement
+                    </Button>
+                  )}
+                </Box>
+              ) : isEventDead && !isNewEvent && eventId ? (
+                <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Button
+                    variant="contained"
+                    color="primary"
+                    size="small"
+                    onClick={handleReviveEvent}
+                    disabled={reviveEventMutation.isPending}
+                  >
+                    Ressusciter l'événement
+                  </Button>
+                </Box>
+              ) : undefined}
+            />
+          )}
           
           <RaceChangesSection
             raceChanges={consolidatedRaceChangesWithCascade}
@@ -557,7 +825,10 @@ const ProposalDetail: React.FC = () => {
             onRaceApprove={handleApproveRace}
             onApproveAll={safeProposal.status === 'PENDING' ? handleApproveAllRaces : undefined}
             onRejectAll={safeProposal.status === 'PENDING' ? handleRejectAllRaces : undefined}
-            disabled={safeProposal.status !== 'PENDING' || updateProposalMutation.isPending}
+            onFieldModify={handleRaceFieldModify}
+            userModifiedRaceChanges={userModifiedRaceChanges}
+            disabled={safeProposal.status !== 'PENDING' || updateProposalMutation.isPending || isEventDead}
+            isEditionCanceled={isEditionCanceled || isEventDead}
           />
           
           {/* Sources des dates extraites */}
@@ -642,109 +913,32 @@ const ProposalDetail: React.FC = () => {
           </Card>
           
           {/* URLs de l'événement */}
-          <Card>
-            <CardContent>
-              <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
-                <WebsiteIcon color="primary" />
-                Liens de l'événement
-              </Typography>
-              
-              {!safeProposal.changes.websiteUrl && !safeProposal.changes.facebookUrl && !safeProposal.changes.instagramUrl ? (
-                <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
-                  Aucun lien disponible
-                </Typography>
-              ) : (
-                <>
-                  {safeProposal.changes.websiteUrl && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                    <WebsiteIcon sx={{ fontSize: '1rem', color: 'text.secondary' }} />
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Site web</Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          fontWeight: 500,
-                          wordBreak: 'break-all',
-                          '& a': { color: 'primary.main', textDecoration: 'none' }
-                        }}
-                      >
-                        <a 
-                          href={typeof safeProposal.changes.websiteUrl === 'string' 
-                            ? safeProposal.changes.websiteUrl 
-                            : (safeProposal.changes.websiteUrl as any)?.new || (safeProposal.changes.websiteUrl as any)?.proposed}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                        >
-                          {typeof safeProposal.changes.websiteUrl === 'string' 
-                            ? safeProposal.changes.websiteUrl 
-                            : (safeProposal.changes.websiteUrl as any)?.new || (safeProposal.changes.websiteUrl as any)?.proposed}
-                        </a>
-                      </Typography>
-                    </Box>
-                  </Box>
-                )}
-                
-                {safeProposal.changes.facebookUrl && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1.5 }}>
-                    <FacebookIcon sx={{ fontSize: '1rem', color: '#1877f2' }} />
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Facebook</Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          fontWeight: 500,
-                          wordBreak: 'break-all',
-                          '& a': { color: 'primary.main', textDecoration: 'none' }
-                        }}
-                      >
-                        <a 
-                          href={typeof safeProposal.changes.facebookUrl === 'string' 
-                            ? safeProposal.changes.facebookUrl 
-                            : (safeProposal.changes.facebookUrl as any)?.new || (safeProposal.changes.facebookUrl as any)?.proposed}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                        >
-                          {typeof safeProposal.changes.facebookUrl === 'string' 
-                            ? safeProposal.changes.facebookUrl 
-                            : (safeProposal.changes.facebookUrl as any)?.new || (safeProposal.changes.facebookUrl as any)?.proposed}
-                        </a>
-                      </Typography>
-                    </Box>
-                  </Box>
-                )}
-                
-                {safeProposal.changes.instagramUrl && (
-                  <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
-                    <InstagramIcon sx={{ fontSize: '1rem', color: '#E4405F' }} />
-                    <Box sx={{ minWidth: 0, flex: 1 }}>
-                      <Typography variant="caption" color="text.secondary">Instagram</Typography>
-                      <Typography 
-                        variant="body2" 
-                        sx={{ 
-                          fontWeight: 500,
-                          wordBreak: 'break-all',
-                          '& a': { color: 'primary.main', textDecoration: 'none' }
-                        }}
-                      >
-                        <a 
-                          href={typeof safeProposal.changes.instagramUrl === 'string' 
-                            ? safeProposal.changes.instagramUrl 
-                            : (safeProposal.changes.instagramUrl as any)?.new || (safeProposal.changes.instagramUrl as any)?.proposed}
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                        >
-                          {typeof safeProposal.changes.instagramUrl === 'string' 
-                            ? safeProposal.changes.instagramUrl 
-                            : (safeProposal.changes.instagramUrl as any)?.new || (safeProposal.changes.instagramUrl as any)?.proposed}
-                        </a>
-                      </Typography>
-                    </Box>
-                  </Box>
-                  )}
-                </>
-              )}
-            </CardContent>
-          </Card>
+          <EventLinksEditor
+            websiteUrl={safeProposal.changes.websiteUrl}
+            facebookUrl={safeProposal.changes.facebookUrl}
+            instagramUrl={safeProposal.changes.instagramUrl}
+            onSave={(links) => {
+              handleFieldModify('websiteUrl', links.websiteUrl)
+              handleFieldModify('facebookUrl', links.facebookUrl)
+              handleFieldModify('instagramUrl', links.instagramUrl)
+            }}
+            editable={safeProposal.status === 'PENDING'}
+          />
+          
+          {/* Informations contextuelles de l'édition */}
+          <EditionContextInfo
+            currentCalendarStatus={
+              userModifiedChanges['calendarStatus'] || 
+              selectedChanges['calendarStatus'] || 
+              (typeof safeProposal.changes.calendarStatus === 'string' 
+                ? safeProposal.changes.calendarStatus 
+                : (safeProposal.changes.calendarStatus as any)?.current || (safeProposal.changes.calendarStatus as any)?.proposed)
+            }
+            currentEditionYear={getEditionYear(safeProposal) ? parseInt(getEditionYear(safeProposal)!) : undefined}
+            previousEditionYear={safeProposal.previousEditionYear}
+            previousCalendarStatus={safeProposal.previousEditionCalendarStatus}
+            previousEditionStartDate={safeProposal.previousEditionStartDate}
+          />
         </Grid>
       </Grid>
 
@@ -803,6 +997,33 @@ const ProposalDetail: React.FC = () => {
           </Button>
           <Button onClick={handleArchive} color="warning">
             Archiver
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Dialog de confirmation pour tuer l'événement */}
+      <Dialog open={killDialogOpen} onClose={() => setKillDialogOpen(false)} maxWidth="sm" fullWidth>
+        <DialogTitle>Tuer l'événement</DialogTitle>
+        <DialogContent>
+          <Typography variant="body1" sx={{ mt: 2 }}>
+            Êtes-vous sûr de vouloir tuer cet événement ? Cette action :
+          </Typography>
+          <Typography component="ul" sx={{ mt: 2, pl: 2 }}>
+            <li>Marque l'événement comme DEAD dans la base de données</li>
+            <li>Rend tous les tableaux non éditables</li>
+            <li>Empêche toute approbation de proposition</li>
+            <li>Peut être annulée avec le bouton "Ressusciter l'événement"</li>
+          </Typography>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setKillDialogOpen(false)}>Annuler</Button>
+          <Button
+            onClick={handleKillEvent}
+            color="error"
+            variant="contained"
+            disabled={killEventMutation.isPending}
+          >
+            Tuer l'événement
           </Button>
         </DialogActions>
       </Dialog>

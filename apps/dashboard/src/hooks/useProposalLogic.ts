@@ -37,6 +37,13 @@ export const useProposalLogic = () => {
   const nonModifiableFields = ['priceType', 'raceId', 'raceName']
   // Champs informationnels uniquement (non modifiables, affichés séparément)
   const informationalFields = ['raceId', 'raceName']
+  
+  // Champs d'événement (pour EVENT_UPDATE)
+  const eventFields = [
+    'status', 'name', 'city', 'country', 'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
+    'fullAddress', 'latitude', 'longitude', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
+    'coverImage', 'description', 'isPrivate', 'isFeatured', 'isRecommended', 'slug'
+  ]
 
   // Fonction pour formatter une valeur selon son type
   const formatValue = (value: any, isSimple: boolean = false, timezone?: string): React.ReactNode => {
@@ -53,8 +60,8 @@ export const useProposalLogic = () => {
       }, value)
     }
     
-    // Si c'est une date ISO
-    if (typeof value === 'string' && value.includes('T')) {
+    // Si c'est une date ISO (format: YYYY-MM-DDTHH:mm:ss ou similaire)
+    if (typeof value === 'string' && /\d{4}-\d{2}-\d{2}T\d{2}:\d{2}/.test(value)) {
       return formatDateTime(value, timezone)
     }
     
@@ -135,6 +142,15 @@ export const useProposalLogic = () => {
     
     if (!firstProposal.eventId) return 'Événement inconnu'
     
+    const eventId = firstProposal.eventId
+    
+    // Pour EVENT_UPDATE, utiliser le eventName enrichi par le backend
+    if (firstProposal.type === 'EVENT_UPDATE' && firstProposal.eventName) {
+      const eventCity = firstProposal.eventCity
+      const baseName = eventCity ? `${firstProposal.eventName} - ${eventCity}` : firstProposal.eventName
+      return `${baseName} (${eventId})`
+    }
+    
     // Essayer d'extraire le nom depuis les métadonnées de justification
     if (firstProposal.justification && Array.isArray(firstProposal.justification)) {
       for (const justif of firstProposal.justification) {
@@ -142,14 +158,15 @@ export const useProposalLogic = () => {
           const eventName = justif.metadata.eventName
           const eventCity = justif.metadata.eventCity
           
-          // Construire le titre avec le nom et la ville (sans l'année ici)
-          return eventCity ? `${eventName} - ${eventCity}` : eventName
+          // Construire le titre avec le nom, la ville et l'ID
+          const baseName = eventCity ? `${eventName} - ${eventCity}` : eventName
+          return `${baseName} (${eventId})`
         }
       }
     }
     
-    // Fallback: logique existante
-    let eventName = firstProposal.eventId.toString().replace('event_', '')
+    // Fallback: logique existante avec ID
+    let eventName = eventId.toString().replace('event_', '')
     
     if (eventName.includes('marathon_paris')) {
       eventName = 'Marathon de Paris'
@@ -161,7 +178,7 @@ export const useProposalLogic = () => {
       eventName = eventName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
     }
     
-    return eventName
+    return `${eventName} (${eventId})`
   }
 
   // Consolider les changements par champ (excluant les races)
@@ -169,11 +186,15 @@ export const useProposalLogic = () => {
     if (groupProposals.length === 0) return []
 
     const changesByField: Record<string, any> = {}
+    const isEventUpdate = groupProposals[0]?.type === 'EVENT_UPDATE'
 
     groupProposals.forEach(proposal => {
       Object.entries(proposal.changes).forEach(([field, value]) => {
         // Ignorer les champs non modifiables et les races (traitées séparément)
         if (nonModifiableFields.includes(field) || field === 'races') return
+        
+        // Pour EVENT_UPDATE, ne garder que les champs d'événement
+        if (isEventUpdate && !eventFields.includes(field)) return
         
         if (!changesByField[field]) {
           changesByField[field] = {
@@ -238,6 +259,14 @@ export const useProposalLogic = () => {
       
       return hasActualChange
     })
+    
+    // Trier les options de chaque champ par confiance décroissante
+    filteredChanges.forEach((change: any) => {
+      change.options.sort((a: ChangeOption, b: ChangeOption) => {
+        // Trier par confiance décroissante
+        return (b.confidence || 0) - (a.confidence || 0)
+      })
+    })
 
     return filteredChanges
   }
@@ -253,8 +282,13 @@ export const useProposalLogic = () => {
       if (racesData && Array.isArray(racesData)) {
         racesData.forEach((race: any, raceIndex: number) => {
           if (typeof race === 'object' && race !== null) {
+            // Extraire le nom de la course (gérer les structures {old, new} ou {proposed, current})
+            let raceName = race.raceName || race.name
+            if (typeof raceName === 'object' && raceName !== null) {
+              raceName = raceName.new || raceName.proposed || raceName.current || raceName.old
+            }
             // Utiliser le nom de la course ou l'index comme clé
-            const raceKey = race.name || `Course ${raceIndex + 1}`
+            const raceKey = raceName || `Course ${raceIndex + 1}`
             
             if (!raceChangesByRace[raceKey]) {
               raceChangesByRace[raceKey] = {
@@ -327,9 +361,16 @@ export const useProposalLogic = () => {
       }
     })
 
-    // Convertir les Sets en arrays
+    // Convertir les Sets en arrays et trier les options par confiance
     Object.values(raceChangesByRace).forEach((race: any) => {
       race.proposalIds = Array.from(race.proposalIds)
+      
+      // Trier les options de chaque champ par confiance décroissante
+      Object.values(race.fields).forEach((field: any) => {
+        field.options.sort((a: ChangeOption, b: ChangeOption) => {
+          return (b.confidence || 0) - (a.confidence || 0)
+        })
+      })
     })
 
     return Object.values(raceChangesByRace)
