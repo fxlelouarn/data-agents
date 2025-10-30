@@ -352,6 +352,15 @@ export const updatesApi = {
     api.post('/updates/bulk/apply', { ids }).then(res => res.data),
 }
 
+// Events API (gestion des événements)
+export const eventsApi = {
+  kill: (eventId: string): Promise<ApiResponse<{ status: string }>> =>
+    api.post(`/events/${eventId}/kill`).then(res => res.data),
+
+  revive: (eventId: string): Promise<ApiResponse<{ status: string }>> =>
+    api.post(`/events/${eventId}/revive`).then(res => res.data),
+}
+
 // Events API (interroge directement Miles Republic)
 export const cacheApi = {
   getEvents: (filters: { limit?: number; search?: string } = {}): Promise<ApiResponse<Array<{

@@ -494,4 +494,231 @@ router.get('/races', [
   }
 }))
 
+/**
+ * POST /api/events/:eventId/kill
+ * Rejette les propositions en attente et crée une ProposalApplication pour mettre l'événement à DEAD
+ */
+router.post('/:eventId/kill', asyncHandler(async (req: Request, res: Response) => {
+  const { eventId } = req.params
+  const { reason } = req.body
+
+  try {
+    // 0. S'assurer qu'un agent "manual" existe
+    let manualAgent = await db.prisma.agent.findUnique({
+      where: { id: 'manual' }
+    })
+    
+    if (!manualAgent) {
+      manualAgent = await db.prisma.agent.create({
+        data: {
+          id: 'manual',
+          name: 'Manual Actions',
+          type: 'SPECIFIC_FIELD',
+          isActive: true,
+          frequency: 'manual', // Pas de cron, actions manuelles seulement
+          config: {
+            description: 'Agent for manual actions from the dashboard'
+          }
+        }
+      })
+    }
+
+    // 1. Trouver toutes les propositions PENDING pour cet événement
+    const pendingProposals = await db.prisma.proposal.findMany({
+      where: {
+        eventId: eventId,
+        status: 'PENDING'
+      }
+    })
+
+    // 2. Rejeter toutes les propositions en attente
+    await db.prisma.proposal.updateMany({
+      where: {
+        eventId: eventId,
+        status: 'PENDING'
+      },
+      data: {
+        status: 'REJECTED',
+        reviewedBy: 'system:kill-event',
+        reviewedAt: new Date()
+      }
+    })
+
+    // 3. Créer une Proposal pour marquer l'événement comme DEAD
+    const killProposal = await db.prisma.proposal.create({
+      data: {
+        agentId: 'manual', // Agent manuel
+        type: 'EVENT_UPDATE',
+        status: 'APPROVED', // Auto-approuvée
+        eventId: eventId,
+        changes: {
+          status: {
+            current: 'LIVE',
+            proposed: 'DEAD'
+          }
+        },
+        justification: {
+          reason: reason || 'Event killed manually via dashboard',
+          killedAt: new Date().toISOString()
+        },
+        confidence: 1.0,
+        reviewedBy: 'system:kill-event',
+        reviewedAt: new Date()
+      }
+    })
+
+    // 4. Créer une ProposalApplication (sera appliquée plus tard)
+    const application = await db.prisma.proposalApplication.create({
+      data: {
+        proposalId: killProposal.id,
+        status: 'PENDING',
+        appliedChanges: {
+          eventId: eventId,
+          status: 'DEAD'
+        }
+      }
+    })
+
+    // 5. Log l'action
+    await db.createLog({
+      agentId: 'manual',
+      level: 'INFO',
+      message: `Event ${eventId} kill request created`,
+      data: {
+        eventId,
+        reason: reason || 'No reason provided',
+        rejectedProposals: pendingProposals.length,
+        proposalId: killProposal.id,
+        applicationId: application.id,
+        timestamp: new Date().toISOString()
+      }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        eventId: eventId,
+        rejectedProposals: pendingProposals.length,
+        killProposal: {
+          id: killProposal.id,
+          status: killProposal.status
+        },
+        application: {
+          id: application.id,
+          status: application.status
+        }
+      },
+      message: `Event kill scheduled. ${pendingProposals.length} proposals rejected. Application will be processed later.`
+    })
+  } catch (error) {
+    console.error('Error killing event:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error creating kill event request',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}))
+
+/**
+ * POST /api/events/:eventId/revive
+ * Crée une ProposalApplication pour réactiver un événement DEAD en le passant à LIVE
+ */
+router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response) => {
+  const { eventId } = req.params
+
+  try {
+    // 0. S'assurer qu'un agent "manual" existe
+    let manualAgent = await db.prisma.agent.findUnique({
+      where: { id: 'manual' }
+    })
+    
+    if (!manualAgent) {
+      manualAgent = await db.prisma.agent.create({
+        data: {
+          id: 'manual',
+          name: 'Manual Actions',
+          type: 'SPECIFIC_FIELD',
+          isActive: true,
+          frequency: 'manual', // Pas de cron, actions manuelles seulement
+          config: {
+            description: 'Agent for manual actions from the dashboard'
+          }
+        }
+      })
+    }
+
+    // 1. Créer une Proposal pour réactiver l'événement
+    const reviveProposal = await db.prisma.proposal.create({
+      data: {
+        agentId: 'manual', // Agent manuel
+        type: 'EVENT_UPDATE',
+        status: 'APPROVED', // Auto-approuvée
+        eventId: eventId,
+        changes: {
+          status: {
+            current: 'DEAD',
+            proposed: 'LIVE'
+          }
+        },
+        justification: {
+          reason: 'Event revived manually via dashboard',
+          revivedAt: new Date().toISOString()
+        },
+        confidence: 1.0,
+        reviewedBy: 'system:revive-event',
+        reviewedAt: new Date()
+      }
+    })
+
+    // 2. Créer une ProposalApplication (sera appliquée plus tard)
+    const application = await db.prisma.proposalApplication.create({
+      data: {
+        proposalId: reviveProposal.id,
+        status: 'PENDING',
+        appliedChanges: {
+          eventId: eventId,
+          status: 'LIVE'
+        }
+      }
+    })
+
+    // 3. Log l'action
+    await db.createLog({
+      agentId: 'manual',
+      level: 'INFO',
+      message: `Event ${eventId} revive request created`,
+      data: {
+        eventId,
+        proposalId: reviveProposal.id,
+        applicationId: application.id,
+        timestamp: new Date().toISOString()
+      }
+    })
+
+    res.json({
+      success: true,
+      data: {
+        eventId: eventId,
+        reviveProposal: {
+          id: reviveProposal.id,
+          status: reviveProposal.status
+        },
+        application: {
+          id: application.id,
+          status: application.status
+        }
+      },
+      message: 'Event revival scheduled. Application will be processed later.'
+    })
+  } catch (error) {
+    console.error('Error reviving event:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Error creating revive event request',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+}))
+
 export { router as eventsRouter }

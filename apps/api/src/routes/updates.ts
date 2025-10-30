@@ -3,6 +3,7 @@ import { param, query, body, validationResult } from 'express-validator'
 import { DatabaseService } from '@data-agents/database'
 import { ProposalApplicationService } from '@data-agents/database/src/services/ProposalApplicationService'
 import { asyncHandler, createError } from '../middleware/error-handler'
+import { enrichProposal } from './proposals'
 
 const router = Router()
 const db = new DatabaseService()
@@ -57,6 +58,8 @@ const transformApplicationForAPI = (app: any) => {
       eventId: app.proposal.eventId,
       editionId: app.proposal.editionId,
       raceId: app.proposal.raceId,
+      eventName: app.proposal.eventName,  // Enriched for EVENT_UPDATE
+      eventCity: app.proposal.eventCity,  // Enriched for EVENT_UPDATE
       agent: {
         name: app.proposal.agent.name,
         type: app.proposal.agent.type
@@ -113,7 +116,15 @@ router.get('/', [
 
   const total = await db.prisma.proposalApplication.count({ where })
   
-  const transformedUpdates = applications.map(app => transformApplicationForAPI(app))
+  // Enrichir les propositions avec les infos contextuelles
+  const enrichedApplications = await Promise.all(
+    applications.map(async (app) => ({
+      ...app,
+      proposal: await enrichProposal(app.proposal)
+    }))
+  )
+  
+  const transformedUpdates = enrichedApplications.map(app => transformApplicationForAPI(app))
 
   res.json({
     success: true,

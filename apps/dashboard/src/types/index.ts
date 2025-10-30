@@ -89,6 +89,10 @@ export interface Proposal {
     type: AgentType
   }
   relatedProposals?: Proposal[]
+  previousEditionCalendarStatus?: string
+  previousEditionYear?: number
+  previousEditionStartDate?: string
+  eventStatus?: 'DEAD' | 'DRAFT' | 'REVIEW' | 'LIVE' | 'DELETED'
 }
 
 export interface AgentStatus {
@@ -224,6 +228,8 @@ export interface DataUpdate {
     eventId?: string
     editionId?: string
     raceId?: string
+    eventName?: string  // Enriched for EVENT_UPDATE
+    eventCity?: string  // Enriched for EVENT_UPDATE
     changes: Record<string, {
       old?: any
       new: any

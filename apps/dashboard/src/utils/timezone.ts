@@ -35,12 +35,22 @@ export function formatDateInTimezone(
   timezone: string = 'Europe/Paris',
   formatStr: string = 'EEEE dd/MM/yyyy HH:mm'
 ): string {
+  // Vérifier si la date est null, undefined ou vide
+  if (!utcDateString || utcDateString === 'null' || utcDateString === 'undefined') {
+    return '-'
+  }
+  
   try {
     const zonedDate = utcToTimezone(utcDateString, timezone)
+    // Vérifier si la date résultante est valide
+    if (isNaN(zonedDate.getTime())) {
+      console.error('Invalid date after conversion:', utcDateString)
+      return '-'
+    }
     return format(zonedDate, formatStr, { locale: fr })
   } catch (error) {
-    console.error('Error formatting date:', error)
-    return utcDateString
+    console.error('Error formatting date:', error, 'for value:', utcDateString)
+    return '-'
   }
 }
 

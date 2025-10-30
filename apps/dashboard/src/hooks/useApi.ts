@@ -9,7 +9,8 @@ import {
   databasesApi,
   settingsApi,
   updatesApi,
-  cacheApi
+  cacheApi,
+  eventsApi
 } from '@/services/api'
 import { 
   AgentFilters, 
@@ -832,6 +833,45 @@ export const useRaces = (filters: { editionId?: string; limit?: number } = {}) =
     queryFn: () => cacheApi.getRaces(filters),
     staleTime: 300000, // 5 minutes
     enabled: !!filters.editionId, // Only run if editionId is provided
+  })
+}
+
+// Events hooks (kill/revive)
+export const useKillEvent = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (eventId: string) => eventsApi.kill(eventId),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      enqueueSnackbar(response.message || 'Événement tué avec succès', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la mise à mort de l\'événement',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
+export const useReviveEvent = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (eventId: string) => eventsApi.revive(eventId),
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      enqueueSnackbar(response.message || 'Événement ressuscité avec succès', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la résurrection de l\'événement',
+        { variant: 'error' }
+      )
+    },
   })
 }
 
