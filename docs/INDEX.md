@@ -8,8 +8,9 @@ Bienvenue dans la documentation complète du projet **data-agents**. Ce projet e
 
 1. **Nouveau sur le projet?** → Commencez par [ARCHITECTURE.md](./ARCHITECTURE.md)
 2. **Veux créer un agent?** → Voir [AGENT-REGISTRY.md](./AGENT-REGISTRY.md)
-3. **Besoin de tester?** → Consulter [TEST-ENVIRONMENT.md](./TEST-ENVIRONMENT.md)
-4. **Configurer un agent?** → [CONFIGURATION-SYSTEM.md](./CONFIGURATION-SYSTEM.md)
+3. **Travailler sur le dashboard?** → Consulter [DASHBOARD-PROPOSALS.md](./DASHBOARD-PROPOSALS.md)
+4. **Besoin de tester?** → Consulter [TEST-ENVIRONMENT.md](./TEST-ENVIRONMENT.md)
+5. **Configurer un agent?** → [CONFIGURATION-SYSTEM.md](./CONFIGURATION-SYSTEM.md)
 
 ---
 
@@ -32,7 +33,15 @@ Bienvenue dans la documentation complète du projet **data-agents**. Ce projet e
 | [**DATABASE-MANAGER.md**](./DATABASE-MANAGER.md) | Gestion connexions bases de données source | Développeurs |
 | [**CONFIGURATION-SYSTEM.md**](./CONFIGURATION-SYSTEM.md) | Configuration dynamique des agents | Développeurs |
 
-### 3. Développement et Test
+### 3. Dashboard et Interface
+
+| Document | Description | Pour qui |
+|----------|-------------|----------|
+| [**DASHBOARD-PROPOSALS.md**](./DASHBOARD-PROPOSALS.md) | Architecture propositions, tables de changements, validation | Frontend |
+| [**TIMEZONE-SUPPORT.md**](./TIMEZONE-SUPPORT.md) | Gestion des timezones dans l'application | Développeurs |
+| [**USER-MODIFICATIONS.md**](./USER-MODIFICATIONS.md) | Système de modifications utilisateur | Développeurs |
+
+### 4. Développement et Test
 
 | Document | Description | Pour qui |
 |----------|-------------|----------|
@@ -344,7 +353,7 @@ R: [AGENT-AUTO-DISABLE.md](./AGENT-AUTO-DISABLE.md)
 
 ## Dernière mise à jour
 
-Documentation générée le **2025-10-19**
+Documentation générée le **2025-10-30**
 
 ---
 
@@ -354,4 +363,5 @@ Documentation générée le **2025-10-19**
 - [AGENTS-ARCHITECTURE.md](./AGENTS-ARCHITECTURE.md) - Détails agents
 - [DATABASE-MANAGER.md](./DATABASE-MANAGER.md) - Gestion BD
 - [CONFIGURATION-SYSTEM.md](./CONFIGURATION-SYSTEM.md) - Configuration
+- [DASHBOARD-PROPOSALS.md](./DASHBOARD-PROPOSALS.md) - Dashboard propositions
 - [TEST-ENVIRONMENT.md](./TEST-ENVIRONMENT.md) - Testing
