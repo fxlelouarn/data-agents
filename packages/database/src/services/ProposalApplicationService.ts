@@ -271,7 +271,10 @@ export class ProposalApplicationService implements IProposalApplicationService {
 
       // Construire les données de mise à jour
       const updateData: any = {
-        updatedBy: 'data-agents'
+        updatedBy: 'data-agents',
+        updatedAt: new Date(),
+        toUpdate: true,
+        algoliaObjectToUpdate: true
       }
       
       for (const [field, value] of Object.entries(selectedChanges)) {
@@ -321,7 +324,9 @@ export class ProposalApplicationService implements IProposalApplicationService {
       }
 
       const updateData: any = {
-        updatedBy: 'data-agents'
+        updatedBy: 'data-agents',
+        updatedAt: new Date(),
+        calendarStatus: 'CONFIRMED'
       }
       
       // Séparer les races des autres changements
@@ -344,11 +349,30 @@ export class ProposalApplicationService implements IProposalApplicationService {
         }
       }
 
+      // Récupérer l'édition pour mettre à jour l'Event parent
+      const edition = await milesDb.edition.findUnique({
+        where: { id: numericEditionId },
+        select: { eventId: true }
+      })
+
       // Mettre à jour l'édition dans Miles Republic
       await milesDb.edition.update({
         where: { id: numericEditionId },
         data: updateData
       })
+
+      // Mettre à jour l'Event parent
+      if (edition?.eventId) {
+        await milesDb.event.update({
+          where: { id: edition.eventId },
+          data: {
+            updatedBy: 'data-agents',
+            updatedAt: new Date(),
+            toUpdate: true,
+            algoliaObjectToUpdate: true
+          }
+        })
+      }
       
       // Mettre à jour les races séparément si nécessaire
       if (racesChanges && Array.isArray(racesChanges)) {
@@ -360,7 +384,8 @@ export class ProposalApplicationService implements IProposalApplicationService {
           }
           
           const raceUpdateData: any = {
-            updatedBy: 'data-agents'
+            updatedBy: 'data-agents',
+            updatedAt: new Date()
           }
           
           // Extraire les changements de la course (tout sauf raceId et raceName)
@@ -421,7 +446,8 @@ export class ProposalApplicationService implements IProposalApplicationService {
       }
 
       const updateData: any = {
-        updatedBy: 'data-agents'
+        updatedBy: 'data-agents',
+        updatedAt: new Date()
       }
       
       for (const [field, value] of Object.entries(selectedChanges)) {
@@ -435,11 +461,30 @@ export class ProposalApplicationService implements IProposalApplicationService {
         }
       }
 
+      // Récupérer la race pour mettre à jour l'Event parent
+      const race = await milesDb.race.findUnique({
+        where: { id: numericRaceId },
+        select: { eventId: true }
+      })
+
       // Mettre à jour dans Miles Republic
       await milesDb.race.update({
         where: { id: numericRaceId },
         data: updateData
       })
+
+      // Mettre à jour l'Event parent
+      if (race?.eventId) {
+        await milesDb.event.update({
+          where: { id: race.eventId },
+          data: {
+            updatedBy: 'data-agents',
+            updatedAt: new Date(),
+            toUpdate: true,
+            algoliaObjectToUpdate: true
+          }
+        })
+      }
 
       return {
         success: true,

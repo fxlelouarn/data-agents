@@ -141,6 +141,128 @@ router.post('/', [
   })
 }))
 
+/**
+ * Enriches a proposal with contextual information from Miles Republic database
+ * 
+ * Behavior by proposal type:
+ * - EVENT_UPDATE: Adds eventName, eventCity, eventStatus from the Event table
+ * - EDITION_UPDATE/NEW_EVENT: Adds previous edition info (calendarStatus, year, startDate) and eventStatus
+ * - Other types: Returns proposal unchanged
+ * 
+ * @param proposal - The proposal to enrich
+ * @returns Enriched proposal with additional context fields
+ */
+export async function enrichProposal(proposal: any) {
+  // EVENT_UPDATE: Enrich with event name, city and status
+  if (proposal.type === 'EVENT_UPDATE' && proposal.eventId) {
+    try {
+      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+        where: { type: 'MILES_REPUBLIC', isActive: true }
+      })
+
+      if (!milesRepublicConnection) return proposal
+
+      const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+      const logger = createConsoleLogger('API', 'proposals-api')
+      const dbManager = DatabaseManager.getInstance(logger)
+      const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+      const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
+        ? parseInt(proposal.eventId)
+        : proposal.eventId
+
+      const event = await connection.event.findUnique({
+        where: { id: numericEventId },
+        select: { 
+          name: true,
+          city: true,
+          status: true 
+        }
+      })
+
+      if (event) {
+        return {
+          ...proposal,
+          eventName: event.name,
+          eventCity: event.city,
+          eventStatus: event.status
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to fetch event info for proposal', proposal.id, error)
+    }
+    return proposal
+  }
+  
+  // Pour les EDITION_UPDATE et NEW_EVENT, logique existante
+  if (!proposal.eventId || !proposal.editionYear || (proposal.type !== 'EDITION_UPDATE' && proposal.type !== 'NEW_EVENT')) {
+    return proposal
+  }
+
+  try {
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: { type: 'MILES_REPUBLIC', isActive: true }
+    })
+
+    if (!milesRepublicConnection) return proposal
+
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'proposals-api')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+    const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
+      ? parseInt(proposal.eventId)
+      : proposal.eventId
+
+    // Vérifier que editionYear est valide
+    if (typeof proposal.editionYear !== 'number' || isNaN(proposal.editionYear)) {
+      return proposal
+    }
+    
+    const previousEditionYear = proposal.editionYear - 1
+    const previousEdition = await connection.edition.findFirst({
+      where: { 
+        eventId: numericEventId, 
+        year: String(previousEditionYear) // year est un String dans Miles Republic
+      },
+      select: { 
+        calendarStatus: true, 
+        year: true,
+        startDate: true
+      }
+    })
+
+    // Récupérer aussi le status de l'événement
+    const event = await connection.event.findUnique({
+      where: { id: numericEventId },
+      select: { status: true }
+    })
+
+    if (previousEdition) {
+      return {
+        ...proposal,
+        previousEditionCalendarStatus: previousEdition.calendarStatus,
+        previousEditionYear: previousEdition.year,
+        previousEditionStartDate: previousEdition.startDate,
+        eventStatus: event?.status
+      }
+    }
+    
+    // Même si pas d'édition précédente, on veut le status de l'événement
+    if (event) {
+      return {
+        ...proposal,
+        eventStatus: event.status
+      }
+    }
+  } catch (error) {
+    console.warn('Failed to fetch previous edition for proposal', proposal.id, error)
+  }
+
+  return proposal
+}
+
 // GET /api/proposals - List proposals with filters
 router.get('/', [
   query('status').optional().isIn(['PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED']),
@@ -179,9 +301,14 @@ router.get('/', [
     }
   })
 
+  // Enrichir chaque proposition avec les infos contextuelles
+  const enrichedProposals = await Promise.all(
+    proposals.map(p => enrichProposal(p))
+  )
+
   res.json({
     success: true,
-    data: proposals,
+    data: enrichedProposals,
     meta: {
       total,
       limit: parseInt(String(limit)),
@@ -229,11 +356,117 @@ router.get('/:id', [
     orderBy: { createdAt: 'desc' }
   })
 
+  // Enrichir avec le nom de l'événement pour EVENT_UPDATE
+  let eventName = null
+  let eventCity = null
+  let eventStatus = null
+  
+  if (proposal.type === 'EVENT_UPDATE' && proposal.eventId) {
+    try {
+      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+        where: { type: 'MILES_REPUBLIC', isActive: true }
+      })
+      
+      if (milesRepublicConnection) {
+        const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+        const logger = createConsoleLogger('API', 'proposals-api')
+        const dbManager = DatabaseManager.getInstance(logger)
+        const connection = await dbManager.getConnection(milesRepublicConnection.id)
+        
+        const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
+          ? parseInt(proposal.eventId)
+          : proposal.eventId
+        
+        const event = await connection.event.findUnique({
+          where: { id: numericEventId },
+          select: { name: true, city: true, status: true }
+        })
+        
+        if (event) {
+          eventName = event.name
+          eventCity = event.city
+          eventStatus = event.status
+        }
+      }
+    } catch (error) {
+      console.warn('Failed to fetch event info for proposal', proposal.id, error)
+    }
+  }
+  
+  // Récupérer le calendarStatus de l'édition précédente depuis Miles Republic
+  let previousEditionCalendarStatus = null
+  let previousEditionYear = null
+  let previousEditionStartDate = null
+  
+  if (proposal.eventId && proposal.editionYear && (proposal.type === 'EDITION_UPDATE' || proposal.type === 'NEW_EVENT')) {
+    try {
+      // Trouver la connexion Miles Republic
+      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+        where: {
+          type: 'MILES_REPUBLIC',
+          isActive: true
+        }
+      })
+
+      if (milesRepublicConnection) {
+        // Obtenir la connexion via DatabaseManager
+        const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+        const logger = createConsoleLogger('API', 'proposals-api')
+        const dbManager = DatabaseManager.getInstance(logger)
+        const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+        // Convertir eventId en nombre si nécessaire
+        const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
+          ? parseInt(proposal.eventId)
+          : proposal.eventId
+
+        // Chercher l'édition précédente (année N-1)
+        previousEditionYear = proposal.editionYear - 1
+        const previousEdition = await connection.edition.findFirst({
+          where: {
+            eventId: numericEventId,
+            year: previousEditionYear.toString() // year est un String dans Miles Republic
+          },
+          select: {
+            calendarStatus: true,
+            year: true,
+            startDate: true
+          }
+        })
+
+        if (previousEdition) {
+          previousEditionCalendarStatus = previousEdition.calendarStatus
+          previousEditionYear = previousEdition.year
+          previousEditionStartDate = previousEdition.startDate
+        }
+        
+        // Récupérer aussi le status de l'événement
+        const event = await connection.event.findUnique({
+          where: { id: numericEventId },
+          select: { status: true }
+        })
+        
+        if (event) {
+          eventStatus = event.status
+        }
+      }
+    } catch (error) {
+      // En cas d'erreur, on continue sans les données de l'édition précédente
+      console.warn('Failed to fetch previous edition calendar status:', error)
+    }
+  }
+
   res.json({
     success: true,
     data: {
       ...proposal,
-      relatedProposals
+      relatedProposals,
+      eventName,
+      eventCity,
+      previousEditionCalendarStatus,
+      previousEditionYear,
+      previousEditionStartDate,
+      eventStatus
     }
   })
 }))
