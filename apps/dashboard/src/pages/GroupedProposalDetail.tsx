@@ -1,5 +1,6 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
+import { useQueryClient } from '@tanstack/react-query'
 import {
   Box,
   LinearProgress,
@@ -37,6 +38,7 @@ import { useProposals, useUpdateProposal, useBulkArchiveProposals, useUnapproveP
 const GroupedProposalDetail: React.FC = () => {
   const { groupKey } = useParams<{ groupKey: string }>()
   const navigate = useNavigate()
+  const queryClient = useQueryClient()
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [killDialogOpen, setKillDialogOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
@@ -423,6 +425,9 @@ const GroupedProposalDetail: React.FC = () => {
           }
         }
       }
+      
+      // Invalider une seule fois après toutes les mutations
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving race changes:', error)
     }
@@ -431,8 +436,32 @@ const GroupedProposalDetail: React.FC = () => {
   const handleApproveAllRaces = async () => {
     try {
       for (const raceChange of consolidatedRaceChanges) {
-        await handleApproveRace(raceChange)
+        // Récupérer toutes les propositions concernées par cette course
+        const raceProposalIds = raceChange.proposalIds
+        const concernedProposals = groupProposals.filter(p => raceProposalIds.includes(p.id))
+        
+        for (const proposal of concernedProposals) {
+          // Trouver les changements de cette course dans la proposition
+          const racesData = proposal.changes.races
+          if (racesData && Array.isArray(racesData)) {
+            const raceInProposal = racesData.find((race: any) => 
+              (race.name || `Course ${racesData.indexOf(race) + 1}`) === raceChange.raceName
+            )
+            
+            if (raceInProposal) {
+              await updateProposalMutation.mutateAsync({
+                id: proposal.id,
+                status: 'APPROVED',
+                reviewedBy: 'Utilisateur',
+                appliedChanges: { [`races[${raceChange.raceIndex}]`]: raceInProposal }
+              })
+            }
+          }
+        }
       }
+      
+      // Invalider une seule fois après toutes les mutations
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving all races:', error)
     }
@@ -452,6 +481,9 @@ const GroupedProposalDetail: React.FC = () => {
           reviewedBy: 'Utilisateur'
         })
       }
+      
+      // Invalider une seule fois après toutes les mutations
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error rejecting all races:', error)
     }
@@ -492,6 +524,9 @@ const GroupedProposalDetail: React.FC = () => {
           }
         }
       }
+      
+      // Invalider les requêtes UNE SEULE FOIS après toutes les mises à jour
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving proposals:', error)
     }
@@ -506,6 +541,9 @@ const GroupedProposalDetail: React.FC = () => {
           reviewedBy: 'Utilisateur'
         })
       }
+      
+      // Invalider une seule fois après toutes les mutations
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error rejecting proposals:', error)
     }
@@ -533,6 +571,9 @@ const GroupedProposalDetail: React.FC = () => {
       for (const proposal of approvedProposals) {
         await unapproveProposalMutation.mutateAsync(proposal.id)
       }
+      
+      // Invalider une seule fois après toutes les mutations
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error unapproving proposals:', error)
     }

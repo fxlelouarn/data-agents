@@ -26,14 +26,38 @@ const api = axios.create({
   },
 })
 
-// Response interceptor for error handling
+// Helper pour délai avec backoff exponentiel
+const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
+
+// Response interceptor for error handling with retry logic for 429
 api.interceptors.response.use(
   (response) => response,
-  (error) => {
+  async (error) => {
+    const config = error.config
+    
+    // Handle authentication error
     if (error.response?.status === 401) {
-      // Handle authentication error
       window.location.href = '/login'
+      return Promise.reject(error)
     }
+    
+    // Handle rate limiting with exponential backoff
+    if (error.response?.status === 429) {
+      config._retryCount = config._retryCount || 0
+      
+      // Maximum 3 retries
+      if (config._retryCount < 3) {
+        config._retryCount += 1
+        
+        // Backoff exponentiel : 1s, 2s, 4s
+        const delayMs = Math.pow(2, config._retryCount - 1) * 1000
+        console.warn(`Rate limited. Retrying in ${delayMs}ms (attempt ${config._retryCount}/3)...`)
+        
+        await delay(delayMs)
+        return api.request(config)
+      }
+    }
+    
     return Promise.reject(error)
   }
 )

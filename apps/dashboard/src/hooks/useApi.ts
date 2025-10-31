@@ -203,9 +203,9 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   return useQuery({
     queryKey: ['proposals', filters, limit, offset],
     queryFn: () => proposalsApi.getAll(filters, limit, offset),
-    staleTime: 10000, // Réduire à 10 secondes pour des données plus fraîches
-    refetchInterval: 30000, // Auto-refresh toutes les 30 secondes
-    refetchOnWindowFocus: true, // Rafraîchir quand l'utilisateur revient sur l'onglet
+    staleTime: 30000, // 30 secondes
+    refetchInterval: 60000, // Auto-refresh toutes les 60 secondes (au lieu de 30)
+    refetchOnWindowFocus: true, // Garder le refetch au focus
   })
 }
 
