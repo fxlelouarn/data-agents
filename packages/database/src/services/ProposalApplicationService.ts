@@ -279,7 +279,15 @@ export class ProposalApplicationService implements IProposalApplicationService {
       
       for (const [field, value] of Object.entries(selectedChanges)) {
         if (value !== undefined && value !== null) {
-          updateData[field] = value
+          // Gérer les objets {old, new, confidence} ou {current, proposed}
+          if (value && typeof value === 'object' && ('new' in value || 'proposed' in value)) {
+            const newValue = 'new' in value ? value.new : value.proposed
+            if (newValue !== undefined && newValue !== null) {
+              updateData[field] = newValue
+            }
+          } else {
+            updateData[field] = value
+          }
         }
       }
 

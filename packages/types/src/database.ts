@@ -16,7 +16,8 @@ export enum LogLevel {
 }
 
 export enum ProposalType {
-  CREATE = 'CREATE',
-  UPDATE = 'UPDATE',
-  DELETE = 'DELETE',
+  NEW_EVENT = 'NEW_EVENT',
+  EVENT_UPDATE = 'EVENT_UPDATE',
+  EDITION_UPDATE = 'EDITION_UPDATE',
+  RACE_UPDATE = 'RACE_UPDATE',
 }
