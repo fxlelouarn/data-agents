@@ -16,6 +16,7 @@ out/
 .env
 .env.local
 .env.*.local
+test-environment/configs/test-env.local.json
 
 # IDE
 .vscode/

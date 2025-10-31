@@ -328,7 +328,9 @@ export class GoogleSearchDateAgent extends BaseAgent {
         
         // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED 
         // ordonnés par la date future estimée pour un traitement déterministe
-        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée)')
+        // IMPORTANT: On filtre les éditions dont la startDate est dans le futur OU null (à confirmer)
+        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée, futur uniquement)')
+        const now = new Date()
         const eventIds = await this.sourceDb.$queryRaw<{id: number, estimatedDate: Date | null}[]>`
           SELECT DISTINCT e.id, 
                  ed."startDate" as "estimatedDate",
@@ -339,6 +341,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
             AND ed."status" = 'LIVE'
             AND e.status = 'LIVE'
             AND ed.year IN (${currentYear}, ${nextYear})
+            AND (ed."startDate" IS NULL OR ed."startDate" >= ${now})
           ORDER BY 
             ed."startDate" ASC NULLS LAST,  -- Date estimée en premier (nulls à la fin)
             e."createdAt" ASC               -- Puis par date de création comme fallback
