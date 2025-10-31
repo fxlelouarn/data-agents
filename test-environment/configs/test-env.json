@@ -1,0 +1,46 @@
+{
+  "description": "Configuration de l'environnement de test pour les agents",
+  "frameworkDatabase": {
+    "url": null,
+    "description": "Base de données du framework data-agents (agents, runs, logs, states). Si null, utilise DATABASE_URL"
+  },
+  "databases": {
+    "milesRepublic": {
+      "url": null,
+      "id": "db-miles-republic",
+      "name": "Miles Republic",
+      "type": "miles-republic",
+      "description": "Configure this in test-env.local.json with your database URL"
+    },
+    "milesRepublicStaging": {
+      "url": null,
+      "id": "db-miles-republic-staging",
+      "name": "Miles Republic Staging",
+      "type": "miles-republic",
+      "description": "Staging database - configure URL if available"
+    }
+  },
+  "testSettings": {
+    "defaultTimeout": 30000,
+    "defaultBatchSize": 10,
+    "logLevel": "INFO",
+    "mockMode": true
+  },
+  "apiKeys": {
+    "googleSearch": {
+      "apiKey": null,
+      "searchEngineId": null,
+      "description": "Google Custom Search API credentials for GoogleSearchDateAgent"
+    },
+    "ffa": {
+      "baseUrl": "https://bases.athle.fr",
+      "description": "FFA calendar scraping - no API key needed"
+    }
+  },
+  "scraping": {
+    "userAgent": "Mozilla/5.0 (compatible; DataAgentsBot/1.0)",
+    "humanDelayMs": 2000,
+    "maxRetries": 3,
+    "timeout": 10000
+  }
+}

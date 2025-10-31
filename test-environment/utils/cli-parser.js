@@ -150,8 +150,18 @@ function mergeOptionsWithConfig(options, config) {
     const merged = { ...options };
     
     // Config file values are used as defaults, command line options override them
+    // Special handling for 'config' key: preserve the nested config object from file
     Object.keys(config).forEach(key => {
-        if (merged[key] === undefined || merged[key] === null) {
+        if (key === 'config') {
+            // Don't override nested config object with config file path
+            if (!merged.config || typeof merged.config === 'string') {
+                // Store file path separately if it exists
+                if (typeof merged.config === 'string') {
+                    merged.configFilePath = merged.config;
+                }
+                merged.config = config[key];
+            }
+        } else if (merged[key] === undefined || merged[key] === null) {
             merged[key] = config[key];
         }
     });

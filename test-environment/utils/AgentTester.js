@@ -5,6 +5,7 @@ const { createMockContext } = require('./mock-context');
 const { createBaseAgentContext, createMockDatabaseService } = require('./base-agent-context');
 const { createLiveAgentContext, createLiveDatabaseService, setupLiveDatabase } = require('./live-agent-context');
 const { InteractivePrompt } = require('./interactive-prompt');
+const { initializeTestDatabaseConfigs, applyFrameworkDatabaseConfig } = require('./test-database-configs');
 
 /**
  * AgentTester - Main class for testing agents in a console environment
@@ -15,6 +16,8 @@ class AgentTester {
         this.options = options;
         this.logger = logger;
         this.agent = null;
+        this.agentId = null; // Will be set during initialization
+        this.testAgentCreated = false;
         this.startTime = null;
         this.results = {
             success: false,
@@ -23,6 +26,81 @@ class AgentTester {
             error: null,
             outputs: []
         };
+    }
+
+    /**
+     * Ensure test agent exists in framework database
+     */
+    async ensureTestAgentExists(agentConfig, logger) {
+        try {
+            // Use the database package's Prisma client
+            const { prisma } = await import('@data-agents/database');
+            
+            // Check if agent exists
+            const existingAgent = await prisma.agent.findUnique({
+                where: { id: agentConfig.id }
+            });
+            
+            if (!existingAgent) {
+                logger.info(`🔧 Creating test agent in framework database: ${agentConfig.id}`);
+                
+                await prisma.agent.create({
+                    data: {
+                        id: agentConfig.id,
+                        name: agentConfig.name,
+                        type: agentConfig.type,
+                        frequency: agentConfig.frequency,
+                        isActive: agentConfig.isActive,
+                        config: agentConfig.config || {}
+                    }
+                });
+                
+                this.testAgentCreated = true;
+                logger.info(`✅ Test agent created: ${agentConfig.id}`);
+            } else {
+                this.testAgentCreated = false;
+                logger.info(`ℹ️  Test agent already exists: ${agentConfig.id}`);
+            }
+        } catch (error) {
+            logger.warn(`Could not create test agent in framework database: ${error.message}`);
+            this.testAgentCreated = false;
+        }
+    }
+    
+    /**
+     * Cleanup test agent from framework database
+     */
+    async cleanupTestAgent(agentId, logger) {
+        if (!this.testAgentCreated) {
+            logger.info(`ℹ️  Skipping cleanup - test agent was not created by this test`);
+            return; // Don't delete if we didn't create it
+        }
+        
+        try {
+            logger.info(`🧹 Cleaning up test agent: ${agentId}`);
+            
+            // Use the database package's Prisma client
+            const { prisma } = await import('@data-agents/database');
+            
+            // Delete related data first (cascade)
+            const statesDeleted = await prisma.agentState.deleteMany({ where: { agentId } });
+            logger.info(`   Deleted ${statesDeleted.count} agent states`);
+            
+            const logsDeleted = await prisma.agentLog.deleteMany({ where: { agentId } });
+            logger.info(`   Deleted ${logsDeleted.count} agent logs`);
+            
+            const runsDeleted = await prisma.agentRun.deleteMany({ where: { agentId } });
+            logger.info(`   Deleted ${runsDeleted.count} agent runs`);
+            
+            // Delete the agent
+            await prisma.agent.delete({ where: { id: agentId } });
+            logger.info(`   Deleted agent record`);
+            
+            logger.info(`✅ Test agent cleaned up: ${agentId}`);
+        } catch (error) {
+            logger.warn(`⚠️  Could not cleanup test agent: ${error.message}`);
+            logger.debug(`Cleanup error stack: ${error.stack}`);
+        }
     }
 
     /**
@@ -42,6 +120,10 @@ class AgentTester {
 
             // Merge options with config
             const mergedConfig = mergeOptionsWithConfig(this.options, config);
+            
+            // Apply framework database configuration from test-env (if configured)
+            // This must be done early, before any Prisma clients are created
+            applyFrameworkDatabaseConfig(initOperation);
             
             // Set log level based on options
             if (this.options.debug) {
@@ -81,12 +163,12 @@ class AgentTester {
             
             // Prepare agent configuration
             const agentConfig = {
-                id: mergedConfig.agentId || this.agentName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
-                name: mergedConfig.agentName || this.agentName,
-                type: mergedConfig.agentType || 'EXTRACTOR',
+                id: mergedConfig.id || mergedConfig.agentId || this.agentName.toLowerCase().replace(/[^a-z0-9-]/g, '-'),
+                name: mergedConfig.name || mergedConfig.agentName || this.agentName,
+                type: mergedConfig.type || mergedConfig.agentType || 'EXTRACTOR',
                 frequency: mergedConfig.frequency || '0 */6 * * *',
-                isActive: true,
-                config: mergedConfig
+                isActive: mergedConfig.isActive ?? true,
+                config: mergedConfig.config || {}
             };
             
             // Create console logger for test mode
@@ -102,22 +184,35 @@ class AgentTester {
                 }
             }
             
+            // Store agent ID for cleanup
+            this.agentId = agentConfig.id;
+            
             // Instantiate the agent (BaseAgent interface: constructor(config, db, logger))
             this.agent = new AgentClass(agentConfig, dbService, agentLogger);
             this.agentContext = agentContext; // Store context for run method
             
-            // If in live mode and agent has a DatabaseManager, inject test configurations
-            if (isLiveMode && this.agent.dbManager && mergedConfig.testDatabaseConfigs) {
-                initOperation.info('🔧 Injecting test database configurations...');
-                this.agent.dbManager.addTestConfigs(mergedConfig.testDatabaseConfigs);
+            // If agent has a DatabaseManager, inject test configurations
+            if (this.agent.dbManager) {
+                // First, try to auto-detect database configs from environment variables
+                initOperation.info('🔧 Detecting database configurations from environment...');
+                const autoDetectedConfigs = await initializeTestDatabaseConfigs(this.agent.dbManager, initOperation);
+                
+                // Then, add any explicit test configs from mergedConfig
+                if (mergedConfig.testDatabaseConfigs && mergedConfig.testDatabaseConfigs.length > 0) {
+                    initOperation.info(`🔧 Adding ${mergedConfig.testDatabaseConfigs.length} explicit test database configuration(s)...`);
+                    this.agent.dbManager.addTestConfigs(mergedConfig.testDatabaseConfigs);
+                }
             }
             
             // Apply test configuration
             if (this.agent.configure && typeof this.agent.configure === 'function') {
                 await this.agent.configure(mergedConfig);
             }
+            
+            // Ensure test agent exists in framework database
+            await this.ensureTestAgentExists(agentConfig, initOperation);
 
-            initOperation.complete('Agent initialized successfully', { 
+            initOperation.complete('Agent initialized successfully', {
                 agentName: this.agentName,
                 agentType: this.agent.constructor.name,
                 config: this.sanitizeConfig(mergedConfig)
@@ -339,6 +434,11 @@ class AgentTester {
                 duration: this.results.duration,
                 itemsProcessed: this.results.itemsProcessed
             });
+            
+            // Cleanup test agent if we created it
+            if (this.agentId) {
+                await this.cleanupTestAgent(this.agentId, this.logger);
+            }
 
             return this.results;
 
@@ -347,6 +447,12 @@ class AgentTester {
             this.results.duration = Date.now() - this.startTime;
             
             runOperation.fail('Agent test failed', error);
+            
+            // Cleanup test agent even on error
+            if (this.agentId) {
+                await this.cleanupTestAgent(this.agentId, this.logger);
+            }
+            
             return this.results;
         }
     }

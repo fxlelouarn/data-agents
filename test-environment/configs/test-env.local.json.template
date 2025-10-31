@@ -1,0 +1,61 @@
+{
+  "description": "Configuration locale de l'environnement de test - ce fichier n'est pas versionné",
+  
+  "frameworkDatabase": {
+    "url": "postgresql://user:password@localhost:5432/data_agents",
+    "_comment": "Base de données du framework data-agents (agents, runs, logs, states). Optionnel - utilise DATABASE_URL si non défini"
+  },
+  
+  "databases": {
+    "milesRepublic": {
+      "url": "postgresql://your-user:your-password@your-host/your-database?sslmode=require",
+      "id": "db-miles-republic",
+      "name": "Miles Republic Local/Dev",
+      "type": "miles-republic",
+      "_comment": "Types supportés: 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic'. Utilisez 'miles-republic' pour Miles Republic"
+    },
+    
+    "examplePostgres": {
+      "url": "postgresql://user:pass@localhost:5432/mydb",
+      "id": "db-example",
+      "name": "Example PostgreSQL DB",
+      "type": "postgresql",
+      "_comment": "Base PostgreSQL standard - supprimez cet exemple"
+    }
+  },
+  
+  "testSettings": {
+    "defaultTimeout": 30000,
+    "defaultBatchSize": 10,
+    "logLevel": "DEBUG",
+    "mockMode": false,
+    "_comment": "mockMode: true = simulation, false = vraies connexions"
+  },
+  
+  "apiKeys": {
+    "googleSearch": {
+      "apiKey": "your-google-api-key",
+      "searchEngineId": "your-search-engine-id",
+      "_comment": "Optionnel - uniquement pour GoogleSearchDateAgent"
+    }
+  },
+  
+  "scraping": {
+    "userAgent": "Mozilla/5.0 (compatible; DataAgentsBot/1.0)",
+    "humanDelayMs": 2000,
+    "maxRetries": 3,
+    "timeout": 10000,
+    "_comment": "Configuration pour les agents de scraping"
+  },
+  
+  "_documentation": {
+    "databaseTypes": {
+      "postgresql": "Base PostgreSQL standard (générique)",
+      "mysql": "MySQL/MariaDB",
+      "mongodb": "MongoDB NoSQL",
+      "miles-republic": "Miles Republic avec schéma spécifique (nécessite: cd apps/agents && npx prisma generate)"
+    },
+    "usage": "Copiez ce fichier vers test-env.local.json et configurez vos credentials",
+    "priority": "test-env.local.json > test-env.json > variables d'environnement"
+  }
+}
