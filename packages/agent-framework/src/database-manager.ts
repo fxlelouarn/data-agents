@@ -3,7 +3,7 @@ import { AgentLogger } from './types'
 export interface DatabaseConfig {
   id: string
   name: string
-  type: 'postgresql' | 'mysql' | 'mongodb' | 'medusa'
+  type: 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic'
   host: string
   port: number
   database: string
@@ -80,12 +80,12 @@ export class DatabaseManager {
   /**
    * Mapper les types de base de données depuis le schéma Prisma
    */
-  private mapDatabaseType(prismaType: any): 'postgresql' | 'mysql' | 'mongodb' | 'medusa' {
+  private mapDatabaseType(prismaType: any): 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic' {
     switch (prismaType) {
       case 'POSTGRESQL': return 'postgresql'
       case 'MYSQL': return 'mysql'
       case 'MONGODB': return 'mongodb'
-      case 'MILES_REPUBLIC': return 'medusa'
+      case 'MILES_REPUBLIC': return 'miles-republic'
       case 'EXTERNAL_API': return 'postgresql' // Fallback
       case 'SQLITE': return 'postgresql' // Fallback
       default: return 'postgresql'
@@ -197,8 +197,8 @@ export class DatabaseManager {
 
       // Use the correct Prisma client based on database type
       let PrismaClient
-      if (config.type === 'medusa') {
-        // For Miles Republic / Medusa databases, use the specialized client
+      if (config.type === 'miles-republic') {
+        // For Miles Republic databases, use the specialized client
         try {
           // Try to import from the agents app directory
           const path = require('path')
