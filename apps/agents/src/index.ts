@@ -1,13 +1,13 @@
 import { agentRegistry } from '@data-agents/agent-framework'
-// import { FFAScraperAgent } from './ffa-scraper' // TODO: Agent non prêt pour production
+import { FFAScraperAgent } from './FFAScraperAgent'
 import { GoogleSearchDateAgent } from './GoogleSearchDateAgent'
 
 // Register all available agents
-// agentRegistry.register('FFA_SCRAPER', FFAScraperAgent) // TODO: Agent non prêt pour production
+agentRegistry.register('FFA_SCRAPER', FFAScraperAgent)
 agentRegistry.register('GOOGLE_SEARCH_DATE', GoogleSearchDateAgent)
 
 // Export for use in other applications
-// export { FFAScraperAgent } // TODO: Agent non prêt pour production
+export { FFAScraperAgent }
 export { GoogleSearchDateAgent }
 export { agentRegistry }
 
