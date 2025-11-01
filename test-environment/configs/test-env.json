@@ -10,6 +10,7 @@
       "id": "db-miles-republic",
       "name": "Miles Republic",
       "type": "miles-republic",
+      "prismaSchema": "apps/agents/prisma/miles-republic.prisma",
       "description": "Configure this in test-env.local.json with your database URL"
     },
     "milesRepublicStaging": {
@@ -17,6 +18,7 @@
       "id": "db-miles-republic-staging",
       "name": "Miles Republic Staging",
       "type": "miles-republic",
+      "prismaSchema": "apps/agents/prisma/miles-republic.prisma",
       "description": "Staging database - configure URL if available"
     }
   },

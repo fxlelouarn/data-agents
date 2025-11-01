@@ -93,7 +93,8 @@ function loadDatabaseConfigsFromFile() {
                 isDefault: dbConfig.isDefault || false,
                 isActive: true,
                 description: dbConfig.description || `Loaded from test-env config (${key})`,
-                connectionString: parsed.connectionString
+                connectionString: parsed.connectionString,
+                prismaSchema: dbConfig.prismaSchema || undefined // Chemin vers le schéma Prisma
             });
         }
     }

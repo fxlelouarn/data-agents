@@ -14,6 +14,7 @@ export interface DatabaseConfig {
   isActive: boolean
   description?: string
   connectionString?: string // URL de connexion complète si fournie
+  prismaSchema?: string // Chemin relatif vers le schéma Prisma à utiliser
 }
 
 export class DatabaseManager {
@@ -67,6 +68,13 @@ export class DatabaseManager {
   
   private async doLoadConfigurations() {
     try {
+      // Si des configurations de test ont déjà été ajoutées, ne pas charger depuis la BD
+      if (this.configs.size > 0) {
+        this.logger.info(`Utilisation des configurations existantes (${this.configs.size} config(s) - mode test)`)
+        this.configsLoaded = true
+        return
+      }
+      
       // Charger uniquement les configurations depuis la base de données
       await this.loadDatabaseConfigurations()
       this.configsLoaded = true
@@ -195,19 +203,93 @@ export class DatabaseManager {
         connectionUrl = `${protocol}://${config.username}:${config.password}@${config.host}:${config.port}/${config.database}${sslParam}`
       }
 
-      // Use the correct Prisma client based on database type
+      // Use the correct Prisma client based on database type and schema
       let PrismaClient
-      if (config.type === 'miles-republic') {
-        // For Miles Republic databases, use the specialized client
+      
+      if (config.prismaSchema) {
+        // Si un schéma Prisma est spécifié, on doit le générer et l'utiliser
         try {
-          // Try to import from the agents app directory
+          const path = require('path')
+          const fs = require('fs')
+          const { execSync } = require('child_process')
+          
+          // Résoudre le chemin absolu du schéma depuis la racine du projet
+          const projectRoot = path.resolve(__dirname, '../../..')
+          const schemaPath = path.resolve(projectRoot, config.prismaSchema)
+          
+          if (!fs.existsSync(schemaPath)) {
+            throw new Error(`Schema Prisma introuvable: ${schemaPath}`)
+          }
+          
+          this.logger.info(`Utilisation du schéma Prisma: ${config.prismaSchema}`)
+          
+          // Créer un répertoire temporaire pour le client généré
+          const outputDir = path.join(projectRoot, 'node_modules', '.prisma', `client-${config.id}`)
+          
+          // Générer le client Prisma pour ce schéma spécifique
+          const envVars = `DATABASE_URL="${connectionUrl}"`
+          const generateCmd = `${envVars} npx prisma generate --schema="${schemaPath}" --generator=client`
+          
+          this.logger.debug(`Génération du client Prisma: ${generateCmd}`)
+          
+          // Exécuter la génération (si pas déjà fait)
+          try {
+            execSync(generateCmd, { 
+              cwd: projectRoot,
+              stdio: 'pipe',
+              env: { ...process.env, DATABASE_URL: connectionUrl }
+            })
+          } catch (genError: any) {
+            // Si l'erreur est juste un warning, continuer
+            if (!genError.message.includes('already up to date')) {
+              this.logger.warn(`Erreur lors de la génération du client Prisma (continuons quand même): ${genError.message}`)
+            }
+          }
+          
+          // Importer le client généré depuis le schéma
+          const schemaDir = path.dirname(schemaPath)
+          const clientPath = path.join(schemaDir, 'node_modules', '.prisma', 'client')
+          
+          // Essayer plusieurs chemins possibles
+          const possiblePaths = [
+            clientPath,
+            path.join(projectRoot, 'node_modules', '.prisma', 'client'),
+            path.join(schemaDir, '..', 'node_modules', '.prisma', 'client')
+          ]
+          
+          let clientModule = null
+          for (const tryPath of possiblePaths) {
+            try {
+              if (fs.existsSync(path.join(tryPath, 'index.js'))) {
+                clientModule = await import(tryPath)
+                this.logger.info(`Client Prisma chargé depuis: ${tryPath}`)
+                break
+              }
+            } catch (e) {
+              // Continuer vers le prochain chemin
+            }
+          }
+          
+          if (!clientModule) {
+            throw new Error(`Client Prisma introuvable après génération. Chemins testés: ${possiblePaths.join(', ')}`)
+          }
+          
+          PrismaClient = clientModule.PrismaClient
+          
+        } catch (error) {
+          this.logger.error(`Erreur lors du chargement du client Prisma personnalisé`, { error: String(error) })
+          throw new Error(`Impossible de charger le client Prisma depuis ${config.prismaSchema}: ${error}`)
+        }
+      } else if (config.type === 'miles-republic') {
+        // Fallback: essayer de charger le client Miles Republic par défaut
+        try {
           const path = require('path')
           const agentsDir = path.resolve(__dirname, '../../../apps/agents')
           const milesClient = await import(`${agentsDir}/node_modules/.prisma/client/index.js`)
           PrismaClient = milesClient.PrismaClient
-          this.logger.info('Using Miles Republic Prisma client')
+          this.logger.info('Using Miles Republic Prisma client (default)')
         } catch (error) {
-          this.logger.error('Miles Republic Prisma client not found, cannot connect to Miles Republic database', { error: String(error) })
+          this.logger.error('Miles Republic Prisma client not found', { error: String(error) })
           throw new Error('Miles Republic Prisma client not generated. Run: cd apps/agents && npx prisma generate')
         }
       } else {
@@ -324,11 +406,14 @@ export class DatabaseManager {
 
   /**
    * Ajouter des configurations de test (pour l'environnement de test)
+   * Ces configs ont la priorité sur celles chargées depuis la BD
    */
   addTestConfigs(testConfigs: DatabaseConfig[]): void {
     for (const config of testConfigs) {
       this.configs.set(config.id, config)
     }
-    this.logger.info(`Ajout de ${testConfigs.length} configurations de test`)
+    this.logger.info(`Ajout de ${testConfigs.length} configuration(s) de test`)
+    // Marquer comme chargé pour éviter le chargement depuis la BD
+    this.configsLoaded = true
   }
 }

@@ -12,7 +12,8 @@
       "id": "db-miles-republic",
       "name": "Miles Republic Local/Dev",
       "type": "miles-republic",
-      "_comment": "Types supportés: 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic'. Utilisez 'miles-republic' pour Miles Republic"
+      "prismaSchema": "apps/agents/prisma/miles-republic.prisma",
+      "_comment": "Types supportés: 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic'. Utilisez 'miles-republic' pour Miles Republic. prismaSchema: chemin relatif vers le schéma Prisma à utiliser (optionnel)"
     },
     
     "examplePostgres": {
