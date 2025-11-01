@@ -206,6 +206,7 @@ export function parseRaces(html: string): FFARace[] {
 
 /**
  * Parse une date française "30 Novembre 2025" ou "01 novembre"
+ * Retourne une date à minuit UTC
  */
 export function parseFrenchDate(dateStr: string): Date | undefined {
   try {
@@ -227,7 +228,8 @@ export function parseFrenchDate(dateStr: string): Date | undefined {
     const month = monthsMap[monthName]
     if (month === undefined) return undefined
 
-    const date = new Date(year, month, day)
+    // Créer la date en UTC à minuit pour éviter les problèmes de timezone
+    const date = new Date(Date.UTC(year, month, day, 0, 0, 0, 0))
     return isNaN(date.getTime()) ? undefined : date
   } catch {
     return undefined

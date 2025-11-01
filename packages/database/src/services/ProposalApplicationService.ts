@@ -25,7 +25,7 @@ export class ProposalApplicationService implements IProposalApplicationService {
     
     // Chercher une connexion MILES_REPUBLIC par défaut
     const availableDbs = await this.dbManager.getAvailableDatabases()
-    const milesDb = availableDbs.find(db => db.type === 'medusa' || db.name.toLowerCase().includes('miles'))
+    const milesDb = availableDbs.find(db => db.type === 'miles-republic' || db.name.toLowerCase().includes('miles'))
     
     if (!milesDb) {
       throw new Error('Aucune connexion Miles Republic trouvée')

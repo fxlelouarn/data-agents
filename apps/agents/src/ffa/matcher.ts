@@ -69,8 +69,8 @@ export async function matchCompetition(
         
         // Trouver l'édition correspondante (même année)
         const year = competition.competition.date.getFullYear().toString()
-        logger.info(`    Checking editions for year ${year}: ${JSON.stringify(candidate.editions || candidate.Edition || [])}`);
-        const edition = (candidate.editions || candidate.Edition)?.find((e: any) => e.year === year)
+        logger.info(`    Checking editions for year ${year}: ${JSON.stringify(candidate.editions || [])}`);
+        const edition = candidate.editions?.find((e: any) => e.year === year)
 
         bestMatch = {
           type: totalSimilarity >= config.similarityThreshold ? 'FUZZY_MATCH' : 'NO_MATCH',
@@ -98,7 +98,7 @@ export async function matchCompetition(
     }
 
     if (bestMatch) {
-      logger.info(`  → Result: ${bestMatch.type} with ${bestMatch.event.name} (confidence: ${bestMatch.confidence.toFixed(3)}, edition: ${bestMatch.edition ? 'YES' : 'NO'})`);
+      logger.info(`  → Result: ${bestMatch.type} with ${bestMatch.event?.name || 'unknown'} (confidence: ${bestMatch.confidence.toFixed(3)}, edition: ${bestMatch.edition ? 'YES' : 'NO'})`);
     } else {
       logger.info(`  → Result: NO_MATCH (no candidates passed similarity threshold ${config.similarityThreshold})`);
     }

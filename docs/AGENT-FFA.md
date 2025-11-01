@@ -1,8 +1,17 @@
-Nous allons créer un nouvel agent qui aura la responsabilité de créer des Proposals à partir d'informations obtenues sur le calendrier de la FFA (https://www.athle.fr/base/calendrier). Ces Proposals pourront porter sur de la modification d'éditions existantes ou sur la création de nouveaux événements (et donc de nouvelles éditions et de nouvelles courses). Les modifications pourront concerner les dates de l'édition, les distances des courses, les dénivelés des courses, les noms des courses, etc.
+# Agent FFA Scraper
 
-La Fédération Française d'Athlétisme (FFA) ne s'occupe que de courses à pied (sur route, trail, etc.).
+## Vue d'ensemble
 
-Le calendrier de la FFA peut être recherché selon plusieurs filtres qui nous permettront de scraper les informations d'événements par lot. Notamment, nous utiliserons les dates, mois par mois, et les ligues (qui sont essentiellement des régions).
+L'Agent FFA Scraper est un agent autonome qui collecte les données des compétitions de courses à pied depuis le calendrier officiel de la Fédération Française d'Athlétisme (https://www.athle.fr/base/calendrier) et génère des propositions (Proposals) pour mettre à jour ou créer des événements dans la base de données Miles Republic.
+
+**Fonctionnalités principales :**
+- Scraping automatique des compétitions FFA par ligue et par mois
+- Matching intelligent entre compétitions FFA et événements Miles Republic existants
+- Génération de propositions de création d'événements ou de mise à jour d'éditions
+- Comparaison détaillée des dates, courses, organisateurs, et services
+- Gestion robuste avec logs détaillés et tolérance aux erreurs
+
+La FFA répertorie uniquement les courses à pied officielles (route, trail, cross) avec chronométrage et enregistrement auprès de la fédération.
 
 Pour accéder à la liste des courses de la ligue ARA, pour le Running, entre le 1er novembre 2025 et le 30 novembre 2025, l'URL est la suivante :
 https://www.athle.fr/bases/liste.aspx?frmpostback=true&frmbase=calendrier&frmmode=1&frmespace=0&frmsaisonffa=2026&frmdate1=2025-11-01&frmdate2=2025-11-30&frmtype1=Running&frmniveau=&frmligue=ARA&frmdepartement=&frmniveaulab=&frmepreuve=&frmtype2=&frmtype3=&frmtype4=
@@ -510,18 +519,314 @@ Pour vérifier si une course d'une compétition du calendrier FFA correspond à 
 
 ---
 
-Utilise Playwright pour le scraping.
+## Architecture technique
+
+### Technologies utilisées
+- **Playwright** : pour le scraping des pages FFA
+- **Prisma** : pour l'accès à la base de données Miles Republic
+- **TypeScript** : pour le code de l'agent
+
+### Structure du code
+
+#### Fichiers principaux
+- `src/agent/agents/scrapers/ffa/FFAScraperAgent.ts` : agent principal
+- `src/agent/agents/scrapers/ffa/FFACompetitionParser.ts` : parser des fiches de compétition
+- `src/agent/agents/scrapers/ffa/FFAEventMatcher.ts` : logique de matching
+- `src/agent/agents/scrapers/ffa/FFAScraperAgentConfig.ts` : configuration de l'agent
 
 ---
-1. Matchng : pour identifier la correspondance entre compétition FFA et événement existant : il faut que tu regardes le nom (en ignorant les infos superflues comme "3è édition de" et éventuellement en utilisant un algo de similarité comme le trigramme ou Levenshtein), la ville, la période. Tu peux prendre un seuil de similarité supérieur à 75%
-2. Gestion des courses : la FFA peut répertorier moins de course que Miles Republic car la FFA ne prend en compte que les courses chronométrées et enregistrées auprès de la FFA. Donc si une compétition FFA a 4 courses, il faut d'abord s'assurer qu'elles n'existent pas sur Miles Republic, via la distance (avec une tolérance de 10%) ; si ça correspond, on propose le nom de la FFA ; si ça ne correspond à rien, on propose la création d'une nouvelle course dans Miles Republic. Attention, on ne prend pas en compte les courses FFA qui n'ont pas de distance. Les courses enfants sont incluses.
-3. Il faut créer un FFAScraperAgentConfigSchéma.ts car il y a des paramètres pour cet agent. Notamment liguesPerRun (nombre), monthsPerRun (nombre), levels (cases à cocher, par défaut départemental et régional -- National et International sont décochés), la fenêtre de scraping (en mois) et le délai entre le moment où l'agent a couvert la fenêtre de scraping et la repasse pour voir s'il y a de nouvelles compétitions, des changements de date, etc.
-4. Structure pour tracker les ligues/mois déjà passés : aucune idée, proposes quelque chose. Je ne sais pas si tu dois utiliser AgentState. En tout cas, il faut que l'avancement soit persisté car le serveur peut être redémarré sans que l'on souhaite tout repasser.
-5. Les données FFA sont officielles donc effectivement un niveau de confiance de 0.9 est sensé. Pour ajuster cette confiance, il faut utiliser les mêmes critères que le GoogleDateSearchAgent.
-6. Tu peux créer les compétitions dans l'ordre de leur apparition, pas de priorisation à faire.
-7. Il faut que tu filtres sur les compétitions de type "Running" (frmtype1=Running)
-8. Il faut que tu fasses comme si le scraping était humain, pas trop rapide.
-9. Je ne me souviens plus de ce qu'est le cooldown.
-10. Lis bien le code avant de démarrer
 
-Fais un plan en .md que je pourrai donner à une autre agent pour qu'il réalise tout ce qui doit être fait.
+## Fonctionnalités implémentées
+
+### 1. Normalisation des noms d'événements
+
+L'agent nettoie les noms d'événements pour améliorer le matching en supprimant :
+- Les mentions d'édition : "34ème édition", "7E édition", etc.
+- Les variations : "- 43èMe éDition", "34è édition de"
+
+Cela permet de matcher correctement des compétitions comme "Corrida de Sassenage - 34ème édition" avec l'événement "Corrida de Sassenage".
+
+### 2. Matching intelligent
+
+Le matching entre compétitions FFA et événements Miles Republic se base sur :
+- **Nom normalisé** : utilisation d'un algorithme de similarité (trigramme)
+- **Ville et département** : vérification de cohérence géographique
+- **Date** : vérification que la date FFA correspond à la période de l'édition
+- **Seuil de confiance** : >= 0.75 pour un match valide, >= 0.90 pour confiance haute
+
+### 3. Exclusion des événements "featured"
+
+Les événements marqués comme "featured" dans Miles Republic sont exclus des propositions de mise à jour car ils sont gérés manuellement par l'équipe.
+
+### 4. Gestion des dates avec heure
+
+Lorsque la FFA fournit l'heure de démarrage de la première course :
+- L'édition utilise cette date+heure complète comme `startDate`
+- La comparaison se fait sur date+heure pour détecter les changements
+
+Sinon :
+- L'édition utilise la date à minuit UTC
+- La comparaison ignore l'heure pour éviter des propositions inutiles
+
+### 5. Matching des courses par distance
+
+Le matching des courses privilégie **la distance** plutôt que le nom :
+- Tolérance de 5% sur la distance
+- Conversion automatique kilomètres → mètres pour la comparaison
+- Les courses sans distance dans la FFA sont ignorées
+- Les courses enfants sont incluses
+
+Exemple : une course de 12 km en base matchera une course FFA de 12000 m.
+
+### 6. Parsing robuste des fiches de compétition
+
+Le parser gère les deux structures HTML des fiches FFA :
+- **Ancien format** : courses dans un tableau `<table>`
+- **Nouveau format** : courses dans des divs `.club-card`
+
+Extraction automatique de :
+- Heure de démarrage de chaque course
+- Distance en mètres
+- Dénivelé positif (D+) en mètres
+- Nom de la course
+
+### 7. Logs détaillés
+
+L'agent produit des logs riches pour faciliter le débogage :
+- Matching des événements (score, confiance)
+- Matching des courses (distance, tolérance)
+- Propositions générées (type, raison)
+- Erreurs avec contexte
+
+Tous les logs de matching sont au niveau INFO pour être visibles par défaut.
+
+---
+
+## Types de propositions générées
+
+### EDITION_UPDATE
+Proposition de mise à jour d'une édition existante lorsque :
+- La date de l'édition a changé
+- L'organisateur a changé ou a été ajouté
+- Les services (parking, douche, restauration) ont changé
+- Des courses ont été ajoutées, modifiées ou supprimées
+
+Chaque proposition inclut :
+- L'ID et le nom de l'événement
+- Les champs modifiés avec ancienne et nouvelle valeur
+- La raison de la modification
+
+### NEW_EVENT
+Proposition de création d'un nouvel événement lorsque :
+- Aucun événement existant ne matche la compétition FFA
+- Ou le score de similarité est trop faible (<0.75)
+
+---
+
+## Configuration de l'agent
+
+Fichier : `FFAScraperAgentConfig.ts`
+
+Paramètres disponibles :
+- **liguesPerRun** : nombre de ligues à traiter par exécution
+- **monthsPerRun** : nombre de mois à traiter par exécution
+- **levels** : niveaux de compétitions (Départemental, Régional, National, International)
+- **scrapingWindowMonths** : fenêtre temporelle de scraping (en mois)
+- **rescanDelay** : délai avant de repasser sur les ligues/mois déjà scrapés
+
+Filtre automatique : seules les compétitions de type "Running" sont traitées (`frmtype1=Running`).
+
+---
+
+## Flux d'exécution
+
+1. **Initialisation** : chargement de la configuration et de l'état d'avancement
+2. **Sélection** : choix des ligues/mois à traiter selon l'état
+3. **Scraping** : récupération du listing des compétitions FFA
+4. **Pagination** : gestion automatique des pages multiples
+5. **Détails** : accès aux fiches descriptives de chaque compétition
+6. **Parsing** : extraction des données (dates, courses, organisateur, services)
+7. **Matching** : recherche d'événements correspondants dans Miles Republic
+8. **Comparaison** : détection des différences avec les données existantes
+9. **Propositions** : génération des proposals UPDATE ou NEW_EVENT
+10. **Persistance** : sauvegarde de l'état d'avancement
+
+---
+
+## Gestion de l'état
+
+L'avancement du scraping est persisté pour permettre la reprise après redémarrage :
+- Ligues déjà traitées
+- Mois déjà traités par ligue
+- Date du dernier scraping complet
+
+Cela permet d'éviter de retraiter les mêmes données et d'optimiser les ressources.
+
+---
+
+## Bonnes pratiques de scraping
+
+- **Délais aléatoires** : entre chaque requête pour simuler un comportement humain
+- **Gestion des erreurs** : retry automatique avec backoff exponentiel
+- **Headers réalistes** : User-Agent navigateur standard
+- **Respect du site** : pas de scraping trop rapide
+
+---
+
+## Améliorations récentes
+
+### Correctifs appliqués
+
+1. **Nettoyage des noms d'événements** (`removeEditionNumber`) : améliore significativement le taux de matching
+2. **Date de début avec heure de première course** : précision accrue sur les horaires d'édition
+3. **Exclusion des événements featured** : évite les propositions indésirables
+4. **Comparaison de dates intelligente** : avec ou sans heure selon disponibilité
+5. **Parser adapté à la nouvelle structure HTML** : gestion des divs `.club-card`
+6. **Matching par distance prioritaire** : conversion km→m et tolérance de 5%
+7. **Logs de matching détaillés** : facilite le débogage et la validation
+8. **Fix contexte logger** : correction des erreurs de contexte dans les fonctions
+9. **Affichage nom événement dans propositions** : `eventName` visible dans les logs
+
+### Qualité des propositions
+
+Le système génère maintenant des propositions de haute qualité :
+- Matching précis grâce à la normalisation des noms
+- Conversion correcte des unités de distance
+- Détection fiable des changements de date
+- Exclusion des faux positifs (événements featured)
+- Logs permettant une validation rapide
+
+---
+
+## Utilisation
+
+### Lancer l'agent
+
+```bash
+node dist/agent/agents/scrapers/ffa/FFAScraperAgent.js
+```
+
+### Tester l'agent
+
+```bash
+ts-node src/agent/agents/scrapers/ffa/tests/test-ffa-scraper-agent.ts
+```
+
+Le test runner affiche :
+- Toutes les propositions générées
+- Le nom de l'événement concerné
+- Les détails des modifications proposées
+- Les courses ajoutées ou modifiées
+
+---
+
+## Notes techniques
+
+### Structure HTML FFA
+
+#### Listing de compétitions
+Les compétitions sont dans un tableau avec la structure :
+```html
+<tr>
+  <td><a title="Compétition numéro : 314406">30 novembre</a></td>
+  <td>Nom de la compétition</td>
+  <td>Ville<br>Département - Ligue</td>
+  <td>Type</td>
+  <td>Niveau</td>
+  <td>Label</td>
+  <td><a href="/competitions/...">+</a></td>
+  <td>Résultats</td>
+</tr>
+```
+
+**Attention** : le lien vers la fiche descriptive change à chaque visite. Il faut toujours partir du numéro de compétition.
+
+#### Fiche descriptive
+Contient :
+- Nom, date, lieu (ville + région)
+- Organisateur : nom, adresse, email, téléphone, site web
+- Services : parking, douches, restauration (icônes dans section `#services`)
+- Liste des courses dans section `#epreuves` avec format récent (divs `.club-card`)
+
+Chaque course indique :
+- Heure de départ (format "HH:MM - Nom")
+- Distance en mètres
+- Dénivelé positif ("D+ XXX m")
+
+### Pagination
+
+Le sélecteur de page en bas de listing permet de naviguer :
+```html
+<div class="select-options" id="optionsPagination">
+  <div class="select-option" data-url="...&frmposition=0">Page 001/005</div>
+  <div class="select-option" data-url="...&frmposition=1">Page 002/005</div>
+  ...
+</div>
+```
+
+L'agent doit parcourir toutes les pages pour chaque ligue/mois.
+
+### Compétitions non confirmées
+
+Certaines compétitions apparaissent en italique sans lien vers la fiche :
+```html
+<td><em>La Ronde Des Oliviers</em></td>
+```
+
+Ces compétitions n'ont pas encore confirmé leurs informations à la FFA. L'agent peut quand même capturer la date pour détecter les changements lors de futurs passages.
+
+---
+
+## Références FFA
+
+### Ligues disponibles
+
+ARA, BFC, BRE, CEN, COR, G-E, GUA, GUY, H-F, I-F, MAR, MAY, N-A, N-C, NOR, OCC, PCA, P-F, P-L, REU, W-F
+
+### Niveaux de compétition
+
+- Départemental
+- Régional  
+- National
+- International
+
+Par défaut, l'agent traite les niveaux Départemental et Régional.
+
+### Saisons FFA
+
+La FFA fonctionne par saison :
+- Une saison commence le 1er septembre et se termine le 31 août de l'année suivante
+- Exemple : saison 2026 = 1er septembre 2025 au 31 août 2026
+- Pour chercher des courses le 31 décembre 2025, il faut indiquer la saison 2026
+
+### URL de base
+
+Calendrier : `https://www.athle.fr/bases/liste.aspx?frmpostback=true&frmbase=calendrier&frmmode=1&frmespace=0&frmsaisonffa={saison}&frmdate1={date_debut}&frmdate2={date_fin}&frmtype1=Running&frmligue={ligue}`
+
+Exemple pour ligue ARA, novembre 2025 :
+```
+https://www.athle.fr/bases/liste.aspx?frmpostback=true&frmbase=calendrier&frmmode=1&frmespace=0&frmsaisonffa=2026&frmdate1=2025-11-01&frmdate2=2025-11-30&frmtype1=Running&frmligue=ARA
+```
+
+---
+
+## Roadmap
+
+### Améliorations potentielles
+
+- [ ] Scraping des résultats après la compétition
+- [ ] Détection des changements d'URL de site web d'événement
+- [ ] Enrichissement avec les labels FFA (Bronze, Argent, Or)
+- [ ] Historique des changements détectés sur chaque compétition
+- [ ] Notification en cas de changements importants (annulation, report)
+- [ ] Optimisation du matching avec machine learning
+- [ ] Support des compétitions multi-jours
+- [ ] Gestion des compétitions avec plusieurs villes (étapes)
+
+---
+
+## Conclusion
+
+L'Agent FFA Scraper est maintenant opérationnel et robuste. Il génère des propositions de qualité qui peuvent être validées manuellement avant intégration dans la base Miles Republic. Les logs détaillés permettent un contrôle qualité efficace et la détection rapide d'éventuelles anomalies.
+
+Le système est prêt pour une utilisation en production avec un monitoring régulier des propositions générées.

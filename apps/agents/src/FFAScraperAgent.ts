@@ -475,18 +475,37 @@ export class FFAScraperAgent extends BaseAgent {
 
   /**
    * Calcule la date de début d'une édition en utilisant l'heure de la première course
+   * Convertit l'heure locale France (Europe/Paris) en UTC
    */
   private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
     // Si on a des courses avec une heure de départ
     if (ffaData.races.length > 0 && ffaData.races[0].startTime) {
-      const dateStr = ffaData.competition.date.toISOString().split('T')[0]
-      const timeStr = ffaData.races[0].startTime
-      const startDate = new Date(`${dateStr}T${timeStr}:00.000Z`)
-      this.logger.info(`🕒 Date calculée avec heure première course: ${startDate.toISOString()} (course: ${ffaData.races[0].name} à ${timeStr})`)
-      return startDate
+      // La date de la compétition est en UTC à minuit
+      const competitionDate = ffaData.competition.date
+      const year = competitionDate.getUTCFullYear()
+      const month = competitionDate.getUTCMonth()
+      const day = competitionDate.getUTCDate()
+      
+      // Parser l'heure locale (format HH:MM)
+      const [hours, minutes] = ffaData.races[0].startTime.split(':').map(Number)
+      
+      // Créer la date en heure locale France (UTC+1 hiver, UTC+2 été)
+      // En utilisant le timezone Europe/Paris
+      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      
+      // Calculer l'offset UTC pour la France à cette date
+      // Approximation: UTC+1 (hiver) sauf entre fin mars et fin octobre où c'est UTC+2 (été)
+      const isDST = month > 2 && month < 10 // Approximation DST (mars à octobre)
+      const offsetHours = isDST ? 2 : 1
+      
+      // Convertir en UTC
+      const startDateUTC = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
+      
+      this.logger.info(`🕒 Date calculée avec heure première course: ${localDateStr} France (UTC+${offsetHours}) -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name} à ${ffaData.races[0].startTime})`)
+      return startDateUTC
     }
-    // Sinon, utiliser la date à minuit
-    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit: ${ffaData.competition.date.toISOString()} (${ffaData.races.length} courses)`)
+    // Sinon, utiliser la date à minuit UTC
+    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit UTC: ${ffaData.competition.date.toISOString()} (${ffaData.races.length} courses)`)
     return ffaData.competition.date
   }
 
@@ -554,15 +573,33 @@ export class FFAScraperAgent extends BaseAgent {
               year: competition.competition.date.getFullYear().toString(),
               startDate: this.calculateEditionStartDate(competition),
               calendarStatus: 'CONFIRMED',
-              races: competition.races.map(race => ({
-                name: race.name,
-                startDate: race.startTime 
-                  ? new Date(`${competition.competition.date.toISOString().split('T')[0]}T${race.startTime}:00.000Z`)
-                  : competition.competition.date,
-                runDistance: race.distance,
-                runPositiveElevation: race.positiveElevation,
-                type: race.type === 'trail' ? 'TRAIL' : 'RUNNING'
-              }))
+              races: competition.races.map(race => {
+                let raceStartDate: Date
+                if (race.startTime) {
+                  // Convertir l'heure locale France en UTC
+                  const competitionDate = competition.competition.date
+                  const year = competitionDate.getUTCFullYear()
+                  const month = competitionDate.getUTCMonth()
+                  const day = competitionDate.getUTCDate()
+                  const [hours, minutes] = race.startTime.split(':').map(Number)
+                  
+                  // Calculer l'offset DST
+                  const isDST = month > 2 && month < 10
+                  const offsetHours = isDST ? 2 : 1
+                  
+                  raceStartDate = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
+                } else {
+                  raceStartDate = competition.competition.date
+                }
+                
+                return {
+                  name: race.name,
+                  startDate: raceStartDate,
+                  runDistance: race.distance,
+                  runPositiveElevation: race.positiveElevation,
+                  type: race.type === 'trail' ? 'TRAIL' : 'RUNNING'
+                }
+              })
             },
             confidence
           }
@@ -648,7 +685,6 @@ export class FFAScraperAgent extends BaseAgent {
             proposals.push({
               type: ProposalType.EDITION_UPDATE,
               eventId: matchResult.event!.id,
-              eventName: matchResult.event!.name,
               editionId: matchResult.edition.id,
               changes,
               justification: justifications
