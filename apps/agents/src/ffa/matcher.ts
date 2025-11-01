@@ -19,8 +19,9 @@ export async function matchCompetition(
   logger: any
 ): Promise<MatchResult> {
   try {
-    // Nettoyer le nom pour la recherche
-    const searchName = normalizeString(competition.competition.name)
+    // Nettoyer le nom pour la recherche (retirer numéros d'édition puis normaliser)
+    const cleanedName = removeEditionNumber(competition.competition.name)
+    const searchName = normalizeString(cleanedName)
     const searchCity = normalizeString(competition.competition.city)
     const searchDate = competition.competition.date
 
@@ -31,6 +32,17 @@ export async function matchCompetition(
       searchDate,
       sourceDb
     )
+
+    // DEBUG LOG pour toutes les compétitions
+    logger.info(`[MATCHER] "${competition.competition.name}" in ${competition.competition.city}`);
+    if (cleanedName !== competition.competition.name) {
+      logger.info(`  Cleaned: "${cleanedName}"`);
+    }
+    logger.info(`  Normalized: name="${searchName}", city="${searchCity}"`);
+    logger.info(`  Found ${candidates.length} candidates`);
+    if (candidates.length > 0) {
+      logger.info(`  Candidates: ${candidates.map(c => `${c.name} (${c.city})`).join(', ')}`);
+    }
 
     if (candidates.length === 0) {
       return {
@@ -44,7 +56,9 @@ export async function matchCompetition(
     let bestSimilarity = 0
 
     for (const candidate of candidates) {
-      const nameSimilarity = calculateSimilarity(searchName, normalizeString(candidate.name))
+      // Nettoyer aussi le nom du candidat pour comparaison équitable
+      const cleanedCandidateName = removeEditionNumber(candidate.name)
+      const nameSimilarity = calculateSimilarity(searchName, normalizeString(cleanedCandidateName))
       const citySimilarity = calculateSimilarity(searchCity, normalizeString(candidate.city))
       
       // Score combiné (80% nom, 20% ville)
@@ -55,7 +69,8 @@ export async function matchCompetition(
         
         // Trouver l'édition correspondante (même année)
         const year = competition.competition.date.getFullYear().toString()
-        const edition = candidate.editions.find((e: any) => e.year === year)
+        logger.info(`    Checking editions for year ${year}: ${JSON.stringify(candidate.editions || candidate.Edition || [])}`);
+        const edition = (candidate.editions || candidate.Edition)?.find((e: any) => e.year === year)
 
         bestMatch = {
           type: totalSimilarity >= config.similarityThreshold ? 'FUZZY_MATCH' : 'NO_MATCH',
@@ -77,9 +92,17 @@ export async function matchCompetition(
         if (totalSimilarity >= 0.95) {
           bestMatch.type = 'EXACT_MATCH'
         }
+        
+        logger.info(`    Best match: "${candidate.name}" (${candidate.city}) - score: ${totalSimilarity.toFixed(3)} (name: ${nameSimilarity.toFixed(3)}, city: ${citySimilarity.toFixed(3)})`);
       }
     }
 
+    if (bestMatch) {
+      logger.info(`  → Result: ${bestMatch.type} with ${bestMatch.event.name} (confidence: ${bestMatch.confidence.toFixed(3)}, edition: ${bestMatch.edition ? 'YES' : 'NO'})`);
+    } else {
+      logger.info(`  → Result: NO_MATCH (no candidates passed similarity threshold ${config.similarityThreshold})`);
+    }
+    
     return bestMatch || {
       type: 'NO_MATCH',
       confidence: 0
@@ -155,6 +178,30 @@ function normalizeString(str: string): string {
 }
 
 /**
+ * Nettoie le nom d'un événement pour le matching en retirant les numéros d'édition
+ * Exemples :
+ * - "34ème Corrida des Bleuets" -> "Corrida des Bleuets"
+ * - "Corrida des Bleuets - 34ème édition" -> "Corrida des Bleuets"
+ * - "Corrida De Sassenage - 34èMe éDition" -> "Corrida De Sassenage"
+ */
+function removeEditionNumber(name: string): string {
+  return name
+    // Supprimer "- Xème édition" / "- Xeme edition" avec le tiret et tout ce qui suit
+    .replace(/\s*[-–—]\s*\d+[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
+    // Supprimer juste "Xème édition" à la fin (sans tiret)
+    .replace(/\s+\d+[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
+    // Supprimer "Xème" / "Xè" / "Xeme" partout dans le nom
+    .replace(/\b\d+[eèé]?me?\b/gi, '')
+    // Supprimer année entre parenthèses ou après tiret (ex: "(2025)", "- 2025")
+    .replace(/\s*[-–—]?\s*\(?\d{4}\)?\s*$/, '')
+    // Nettoyer les tirets/mots orphelins à la fin
+    .replace(/\s*[-–—]\s*$/, '')
+    // Normaliser les espaces multiples créés
+    .replace(/\s+/g, ' ')
+    .trim()
+}
+
+/**
  * Match une course FFA avec une course Miles Republic existante
  */
 export function matchRace(
@@ -216,7 +263,7 @@ export async function findCandidateEvents(
   city: string,
   date: Date,
   sourceDb: any
-): Promise<Array<{ id: string, name: string, city: string, editions: any[] }>> {
+): Promise<Array<{ id: string, name: string, city: string, editions?: any[] }>> {
   try {
     // Calculer la fenêtre temporelle (±60 jours)
     const startDate = new Date(date)
@@ -225,33 +272,44 @@ export async function findCandidateEvents(
     const endDate = new Date(date)
     endDate.setDate(endDate.getDate() + 60)
 
-    // Rechercher dans la base
-    // Note: Ceci est un exemple simplifié. L'implémentation réelle dépendra 
-    // de la structure de la base Miles Republic
-    const events = await sourceDb.event.findMany({
+    // Extraire les mots clés pour la recherche SQL
+    const nameWords = name.split(' ').filter(w => w.length >= 4).slice(0, 3)
+    const cityWords = city.split(' ').filter(w => w.length >= 3)
+    
+    // Rechercher dans la base Miles Republic avec filtrage SQL en deux passes
+    // Passe 1 : Rechercher avec nom ET ville (plus restrictif, prioritaire)
+    const namePrefix = nameWords.length > 0 ? nameWords[0].substring(0, 5) : ''
+    
+    let allEvents = await sourceDb.Event.findMany({
       where: {
-        OR: [
+        AND: [
           {
-            name: {
-              contains: name,
-              mode: 'insensitive'
+            editions: {
+              some: {
+                startDate: {
+                  gte: startDate,
+                  lte: endDate
+                }
+              }
             }
           },
+          // Exiger au moins un mot de la ville
           {
-            city: {
-              contains: city,
-              mode: 'insensitive'
+            OR: cityWords.map(word => ({
+              city: {
+                contains: word,
+                mode: 'insensitive' as const
+              }
+            }))
+          },
+          // ET au moins le préfixe du nom
+          namePrefix.length >= 5 ? {
+            name: {
+              contains: namePrefix,
+              mode: 'insensitive' as const
             }
-          }
-        ],
-        editions: {
-          some: {
-            startDate: {
-              gte: startDate,
-              lte: endDate
-            }
-          }
-        }
+          } : {}
+        ]
       },
       include: {
         editions: {
@@ -260,13 +318,113 @@ export async function findCandidateEvents(
               gte: startDate,
               lte: endDate
             }
+          },
+          select: {
+            id: true,
+            year: true,
+            startDate: true
           }
         }
       },
-      take: 10
+      take: 50 // Limiter pour les performances
     })
-
-    return events
+    
+    // Passe 2 : Si peu de résultats, élargir avec OR
+    if (allEvents.length < 10) {
+      const moreEvents = await sourceDb.Event.findMany({
+        where: {
+          AND: [
+            {
+              editions: {
+                some: {
+                  startDate: {
+                    gte: startDate,
+                    lte: endDate
+                  }
+                }
+              }
+            },
+            {
+              OR: [
+                // Rechercher par ville
+                ...cityWords.map(word => ({
+                  city: {
+                    contains: word,
+                    mode: 'insensitive' as const
+                  }
+                })),
+                // Rechercher par préfixe du nom
+                namePrefix.length >= 5 ? {
+                  name: {
+                    contains: namePrefix,
+                    mode: 'insensitive' as const
+                  }
+                } : undefined
+              ].filter(Boolean)
+            },
+            // Exclure ceux déjà trouvés
+            {
+              NOT: {
+                id: {
+                  in: allEvents.map((e: any) => e.id)
+                }
+              }
+            }
+          ]
+        },
+        include: {
+          editions: {
+            where: {
+              startDate: {
+                gte: startDate,
+                lte: endDate
+              }
+            },
+            select: {
+              id: true,
+              year: true,
+              startDate: true
+            }
+          }
+        },
+        take: Math.max(50 - allEvents.length, 10)
+      })
+      
+      allEvents = [...allEvents, ...moreEvents]
+    }
+    // Filtrer en mémoire avec normalisation des accents et matching flou
+    const candidates = allEvents.filter((event: any) => {
+      const normalizedEventName = normalizeString(event.name)
+      const normalizedEventCity = normalizeString(event.city)
+      const eventNameWords = normalizedEventName.split(' ')
+      const eventCityWords = normalizedEventCity.split(' ')
+      
+      // Vérifier si au moins un mot du nom correspond avec matching flou
+      const nameMatch = nameWords.some(word => {
+        // D'abord essayer une correspondance exacte (plus rapide)
+        if (normalizedEventName.includes(word.toLowerCase())) {
+          return true
+        }
+        // Sinon, utiliser la similarité de Levenshtein
+        return eventNameWords.some(eventWord => 
+          eventWord.length >= 4 && calculateSimilarity(word.toLowerCase(), eventWord) >= 0.8
+        )
+      })
+      
+      // Vérifier si au moins un mot de la ville correspond
+      const cityMatch = cityWords.some(word => {
+        if (normalizedEventCity.includes(word.toLowerCase())) {
+          return true
+        }
+        return eventCityWords.some(eventWord =>
+          eventWord.length >= 3 && calculateSimilarity(word.toLowerCase(), eventWord) >= 0.85
+        )
+      })
+      
+      return nameMatch || cityMatch
+    })
+    // Retourner les 10 meilleurs candidats
+    return candidates.slice(0, 10)
   } catch (error) {
     console.error('Erreur lors de la recherche de candidats:', error)
     return []
