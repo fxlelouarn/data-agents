@@ -90,7 +90,8 @@ export class FFAScraperAgent extends BaseAgent {
         
         const { PrismaClient } = await import('@prisma/client')
         this.sourceDb = new PrismaClient({
-          datasources: { db: { url: connectionUrl } }
+          datasources: { db: { url: connectionUrl } },
+          log: [] // Désactiver les logs prisma:query
         })
         
         await this.sourceDb.$connect()
@@ -152,7 +153,15 @@ export class FFAScraperAgent extends BaseAgent {
     }
 
     // Déterminer les mois à traiter
-    const currentMonthIndex = allMonths.indexOf(progress.currentMonth)
+    let currentMonthIndex = allMonths.indexOf(progress.currentMonth)
+    
+    // Si le mois actuel n'est plus dans la fenêtre (expiré), recommencer au premier mois
+    if (currentMonthIndex === -1) {
+      this.logger.info(`⚠️  Mois actuel ${progress.currentMonth} expiré, redémarrage au mois: ${allMonths[0]}`)
+      currentMonthIndex = 0
+      progress.currentMonth = allMonths[0]
+    }
+    
     const months: string[] = []
     
     for (let i = 0; i < config.monthsPerRun && currentMonthIndex + i < allMonths.length; i++) {
@@ -203,12 +212,292 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
+   * Compare les données FFA avec une édition existante
+   * Retourne les changements détectés et leurs justifications
+   */
+  private compareFFAWithEdition(
+    ffaData: FFACompetitionDetails,
+    edition: any,
+    event: any,
+    confidence: number
+  ): { changes: any, justifications: any[] } {
+    const changes: any = {}
+    const justifications: any[] = []
+
+    // Calculer la date de début avec l'heure de la première course
+    const ffaStartDate = this.calculateEditionStartDate(ffaData)
+    const hasRaceTime = ffaData.races.length > 0 && ffaData.races[0].startTime
+
+    // 1. Comparaison de la date
+    let dateDiff = Infinity
+    if (edition.startDate) {
+      if (hasRaceTime) {
+        // Si on a une heure précise de la FFA, comparer date + heure
+        dateDiff = Math.abs(ffaStartDate.getTime() - edition.startDate.getTime())
+      } else {
+        // Sinon, comparer uniquement la date (jour), pas l'heure
+        const ffaDay = ffaStartDate.toISOString().split('T')[0]
+        const dbDay = edition.startDate.toISOString().split('T')[0]
+        dateDiff = ffaDay === dbDay ? 0 : 86400000 // 0 ou 1 jour en ms
+      }
+    }
+    
+    if (dateDiff > 21600000) { // 6 heures en ms
+      changes.startDate = {
+        old: edition.startDate,
+        new: ffaStartDate,
+        confidence
+      }
+      justifications.push({
+        type: 'text',
+        content: `Date FFA différente: ${ffaStartDate.toISOString()} vs ${edition.startDate?.toISOString()}`,
+        metadata: { 
+          ffaDate: ffaStartDate.toISOString(),
+          dbDate: edition.startDate?.toISOString(),
+          diffHours: Math.round(dateDiff / 3600000),
+          source: ffaData.competition.detailUrl
+        }
+      })
+    }
+    
+    // 2. Statut calendrier (toujours confirmer depuis la FFA)
+    if (edition.calendarStatus !== 'CONFIRMED') {
+      changes.calendarStatus = {
+        old: edition.calendarStatus,
+        new: 'CONFIRMED',
+        confidence
+      }
+      justifications.push({
+        type: 'text',
+        content: `Confirmation depuis FFA (source officielle)`,
+        metadata: { 
+          oldStatus: edition.calendarStatus,
+          source: ffaData.competition.detailUrl 
+        }
+      })
+    }
+
+    // 3. Date de clôture des inscriptions
+    if (ffaData.registrationClosingDate) {
+      const existingClosingDate = edition.registrationClosingDate
+      const newClosingDate = ffaData.registrationClosingDate
+      
+      if (!existingClosingDate || 
+          Math.abs(newClosingDate.getTime() - existingClosingDate.getTime()) > 3600000) { // 1h de diff
+        changes.registrationClosingDate = {
+          old: existingClosingDate,
+          new: newClosingDate,
+          confidence
+        }
+        justifications.push({
+          type: 'text',
+          content: `Date de clôture FFA: ${newClosingDate.toISOString()}`,
+          metadata: { 
+            oldDate: existingClosingDate?.toISOString(),
+            newDate: newClosingDate.toISOString()
+          }
+        })
+      }
+    }
+
+    // 4. Organisateur
+    if (ffaData.organizerName) {
+      const existingOrgName = edition.organization?.name
+      if (!existingOrgName || existingOrgName !== ffaData.organizerName) {
+        changes.organization = {
+          old: existingOrgName,
+          new: {
+            name: ffaData.organizerName,
+            email: ffaData.organizerEmail,
+            phone: ffaData.organizerPhone,
+            website: ffaData.organizerWebsite,
+            address: ffaData.organizerAddress
+          },
+          confidence: confidence * 0.9
+        }
+        justifications.push({
+          type: 'text',
+          content: `Organisateur FFA: ${ffaData.organizerName}`,
+          metadata: {
+            oldOrganizer: existingOrgName,
+            newOrganizer: ffaData.organizerName,
+            contact: {
+              email: ffaData.organizerEmail,
+              phone: ffaData.organizerPhone,
+              website: ffaData.organizerWebsite
+            }
+          }
+        })
+      }
+    }
+
+    // 5. Courses manquantes ou à mettre à jour
+    if (ffaData.races.length > 0) {
+      const existingRaces = edition.races || []
+      // Convertir les distances DB (qui sont en km) en mètres pour comparaison
+      const existingRacesWithMeters = existingRaces.map((r: any) => ({
+        ...r,
+        runDistanceMeters: (r.runDistance || 0) * 1000,
+        walkDistanceMeters: (r.walkDistance || 0) * 1000,
+        swimDistanceMeters: (r.swimDistance || 0) * 1000,
+        bikeDistanceMeters: (r.bikeDistance || 0) * 1000,
+        totalDistanceMeters: ((r.runDistance || 0) + (r.walkDistance || 0) + (r.swimDistance || 0) + (r.bikeDistance || 0)) * 1000
+      }))
+      
+      this.logger.info(`📋 Édition ${edition.id} : ${existingRaces.length} course(s) existante(s)`, {
+        races: existingRacesWithMeters.map((r: any) => ({
+          name: r.name,
+          distanceKm: r.runDistance,
+          distanceMeters: r.totalDistanceMeters
+        }))
+      })
+      this.logger.info(`📋 FFA : ${ffaData.races.length} course(s) à comparer`, {
+        races: ffaData.races.map(r => ({ name: r.name, distance: r.distance }))
+      })
+      
+      const racesToAdd: any[] = []
+      const racesToUpdate: any[] = []
+
+      for (const ffaRace of ffaData.races) {
+        const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
+          // Utiliser la distance totale déjà convertie en mètres
+          const totalDistance = dbRace.totalDistanceMeters
+          
+          // Si la course FFA a une distance, matcher principalement sur la distance
+          if (ffaRace.distance && ffaRace.distance > 0) {
+            // Tolérance de 5% pour le matching de distance
+            const tolerance = ffaRace.distance * 0.05
+            const distanceDiff = Math.abs(totalDistance - ffaRace.distance)
+            
+            // Match si la distance est dans la tolérance
+            return distanceDiff <= tolerance
+          }
+          
+          // Si pas de distance FFA, fallback sur le matching de nom
+          const nameMatch = dbRace.name?.toLowerCase().includes(ffaRace.name.toLowerCase()) ||
+                            ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
+          return nameMatch
+        })
+
+        if (!matchingRace) {
+          this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
+          racesToAdd.push({
+            name: ffaRace.name,
+            distance: ffaRace.distance,
+            elevation: ffaRace.positiveElevation,
+            startTime: ffaRace.startTime,
+            type: ffaRace.type,
+            categories: ffaRace.categories
+          })
+        } else {
+          this.logger.info(`✅ Course FFA matchée: ${ffaRace.name} (${ffaRace.distance}m) ↔ ${matchingRace.name} (${matchingRace.totalDistanceMeters}m)`)
+          const raceUpdates: any = {}
+          
+          if (ffaRace.positiveElevation && 
+              (!matchingRace.runPositiveElevation || 
+               Math.abs(matchingRace.runPositiveElevation - ffaRace.positiveElevation) > 10)) {
+            raceUpdates.runPositiveElevation = {
+              old: matchingRace.runPositiveElevation,
+              new: ffaRace.positiveElevation
+            }
+          }
+
+          if (Object.keys(raceUpdates).length > 0) {
+            racesToUpdate.push({
+              raceId: matchingRace.id,
+              raceName: matchingRace.name,
+              updates: raceUpdates
+            })
+          }
+        }
+      }
+
+      if (racesToAdd.length > 0) {
+        changes.racesToAdd = {
+          old: null,
+          new: racesToAdd,
+          confidence: confidence * 0.85
+        }
+        justifications.push({
+          type: 'text',
+          content: `${racesToAdd.length} nouvelle(s) course(s) FFA détectée(s)`,
+          metadata: { races: racesToAdd.map(r => r.name) }
+        })
+      }
+
+      if (racesToUpdate.length > 0) {
+        changes.racesToUpdate = {
+          old: null,
+          new: racesToUpdate,
+          confidence: confidence * 0.9
+        }
+        justifications.push({
+          type: 'text',
+          content: `${racesToUpdate.length} course(s) à mettre à jour`,
+          metadata: { races: racesToUpdate.map(r => ({ name: r.raceName, updates: r.updates })) }
+        })
+      }
+    }
+
+    // 6. Services/équipements
+    if (ffaData.services && ffaData.services.length > 0) {
+      changes.services = {
+        old: edition.editionInfo?.editionServices?.map((s: any) => s.editionService?.type) || [],
+        new: ffaData.services,
+        confidence: confidence * 0.7
+      }
+      justifications.push({
+        type: 'text',
+        content: `Services FFA: ${ffaData.services.join(', ')}`,
+        metadata: { services: ffaData.services }
+      })
+    }
+
+    // 7. Informations additionnelles
+    if (ffaData.additionalInfo && ffaData.additionalInfo.trim().length > 10) {
+      const existingInfo = edition.editionInfo?.whatIsIncluded || ''
+      if (!existingInfo || existingInfo.length < ffaData.additionalInfo.length) {
+        changes.additionalInfo = {
+          old: existingInfo,
+          new: ffaData.additionalInfo,
+          confidence: confidence * 0.6
+        }
+        justifications.push({
+          type: 'text',
+          content: `Informations additionnelles FFA disponibles`,
+          metadata: { preview: ffaData.additionalInfo.substring(0, 200) }
+        })
+      }
+    }
+
+    return { changes, justifications }
+  }
+
+  /**
+   * Calcule la date de début d'une édition en utilisant l'heure de la première course
+   */
+  private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
+    // Si on a des courses avec une heure de départ
+    if (ffaData.races.length > 0 && ffaData.races[0].startTime) {
+      const dateStr = ffaData.competition.date.toISOString().split('T')[0]
+      const timeStr = ffaData.races[0].startTime
+      const startDate = new Date(`${dateStr}T${timeStr}:00.000Z`)
+      this.logger.info(`🕒 Date calculée avec heure première course: ${startDate.toISOString()} (course: ${ffaData.races[0].name} à ${timeStr})`)
+      return startDate
+    }
+    // Sinon, utiliser la date à minuit
+    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit: ${ffaData.competition.date.toISOString()} (${ffaData.races.length} courses)`)
+    return ffaData.competition.date
+  }
+
+  /**
    * Crée les propositions pour une compétition
    */
   private async createProposalsForCompetition(
     competition: FFACompetitionDetails,
     matchResult: MatchResult,
-    config: FFAScraperConfig
+    config: FFAScraperConfig,
+    context: AgentContext
   ): Promise<ProposalData[]> {
     const proposals: ProposalData[] = []
     
@@ -263,12 +552,12 @@ export class FFAScraperAgent extends BaseAgent {
           edition: {
             new: {
               year: competition.competition.date.getFullYear().toString(),
-              startDate: competition.competition.date,
+              startDate: this.calculateEditionStartDate(competition),
               calendarStatus: 'CONFIRMED',
               races: competition.races.map(race => ({
                 name: race.name,
                 startDate: race.startTime 
-                  ? new Date(`${competition.competition.date.toISOString().split('T')[0]}T${race.startTime}:00`)
+                  ? new Date(`${competition.competition.date.toISOString().split('T')[0]}T${race.startTime}:00.000Z`)
                   : competition.competition.date,
                 runDistance: race.distance,
                 runPositiveElevation: race.positiveElevation,
@@ -291,31 +580,80 @@ export class FFAScraperAgent extends BaseAgent {
         }]
       })
     } else if (matchResult.type === 'FUZZY_MATCH' || matchResult.type === 'EXACT_MATCH') {
+      // Vérifier si l'événement est featured (ne doit pas être modifié)
+      const eventData = await this.sourceDb.event.findUnique({
+        where: { id: matchResult.event!.id },
+        select: { isFeatured: true }
+      })
+      
+      if (eventData?.isFeatured) {
+        context.logger.info(`⚠️  Événement featured ignoré: ${matchResult.event!.name} (${matchResult.event!.id})`)
+        return proposals
+      }
+      
       // Proposer des mises à jour pour l'édition existante
       if (matchResult.edition) {
-        const dateDiff = matchResult.edition.startDate 
-          ? Math.abs(competition.competition.date.getTime() - matchResult.edition.startDate.getTime())
-          : Infinity
-        
-        // Si la date diffère de plus d'un jour, proposer une mise à jour
-        if (dateDiff > 86400000) {
-          proposals.push({
-            type: ProposalType.EDITION_UPDATE,
-            eventId: matchResult.event!.id,
-            editionId: matchResult.edition.id,
-            changes: {
-              startDate: {
-                old: matchResult.edition.startDate,
-                new: competition.competition.date,
-                confidence
-              }
+        // Charger les données complètes de l'édition depuis la base
+        const fullEdition = await this.sourceDb.edition.findUnique({
+          where: { id: matchResult.edition.id },
+          include: {
+            organization: true,
+            races: {
+              include: {
+                raceInfo: true
+              },
+              where: { isArchived: false }
             },
-            justification: [{
-              type: 'text',
-              content: `Date FFA différente pour ${competition.competition.name}`,
-              metadata: { ffaId: competition.competition.ffaId, source: competition.competition.detailUrl }
-            }]
-          })
+            editionInfo: {
+              include: {
+                editionServices: {
+                  include: {
+                    editionService: true
+                  }
+                }
+              }
+            }
+          }
+        })
+
+        if (!fullEdition) {
+          context.logger.warn(`⚠️  Édition ${matchResult.edition.id} non trouvée lors du chargement complet`)
+        } else {
+          context.logger.info(`🔍 Analyse édition ${fullEdition.id} (${matchResult.event!.name})...`)
+          const { changes, justifications } = this.compareFFAWithEdition(
+            competition,
+            fullEdition,
+            matchResult.event!,
+            confidence
+          )
+          
+          // Log pour comprendre pourquoi aucun changement
+          if (Object.keys(changes).length === 0) {
+            context.logger.info(`✓ Édition ${fullEdition.id} (${matchResult.event!.name}) déjà à jour`, {
+              ffaDate: competition.competition.date.toISOString(),
+              dbDate: fullEdition.startDate?.toISOString(),
+              calendarStatus: fullEdition.calendarStatus,
+              hasOrganization: !!fullEdition.organization,
+              racesCount: fullEdition.races?.length || 0,
+              ffaRacesCount: competition.races.length
+            })
+          }
+          
+          // Si on a des changements, créer la proposition
+          if (Object.keys(changes).length > 0) {
+            context.logger.info(`📝 Proposition EDITION_UPDATE pour ${matchResult.event!.name} (édition ${matchResult.edition.id})`, {
+              changesCount: Object.keys(changes).length,
+              changeTypes: Object.keys(changes)
+            })
+            proposals.push({
+              type: ProposalType.EDITION_UPDATE,
+              eventId: matchResult.event!.id,
+              eventName: matchResult.event!.name,
+              editionId: matchResult.edition.id,
+              changes,
+              justification: justifications
+            })
+          }
         }
       }
     }
@@ -358,6 +696,9 @@ export class FFAScraperAgent extends BaseAgent {
           totalCompetitions += competitions.length
 
           // Matcher et créer des propositions
+          let matchedCount = 0
+          let proposalsFromMatches = 0
+          
           for (const competition of competitions) {
             const matchResult = await matchCompetition(
               competition,
@@ -369,11 +710,21 @@ export class FFAScraperAgent extends BaseAgent {
             const proposals = await this.createProposalsForCompetition(
               competition,
               matchResult,
-              config
+              config,
+              context
             )
+
+            if (matchResult.type !== 'NO_MATCH') {
+              matchedCount++
+              if (proposals.length > 0) {
+                proposalsFromMatches++
+              }
+            }
 
             allProposals.push(...proposals)
           }
+          
+          context.logger.info(`📊 Stats: ${matchedCount} matches (${proposalsFromMatches} avec propositions)`)
 
           // Marquer le mois comme complété pour cette ligue
           if (!progress.completedMonths[ligue]) {
