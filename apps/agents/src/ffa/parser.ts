@@ -16,7 +16,9 @@ export function parseCompetitionsList(html: string): FFACompetition[] {
   const competitions: FFACompetition[] = []
 
   // Table principale des compétitions
-  $('#ctnCalendrier tbody tr.clickable').each((_, element) => {
+  // Note: on ne filtre pas sur .clickable car cette classe n'existe pas dans le HTML FFA
+  // On filtre plutôt les lignes de détail (detail-row) qui sont des sous-lignes mobiles
+  $('table tbody tr').not('.detail-row').each((_, element) => {
     try {
       const $row = $(element)
       
@@ -138,45 +140,60 @@ export function parseRaces(html: string): FFARace[] {
 
   // Chercher la section des épreuves
   const $eprevesSection = $('#epreuves')
-  if (!$eprevesSection.length) return races
+  if (!$eprevesSection.length) {
+    console.warn('[PARSER] Section #epreuves non trouvée dans le HTML')
+    // Essayer d'autres sélecteurs possibles
+    const $tables = $('table')
+    console.warn(`[PARSER] ${$tables.length} tables trouvées dans le HTML`)
+    return races
+  }
+  
+  console.log('[PARSER] Section #epreuves trouvée, extraction des courses...')
 
-  // Parser chaque ligne de course
-  $eprevesSection.find('table tr').each((index, element) => {
-    if (index === 0) return // Skip header
+  // Nouvelle structure HTML : div.club-card au lieu de table
+  const $clubCards = $eprevesSection.find('.club-card')
+  console.log(`[PARSER] ${$clubCards.length} courses trouvées dans .club-card`)
+  
+  $clubCards.each((index, element) => {
+    const $card = $(element)
+    
+    // Titre de la course (contient heure, distance, nom)
+    // Ex: "14:00 - 1 km - Course HS non officielle" ou "09:00 - 22éme toussitrail 21kms - Trail XXS"
+    const raceTitle = $card.find('h3').text().trim()
+    if (!raceTitle) {
+      console.log(`[PARSER] Card ${index}: titre vide`)
+      return
+    }
+    
+    // Détails de la course (catégories, distance, dénivelé)
+    // Ex: "EAF / EAM - 1000 m" ou "TCF / TCM - 21000 m / 187 m D+ / 22870 m effort"
+    const raceDetails = $card.find('p.text-dark-grey').first().text().trim()
+    
+    console.log(`[PARSER] Course trouvée: \"${raceTitle}\" | Détails: \"${raceDetails}\"`)
 
-    const $row = $(element)
-    const $cells = $row.find('td')
+    // Extraire heure de départ depuis le titre
+    const timeMatch = raceTitle.match(/(\d{1,2}):(\d{2})/)
+    const startTime = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : undefined
 
-    if ($cells.length === 0) return
+    // Extraire distance depuis les détails ou le titre
+    const distance = parseDistance(raceDetails || raceTitle)
 
-    const raceName = $cells.eq(0).text().trim()
-    if (!raceName) return
-
-    // Extraire heure de départ
-    const timeMatch = raceName.match(/(\d{1,2}[h:]\d{2})/)
-    const startTime = timeMatch ? timeMatch[1].replace('h', ':') : undefined
-
-    // Extraire distance
-    const distanceText = $cells.eq(1)?.text().trim() || raceName
-    const distance = parseDistance(distanceText)
-
-    // Extraire dénivelé
-    const elevationText = $cells.eq(2)?.text().trim() || raceName
-    const positiveElevation = parseElevation(elevationText)
+    // Extraire dénivelé depuis les détails
+    const positiveElevation = parseElevation(raceDetails)
 
     // Déterminer le type de course
     let type: FFARace['type'] = 'other'
-    const lowerName = raceName.toLowerCase()
-    if (lowerName.includes('trail')) {
+    const lowerTitle = raceTitle.toLowerCase()
+    if (lowerTitle.includes('trail')) {
       type = 'trail'
-    } else if (lowerName.includes('marche') || lowerName.includes('randonnée')) {
+    } else if (lowerTitle.includes('marche') || lowerTitle.includes('randonnée')) {
       type = 'walk'
     } else if (distance && distance >= 100) {
       type = 'running'
     }
 
     races.push({
-      name: cleanEventName(raceName),
+      name: cleanEventName(raceTitle),
       startTime,
       distance,
       positiveElevation,
