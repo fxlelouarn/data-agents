@@ -581,6 +581,11 @@ class AgentTester {
         if (result && typeof result === 'object') {
             this.results.itemsProcessed = result.itemsProcessed || result.count || result.length || 0;
             this.results.outputs = result.outputs || result.data || result.results || [];
+            
+            // Handle proposals if present
+            if (result.proposals && Array.isArray(result.proposals)) {
+                this.displayProposals(result.proposals);
+            }
         } else if (Array.isArray(result)) {
             this.results.itemsProcessed = result.length;
             this.results.outputs = result;
@@ -590,6 +595,69 @@ class AgentTester {
         if (this.options.output) {
             this.saveOutputToFile(result);
         }
+    }
+    
+    /**
+     * Display proposals in a readable format
+     */
+    displayProposals(proposals) {
+        if (!proposals || proposals.length === 0) {
+            return;
+        }
+        
+        this.logger.separator('Propositions Générées');
+        this.logger.info(`📝 ${proposals.length} proposition(s) créée(s):\n`);
+        
+        proposals.forEach((proposal, index) => {
+            console.log(`\n${'='.repeat(80)}`);
+            console.log(`Proposition #${index + 1} - ${proposal.type}`);
+            console.log('='.repeat(80));
+            
+            // Display event/edition/race info
+            if (proposal.eventName) console.log(`🎯 Event: ${proposal.eventName}`);
+            if (proposal.eventId) console.log(`🎯 Event ID: ${proposal.eventId}`);
+            if (proposal.editionId) console.log(`📅 Edition ID: ${proposal.editionId}`);
+            if (proposal.raceId) console.log(`🏁 Race ID: ${proposal.raceId}`);
+            if (proposal.confidence !== undefined) console.log(`📊 Confiance: ${(proposal.confidence * 100).toFixed(1)}%`);
+            
+            // Display changes
+            if (proposal.changes) {
+                console.log('\n🔄 CHANGEMENTS:');
+                if (typeof proposal.changes === 'object') {
+                    Object.entries(proposal.changes).forEach(([key, value]) => {
+                        console.log(`  • ${key}:`);
+                        console.log(`    ${JSON.stringify(value, null, 4).split('\n').join('\n    ')}`);
+                    });
+                } else {
+                    console.log(`  ${JSON.stringify(proposal.changes, null, 2)}`);
+                }
+            }
+            
+            // Display justifications
+            if (proposal.justification) {
+                console.log('\n📜 JUSTIFICATIONS:');
+                if (Array.isArray(proposal.justification)) {
+                    proposal.justification.forEach((just, idx) => {
+                        if (typeof just === 'string') {
+                            console.log(`  ${idx + 1}. ${just}`);
+                        } else if (just.type === 'text') {
+                            console.log(`  ${idx + 1}. ${just.content}`);
+                            if (just.metadata) {
+                                console.log(`     Métadonnées: ${JSON.stringify(just.metadata, null, 2).split('\n').join('\n     ')}`);
+                            }
+                        } else {
+                            console.log(`  ${idx + 1}. ${JSON.stringify(just, null, 2).split('\n').join('\n     ')}`);
+                        }
+                    });
+                } else {
+                    console.log(`  ${typeof proposal.justification === 'string' ? proposal.justification : JSON.stringify(proposal.justification, null, 2)}`);
+                }
+            }
+            
+            console.log('='.repeat(80));
+        });
+        
+        console.log('\n');
     }
 
     /**
