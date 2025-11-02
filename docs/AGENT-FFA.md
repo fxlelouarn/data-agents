@@ -558,15 +558,39 @@ Le matching entre compétitions FFA et événements Miles Republic se base sur :
 
 Les événements marqués comme "featured" dans Miles Republic sont exclus des propositions de mise à jour car ils sont gérés manuellement par l'équipe.
 
-### 4. Gestion des dates avec heure
+### 4. Gestion des dates avec heure et timezones
 
 Lorsque la FFA fournit l'heure de démarrage de la première course :
 - L'édition utilise cette date+heure complète comme `startDate`
 - La comparaison se fait sur date+heure pour détecter les changements
+- **Conversion automatique timezone locale → UTC**
 
 Sinon :
 - L'édition utilise la date à minuit UTC
 - La comparaison ignore l'heure pour éviter des propositions inutiles
+
+#### Gestion des timezones par ligue
+
+L'agent gère correctement les différents timezones :
+
+**Métropole et autres ligues** :
+- Hiver (nov-mars) : UTC+1
+- Été (avr-oct) : UTC+2 (DST)
+
+**DOM-TOM** (pas de changement d'heure) :
+- **GUA** (Guadeloupe) : UTC-4
+- **GUY** (Guyane) : UTC-3
+- **MAR** (Martinique) : UTC-4
+- **MAY** (Mayotte) : UTC+3
+- **N-C** (Nouvelle-Calédonie) : UTC+11
+- **P-F** (Polynésie Française) : UTC-10
+- **REU** (Réunion) : UTC+4
+- **W-F** (Wallis-et-Futuna) : UTC+12
+
+Exemples :
+- Marathon Beaujolais (ARA) en novembre : 08:30 local = 07:30 UTC (UTC+1)
+- Trail Martinique (MAR) : 08:30 local = 12:30 UTC (UTC-4)
+- Course Réunion (REU) : 08:30 local = 04:30 UTC (UTC+4)
 
 ### 5. Matching des courses par distance
 

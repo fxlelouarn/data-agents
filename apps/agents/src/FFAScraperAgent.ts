@@ -474,8 +474,35 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
+   * Détermine l'offset UTC d'une ligue en fonction de sa localisation
+   * Les DOM-TOM ont des timezones différentes de la métropole
+   */
+  private getTimezoneOffset(ligue: string, month: number): number {
+    // Timezones DOM-TOM (pas de DST)
+    const domTomTimezones: Record<string, number> = {
+      'GUA': -4,  // Guadeloupe (America/Guadeloupe)
+      'GUY': -3,  // Guyane (America/Cayenne)
+      'MAR': -4,  // Martinique (America/Martinique)
+      'MAY': 3,   // Mayotte (Indian/Mayotte)
+      'N-C': 11,  // Nouvelle-Calédonie (Pacific/Noumea)
+      'P-F': -10, // Polynésie Française (Pacific/Tahiti)
+      'REU': 4,   // Réunion (Indian/Reunion)
+      'W-F': 12   // Wallis-et-Futuna (Pacific/Wallis)
+    }
+    
+    // Si c'est un DOM-TOM, retourner son offset fixe (pas de DST)
+    if (ligue in domTomTimezones) {
+      return domTomTimezones[ligue]
+    }
+    
+    // Sinon, c'est la métropole : UTC+1 (hiver) ou UTC+2 (été avec DST)
+    const isDST = month > 2 && month < 10 // Approximation DST (mars à octobre)
+    return isDST ? 2 : 1
+  }
+
+  /**
    * Calcule la date de début d'une édition en utilisant l'heure de la première course
-   * Convertit l'heure locale France (Europe/Paris) en UTC
+   * Convertit l'heure locale (selon la ligue) en UTC
    */
   private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
     // Si on a des courses avec une heure de départ
@@ -489,19 +516,18 @@ export class FFAScraperAgent extends BaseAgent {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = ffaData.races[0].startTime.split(':').map(Number)
       
-      // Créer la date en heure locale France (UTC+1 hiver, UTC+2 été)
-      // En utilisant le timezone Europe/Paris
-      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      // Déterminer l'offset UTC selon la ligue
+      const ligue = ffaData.competition.ligue
+      const offsetHours = this.getTimezoneOffset(ligue, month)
       
-      // Calculer l'offset UTC pour la France à cette date
-      // Approximation: UTC+1 (hiver) sauf entre fin mars et fin octobre où c'est UTC+2 (été)
-      const isDST = month > 2 && month < 10 // Approximation DST (mars à octobre)
-      const offsetHours = isDST ? 2 : 1
+      // Créer la date en heure locale
+      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
       
       // Convertir en UTC
       const startDateUTC = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
       
-      this.logger.info(`🕒 Date calculée avec heure première course: ${localDateStr} France (UTC+${offsetHours}) -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name} à ${ffaData.races[0].startTime})`)
+      const offsetSign = offsetHours >= 0 ? '+' : ''
+      this.logger.info(`🕒 Date calculée avec heure première course: ${localDateStr} ${ligue} (UTC${offsetSign}${offsetHours}) -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name} à ${ffaData.races[0].startTime})`)
       return startDateUTC
     }
     // Sinon, utiliser la date à minuit UTC
@@ -576,16 +602,16 @@ export class FFAScraperAgent extends BaseAgent {
               races: competition.races.map(race => {
                 let raceStartDate: Date
                 if (race.startTime) {
-                  // Convertir l'heure locale France en UTC
+                  // Convertir l'heure locale en UTC selon la ligue
                   const competitionDate = competition.competition.date
                   const year = competitionDate.getUTCFullYear()
                   const month = competitionDate.getUTCMonth()
                   const day = competitionDate.getUTCDate()
                   const [hours, minutes] = race.startTime.split(':').map(Number)
                   
-                  // Calculer l'offset DST
-                  const isDST = month > 2 && month < 10
-                  const offsetHours = isDST ? 2 : 1
+                  // Déterminer l'offset selon la ligue
+                  const ligue = competition.competition.ligue
+                  const offsetHours = this.getTimezoneOffset(ligue, month)
                   
                   raceStartDate = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
                 } else {
