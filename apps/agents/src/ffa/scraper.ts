@@ -125,7 +125,7 @@ export async function fetchCompetitionsList(
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
       },
-      timeout: 30000 // 30 secondes timeout
+      timeout: 60000 // 60 secondes timeout
     })
     
     const html = response.data
@@ -182,7 +182,7 @@ export async function fetchCompetitionDetails(
         'Accept-Language': 'fr-FR,fr;q=0.9,en-US;q=0.8,en;q=0.7',
         'Referer': 'https://www.athle.fr/base/calendrier'
       },
-      timeout: 30000
+      timeout: 60000
     })
     
     const html = response.data

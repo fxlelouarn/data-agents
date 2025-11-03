@@ -854,7 +854,32 @@ export class FFAScraperAgent extends BaseAgent {
       progress.lastCompletedAt = new Date()
       await this.saveProgress(progress)
 
-      context.logger.info(`✅ Scraping terminé: ${totalCompetitions} compétitions, ${allProposals.length} propositions`)
+      // Sauvegarder les propositions en base de données
+      context.logger.info(`💾 Sauvegarde de ${allProposals.length} propositions...`)
+      for (const proposal of allProposals) {
+        try {
+          // Extraire la confiance de la proposition
+          const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
+          
+          await this.createProposal(
+            proposal.type,
+            proposal.changes,
+            proposal.justification,
+            proposal.eventId?.toString(),
+            proposal.editionId?.toString(),
+            proposal.raceId?.toString(),
+            proposalConfidence
+          )
+        } catch (error) {
+          context.logger.error(`Erreur lors de la création d'une proposition`, { 
+            type: proposal.type,
+            eventName: proposal.eventName,
+            error: String(error) 
+          })
+        }
+      }
+      
+      context.logger.info(`✅ Scraping terminé: ${totalCompetitions} compétitions, ${allProposals.length} propositions sauvegardées`)
 
       return {
         success: true,

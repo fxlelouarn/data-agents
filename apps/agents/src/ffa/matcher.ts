@@ -392,6 +392,60 @@ export async function findCandidateEvents(
       
       allEvents = [...allEvents, ...moreEvents]
     }
+    
+    // Passe 3 : Si toujours peu de résultats et que le nom est distinctif,
+    // rechercher uniquement par nom (pour gérer les cas de villes différentes)
+    if (allEvents.length < 5 && namePrefix.length >= 5) {
+      const nameOnlyEvents = await sourceDb.Event.findMany({
+        where: {
+          AND: [
+            {
+              editions: {
+                some: {
+                  startDate: {
+                    gte: startDate,
+                    lte: endDate
+                  }
+                }
+              }
+            },
+            {
+              name: {
+                contains: namePrefix,
+                mode: 'insensitive' as const
+              }
+            },
+            // Exclure ceux déjà trouvés
+            {
+              NOT: {
+                id: {
+                  in: allEvents.map((e: any) => e.id)
+                }
+              }
+            }
+          ]
+        },
+        include: {
+          editions: {
+            where: {
+              startDate: {
+                gte: startDate,
+                lte: endDate
+              }
+            },
+            select: {
+              id: true,
+              year: true,
+              startDate: true
+            }
+          }
+        },
+        take: 20
+      })
+      
+      allEvents = [...allEvents, ...nameOnlyEvents]
+    }
+    
     // Filtrer en mémoire avec normalisation des accents et matching flou
     const candidates = allEvents.filter((event: any) => {
       const normalizedEventName = normalizeString(event.name)
@@ -421,7 +475,22 @@ export async function findCandidateEvents(
         )
       })
       
-      return nameMatch || cityMatch
+      // Accepter les candidats si :
+      // - Le nom ET la ville correspondent
+      // - OU le nom correspond très bien (>0.9) même si la ville diffère (cas des villes limitrophes)
+      if (nameMatch && cityMatch) {
+        return true
+      }
+      
+      if (nameMatch) {
+        // Calculer la similarité du nom complet pour accepter les très bons matchs
+        const fullNameSimilarity = calculateSimilarity(name.toLowerCase(), normalizedEventName)
+        if (fullNameSimilarity >= 0.9) {
+          return true
+        }
+      }
+      
+      return false
     })
     // Retourner les 10 meilleurs candidats
     return candidates.slice(0, 10)
