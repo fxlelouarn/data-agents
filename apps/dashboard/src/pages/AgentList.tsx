@@ -19,6 +19,7 @@ import {
   Avatar,
   Tooltip,
   LinearProgress,
+  Button,
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -28,6 +29,7 @@ import {
   Error as ErrorIcon,
   Warning as WarningIcon,
   Block as BlockIcon,
+  Add as AddIcon,
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef } from '@mui/x-data-grid-pro'
 import { useAgents, useToggleAgent, useRunAgent, useFailureReport, useLogs } from '@/hooks/useApi'
@@ -399,6 +401,14 @@ const AgentList: React.FC = () => {
             )}
           </Box>
         </Box>
+        <Button
+          variant="contained"
+          startIcon={<AddIcon />}
+          component={RouterLink}
+          to="/agents/create"
+        >
+          Nouvel Agent
+        </Button>
       </Box>
 
       {/* Filters */}

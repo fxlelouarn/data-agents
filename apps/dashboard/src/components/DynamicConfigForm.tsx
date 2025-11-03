@@ -484,10 +484,9 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       if (!typeGroups[normalizedType]) {
         typeGroups[normalizedType] = []
       }
-      typeGroups[normalizedType].push([fieldName, fieldConfig])
+    typeGroups[normalizedType].push([fieldName, fieldConfig])
     })
     
-    console.log('DEBUG - Field grouping:', typeGroups)
     return typeGroups
   }
 

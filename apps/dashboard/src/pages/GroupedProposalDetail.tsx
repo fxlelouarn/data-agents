@@ -33,7 +33,7 @@ import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import EventLinksEditor from '@/components/proposals/EventLinksEditor'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
-import { useProposals, useUpdateProposal, useBulkArchiveProposals, useUnapproveProposal, useKillEvent, useReviveEvent } from '@/hooks/useApi'
+import { useProposals, useUpdateProposal, useBulkArchiveProposals, useUnapproveProposal, useKillEvent, useReviveEvent, useProposalGroup } from '@/hooks/useApi'
 
 const GroupedProposalDetail: React.FC = () => {
   const { groupKey } = useParams<{ groupKey: string }>()
@@ -45,7 +45,9 @@ const GroupedProposalDetail: React.FC = () => {
   const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
   const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
   
-  const { data: proposalsData, isLoading } = useProposals({})
+  // Use the new group-specific hook to load only the proposals for this group
+  const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
+  const { data: allProposalsData } = useProposals({}, 100) // Still needed for navigation
   const updateProposalMutation = useUpdateProposal()
   const bulkArchiveMutation = useBulkArchiveProposals()
   const unapproveProposalMutation = useUnapproveProposal()
@@ -134,9 +136,9 @@ const GroupedProposalDetail: React.FC = () => {
 
   // Navigation logic
   const allGroupKeys = useMemo(() => {
-    if (!proposalsData?.data) return []
+    if (!allProposalsData?.data) return []
     const keys = new Set<string>()
-    proposalsData.data.forEach(proposal => {
+    allProposalsData.data.forEach(proposal => {
       if (proposal.type === 'NEW_EVENT') {
         keys.add(`new-event-${proposal.id}`)
       } else {
@@ -144,7 +146,7 @@ const GroupedProposalDetail: React.FC = () => {
       }
     })
     return Array.from(keys)
-  }, [proposalsData?.data])
+  }, [allProposalsData?.data])
 
   const currentIndex = allGroupKeys.indexOf(groupKey || '')
   const canGoToPrev = currentIndex > 0
@@ -159,24 +161,15 @@ const GroupedProposalDetail: React.FC = () => {
 
   // Récupérer les propositions du groupe et les trier par confiance décroissante
   const groupProposals = useMemo(() => {
-    if (!proposalsData?.data || !groupKey) return []
+    if (!groupProposalsData?.data || !groupKey) return []
     
-    const filtered = proposalsData.data.filter(proposal => {
-      if (groupKey.startsWith('new-event-')) {
-        return groupKey === `new-event-${proposal.id}`
-      } else {
-        const proposalGroupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
-        return proposalGroupKey === groupKey
-      }
-    })
-    
-    // Trier par confiance décroissante
-    return filtered.sort((a, b) => {
+    // Les propositions sont déjà filtrées par le backend, juste les trier par confiance
+    return groupProposalsData.data.sort((a, b) => {
       const confidenceA = a.confidence || 0
       const confidenceB = b.confidence || 0
       return confidenceB - confidenceA
     })
-  }, [proposalsData?.data, groupKey])
+  }, [groupProposalsData?.data, groupKey])
   
   // Extraire la timezone de l'édition (prend en compte les modifications utilisateur)
   const editionTimezone = useMemo(() => {

@@ -9,6 +9,7 @@ import { fr } from 'date-fns/locale'
 
 import Layout from '@/components/Layout'
 import AgentList from '@/pages/AgentList'
+import AgentCreate from '@/pages/AgentCreate'
 import AgentDetail from '@/pages/AgentDetail'
 import AgentEdit from '@/pages/AgentEdit'
 import AgentLogs from '@/pages/AgentLogs'
@@ -125,6 +126,7 @@ function App() {
                     
                     {/* Agents routes */}
                     <Route path="/agents" element={<AgentList />} />
+                    <Route path="/agents/create" element={<AgentCreate />} />
                     <Route path="/agents/:id" element={<AgentDetail />} />
                     <Route path="/agents/:id/edit" element={<AgentEdit />} />
                     <Route path="/agents/:id/logs" element={<AgentLogs />} />

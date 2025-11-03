@@ -45,7 +45,7 @@ const ProposalDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const navigate = useNavigate()
   const { data: proposalData, isLoading } = useProposal(id!)
-  const { data: proposalsData } = useProposals()
+  const { data: proposalsData } = useProposals({}, 100)
   const updateProposalMutation = useUpdateProposal()
   const unapproveProposalMutation = useUnapproveProposal()
   

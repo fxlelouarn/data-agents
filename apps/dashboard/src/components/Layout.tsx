@@ -55,7 +55,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
 
   const { data: proposalsData } = useProposals({ status: 'PENDING' })
   const { data: databasesData } = useDatabases() // Seulement les bases actives par défaut
-  const pendingProposals = proposalsData?.data?.length || 0
+  const pendingProposals = proposalsData?.meta?.total || 0
   const activeDatabases = databasesData?.data?.filter(db => db.isActive) || []
   const hasActiveDatabases = activeDatabases.length > 0
 
