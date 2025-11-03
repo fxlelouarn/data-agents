@@ -113,6 +113,9 @@ export const proposalsApi = {
   getById: (id: string): Promise<ApiResponse<Proposal & { relatedProposals: Proposal[] }>> =>
     api.get(`/proposals/${id}`).then(res => res.data),
 
+  getByGroup: (groupKey: string): Promise<ApiResponse<Proposal[]>> =>
+    api.get(`/proposals/group/${groupKey}`).then(res => res.data),
+
   createManual: (data: {
     eventId?: string
     editionId?: string

@@ -217,6 +217,17 @@ export const useProposal = (id: string) => {
   })
 }
 
+export const useProposalGroup = (groupKey: string) => {
+  return useQuery({
+    queryKey: ['proposals', 'group', groupKey],
+    queryFn: () => proposalsApi.getByGroup(groupKey),
+    enabled: !!groupKey,
+    staleTime: 30000, // 30 secondes
+    refetchInterval: 60000, // Auto-refresh toutes les 60 secondes
+    refetchOnWindowFocus: true,
+  })
+}
+
 export const useUpdateProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

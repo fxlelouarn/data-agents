@@ -81,11 +81,21 @@ const ProposalList: React.FC = () => {
   const [createProposalOpen, setCreateProposalOpen] = useState(false)
   const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
   const [creationType, setCreationType] = useState<'NEW_EVENT' | 'EDIT_EVENT'>('NEW_EVENT')
+  const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 50 })
 
-  const { data: proposalsData, isLoading, refetch } = useProposals({ 
-    status: statusFilter !== 'ALL' ? statusFilter : undefined,
-    type: typeFilter !== 'ALL' ? typeFilter : undefined,
-  })
+  const { data: proposalsData, isLoading, refetch } = useProposals(
+    { 
+      status: statusFilter !== 'ALL' ? statusFilter : undefined,
+      type: typeFilter !== 'ALL' ? typeFilter : undefined,
+    },
+    paginationModel.pageSize,
+    paginationModel.page * paginationModel.pageSize
+  )
+  
+  // Reset pagination when filters change
+  React.useEffect(() => {
+    setPaginationModel(prev => ({ ...prev, page: 0 }))
+  }, [statusFilter, typeFilter])
   
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
@@ -192,15 +202,22 @@ const ProposalList: React.FC = () => {
   const getEventTitle = (groupKey: string, proposals: any[]) => {
     if (groupKey.startsWith('new-event-')) {
       const proposal = proposals[0]
-      return proposal.changes.eventName || 'Nouvel événement'
+      // Extraire .new si c'est un objet change
+      const eventNameValue = proposal.changes.eventName || proposal.changes.name
+      const eventName = (typeof eventNameValue === 'object' && eventNameValue?.new) ? eventNameValue.new : eventNameValue
+      return eventName || 'Nouvel événement'
     }
     
     const proposal = proposals[0]
-    if (!proposal.eventId) {
-      return 'Événement inconnu'
+    
+    // PRIORITÉ 1: Utiliser les champs enrichis par l'API (eventName, eventCity, editionYear)
+    if (proposal.eventName) {
+      const cityPart = proposal.eventCity ? ` - ${proposal.eventCity}` : ''
+      const yearPart = proposal.editionYear ? ` ${proposal.editionYear}` : ''
+      return `${proposal.eventName}${cityPart}${yearPart}`
     }
     
-    // Essayer d'extraire le nom depuis les métadonnées de justification
+    // PRIORITÉ 2: Essayer d'extraire le nom depuis les métadonnées de justification
     if (proposal.justification && Array.isArray(proposal.justification)) {
       for (const justif of proposal.justification) {
         if (justif.metadata && justif.metadata.eventName) {
@@ -214,6 +231,15 @@ const ProposalList: React.FC = () => {
           return `${eventName}${cityPart}${yearPart}`
         }
       }
+    }
+    
+    // Pour EDITION_UPDATE sans eventId, utiliser editionId avec les métadonnées si disponibles
+    if (!proposal.eventId && proposal.editionId) {
+      return `Édition ${proposal.editionId}`
+    }
+    
+    if (!proposal.eventId) {
+      return 'Événement inconnu'
     }
     
     // Fallback: extraire le nom de l'événement depuis l'ID (logique existante)
@@ -307,10 +333,22 @@ const ProposalList: React.FC = () => {
         const proposal = params.row
         // Pour les nouveaux événements
         if (proposal.type === 'NEW_EVENT') {
-          return proposal.changes.name || proposal.changes.eventName || 'Nouvel événement'
+          // Extraire .new si c'est un objet change, sinon utiliser la valeur directement
+          const nameValue = proposal.changes.name
+          const eventNameValue = proposal.changes.eventName
+          const name = (typeof nameValue === 'object' && nameValue?.new) ? nameValue.new : nameValue
+          const eventName = (typeof eventNameValue === 'object' && eventNameValue?.new) ? eventNameValue.new : eventNameValue
+          return name || eventName || 'Nouvel événement'
         }
         
-        // Essayer d'extraire depuis les métadonnées de justification
+        // PRIORITÉ 1: Utiliser les champs enrichis par l'API
+        if (proposal.eventName) {
+          const cityPart = proposal.eventCity ? ` - ${proposal.eventCity}` : ''
+          const yearPart = proposal.editionYear ? ` ${proposal.editionYear}` : ''
+          return `${proposal.eventName}${cityPart}${yearPart}`
+        }
+        
+        // PRIORITÉ 2: Essayer d'extraire depuis les métadonnées de justification
         if (proposal.justification && Array.isArray(proposal.justification)) {
           for (const justif of proposal.justification) {
             if (justif.metadata?.eventName) {
@@ -660,6 +698,32 @@ const ProposalList: React.FC = () => {
         /* Grouped View */
         <Box>
           {isLoading && <LinearProgress sx={{ mb: 2 }} />}
+          
+          {/* Pagination info for grouped view */}
+          {proposalsData?.meta && (
+            <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+              <Typography variant="body2" color="text.secondary">
+                Affichage de {proposalsData.meta.offset + 1} à {Math.min(proposalsData.meta.offset + proposalsData.meta.limit, proposalsData.meta.total)} sur {proposalsData.meta.total} propositions
+              </Typography>
+              <Box sx={{ display: 'flex', gap: 1 }}>
+                <Button
+                  size="small"
+                  disabled={paginationModel.page === 0}
+                  onClick={() => setPaginationModel({ ...paginationModel, page: paginationModel.page - 1 })}
+                >
+                  Précédent
+                </Button>
+                <Button
+                  size="small"
+                  disabled={!proposalsData.meta.hasMore}
+                  onClick={() => setPaginationModel({ ...paginationModel, page: paginationModel.page + 1 })}
+                >
+                  Suivant
+                </Button>
+              </Box>
+            </Box>
+          )}
+          
           {Object.entries(groupedProposals).map(([groupKey, proposals]) => {
             const isExpanded = expandedGroups.has(groupKey)
             return (
@@ -887,11 +951,11 @@ const ProposalList: React.FC = () => {
               rows={filteredProposals}
               columns={columns}
               pagination
-              pageSizeOptions={[10, 25, 50]}
-              initialState={{
-                pagination: { paginationModel: { pageSize: 25 } },
-                sorting: { sortModel: [{ field: 'createdAt', sort: 'desc' }] },
-              }}
+              paginationMode="server"
+              rowCount={proposalsData?.meta?.total || 0}
+              paginationModel={paginationModel}
+              onPaginationModelChange={setPaginationModel}
+              pageSizeOptions={[25, 50, 100]}
               slots={{
                 toolbar: GridToolbar,
               }}
