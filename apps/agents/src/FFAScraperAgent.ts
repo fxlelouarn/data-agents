@@ -16,7 +16,10 @@ import {
   FFACompetitionDetails,
   ScrapingProgress,
   FFA_LIGUES,
-  MatchResult
+  MatchResult,
+  convertFFALigueToRegionCode,
+  convertFFALigueToRegionName,
+  convertFFALigueToDisplayCode
 } from './ffa/types'
 import { 
   fetchAllCompetitionsForPeriod, 
@@ -26,6 +29,7 @@ import {
   humanDelay 
 } from './ffa/scraper'
 import { matchCompetition, calculateAdjustedConfidence } from './ffa/matcher'
+import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
 
 export class FFAScraperAgent extends BaseAgent {
   private dbManager: DatabaseManager
@@ -294,30 +298,56 @@ export class FFAScraperAgent extends BaseAgent {
           content: `Date de clôture FFA: ${newClosingDate.toISOString()}`,
           metadata: { 
             oldDate: existingClosingDate?.toISOString(),
-            newDate: newClosingDate.toISOString()
+            newDate: newClosingDate.toISOString(),
+            source: ffaData.competition.detailUrl
           }
         })
       }
     }
 
-    // 4. Organisateur
+    // 4. Organisateur (via EditionPartner avec role ORGANIZER)
     if (ffaData.organizerName) {
-      const existingOrgName = edition.organization?.name
-      if (!existingOrgName || existingOrgName !== ffaData.organizerName) {
-        changes.organization = {
-          old: existingOrgName,
+      // Trouver l'organisateur actuel dans les EditionPartners
+      const existingOrganizer = (edition.editionPartners || []).find(
+        (p: any) => p.role === 'ORGANIZER'
+      )
+      
+      const existingOrgName = existingOrganizer?.name
+      const existingOrgWebsite = existingOrganizer?.websiteUrl
+      
+      // Proposer si:
+      // 1. Aucun organisateur n'existe
+      // 2. Le nom a changé
+      // 3. Un nouveau site web est disponible
+      const shouldUpdate = !existingOrganizer || 
+                           existingOrgName !== ffaData.organizerName ||
+                           (ffaData.organizerWebsite && ffaData.organizerWebsite !== existingOrgWebsite)
+      
+      if (shouldUpdate) {
+        changes.organizer = {
+          old: existingOrganizer ? {
+            name: existingOrgName,
+            websiteUrl: existingOrgWebsite
+          } : null,
           new: {
             name: ffaData.organizerName,
+            websiteUrl: ffaData.organizerWebsite,
+            facebookUrl: ffaData.organizerWebsite?.includes('facebook.com') ? ffaData.organizerWebsite : undefined,
+            instagramUrl: ffaData.organizerWebsite?.includes('instagram.com') ? ffaData.organizerWebsite : undefined,
             email: ffaData.organizerEmail,
-            phone: ffaData.organizerPhone,
-            website: ffaData.organizerWebsite,
-            address: ffaData.organizerAddress
+            phone: ffaData.organizerPhone
           },
-          confidence: confidence * 0.9
+          confidence: confidence * 0.85
         }
+        
+        const reasons = []
+        if (!existingOrganizer) reasons.push('organisateur manquant')
+        if (existingOrgName && existingOrgName !== ffaData.organizerName) reasons.push('nom différent')
+        if (ffaData.organizerWebsite && ffaData.organizerWebsite !== existingOrgWebsite) reasons.push('nouveau site web')
+        
         justifications.push({
           type: 'text',
-          content: `Organisateur FFA: ${ffaData.organizerName}`,
+          content: `Organisateur FFA: ${ffaData.organizerName}${reasons.length > 0 ? ` (${reasons.join(', ')})` : ''}`,
           metadata: {
             oldOrganizer: existingOrgName,
             newOrganizer: ffaData.organizerName,
@@ -325,7 +355,9 @@ export class FFAScraperAgent extends BaseAgent {
               email: ffaData.organizerEmail,
               phone: ffaData.organizerPhone,
               website: ffaData.organizerWebsite
-            }
+            },
+            reasons,
+            source: ffaData.competition.detailUrl
           }
         })
       }
@@ -383,7 +415,7 @@ export class FFAScraperAgent extends BaseAgent {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
           racesToAdd.push({
             name: ffaRace.name,
-            distance: ffaRace.distance,
+            distance: ffaRace.distance ? ffaRace.distance / 1000 : undefined,
             elevation: ffaRace.positiveElevation,
             startTime: ffaRace.startTime,
             type: ffaRace.type,
@@ -421,7 +453,10 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `${racesToAdd.length} nouvelle(s) course(s) FFA détectée(s)`,
-          metadata: { races: racesToAdd.map(r => r.name) }
+          metadata: { 
+            races: racesToAdd.map(r => r.name),
+            source: ffaData.competition.detailUrl
+          }
         })
       }
 
@@ -434,7 +469,10 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `${racesToUpdate.length} course(s) à mettre à jour`,
-          metadata: { races: racesToUpdate.map(r => ({ name: r.raceName, updates: r.updates })) }
+          metadata: { 
+            races: racesToUpdate.map(r => ({ name: r.raceName, updates: r.updates })),
+            source: ffaData.competition.detailUrl
+          }
         })
       }
     }
@@ -449,7 +487,10 @@ export class FFAScraperAgent extends BaseAgent {
       justifications.push({
         type: 'text',
         content: `Services FFA: ${ffaData.services.join(', ')}`,
-        metadata: { services: ffaData.services }
+        metadata: { 
+          services: ffaData.services,
+          source: ffaData.competition.detailUrl
+        }
       })
     }
 
@@ -465,7 +506,10 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `Informations additionnelles FFA disponibles`,
-          metadata: { preview: ffaData.additionalInfo.substring(0, 200) }
+          metadata: { 
+            preview: ffaData.additionalInfo.substring(0, 200),
+            source: ffaData.competition.detailUrl
+          }
         })
       }
     }
@@ -557,6 +601,7 @@ export class FFAScraperAgent extends BaseAgent {
       // Créer un nouvel événement
       proposals.push({
         type: ProposalType.NEW_EVENT,
+        eventName: competition.competition.name,
         changes: {
           name: {
             new: competition.competition.name,
@@ -571,25 +616,27 @@ export class FFAScraperAgent extends BaseAgent {
             confidence
           },
           countrySubdivisionNameLevel1: {
-            new: competition.competition.ligue,
+            new: convertFFALigueToRegionName(competition.competition.ligue),
             confidence
           },
           countrySubdivisionDisplayCodeLevel1: {
-            new: competition.competition.ligue,
+            new: convertFFALigueToDisplayCode(competition.competition.ligue),
             confidence
           },
           countrySubdivisionNameLevel2: {
-            new: competition.competition.department,
+            new: getDepartmentName(competition.competition.department),
             confidence
           },
           countrySubdivisionDisplayCodeLevel2: {
-            new: competition.competition.department,
+            new: normalizeDepartmentCode(competition.competition.department),
             confidence
           },
-          websiteUrl: {
-            new: competition.organizerWebsite,
-            confidence
-          },
+          ...(competition.organizerWebsite ? {
+            [competition.organizerWebsite.includes('facebook.com') ? 'facebookUrl' : 'websiteUrl']: {
+              new: competition.organizerWebsite,
+              confidence
+            }
+          } : {}),
           dataSource: {
             new: 'FEDERATION',
             confidence
@@ -621,7 +668,7 @@ export class FFAScraperAgent extends BaseAgent {
                 return {
                   name: race.name,
                   startDate: raceStartDate,
-                  runDistance: race.distance,
+                  runDistance: race.distance ? race.distance / 1000 : undefined,
                   runPositiveElevation: race.positiveElevation,
                   type: race.type === 'trail' ? 'TRAIL' : 'RUNNING'
                 }
@@ -661,6 +708,7 @@ export class FFAScraperAgent extends BaseAgent {
           where: { id: matchResult.edition.id },
           include: {
             organization: true,
+            editionPartners: true,
             races: {
               include: {
                 raceInfo: true
@@ -710,6 +758,7 @@ export class FFAScraperAgent extends BaseAgent {
             })
             proposals.push({
               type: ProposalType.EDITION_UPDATE,
+              eventName: matchResult.event!.name,
               eventId: matchResult.event!.id,
               editionId: matchResult.edition.id,
               changes,
