@@ -101,7 +101,44 @@ export function parseCompetitionDetails(
   }
 
   // Extraire les informations de l'organisateur
-  // Chercher dans les sections de la page
+  // Chercher d'abord dans le titre/header de la page pour le nom de l'organisateur
+  const organizerHeading = $('h2, h3, h4').filter((_, el) => {
+    const text = $(el).text().toLowerCase()
+    return text.includes('organisateur') || text.includes('organisé par')
+  }).first()
+  
+  if (organizerHeading.length > 0) {
+    // Le nom peut être dans le texte qui suit directement, ou dans un élément frère
+    const nextElement = organizerHeading.next()
+    if (nextElement.length > 0) {
+      const possibleName = nextElement.text().trim()
+      if (possibleName && possibleName.length > 3 && possibleName.length < 100) {
+        details.organizerName = possibleName
+      }
+    }
+  }
+  
+  // Sinon, essayer de trouver dans les sections
+  if (!details.organizerName) {
+    $('section, div.club-card').each((_, element) => {
+      const $element = $(element)
+      const text = $element.text()
+      
+      // Chercher des patterns comme "Organisé par: ..." ou "Organisateur: ..."
+      const organizerMatch = text.match(/Organis(?:é|e) par\s*:\s*([^\n\r]+)/i) ||
+                             text.match(/Organisateur\s*:\s*([^\n\r]+)/i)
+      
+      if (organizerMatch && !details.organizerName) {
+        const name = organizerMatch[1].trim()
+        // Ne prendre que si c'est un nom raisonnable (pas un email ou URL)
+        if (name && name.length > 3 && name.length < 100 && !name.includes('@') && !name.includes('http')) {
+          details.organizerName = name
+        }
+      }
+    })
+  }
+  
+  // Chercher dans les sections de la page pour les autres infos
   $('section').each((_, section) => {
     const $section = $(section)
     const sectionText = $section.text()
@@ -270,19 +307,26 @@ export function parseDistance(distanceStr: string): number | undefined {
 }
 
 /**
- * Parse un dénivelé "500 m" ou "D+ 500m" et retourne en mètres
+ * Parse un dénivelé "500 m" ou "D+ 500m" ou "500 m D+" et retourne en mètres
  */
 export function parseElevation(elevationStr: string): number | undefined {
   try {
     const cleaned = elevationStr.toLowerCase().replace(/\s/g, '')
     
-    // Chercher D+ ou dénivelé
-    const match = cleaned.match(/(?:d\+|dénivelé|elevation)[:\s]*(\d+)/)
-    if (match) {
-      return parseInt(match[1], 10)
+    // Format 1: "D+ 500" ou "D+:500" (D+ avant le nombre)
+    const match1 = cleaned.match(/(?:d\+|dénivelé|elevation)[:\s]*(\d+)/)
+    if (match1) {
+      return parseInt(match1[1], 10)
     }
 
-    // Si c'est dans un contexte clair de dénivelé
+    // Format 2: "500 m D+" ou "500m d+" (nombre avant D+)
+    // Chercher un nombre suivi de 'm' puis de 'd+'
+    const match2 = cleaned.match(/(\d+)\s*m\s*d\+/)
+    if (match2) {
+      return parseInt(match2[1], 10)
+    }
+
+    // Format 3: Si 'd+' ou 'dénivelé' est présent, chercher un nombre avec 'm'
     if (cleaned.includes('d+') || cleaned.includes('dénivelé')) {
       const numMatch = cleaned.match(/(\d+)\s*m/)
       if (numMatch) {
