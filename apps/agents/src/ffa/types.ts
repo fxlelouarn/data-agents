@@ -224,24 +224,24 @@ export const FFA_LIGUES = [
   'ARA', // Auvergne-Rhône-Alpes
   'BFC', // Bourgogne-Franche-Comté
   'BRE', // Bretagne
-  'CVL', // Centre-Val de Loire
+  'CEN', // Centre-Val de Loire
   'COR', // Corse
-  'GES', // Grand Est
-  'HDF', // Hauts-de-France
-  'IDF', // Île-de-France
-  'NOR', // Normandie
-  'NAQ', // Nouvelle-Aquitaine
-  'OCC', // Occitanie
-  'PDL', // Pays de la Loire
-  'PAC', // Provence-Alpes-Côte d'Azur
+  'G-E', // Grand Est
   'GUA', // Guadeloupe
   'GUY', // Guyane
+  'H-F', // Hauts-de-France
+  'I-F', // Île-de-France
   'MAR', // Martinique
   'MAY', // Mayotte
+  'N-A', // Nouvelle-Aquitaine
+  'N-C', // Nouvelle-Calédonie
+  'NOR', // Normandie
+  'OCC', // Occitanie
+  'PCA', // Provence-Alpes-Côte d'Azur
+  'P-F', // Polynésie française
+  'P-L', // Pays de la Loire
   'REU', // Réunion
-  'POL', // Polynésie française
-  'NCL', // Nouvelle-Calédonie
-  'WF'   // Wallis-et-Futuna
+  'W-F'  // Wallis-et-Futuna
 ] as const
 
 /**
@@ -263,3 +263,53 @@ export const FFA_LEVELS = [
  * Type union pour les niveaux FFA
  */
 export type FFALevel = typeof FFA_LEVELS[number]
+
+/**
+ * Mapping des codes FFA vers les codes régions françaises (ISO 3166-2:FR sans le préfixe FR-)
+ * et codes départements pour les territoires d'outre-mer
+ */
+export const FFA_LIGUE_TO_REGION_CODE: Record<string, { code: string, name: string, displayCode: string }> = {
+  'ARA': { code: 'ARA', name: 'Auvergne-Rhône-Alpes', displayCode: 'ARA' },
+  'BFC': { code: 'BFC', name: 'Bourgogne-Franche-Comté', displayCode: 'BFC' },
+  'BRE': { code: 'BRE', name: 'Bretagne', displayCode: 'BRE' },
+  'CEN': { code: 'CVL', name: 'Centre-Val de Loire', displayCode: 'CVL' },
+  'COR': { code: 'COR', name: 'Corse', displayCode: 'COR' },
+  'G-E': { code: 'GES', name: 'Grand Est', displayCode: 'GES' },
+  'H-F': { code: 'HDF', name: 'Hauts-de-France', displayCode: 'HDF' },
+  'I-F': { code: 'IDF', name: 'Île-de-France', displayCode: 'IDF' },
+  'NOR': { code: 'NOR', name: 'Normandie', displayCode: 'NOR' },
+  'N-A': { code: 'NAQ', name: 'Nouvelle-Aquitaine', displayCode: 'NAQ' },
+  'OCC': { code: 'OCC', name: 'Occitanie', displayCode: 'OCC' },
+  'P-L': { code: 'PDL', name: 'Pays de la Loire', displayCode: 'PDL' },
+  'PCA': { code: 'PAC', name: "Provence-Alpes-Côte d'Azur", displayCode: 'PAC' },
+  // DOM-TOM : utiliser les codes départements
+  'GUA': { code: '971', name: 'Guadeloupe', displayCode: 'GP' },
+  'GUY': { code: '973', name: 'Guyane', displayCode: 'GF' },
+  'MAR': { code: '972', name: 'Martinique', displayCode: 'MQ' },
+  'MAY': { code: '976', name: 'Mayotte', displayCode: 'YT' },
+  'REU': { code: '974', name: 'La Réunion', displayCode: 'RE' },
+  'N-C': { code: '988', name: 'Nouvelle-Calédonie', displayCode: 'NC' },
+  'P-F': { code: '987', name: 'Polynésie française', displayCode: 'PF' },
+  'W-F': { code: '986', name: 'Wallis-et-Futuna', displayCode: 'WF' }
+}
+
+/**
+ * Convertit un code FFA ligue en code région français (pour countrySubdivisionCodeLevel1)
+ */
+export function convertFFALigueToRegionCode(ffaLigue: string): string {
+  return FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.code || ffaLigue
+}
+
+/**
+ * Convertit un code FFA ligue en nom de région (pour countrySubdivisionNameLevel1)
+ */
+export function convertFFALigueToRegionName(ffaLigue: string): string {
+  return FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.name || ffaLigue
+}
+
+/**
+ * Convertit un code FFA ligue en code d'affichage (pour countrySubdivisionDisplayCodeLevel1)
+ */
+export function convertFFALigueToDisplayCode(ffaLigue: string): string {
+  return FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.displayCode || ffaLigue
+}
