@@ -9,9 +9,61 @@ L'Agent FFA Scraper est un agent autonome qui collecte les données des compéti
 - Matching intelligent entre compétitions FFA et événements Miles Republic existants
 - Génération de propositions de création d'événements ou de mise à jour d'éditions
 - Comparaison détaillée des dates, courses, organisateurs, et services
+- Extraction complète des informations organisateur (nom, site web, email, téléphone, réseaux sociaux)
+- Mapping automatique des ligues FFA vers les codes officiels de régions et départements français
 - Gestion robuste avec logs détaillés et tolérance aux erreurs
 
 La FFA répertorie uniquement les courses à pied officielles (route, trail, cross) avec chronométrage et enregistrement auprès de la fédération.
+
+## Extraction des informations organisateur
+
+L'agent extrait désormais toutes les informations détaillées de l'organisateur depuis les pages de compétitions FFA :
+
+- **Nom de l'organisateur** : extrait depuis la section des informations pratiques
+- **Site web** : URL du site officiel de l'organisateur
+- **Email** : adresse email de contact
+- **Téléphone** : numéro de téléphone
+- **Réseaux sociaux** : liens Facebook, Instagram, Twitter, etc.
+
+Ces informations sont utilisées pour créer ou mettre à jour un `EditionPartner` avec le rôle `ORGANIZER` dans la base de données Miles Republic. La comparaison se fait sur le nom et le site web de l'organisateur pour détecter les changements.
+
+## Mapping géographique des ligues FFA
+
+L'agent inclut un mapping complet entre les codes de ligues FFA et les codes officiels des régions et départements français :
+
+**Fonctions disponibles :**
+
+- `getRegionCodeForLeague(ligueCode)` : retourne le code région INSEE à 2 chiffres (ex: "84" pour Auvergne-Rhône-Alpes)
+- `getRegionNameForLeague(ligueCode)` : retourne le nom complet de la région
+- `getRegionDisplayCodeForLeague(ligueCode)` : retourne le code d'affichage (ex: "ARA")
+
+**Exemple d'utilisation :**
+```typescript
+import { getRegionCodeForLeague, getRegionNameForLeague } from './leagueMappings';
+
+const regionCode = getRegionCodeForLeague('ARA');  // "84"
+const regionName = getRegionNameForLeague('ARA');  // "Auvergne-Rhône-Alpes"
+```
+
+**Ligues supportées :**
+- ARA (Auvergne-Rhône-Alpes)
+- BFC (Bourgogne-Franche-Comté)
+- BRE (Bretagne)
+- CVL (Centre-Val de Loire)
+- GES (Grand Est)
+- HDF (Hauts-de-France)
+- IDF (Île-de-France)
+- NOR (Normandie)
+- NAQ (Nouvelle-Aquitaine)
+- OCC (Occitanie)
+- PDL (Pays de la Loire)
+- PAC (Provence-Alpes-Côte d'Azur)
+- COR (Corse)
+- GUA (Guadeloupe)
+- GUY (Guyane)
+- MAR (Martinique)
+- MAY (Mayotte)
+- REU (La Réunion)
 
 Pour accéder à la liste des courses de la ligue ARA, pour le Running, entre le 1er novembre 2025 et le 30 novembre 2025, l'URL est la suivante :
 https://www.athle.fr/bases/liste.aspx?frmpostback=true&frmbase=calendrier&frmmode=1&frmespace=0&frmsaisonffa=2026&frmdate1=2025-11-01&frmdate2=2025-11-30&frmtype1=Running&frmniveau=&frmligue=ARA&frmdepartement=&frmniveaulab=&frmepreuve=&frmtype2=&frmtype3=&frmtype4=
