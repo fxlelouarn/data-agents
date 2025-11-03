@@ -146,6 +146,25 @@ export class AgentService implements IAgentService {
   }
 
   /**
+   * Migre les anciens noms de champs vers les nouveaux noms
+   * Utile lors de la réinstallation pour maintenir la compatibilité
+   */
+  private migrateConfigFieldNames(config: any): any {
+    const migratedConfig = { ...config }
+    
+    // Migration: searchEngineId -> googleSearchEngineId
+    if (migratedConfig.searchEngineId && !migratedConfig.googleSearchEngineId) {
+      migratedConfig.googleSearchEngineId = migratedConfig.searchEngineId
+      delete migratedConfig.searchEngineId
+    }
+    
+    // Ajouter d'autres migrations ici si nécessaire
+    // Ex: oldFieldName -> newFieldName
+    
+    return migratedConfig
+  }
+
+  /**
    * Réinstalle un agent en récupérant sa définition actuelle depuis le code
    */
   async reinstallAgent(id: string) {
@@ -172,10 +191,13 @@ export class AgentService implements IAgentService {
       // 3. Convertir le schéma du format framework vers DynamicConfigForm
       const convertedSchema = agentRegistryService.convertSchemaFormat(agentDefinition.configSchema)
 
-      // 4. Fusionner les valeurs existantes avec la nouvelle structure
+      // 4. Migrer les anciens noms de champs vers les nouveaux
+      const migratedConfig = this.migrateConfigFieldNames(currentConfig)
+      
+      // 5. Fusionner les valeurs existantes avec la nouvelle structure
       const updatedConfig = {
         ...agentDefinition.defaultConfig, // Valeurs par défaut du code
-        ...currentConfig, // Valeurs existantes (priorité)
+        ...migratedConfig, // Valeurs existantes migrées (priorité)
         configSchema: convertedSchema // Nouveau schéma converti
       }
 

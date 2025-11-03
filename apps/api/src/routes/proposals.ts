@@ -194,70 +194,96 @@ export async function enrichProposal(proposal: any) {
     return proposal
   }
   
-  // Pour les EDITION_UPDATE et NEW_EVENT, logique existante
-  if (!proposal.eventId || !proposal.editionYear || (proposal.type !== 'EDITION_UPDATE' && proposal.type !== 'NEW_EVENT')) {
-    return proposal
-  }
+  // Pour les EDITION_UPDATE et NEW_EVENT
+  if (proposal.type === 'EDITION_UPDATE' || proposal.type === 'NEW_EVENT') {
+    try {
+      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+        where: { type: 'MILES_REPUBLIC', isActive: true }
+      })
 
-  try {
-    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
-      where: { type: 'MILES_REPUBLIC', isActive: true }
-    })
+      if (!milesRepublicConnection) return proposal
 
-    if (!milesRepublicConnection) return proposal
+      const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+      const logger = createConsoleLogger('API', 'proposals-api')
+      const dbManager = DatabaseManager.getInstance(logger)
+      const connection = await dbManager.getConnection(milesRepublicConnection.id)
 
-    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
-    const logger = createConsoleLogger('API', 'proposals-api')
-    const dbManager = DatabaseManager.getInstance(logger)
-    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+      let numericEventId: number | undefined
+      let editionYear: number | undefined
 
-    const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
-      ? parseInt(proposal.eventId)
-      : proposal.eventId
+      // Pour EDITION_UPDATE, récupérer l'eventId depuis l'édition
+      if (proposal.type === 'EDITION_UPDATE' && proposal.editionId) {
+        const numericEditionId = typeof proposal.editionId === 'string' && /^\d+$/.test(proposal.editionId)
+          ? parseInt(proposal.editionId)
+          : proposal.editionId
 
-    // Vérifier que editionYear est valide
-    if (typeof proposal.editionYear !== 'number' || isNaN(proposal.editionYear)) {
-      return proposal
-    }
-    
-    const previousEditionYear = proposal.editionYear - 1
-    const previousEdition = await connection.edition.findFirst({
-      where: { 
-        eventId: numericEventId, 
-        year: String(previousEditionYear) // year est un String dans Miles Republic
-      },
-      select: { 
-        calendarStatus: true, 
-        year: true,
-        startDate: true
+        const edition = await connection.edition.findUnique({
+          where: { id: numericEditionId },
+          select: { 
+            eventId: true,
+            year: true
+          }
+        })
+
+        if (edition) {
+          numericEventId = edition.eventId
+          editionYear = parseInt(edition.year)
+        }
+      } else if (proposal.eventId) {
+        // Pour NEW_EVENT ou si eventId est déjà fourni
+        numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
+          ? parseInt(proposal.eventId)
+          : proposal.eventId
+        editionYear = proposal.editionYear
       }
-    })
 
-    // Récupérer aussi le status de l'événement
-    const event = await connection.event.findUnique({
-      where: { id: numericEventId },
-      select: { status: true }
-    })
+      if (!numericEventId) return proposal
 
-    if (previousEdition) {
-      return {
+      // Récupérer les infos de l'événement (nom, ville, statut)
+      const event = await connection.event.findUnique({
+        where: { id: numericEventId },
+        select: { 
+          name: true,
+          city: true,
+          status: true 
+        }
+      })
+      
+      // Base enrichment avec event info
+      const enriched: any = {
         ...proposal,
-        previousEditionCalendarStatus: previousEdition.calendarStatus,
-        previousEditionYear: previousEdition.year,
-        previousEditionStartDate: previousEdition.startDate,
-        eventStatus: event?.status
+        eventName: event?.name,
+        eventCity: event?.city,
+        eventStatus: event?.status,
+        editionYear: editionYear
       }
-    }
-    
-    // Même si pas d'édition précédente, on veut le status de l'événement
-    if (event) {
-      return {
-        ...proposal,
-        eventStatus: event.status
+
+      // Si on a editionYear, récupérer aussi l'édition précédente
+      if (editionYear && typeof editionYear === 'number' && !isNaN(editionYear)) {
+        const previousEditionYear = editionYear - 1
+        const previousEdition = await connection.edition.findFirst({
+          where: { 
+            eventId: numericEventId, 
+            year: String(previousEditionYear)
+          },
+          select: { 
+            calendarStatus: true, 
+            year: true,
+            startDate: true
+          }
+        })
+        
+        if (previousEdition) {
+          enriched.previousEditionCalendarStatus = previousEdition.calendarStatus
+          enriched.previousEditionYear = previousEdition.year
+          enriched.previousEditionStartDate = previousEdition.startDate
+        }
       }
+
+      return enriched
+    } catch (error) {
+      console.warn('Failed to fetch edition info for proposal', proposal.id, error)
     }
-  } catch (error) {
-    console.warn('Failed to fetch previous edition for proposal', proposal.id, error)
   }
 
   return proposal
@@ -314,6 +340,66 @@ router.get('/', [
       limit: parseInt(String(limit)),
       offset: parseInt(String(offset)),
       hasMore: (parseInt(String(offset)) + parseInt(String(limit))) < total
+    }
+  })
+}))
+
+// GET /api/proposals/group/:groupKey - Get proposals by group key
+router.get('/group/:groupKey', [
+  param('groupKey').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { groupKey } = req.params
+  
+  let proposals: any[]
+  
+  // Check if it's a new event group
+  if (groupKey.startsWith('new-event-')) {
+    const proposalId = groupKey.replace('new-event-', '')
+    const proposal = await db.prisma.proposal.findUnique({
+      where: { id: proposalId },
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        }
+      }
+    })
+    
+    proposals = proposal ? [proposal] : []
+  } else {
+    // Parse eventId-editionId format
+    const [eventId, editionId] = groupKey.split('-')
+    
+    if (!eventId || !editionId || eventId === 'unknown' || editionId === 'unknown') {
+      throw createError(400, 'Invalid group key format', 'INVALID_GROUP_KEY')
+    }
+    
+    // Get all proposals for this event/edition combination
+    proposals = await db.prisma.proposal.findMany({
+      where: {
+        eventId,
+        editionId
+      },
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        }
+      },
+      orderBy: { createdAt: 'desc' }
+    })
+  }
+  
+  // Enrichir chaque proposition avec les infos contextuelles
+  const enrichedProposals = await Promise.all(
+    proposals.map(p => enrichProposal(p))
+  )
+  
+  res.json({
+    success: true,
+    data: enrichedProposals,
+    meta: {
+      total: enrichedProposals.length,
+      groupKey
     }
   })
 }))
