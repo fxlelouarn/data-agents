@@ -38,10 +38,10 @@ const DEFAULT_CONFIG = {
   }
 }
 
-// Enregistrer l'agent dans le registry avec le type EXTRACTOR
-agentRegistry.register('EXTRACTOR', GoogleSearchDateAgent)
+// Enregistrer l'agent dans le registry avec un identifiant unique
+agentRegistry.register('GOOGLE_SEARCH_DATE', GoogleSearchDateAgent)
 
-console.log('✅ Google Search Date Agent enregistré dans le registry pour le type EXTRACTOR')
+console.log('✅ Google Search Date Agent enregistré dans le registry pour GOOGLE_SEARCH_DATE')
 
 export { GoogleSearchDateAgent, DEFAULT_CONFIG }
 export default GoogleSearchDateAgent

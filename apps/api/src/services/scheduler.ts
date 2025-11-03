@@ -224,7 +224,17 @@ export class AgentScheduler {
       }
 
       // Get agent instance from registry
-      const agent = agentRegistry.create(agentConfig.type, {
+      // Use config.agentType (specific implementation) if available, otherwise fallback to type (category)
+      const config = (agentConfig.config as Record<string, any>) || {}
+      const agentType = config.agentType || agentConfig.type
+      
+      executionLogger.info('Résolution du type d\'agent', { 
+        agentType, 
+        category: agentConfig.type,
+        hasSpecificType: !!config.agentType
+      })
+      
+      const agent = agentRegistry.create(agentType, {
         id: agentConfig.id,
         name: agentConfig.name,
         description: agentConfig.description,
@@ -235,7 +245,7 @@ export class AgentScheduler {
       })
 
       if (!agent) {
-        throw new Error(`No agent implementation found for type: ${agentConfig.type}`)
+        throw new Error(`No agent implementation found for type: ${agentType}. Available types: ${agentRegistry.getRegisteredTypes().join(', ')}`)
       }
 
       // Execute the agent
