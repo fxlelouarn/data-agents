@@ -7,10 +7,14 @@ import {
 } from './types'
 import { createLogger } from './logger'
 import { IDatabaseService, getDatabaseService } from './database-interface'
+import { DatabaseManager } from './database-manager'
+import { ConnectionManager, PrismaClientType } from './connection-manager'
 
 export abstract class BaseAgent implements IAgent {
   protected db: IDatabaseService | null = null
   protected logger: AgentLogger
+  protected connectionManager: ConnectionManager
+  protected dbManager: DatabaseManager
 
   constructor(
     public readonly config: AgentConfig,
@@ -19,6 +23,8 @@ export abstract class BaseAgent implements IAgent {
   ) {
     this.db = db || null
     this.logger = logger || createLogger(config.name, config.id)
+    this.connectionManager = new ConnectionManager()
+    this.dbManager = DatabaseManager.getInstance(this.logger)
   }
 
   protected async getDb(): Promise<IDatabaseService> {
@@ -200,5 +206,40 @@ export abstract class BaseAgent implements IAgent {
     } catch {
       return undefined
     }
+  }
+
+  /**
+   * Établit une connexion à une base de données source
+   * 
+   * Cette méthode centralise la logique de connexion qui était auparavant
+   * dupliquée dans chaque agent (GoogleSearchDateAgent, FFAScraperAgent).
+   * 
+   * @param sourceDbId - ID de la base de données source dans la configuration
+   * @returns Client Prisma connecté
+   * @throws Error si la configuration est introuvable ou la connexion échoue
+   * 
+   * @example
+   * ```typescript
+   * // Dans votre agent
+   * const sourceDb = await this.connectToSource(config.sourceDatabase)
+   * const events = await sourceDb.event.findMany({ ... })
+   * ```
+   * 
+   * @since 2025-11-05 - Refactoring pour éliminer duplication
+   */
+  protected async connectToSource(sourceDbId: string): Promise<PrismaClientType> {
+    return this.connectionManager.connectToSource(
+      sourceDbId,
+      this.dbManager,
+      this.logger
+    )
+  }
+
+  /**
+   * Ferme toutes les connexions sources actives
+   * À appeler dans le cleanup de l'agent si nécessaire
+   */
+  protected async closeSourceConnections(): Promise<void> {
+    await this.connectionManager.closeAllConnections()
   }
 }

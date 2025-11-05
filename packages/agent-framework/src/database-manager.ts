@@ -1,4 +1,6 @@
 import { AgentLogger } from './types'
+import { ConfigLoader } from './database/config-loader'
+import { DatabaseStrategyFactory } from './database/factory'
 
 export interface DatabaseConfig {
   id: string
@@ -17,17 +19,23 @@ export interface DatabaseConfig {
   prismaSchema?: string // Chemin relatif vers le schéma Prisma à utiliser
 }
 
+/**
+ * DatabaseManager refactorisé (Phase 2)
+ * - Utilise ConfigLoader pour charger les configurations
+ * - Utilise DatabaseStrategyFactory pour créer les connexions
+ * - Simplifié de 420 → ~150 lignes
+ */
 export class DatabaseManager {
   private static instance: DatabaseManager | null = null
   private connections = new Map<string, any>()
   private configs = new Map<string, DatabaseConfig>()
   private logger: AgentLogger
+  private configLoader: ConfigLoader
   private configsLoaded = false
-  private loadPromise: Promise<void> | null = null
 
   private constructor(logger: AgentLogger) {
     this.logger = logger
-    // Ne pas attendre ici, mais charger dès la première utilisation
+    this.configLoader = new ConfigLoader(logger)
   }
   
   /**
@@ -49,106 +57,29 @@ export class DatabaseManager {
     DatabaseManager.instance = null
   }
 
-  private async loadConfigurations() {
-    // Si déjà en cours de chargement, attendre la fin
-    if (this.loadPromise) {
-      await this.loadPromise
-      return
-    }
-    
-    // Si déjà chargé, ne pas recharger
+  /**
+   * Charger les configurations (délégué au ConfigLoader)
+   */
+  private async loadConfigurations(): Promise<void> {
     if (this.configsLoaded) {
       return
     }
-    
-    this.loadPromise = this.doLoadConfigurations()
-    await this.loadPromise
-    this.loadPromise = null
-  }
-  
-  private async doLoadConfigurations() {
-    try {
-      // Si des configurations de test ont déjà été ajoutées, ne pas charger depuis la BD
-      if (this.configs.size > 0) {
-        this.logger.info(`Utilisation des configurations existantes (${this.configs.size} config(s) - mode test)`)
-        this.configsLoaded = true
-        return
-      }
-      
-      // Charger uniquement les configurations depuis la base de données
-      await this.loadDatabaseConfigurations()
+
+    // Si des configs de test existent déjà, ne pas charger depuis la BD
+    if (this.configs.size > 0) {
+      this.logger.info(`Utilisation des configurations existantes (${this.configs.size} config(s) - mode test)`)
       this.configsLoaded = true
-
-      this.logger.info(`Configurations de bases de données chargées: ${this.configs.size}`)
-    } catch (error) {
-      this.logger.error('Erreur lors du chargement des configurations DB', { error: String(error) })
+      return
     }
-  }
 
-  /**
-   * Mapper les types de base de données depuis le schéma Prisma
-   */
-  private mapDatabaseType(prismaType: any): 'postgresql' | 'mysql' | 'mongodb' | 'miles-republic' {
-    switch (prismaType) {
-      case 'POSTGRESQL': return 'postgresql'
-      case 'MYSQL': return 'mysql'
-      case 'MONGODB': return 'mongodb'
-      case 'MILES_REPUBLIC': return 'miles-republic'
-      case 'EXTERNAL_API': return 'postgresql' // Fallback
-      case 'SQLITE': return 'postgresql' // Fallback
-      default: return 'postgresql'
+    // Charger depuis la BD via ConfigLoader
+    const configs = await this.configLoader.loadFromDatabase()
+    for (const config of configs) {
+      this.configs.set(config.id, config)
     }
-  }
 
-  /**
-   * Charger les configurations depuis la table database_connections
-   */
-  private async loadDatabaseConfigurations() {
-    try {
-      const { PrismaClient } = await import('@prisma/client')
-      const prisma = new PrismaClient({
-        datasources: {
-          db: {
-            url: process.env.DATABASE_URL
-          }
-        }
-      })
-
-      await prisma.$connect()
-      
-      const dbConnections = await prisma.databaseConnection.findMany({
-        where: {
-          isActive: true
-        }
-      })
-
-      for (const dbConn of dbConnections) {
-        const config: DatabaseConfig = {
-          id: dbConn.id,
-          name: dbConn.name,
-          type: this.mapDatabaseType(dbConn.type),
-          host: dbConn.host || 'localhost',
-          port: dbConn.port || 5432,
-          database: dbConn.database || '',
-          username: dbConn.username || '',
-          password: dbConn.password || '',
-          ssl: dbConn.sslMode !== 'disable',
-          isDefault: false, // Pas de champ isDefault dans le schéma
-          isActive: dbConn.isActive,
-          description: dbConn.description || undefined,
-          connectionString: dbConn.connectionUrl || undefined
-        }
-        
-        this.configs.set(config.id, config)
-      }
-
-      await prisma.$disconnect()
-      
-      this.logger.info(`${dbConnections.length} configurations de base chargées depuis la BD`)
-
-    } catch (error) {
-      this.logger.warn('Impossible de charger les configurations depuis la BD, utilisation des configs par défaut uniquement', { error: String(error) })
-    }
+    this.configsLoaded = true
+    this.logger.info(`${configs.length} configurations chargées`)
   }
 
   /**
@@ -187,132 +118,18 @@ export class DatabaseManager {
   }
 
   /**
-   * Créer une connexion selon le type de base de données
+   * Créer une connexion (délégué au DatabaseStrategyFactory)
    */
   private async createConnection(config: DatabaseConfig): Promise<any> {
     try {
-      let connectionUrl: string
-
-      if (config.connectionString) {
-        // Utiliser l'URL de connexion fournie
-        connectionUrl = config.connectionString
-      } else {
-        // Construire l'URL à partir des paramètres
-        const protocol = config.type === 'postgresql' ? 'postgresql' : 'mysql'
-        const sslParam = config.ssl ? '?ssl=true' : ''
-        connectionUrl = `${protocol}://${config.username}:${config.password}@${config.host}:${config.port}/${config.database}${sslParam}`
-      }
-
-      // Use the correct Prisma client based on database type and schema
-      let PrismaClient
+      const strategy = DatabaseStrategyFactory.getStrategy(config)
+      const connection = await strategy.createConnection(config, this.logger)
       
-      if (config.prismaSchema) {
-        // Si un schéma Prisma est spécifié, on doit le générer et l'utiliser
-        try {
-          const path = require('path')
-          const fs = require('fs')
-          const { execSync } = require('child_process')
-          
-          // Résoudre le chemin absolu du schéma depuis la racine du projet
-          const projectRoot = path.resolve(__dirname, '../../..')
-          const schemaPath = path.resolve(projectRoot, config.prismaSchema)
-          
-          if (!fs.existsSync(schemaPath)) {
-            throw new Error(`Schema Prisma introuvable: ${schemaPath}`)
-          }
-          
-          this.logger.info(`Utilisation du schéma Prisma: ${config.prismaSchema}`)
-          
-          // Créer un répertoire temporaire pour le client généré
-          const outputDir = path.join(projectRoot, 'node_modules', '.prisma', `client-${config.id}`)
-          
-          // Générer le client Prisma pour ce schéma spécifique
-          const envVars = `DATABASE_URL="${connectionUrl}"`
-          const generateCmd = `${envVars} npx prisma generate --schema="${schemaPath}" --generator=client`
-          
-          this.logger.debug(`Génération du client Prisma: ${generateCmd}`)
-          
-          // Exécuter la génération (si pas déjà fait)
-          try {
-            execSync(generateCmd, { 
-              cwd: projectRoot,
-              stdio: 'pipe',
-              env: { ...process.env, DATABASE_URL: connectionUrl }
-            })
-          } catch (genError: any) {
-            // Si l'erreur est juste un warning, continuer
-            if (!genError.message.includes('already up to date')) {
-              this.logger.warn(`Erreur lors de la génération du client Prisma (continuons quand même): ${genError.message}`)
-            }
-          }
-          
-          // Importer le client généré depuis le schéma
-          const schemaDir = path.dirname(schemaPath)
-          const clientPath = path.join(schemaDir, 'node_modules', '.prisma', 'client')
-          
-          // Essayer plusieurs chemins possibles
-          const possiblePaths = [
-            clientPath,
-            path.join(projectRoot, 'node_modules', '.prisma', 'client'),
-            path.join(schemaDir, '..', 'node_modules', '.prisma', 'client')
-          ]
-          
-          let clientModule = null
-          for (const tryPath of possiblePaths) {
-            try {
-              if (fs.existsSync(path.join(tryPath, 'index.js'))) {
-                clientModule = await import(tryPath)
-                this.logger.info(`Client Prisma chargé depuis: ${tryPath}`)
-                break
-              }
-            } catch (e) {
-              // Continuer vers le prochain chemin
-            }
-          }
-          
-          if (!clientModule) {
-            throw new Error(`Client Prisma introuvable après génération. Chemins testés: ${possiblePaths.join(', ')}`)
-          }
-          
-          PrismaClient = clientModule.PrismaClient
-          
-        } catch (error) {
-          this.logger.error(`Erreur lors du chargement du client Prisma personnalisé`, { error: String(error) })
-          throw new Error(`Impossible de charger le client Prisma depuis ${config.prismaSchema}: ${error}`)
-        }
-      } else if (config.type === 'miles-republic') {
-        // Fallback: essayer de charger le client Miles Republic par défaut
-        try {
-          const path = require('path')
-          const agentsDir = path.resolve(__dirname, '../../../apps/agents')
-          const milesClient = await import(`${agentsDir}/node_modules/.prisma/client/index.js`)
-          PrismaClient = milesClient.PrismaClient
-          this.logger.info('Using Miles Republic Prisma client (default)')
-        } catch (error) {
-          this.logger.error('Miles Republic Prisma client not found', { error: String(error) })
-          throw new Error('Miles Republic Prisma client not generated. Run: cd apps/agents && npx prisma generate')
-        }
-      } else {
-        // For other databases, use the default client
-        const defaultClient = await import('@prisma/client')
-        PrismaClient = defaultClient.PrismaClient
-      }
-
-      const client = new PrismaClient({
-        datasources: {
-          db: {
-            url: connectionUrl
-          }
-        }
-      })
-
-      // Tester la connexion
-      await client.$connect()
-      
-      return client
+      this.logger.info(`Connexion créée pour: ${config.name}`)
+      return connection
 
     } catch (error) {
-      this.logger.error(`Erreur lors de la création de connexion pour ${config.name}`, { error: String(error) })
+      this.logger.error(`Erreur création connexion: ${config.name}`, { error: String(error) })
       throw error
     }
   }
@@ -339,11 +156,10 @@ export class DatabaseManager {
   }
 
   /**
-   * Tester une connexion
+   * Tester une connexion (utilise la stratégie appropriée)
    */
   async testConnection(databaseId: string): Promise<boolean> {
     try {
-      // S'assurer que les configurations sont chargées
       await this.loadConfigurations()
 
       const config = this.configs.get(databaseId)
@@ -351,15 +167,16 @@ export class DatabaseManager {
         throw new Error(`Configuration non trouvée: ${databaseId}`)
       }
 
-      const connection = await this.createConnection(config)
-      await connection.$queryRaw`SELECT 1`
-      await connection.$disconnect()
+      const strategy = DatabaseStrategyFactory.getStrategy(config)
+      const connection = await strategy.createConnection(config, this.logger)
+      const result = await strategy.testConnection(connection)
+      await strategy.closeConnection(connection)
 
-      this.logger.info(`Test de connexion réussi: ${config.name}`)
-      return true
+      this.logger.info(`Test connexion: ${config.name} → ${result ? 'OK' : 'FAIL'}`)
+      return result
 
     } catch (error) {
-      this.logger.error(`Test de connexion échoué pour ${databaseId}`, { error: String(error) })
+      this.logger.error(`Test connexion échoué: ${databaseId}`, { error: String(error) })
       return false
     }
   }

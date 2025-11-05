@@ -1,4 +1,4 @@
-import { BaseAgent, DatabaseManager } from '@data-agents/agent-framework'
+import { BaseAgent } from '@data-agents/agent-framework'
 import { AgentType, IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
@@ -59,7 +59,6 @@ interface ExtractedDate {
 }
 
 export class GoogleSearchDateAgent extends BaseAgent {
-  private dbManager: DatabaseManager // Gestionnaire de bases de données
   private sourceDb: any // Connexion à la base source
   private stateService: IAgentStateService // Service de gestion d'état
   private prisma: typeof prisma // Client Prisma pour le cache local
@@ -85,64 +84,21 @@ export class GoogleSearchDateAgent extends BaseAgent {
     }
 
     super(agentConfig, db, logger)
-    this.dbManager = DatabaseManager.getInstance(this.logger)
+    // Note: dbManager est maintenant dans BaseAgent
     this.prisma = prisma // Client Prisma pour accès au cache local
     // Créer une instance du service d'état avec le client Prisma
     this.stateService = new AgentStateService(prisma)
   }
 
+  /**
+   * Initialise la connexion à la base de données source
+   * @deprecated Cette méthode utilise maintenant connectToSource() de BaseAgent
+   */
   private async initializeSourceConnection(config: GoogleSearchDateConfig) {
-    try {
-      if (!this.sourceDb) {
-        // Obtenir la configuration de la base de données
-        const dbConfig = await this.dbManager.getAvailableDatabases()
-        const targetDb = dbConfig.find(db => db.id === config.sourceDatabase)
-        
-        if (!targetDb) {
-          throw new Error(`Configuration de base de données non trouvée: ${config.sourceDatabase}`)
-        }
-        
-        // Essayer d'utiliser le client Prisma de Miles Republic
-        let connectionUrl = targetDb.connectionString
-        if (!connectionUrl) {
-          // Construire l'URL si pas fournie
-          const protocol = targetDb.type === 'postgresql' ? 'postgresql' : 'mysql'
-          const sslParam = targetDb.ssl ? '?ssl=true' : ''
-          connectionUrl = `${protocol}://${targetDb.username}:${targetDb.password}@${targetDb.host}:${targetDb.port}/${targetDb.database}${sslParam}`
-        }
-        
-        this.logger.info(`🔗 Tentative de connexion Miles Republic: ${targetDb.name}`, {
-          connectionUrl: connectionUrl.replace(/\/\/[^@]+@/, '//***:***@')
-        })
-        
-        // Configurer les variables d'environnement pour Prisma
-        const originalDatabaseUrl = process.env.DATABASE_URL
-        process.env.DATABASE_URL = connectionUrl
-        process.env.DATABASE_DIRECT_URL = connectionUrl
-        
-        // Utiliser le client Prisma pré-généré avec le schéma Miles Republic
-        this.logger.info('📚 Utilisation du client Prisma Miles Republic pré-généré...')
-        
-        const { PrismaClient } = await import('@prisma/client')
-        this.sourceDb = new PrismaClient({
-          datasources: {
-            db: {
-              url: connectionUrl
-            }
-          }
-        })
-        
-        this.logger.info('✅ Client Miles Republic créé avec succès')
-        
-        // Tester la connexion
-        await this.sourceDb.$connect()
-        this.logger.info(`✅ Connexion établie avec succès à: ${targetDb.name}`)
-      }
-      return this.sourceDb
-    } catch (error) {
-      this.logger.error(`Erreur lors de l'initialisation de la connexion source: ${config.sourceDatabase}`, { error: String(error) })
-      throw error
+    if (!this.sourceDb) {
+      this.sourceDb = await this.connectToSource(config.sourceDatabase)
     }
+    return this.sourceDb
   }
 
   async run(context: AgentContext): Promise<AgentRunResult> {

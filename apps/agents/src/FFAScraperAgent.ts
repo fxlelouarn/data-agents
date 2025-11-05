@@ -7,7 +7,7 @@
  * - Créer des propositions de création/modification d'événements, éditions et courses
  */
 
-import { BaseAgent, DatabaseManager, AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
 import { AgentType, IAgentStateService, AgentStateService, prisma, ProposalType } from '@data-agents/database'
 import { FFAScraperAgentConfigSchema } from './FFAScraperAgent.configSchema'
 import { 
@@ -32,7 +32,6 @@ import { matchCompetition, calculateAdjustedConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
 
 export class FFAScraperAgent extends BaseAgent {
-  private dbManager: DatabaseManager
   private sourceDb: any
   private stateService: IAgentStateService
   private prisma: typeof prisma
@@ -62,48 +61,18 @@ export class FFAScraperAgent extends BaseAgent {
     }
 
     super(agentConfig, db, logger)
-    this.dbManager = DatabaseManager.getInstance(this.logger)
+    // Note: dbManager est maintenant dans BaseAgent
     this.prisma = prisma
     this.stateService = new AgentStateService(prisma)
   }
 
   /**
    * Initialise la connexion à la base de données Miles Republic
+   * @deprecated Cette méthode utilise maintenant connectToSource() de BaseAgent
    */
   private async initializeSourceConnection(config: FFAScraperConfig): Promise<void> {
-    try {
-      if (!this.sourceDb) {
-        const dbConfig = await this.dbManager.getAvailableDatabases()
-        const targetDb = dbConfig.find(db => db.id === config.sourceDatabase)
-        
-        if (!targetDb) {
-          throw new Error(`Configuration de base de données non trouvée: ${config.sourceDatabase}`)
-        }
-        
-        let connectionUrl = targetDb.connectionString
-        if (!connectionUrl) {
-          const protocol = targetDb.type === 'postgresql' ? 'postgresql' : 'mysql'
-          const sslParam = targetDb.ssl ? '?ssl=true' : ''
-          connectionUrl = `${protocol}://${targetDb.username}:${targetDb.password}@${targetDb.host}:${targetDb.port}/${targetDb.database}${sslParam}`
-        }
-        
-        this.logger.info(`🔗 Connexion à Miles Republic: ${targetDb.name}`)
-        
-        process.env.DATABASE_URL = connectionUrl
-        process.env.DATABASE_DIRECT_URL = connectionUrl
-        
-        const { PrismaClient } = await import('@prisma/client')
-        this.sourceDb = new PrismaClient({
-          datasources: { db: { url: connectionUrl } },
-          log: [] // Désactiver les logs prisma:query
-        })
-        
-        await this.sourceDb.$connect()
-        this.logger.info(`✅ Connexion établie: ${targetDb.name}`)
-      }
-    } catch (error) {
-      this.logger.error(`Erreur connexion source: ${config.sourceDatabase}`, { error: String(error) })
-      throw error
+    if (!this.sourceDb) {
+      this.sourceDb = await this.connectToSource(config.sourceDatabase)
     }
   }
 
