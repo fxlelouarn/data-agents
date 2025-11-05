@@ -3,7 +3,7 @@ import { Box, Button } from '@mui/material'
 import { CheckCircle as ApproveIcon, Cancel as RejectIcon, DangerousOutlined as SkullIcon } from '@mui/icons-material'
 import ProposalDetailBase from '../base/ProposalDetailBase'
 import CategorizedEventChangesTable from '@/components/proposals/CategorizedEventChangesTable'
-import DateSourcesSection from '@/components/proposals/DateSourcesSection'
+import ProposalJustificationsCard from '@/components/proposals/ProposalJustificationsCard'
 import AgentCard from '@/components/proposals/AgentCard'
 import EventLinksEditor from '@/components/proposals/EventLinksEditor'
 
@@ -101,8 +101,9 @@ const EventUpdateDetail: React.FC<EventUpdateDetailProps> = ({ proposalId }) => 
               ) : undefined}
             />
             
-            <DateSourcesSection 
-              justifications={proposal.justification || []} 
+            <ProposalJustificationsCard 
+              justifications={proposal.justification || []}
+              confidence={proposal.confidence}
             />
           </>
         )

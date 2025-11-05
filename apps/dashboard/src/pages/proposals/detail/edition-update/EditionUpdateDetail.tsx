@@ -2,7 +2,7 @@ import React from 'react'
 import ProposalDetailBase from '../base/ProposalDetailBase'
 import CategorizedEditionChangesTable from '@/components/proposals/CategorizedEditionChangesTable'
 import RaceChangesSection from '@/components/proposals/RaceChangesSection'
-import DateSourcesSection from '@/components/proposals/DateSourcesSection'
+import ProposalJustificationsCard from '@/components/proposals/ProposalJustificationsCard'
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
@@ -85,6 +85,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 change={racesToAddChange}
                 onApprove={() => {/* Single proposal - no field-specific approve */}}
                 disabled={!allPending || isPending || isEventDead}
+                proposalId={proposalId}
               />
             )}
             
@@ -101,8 +102,9 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
               />
             )}
             
-            <DateSourcesSection 
-              justifications={proposal.justification || []} 
+            <ProposalJustificationsCard 
+              justifications={proposal.justification || []}
+              confidence={proposal.confidence}
             />
           </>
         )

@@ -1,7 +1,7 @@
 import React from 'react'
 import ProposalDetailBase from '../base/ProposalDetailBase'
 import RaceChangesSection from '@/components/proposals/RaceChangesSection'
-import DateSourcesSection from '@/components/proposals/DateSourcesSection'
+import ProposalJustificationsCard from '@/components/proposals/ProposalJustificationsCard'
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 
@@ -40,8 +40,9 @@ const RaceUpdateDetail: React.FC<RaceUpdateDetailProps> = ({ proposalId }) => {
               isEditionCanceled={isEditionCanceled || isEventDead}
             />
             
-            <DateSourcesSection 
-              justifications={proposal.justification || []} 
+            <ProposalJustificationsCard 
+              justifications={proposal.justification || []}
+              confidence={proposal.confidence}
             />
           </>
         )

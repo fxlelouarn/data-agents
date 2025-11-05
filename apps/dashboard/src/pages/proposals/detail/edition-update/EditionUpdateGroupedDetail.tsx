@@ -41,7 +41,13 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           isEventDead,
           setKillDialogOpen,
           isEditionCanceled,
-          groupProposals
+          groupProposals,
+          // Validation par bloc
+          validateBlock,
+          unvalidateBlock,
+          isBlockValidated,
+          isBlockPending,
+          blockProposals
         } = context
         
         // Séparer les champs standards des champs spéciaux
@@ -72,17 +78,22 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
               <CategorizedEditionChangesTable
                 title="Édition"
                 changes={realStandardChanges}
-              isNewEvent={false}
-              selectedChanges={selectedChanges}
-              onFieldSelect={handleFieldSelect}
-              onFieldApprove={handleApproveField}
-              onFieldModify={handleFieldModify}
-              userModifiedChanges={userModifiedChanges}
-              formatValue={formatValue}
-              formatAgentsList={formatAgentsList}
-              timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
-              isEditionCanceled={isEditionCanceled || isEventDead}
+                isNewEvent={false}
+                selectedChanges={selectedChanges}
+                onFieldSelect={handleFieldSelect}
+                onFieldApprove={handleApproveField}
+                onFieldModify={handleFieldModify}
+                userModifiedChanges={userModifiedChanges}
+                formatValue={formatValue}
+                formatAgentsList={formatAgentsList}
+                timezone={editionTimezone}
+                disabled={isBlockValidated('edition') || isEventDead}
+                isEditionCanceled={isEditionCanceled || isEventDead}
+                isBlockValidated={isBlockValidated('edition')}
+                onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('edition')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             
@@ -93,7 +104,12 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onApprove={() => handleApproveField('organizer')}
                 onFieldModify={handleFieldModify}
                 userModifiedChanges={userModifiedChanges}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('organizer') || isEventDead}
+                isBlockValidated={isBlockValidated('organizer')}
+                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             
@@ -102,7 +118,8 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
               <RacesToAddSection
                 change={racesToAddChange}
                 onApprove={() => handleApproveField('racesToAdd')}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('races') || isEventDead}
+                proposalId={groupProposals[0]?.id}
               />
             )}
             
@@ -113,12 +130,17 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 formatValue={formatValue}
                 timezone={editionTimezone}
                 onRaceApprove={(raceData) => context.handleApproveRace(raceData)}
-                onApproveAll={allPending ? handleApproveAllRaces : undefined}
-                onRejectAll={allPending ? handleRejectAllRaces : undefined}
+                // onApproveAll={allPending ? handleApproveAllRaces : undefined}  // ❌ OBSOLETE
+                // onRejectAll={allPending ? handleRejectAllRaces : undefined}    // ❌ OBSOLETE
                 onFieldModify={handleRaceFieldModify}
                 userModifiedRaceChanges={userModifiedRaceChanges}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('races') || isEventDead}
                 isEditionCanceled={isEditionCanceled || isEventDead}
+                isBlockValidated={isBlockValidated('races')}
+                onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('races')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             

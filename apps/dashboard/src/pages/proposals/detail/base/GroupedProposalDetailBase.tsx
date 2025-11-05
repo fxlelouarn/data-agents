@@ -19,6 +19,7 @@ import {
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
+import { useBlockValidation } from '@/hooks/useBlockValidation'
 import { 
   useProposals, 
   useUpdateProposal, 
@@ -90,6 +91,13 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   killDialogOpen: boolean
   setKillDialogOpen: (open: boolean) => void
   isEditionCanceled: boolean
+  // Validation par blocs
+  validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  unvalidateBlock: (blockKey: string) => Promise<void>
+  validateAllBlocks: () => Promise<void>
+  isBlockValidated: (blockKey: string) => boolean
+  isBlockPending: boolean
+  blockProposals: Record<string, string[]>
 }
 
 export interface GroupedProposalDetailBaseProps {
@@ -134,6 +142,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     consolidateChanges,
     consolidateRaceChanges
   } = useProposalLogic()
+  
   
   // Handlers
   const handleSelectField = (fieldName: string, selectedValue: any) => {
@@ -630,6 +639,67 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
   const allPending = groupProposals.every(p => p.status === 'PENDING')
+  
+  // Identifier les propositions par bloc
+  const blockProposals = useMemo(() => {
+    const blocks: Record<string, string[]> = {}
+    
+    // Bloc Edition
+    const editionProposalIds = groupProposals
+      .filter(p => consolidatedChanges.some(c => 
+        !['organizer', 'racesToAdd'].includes(c.field) &&
+        c.options.some(o => o.proposalId === p.id)
+      ))
+      .map(p => p.id)
+    if (editionProposalIds.length > 0) {
+      blocks['edition'] = editionProposalIds
+      console.log('[DEBUG] Bloc Edition:', editionProposalIds)
+    }
+
+    // Bloc Organisateur
+    const organizerProposalIds = groupProposals
+      .filter(p => consolidatedChanges.some(c => 
+        c.field === 'organizer' &&
+        c.options.some(o => o.proposalId === p.id)
+      ))
+      .map(p => p.id)
+    if (organizerProposalIds.length > 0) {
+      blocks['organizer'] = organizerProposalIds
+    }
+
+    // Bloc Courses
+    const raceProposalIds = groupProposals
+      .filter(p => consolidatedRaceChangesWithCascade.some(rc =>
+        rc.proposalIds.includes(p.id)
+      ))
+      .map(p => p.id)
+    if (raceProposalIds.length > 0) {
+      blocks['races'] = raceProposalIds
+    }
+
+    // Bloc Événement (si NEW_EVENT ou EVENT_UPDATE)
+    if (isNewEvent || groupProposals[0]?.type === 'EVENT_UPDATE') {
+      blocks['event'] = groupProposals
+        .filter(p => ['NEW_EVENT', 'EVENT_UPDATE'].includes(p.type))
+        .map(p => p.id)
+    }
+
+    return blocks
+  }, [groupProposals, consolidatedChanges, consolidatedRaceChangesWithCascade, isNewEvent])
+  
+  // Hook de validation par blocs (APRÈS blockProposals pour éviter la dépendance circulaire)
+  const {
+    blockStatus,
+    validateBlock,
+    unvalidateBlock,
+    validateAllBlocks: validateAllBlocksBase,
+    isBlockValidated,
+    isPending: isBlockPending
+  } = useBlockValidation({
+    proposals: groupProposals,
+    blockProposals
+  })
+  
   const hasApproved = groupProposals.some(p => p.status === 'APPROVED')
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
 
@@ -667,7 +737,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     isNewEvent,
     killDialogOpen,
     setKillDialogOpen,
-    isEditionCanceled
+    isEditionCanceled,
+    // Validation par blocs
+    validateBlock,
+    unvalidateBlock,
+    validateAllBlocks: () => validateAllBlocksBase(blockProposals),
+    isBlockValidated,
+    isBlockPending,
+    blockProposals
   }
 
   if (isLoading) return <LinearProgress />
@@ -694,8 +771,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             onPrevious: () => navigateToGroup('prev'),
             onNext: () => navigateToGroup('next')
           }}
-          showApproveAllButton={allPending && !isEventDead}
-          onApproveAll={handleApproveAll}
+          showValidateAllBlocksButton={allPending && !isEventDead && Object.keys(blockProposals).length > 0}
+          onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
+          isValidateAllBlocksPending={isBlockPending}
+          // showApproveAllButton={allPending && !isEventDead}  // ❌ OBSOLETE - Remplacé par validation par blocs
+          // onApproveAll={handleApproveAll}                      // ❌ OBSOLETE - Remplacé par validation par blocs
           showKillEventButton={allPending && !isEventDead && !isNewEvent && Boolean(eventId)}
           onKillEvent={() => setKillDialogOpen(true)}
           showArchiveButton={allPending}

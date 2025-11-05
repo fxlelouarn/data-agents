@@ -39,7 +39,13 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           isPending,
           isEventDead,
           isEditionCanceled,
-          groupProposals
+          groupProposals,
+          // Validation par bloc
+          validateBlock,
+          unvalidateBlock,
+          isBlockValidated,
+          isBlockPending,
+          blockProposals
         } = context
         
         return (
@@ -58,6 +64,10 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
+              isBlockValidated={isBlockValidated('event')}
+              onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('event')}
+              isBlockPending={isBlockPending}
             />
             
             {/* Table des champs Edition */}
@@ -75,30 +85,11 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
-              actions={allPending ? (
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="small"
-                    startIcon={<ApproveIcon />}
-                    onClick={handleApproveAll}
-                    disabled={isPending || isEventDead}
-                  >
-                    Tout approuver
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<RejectIcon />}
-                    onClick={handleRejectAll}
-                    disabled={isPending || isEventDead}
-                  >
-                    Tout rejeter
-                  </Button>
-                </Box>
-              ) : undefined}
+              isBlockValidated={isBlockValidated('edition')}
+              onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('edition')}
+              isBlockPending={isBlockPending}
+              // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
             {/* Section des courses */}
@@ -107,12 +98,16 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               formatValue={formatValue}
               timezone={editionTimezone}
               onRaceApprove={(raceData) => context.handleApproveRace(raceData)}
-              onApproveAll={allPending ? handleApproveAllRaces : undefined}
-              onRejectAll={allPending ? handleRejectAllRaces : undefined}
+              // onApproveAll={allPending ? handleApproveAllRaces : undefined}  // ❌ OBSOLETE
+              // onRejectAll={allPending ? handleRejectAllRaces : undefined}    // ❌ OBSOLETE
               onFieldModify={handleRaceFieldModify}
               userModifiedRaceChanges={userModifiedRaceChanges}
               disabled={!allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
+              isBlockValidated={isBlockValidated('races')}
+              onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('races')}
+              isBlockPending={isBlockPending}
             />
             
             {/* Sources des dates extraites */}

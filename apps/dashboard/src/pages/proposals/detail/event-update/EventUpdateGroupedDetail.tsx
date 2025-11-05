@@ -34,7 +34,13 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
           setKillDialogOpen,
           handleReviveEvent,
           groupProposals,
-          isNewEvent
+          isNewEvent,
+          // Validation par bloc
+          validateBlock,
+          unvalidateBlock,
+          isBlockValidated,
+          isBlockPending,
+          blockProposals
         } = context
         
         const firstProposal = groupProposals[0]
@@ -56,6 +62,10 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
+              isBlockValidated={isBlockValidated('event')}
+              onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('event')}
+              isBlockPending={isBlockPending}
               actions={allPending ? (
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button

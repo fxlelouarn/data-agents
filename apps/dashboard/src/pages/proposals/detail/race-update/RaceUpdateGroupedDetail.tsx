@@ -4,6 +4,8 @@ import RaceChangesSection from '@/components/proposals/RaceChangesSection'
 import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
+import ValidateBlockButton from '@/components/proposals/ValidateBlockButton'
+import { useProposalBlockValidation } from '@/hooks/useProposalBlockValidation'
 
 interface RaceUpdateGroupedDetailProps {
   groupKey: string
@@ -28,17 +30,34 @@ const RaceUpdateGroupedDetail: React.FC<RaceUpdateGroupedDetailProps> = ({ group
           isEditionCanceled,
           groupProposals
         } = context
+
+        const firstProposalId = groupProposals[0]?.id
+        const { isValidated, validate, cancel } = useProposalBlockValidation(
+          firstProposalId,
+          'races'
+        )
         
         return (
           <>
+            {/* Bouton de validation en haut */}
+            {firstProposalId && (
+              <ValidateBlockButton
+                isValidated={isValidated}
+                onValidate={validate}
+                onCancel={cancel}
+                disabled={!allPending || isPending || isEventDead}
+                blockName="Courses"
+              />
+            )}
+
             {/* Section des courses */}
             <RaceChangesSection
               raceChanges={consolidatedRaceChanges}
               formatValue={formatValue}
               timezone={editionTimezone}
               onRaceApprove={(raceData) => context.handleApproveRace(raceData)}
-              onApproveAll={allPending ? handleApproveAllRaces : undefined}
-              onRejectAll={allPending ? handleRejectAllRaces : undefined}
+              // onApproveAll={allPending ? handleApproveAllRaces : undefined}  // ❌ OBSOLETE
+              // onRejectAll={allPending ? handleRejectAllRaces : undefined}    // ❌ OBSOLETE
               onFieldModify={handleRaceFieldModify}
               userModifiedRaceChanges={userModifiedRaceChanges}
               disabled={!allPending || isPending || isEventDead}
