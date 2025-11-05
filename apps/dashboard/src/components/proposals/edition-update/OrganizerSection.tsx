@@ -23,6 +23,7 @@ import {
 } from '@mui/icons-material'
 import type { ConsolidatedChange } from '@/pages/proposals/detail/base/GroupedProposalDetailBase'
 import FieldEditor from '@/components/proposals/FieldEditor'
+import BlockValidationButton from '@/components/proposals/BlockValidationButton'
 
 interface OrganizerSectionProps {
   change: ConsolidatedChange
@@ -30,6 +31,12 @@ interface OrganizerSectionProps {
   onFieldModify?: (fieldName: string, newValue: any) => void
   userModifiedChanges?: Record<string, any>
   disabled: boolean
+  // Props de validation par bloc
+  isBlockValidated?: boolean
+  onValidateBlock?: () => Promise<void>
+  onUnvalidateBlock?: () => Promise<void>
+  isBlockPending?: boolean
+  validationDisabled?: boolean
 }
 
 interface OrganizerField {
@@ -44,7 +51,12 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   onApprove, 
   onFieldModify,
   userModifiedChanges = {},
-  disabled 
+  disabled,
+  isBlockValidated = false,
+  onValidateBlock,
+  onUnvalidateBlock,
+  isBlockPending = false,
+  validationDisabled = false
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   
@@ -64,7 +76,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   ].filter(f => f.proposedValue || f.currentValue) // Afficher seulement les champs qui ont une valeur
   
   const handleStartEdit = (fieldKey: string) => {
-    if (!disabled && onFieldModify) {
+    if (!disabled && !isBlockValidated && onFieldModify) {
       setEditingField(fieldKey)
     }
   }
@@ -132,22 +144,22 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   }
   
   return (
-    <Paper sx={{ mb: 3 }}>
+    <Paper sx={{ mb: 3, ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 }) }}>
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <BusinessIcon color="action" />
           <Typography variant="h6">Organisateur</Typography>
         </Box>
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<ApproveIcon />}
-          onClick={onApprove}
-          disabled={disabled}
-        >
-          Approuver
-        </Button>
+        {onValidateBlock && onUnvalidateBlock && (
+          <BlockValidationButton
+            blockName="Organisateur"
+            isValidated={isBlockValidated}
+            onValidate={onValidateBlock}
+            onUnvalidate={onUnvalidateBlock}
+            disabled={validationDisabled}
+            isPending={isBlockPending}
+          />
+        )}
       </Box>
       
       <TableContainer>
@@ -183,7 +195,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                   ) : (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', width: '100%' }}>
                       {formatFieldValue(getFieldValue(field.key), field.key, field.key)}
-                      {onFieldModify && !disabled && (
+                      {onFieldModify && !disabled && !isBlockValidated && (
                         <Tooltip title="Modifier manuellement">
                           <IconButton
                             size="small"

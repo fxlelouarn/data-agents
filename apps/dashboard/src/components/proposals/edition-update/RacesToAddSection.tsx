@@ -18,11 +18,14 @@ import {
   Add as AddIcon
 } from '@mui/icons-material'
 import type { ConsolidatedChange } from '@/pages/proposals/detail/base/GroupedProposalDetailBase'
+import BlockValidationButton from '@/components/proposals/BlockValidationButton'
+import { useProposalBlockValidation } from '@/hooks/useProposalBlockValidation'
 
 interface RacesToAddSectionProps {
   change: ConsolidatedChange
   onApprove: () => void
   disabled: boolean
+  proposalId?: string
 }
 
 interface RaceToAdd {
@@ -33,10 +36,15 @@ interface RaceToAdd {
   registrationUrl?: string
 }
 
-const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove, disabled }) => {
+const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove, disabled, proposalId }) => {
   const races = change.options[0]?.proposedValue as RaceToAdd[] | undefined
   const confidence = change.options[0]?.confidence || 0
   const hasConsensus = change.options.length > 1
+  
+  const { isValidated, validate, cancel } = useProposalBlockValidation(
+    proposalId,
+    'races_to_add'
+  )
   
   if (!races || races.length === 0) return null
   
@@ -91,21 +99,22 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
   
   return (
     <Paper sx={{ mb: 3 }}>
+      {/* Header avec bouton de validation */}
       <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AddIcon color="primary" />
           <Typography variant="h6">Courses à ajouter ({races.length})</Typography>
         </Box>
-        <Button
-          size="small"
-          variant="contained"
-          color="success"
-          startIcon={<ApproveIcon />}
-          onClick={onApprove}
-          disabled={disabled}
-        >
-          Approuver tout
-        </Button>
+        {proposalId && (
+          <BlockValidationButton
+            blockName="Courses"
+            isValidated={isValidated}
+            onValidate={validate}
+            onUnvalidate={cancel}
+            disabled={disabled}
+            isPending={false}
+          />
+        )}
       </Box>
       
       <TableContainer>

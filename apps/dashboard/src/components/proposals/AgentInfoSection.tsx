@@ -13,7 +13,9 @@ import {
   CheckCircle as CheckIcon,
   Cancel as CancelIcon,
   HourglassEmpty as PendingIcon,
-  Archive as ArchiveIcon
+  Archive as ArchiveIcon,
+  Link as LinkIcon,
+  OpenInNew as OpenInNewIcon
 } from '@mui/icons-material'
 import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
@@ -35,6 +37,15 @@ interface Proposal {
   editionYear?: number
   eventId?: string
   editionId?: string
+  // Justifications pour extraire les sources
+  justification?: Array<{
+    type: string
+    content: string
+    metadata?: {
+      source?: string
+      [key: string]: any
+    }
+  }>
 }
 
 interface AgentInfoSectionProps {
@@ -76,6 +87,36 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
       case 'PENDING': return 'En attente'
       default: return status
     }
+  }
+
+  // Extraire la première source disponible d'une proposition
+  const getSourceUrl = (proposal: Proposal): string | null => {
+    if (!proposal.justification || proposal.justification.length === 0) {
+      return null
+    }
+
+    // Chercher dans l'ordre de priorité:
+    // 1. metadata.source
+    // 2. content si type = 'url'
+    // 3. content si commence par http
+    for (const justif of proposal.justification) {
+      // Priorité 1: metadata.source
+      if (justif.metadata?.source) {
+        return justif.metadata.source
+      }
+      
+      // Priorité 2: content de type url
+      if (justif.type === 'url' && justif.content) {
+        return justif.content
+      }
+      
+      // Priorité 3: content qui ressemble à une URL
+      if (justif.content && typeof justif.content === 'string' && justif.content.match(/^https?:\/\//)) {
+        return justif.content
+      }
+    }
+
+    return null
   }
 
   return (
@@ -136,15 +177,30 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
               {formatDate(proposal.createdAt)}
             </Typography>
 
-            <Button
-              size="small"
-              variant="outlined"
-              component={Link}
-              to={`/proposals/${proposal.id}`}
-              fullWidth
-            >
-              Voir détails
-            </Button>
+            <Box sx={{ display: 'flex', gap: 1 }}>
+              <Button
+                size="small"
+                variant="outlined"
+                component={Link}
+                to={`/proposals/${proposal.id}`}
+                sx={{ flex: 1 }}
+              >
+                Voir détails
+              </Button>
+              
+              {getSourceUrl(proposal) && (
+                <Button
+                  size="small"
+                  variant="outlined"
+                  color="primary"
+                  startIcon={<OpenInNewIcon sx={{ fontSize: '1rem' }} />}
+                  onClick={() => window.open(getSourceUrl(proposal)!, '_blank', 'noopener,noreferrer')}
+                  sx={{ flex: 1 }}
+                >
+                  Voir source
+                </Button>
+              )}
+            </Box>
           </Box>
         ))}
       </CardContent>

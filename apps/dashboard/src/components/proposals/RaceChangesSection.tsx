@@ -30,6 +30,7 @@ import {
   Edit as EditIcon
 } from '@mui/icons-material'
 import FieldEditor from './FieldEditor'
+import BlockValidationButton from './BlockValidationButton'
 
 interface RaceChangeField {
   field: string
@@ -55,32 +56,43 @@ interface RaceChangesSectionProps {
   raceChanges: RaceChange[]
   formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
   onRaceApprove?: (raceData: RaceChange) => void
-  onApproveAll?: () => void
-  onRejectAll?: () => void
+  // onApproveAll?: () => void  // ❌ OBSOLETE - Remplacé par validation par blocs
+  // onRejectAll?: () => void   // ❌ OBSOLETE - Remplacé par validation par blocs
   onFieldModify?: (raceIndex: number, fieldName: string, newValue: any) => void
   userModifiedRaceChanges?: Record<string, Record<string, any>> // { [raceIndex]: { [fieldName]: value } }
   disabled?: boolean
   timezone?: string // Timezone pour afficher les dates des courses
   isEditionCanceled?: boolean // Désactiver tous les champs si l'édition est annulée
+  // Props de validation par bloc
+  isBlockValidated?: boolean
+  onValidateBlock?: () => Promise<void>
+  onUnvalidateBlock?: () => Promise<void>
+  isBlockPending?: boolean
+  validationDisabled?: boolean
 }
 
 const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   raceChanges,
   formatValue,
   onRaceApprove,
-  onApproveAll,
-  onRejectAll,
+  // onApproveAll,  // ❌ OBSOLETE
+  // onRejectAll,   // ❌ OBSOLETE
   onFieldModify,
   userModifiedRaceChanges = {},
   disabled = false,
   timezone = 'Europe/Paris',
-  isEditionCanceled = false
+  isEditionCanceled = false,
+  isBlockValidated = false,
+  onValidateBlock,
+  onUnvalidateBlock,
+  isBlockPending = false,
+  validationDisabled = false
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   
   const handleStartEdit = (raceIndex: number, fieldName: string) => {
-    // Ne pas permettre d'éditer si désactivé globalement ou si l'édition est annulée
-    if (!disabled && !isEditionCanceled && onFieldModify) {
+    // Ne pas permettre d'éditer si désactivé globalement, si l'édition est annulée, ou si le bloc est validé
+    if (!disabled && !isEditionCanceled && !isBlockValidated && onFieldModify) {
       setEditingField(`${raceIndex}-${fieldName}`)
     }
   }
@@ -105,13 +117,23 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   if (raceChanges.length === 0) return null
 
   return (
-    <Card sx={{ mt: 2 }}>
+    <Card sx={{ mt: 2, ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 }) }}>
       <CardContent>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Typography variant="h6">
             <RaceIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
             Modifications des courses
           </Typography>
+          {onValidateBlock && onUnvalidateBlock && (
+            <BlockValidationButton
+              blockName="Courses"
+              isValidated={isBlockValidated}
+              onValidate={onValidateBlock}
+              onUnvalidate={onUnvalidateBlock}
+              disabled={validationDisabled}
+              isPending={isBlockPending}
+            />
+          )}
         </Box>
         
         {raceChanges.map((raceData, index) => (
@@ -142,8 +164,8 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                         <TableRow 
                           key={fieldName}
                           sx={{
-                            backgroundColor: isEditionCanceled ? 'action.hover' : 'inherit',
-                            opacity: isEditionCanceled ? 0.6 : 1
+                            backgroundColor: (isEditionCanceled || isBlockValidated) ? 'action.hover' : 'inherit',
+                            opacity: (isEditionCanceled || isBlockValidated) ? 0.6 : 1
                           }}
                         >
                           <TableCell>
@@ -172,7 +194,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                                 </Typography>
                                 
                                 {/* Bouton modifier pour les dates */}
-                                {fieldName === 'startDate' && onFieldModify && !disabled && !isEditionCanceled && (
+                                {fieldName === 'startDate' && onFieldModify && !disabled && !isEditionCanceled && !isBlockValidated && (
                                   <Tooltip title="Modifier manuellement">
                                     <IconButton
                                       size="small"

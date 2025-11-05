@@ -32,6 +32,10 @@ interface ProposalNavigationProps {
   // Bouton retour
   showBackButton?: boolean
   onBack?: () => void
+  // Validation par blocs
+  showValidateAllBlocksButton?: boolean
+  onValidateAllBlocks?: () => Promise<void>
+  isValidateAllBlocksPending?: boolean
 }
 
 const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
@@ -46,7 +50,10 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   onKillEvent,
   disabled = false,
   showBackButton = true,
-  onBack
+  onBack,
+  showValidateAllBlocksButton = false,
+  onValidateAllBlocks,
+  isValidateAllBlocksPending = false
 }) => {
   const handleBack = () => {
     if (onBack) {
@@ -94,6 +101,18 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
       </Box>
       
       <Box sx={{ display: 'flex', gap: 1 }}>
+        {showValidateAllBlocksButton && onValidateAllBlocks && (
+          <Button
+            variant="contained"
+            color="success"
+            size="small"
+            startIcon={<ApproveAllIcon />}
+            onClick={onValidateAllBlocks}
+            disabled={disabled || isValidateAllBlocksPending}
+          >
+            Tout valider (blocs)
+          </Button>
+        )}
         {showApproveAllButton && onApproveAll && (
           <Button
             variant="contained"
