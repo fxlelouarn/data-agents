@@ -80,6 +80,8 @@ export interface Proposal {
     metadata?: Record<string, any>
   }>
   confidence?: number
+  // Approbation par blocs
+  approvedBlocks?: Record<string, boolean>
   // Champs de contexte enrichis
   eventName?: string
   eventCity?: string

@@ -137,6 +137,7 @@ export const proposalsApi = {
       userModifiedChanges?: Record<string, any>;
       modificationReason?: string;
       modifiedBy?: string;
+      block?: string;
     }
   ): Promise<ApiResponse<Proposal>> =>
     api.put(`/proposals/${id}`, data).then(res => res.data),
