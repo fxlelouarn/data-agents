@@ -463,14 +463,38 @@ router.put('/:id', [
   body('userModifiedChanges').optional().isObject(),
   body('modificationReason').optional().isString(),
   body('modifiedBy').optional().isString(),
+  body('block').optional().isString(),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
-  const { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy } = req.body
+  const { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block } = req.body
+
+  // Récupérer la proposition actuelle pour gérer les blocs
+  const currentProposal = await db.prisma.proposal.findUnique({
+    where: { id }
+  })
+
+  if (!currentProposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
 
   const updates: any = {}
   
-  if (status) {
+  // Si un bloc spécifique est fourni et qu'on approuve
+  if (status === 'APPROVED' && block) {
+    const approvedBlocks = (currentProposal.approvedBlocks as Record<string, boolean>) || {}
+    approvedBlocks[block] = true
+    updates.approvedBlocks = approvedBlocks
+    
+    // On met le status général à APPROVED seulement si tous les blocs sont approuvés
+    // Pour l'instant, on marque comme approuvé dès qu'un bloc est approuvé
+    updates.status = status
+    updates.reviewedAt = new Date()
+    if (reviewedBy) {
+      updates.reviewedBy = reviewedBy
+    }
+  } else if (status) {
+    // Approbation/rejet global standard
     updates.status = status
     updates.reviewedAt = new Date()
     if (reviewedBy) {
@@ -713,6 +737,56 @@ router.post('/:id/unapprove', [
   })
 }))
 
+// GET /api/proposals/:id/approved-blocks - Get approved blocks info (debug)
+router.get('/:id/approved-blocks', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+  const changes = proposal.changes as Record<string, any>
+  
+  // Categorize changes by block
+  const changesByBlock: Record<string, string[]> = {}
+  for (const field of Object.keys(changes)) {
+    let block = 'edition'
+    if (field === 'organizer' || field === 'organizerId') {
+      block = 'organizer'
+    } else if (field === 'racesToAdd' || field === 'races' || field.startsWith('race_')) {
+      block = 'races'
+    }
+    
+    if (!changesByBlock[block]) {
+      changesByBlock[block] = []
+    }
+    changesByBlock[block].push(field)
+  }
+
+  res.json({
+    success: true,
+    data: {
+      proposalId: id,
+      approvedBlocks,
+      changesByBlock,
+      summary: Object.entries(changesByBlock).map(([block, fields]) => ({
+        block,
+        isApproved: approvedBlocks[block] === true,
+        fieldCount: fields.length,
+        fields
+      }))
+    }
+  })
+}))
+
 // POST /api/proposals/:id/preview - Preview what changes would be applied
 router.post('/:id/preview', [
   param('id').isString().notEmpty(),
@@ -779,9 +853,10 @@ router.post('/bulk-approve', [
   body('proposalIds').isArray().withMessage('proposalIds must be an array'),
   body('proposalIds.*').isString().notEmpty(),
   body('reviewedBy').optional().isString(),
+  body('block').optional().isString(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
-  const { proposalIds, reviewedBy } = req.body
+  const { proposalIds, reviewedBy, block } = req.body
 
   // Use transaction to approve proposals and create applications atomically
   const result = await db.prisma.$transaction(async (tx) => {
@@ -793,17 +868,35 @@ router.post('/bulk-approve', [
       }
     })
 
-    // Approve the proposals
-    const updateResult = await tx.proposal.updateMany({
-      where: {
-        id: { in: pendingProposals.map(p => p.id) }
-      },
-      data: {
-        status: 'APPROVED',
-        reviewedAt: new Date(),
-        reviewedBy: reviewedBy || undefined
+    // Si un bloc spécifique est fourni, mettre à jour les approvedBlocks de chaque proposition
+    if (block) {
+      for (const proposal of pendingProposals) {
+        const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+        approvedBlocks[block] = true
+        
+        await tx.proposal.update({
+          where: { id: proposal.id },
+          data: {
+            status: 'APPROVED',
+            reviewedAt: new Date(),
+            reviewedBy: reviewedBy || undefined,
+            approvedBlocks
+          }
+        })
       }
-    })
+    } else {
+      // Approbation globale standard
+      await tx.proposal.updateMany({
+        where: {
+          id: { in: pendingProposals.map(p => p.id) }
+        },
+        data: {
+          status: 'APPROVED',
+          reviewedAt: new Date(),
+          reviewedBy: reviewedBy || undefined
+        }
+      })
+    }
 
     // Create ProposalApplication for each approved proposal (only if not exists)
     const applicationsToCreate = []
@@ -825,7 +918,7 @@ router.post('/bulk-approve', [
     })
 
     return {
-      approvedCount: updateResult.count,
+      approvedCount: pendingProposals.length,
       applicationsCreated: applications.count
     }
   })
