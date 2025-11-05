@@ -61,8 +61,18 @@ export async function matchCompetition(
       const nameSimilarity = calculateSimilarity(searchName, normalizeString(cleanedCandidateName))
       const citySimilarity = calculateSimilarity(searchCity, normalizeString(candidate.city))
       
-      // Score combiné (80% nom, 20% ville)
-      const totalSimilarity = nameSimilarity * 0.8 + citySimilarity * 0.2
+      // Score combiné avec logique adaptative :
+      // - Si le nom correspond très bien (>0.9), réduire l'importance de la ville
+      //   pour gérer les cas de villes limitrophes (ex: Saint-Apollinaire vs Dijon)
+      // - Sinon, utiliser le scoring standard (80% nom, 20% ville)
+      let totalSimilarity: number
+      if (nameSimilarity >= 0.9) {
+        // Nom excellent : 95% nom, 5% ville (tolérer des variations de ville)
+        totalSimilarity = nameSimilarity * 0.95 + citySimilarity * 0.05
+      } else {
+        // Nom moyen : 80% nom, 20% ville (scoring standard)
+        totalSimilarity = nameSimilarity * 0.8 + citySimilarity * 0.2
+      }
 
       if (totalSimilarity > bestSimilarity) {
         bestSimilarity = totalSimilarity
