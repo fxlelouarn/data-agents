@@ -223,6 +223,10 @@ export interface ProposalApplicationResult {
   syncedToDatabase?: boolean // Indique si synchronisé avec Miles Republic
   syncError?: string // Erreur de synchronisation s'il y en a une
   dryRun?: boolean // Indique si c'était une simulation
+  filteredChanges?: { // Changements filtrés par blocs non approuvés
+    removed: string[]
+    approvedBlocks: Record<string, boolean>
+  }
   [key: string]: any // Pour permettre d'autres champs comme eventData, etc.
 }
 

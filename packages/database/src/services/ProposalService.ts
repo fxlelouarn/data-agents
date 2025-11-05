@@ -1,33 +1,25 @@
 import { PrismaClient } from '@prisma/client'
 import { IProposalService, ProposalFilters } from './interfaces'
+import { ProposalRepository } from '../repositories/proposal.repository'
 
+/**
+ * Proposal Service - Business logic layer
+ * 
+ * Uses ProposalRepository for data access (Repository Pattern)
+ */
 export class ProposalService implements IProposalService {
-  constructor(private prisma: PrismaClient) {}
+  private repository: ProposalRepository
+
+  constructor(private prisma: PrismaClient) {
+    this.repository = new ProposalRepository(prisma)
+  }
 
   async getProposals(filters: ProposalFilters = {}) {
-    const whereClause: any = {}
-    
-    if (filters.status) whereClause.status = filters.status as any
-    if (filters.type) whereClause.type = filters.type as any
-    if (filters.eventId) whereClause.eventId = filters.eventId
-    if (filters.editionId) whereClause.editionId = filters.editionId
-    if (filters.agentId) whereClause.agentId = filters.agentId
-
-    return this.prisma.proposal.findMany({
-      where: whereClause,
-      include: {
-        agent: {
-          select: { name: true, type: true }
-        }
-      },
-      orderBy: { createdAt: 'desc' }
-    })
+    return this.repository.findMany(filters)
   }
 
   async getProposal(id: string) {
-    return this.prisma.proposal.findUnique({
-      where: { id }
-    })
+    return this.repository.findById(id)
   }
 
   async createProposal(data: {
@@ -66,15 +58,12 @@ export class ProposalService implements IProposalService {
       raceName = data.justification.raceName
     }
     
-    return this.prisma.proposal.create({
-      data: {
-        ...data,
-        type: data.type as any,
-        eventName,
-        eventCity,
-        editionYear,
-        raceName
-      }
+    return this.repository.create({
+      ...data,
+      eventName,
+      eventCity,
+      editionYear,
+      raceName
     })
   }
 
@@ -86,19 +75,12 @@ export class ProposalService implements IProposalService {
     modificationReason?: string
     modifiedBy?: string
     modifiedAt?: Date
+    approvedBlocks?: any
   }) {
-    return this.prisma.proposal.update({
-      where: { id },
-      data: {
-        ...data,
-        status: data.status as any
-      }
-    })
+    return this.repository.update(id, data)
   }
 
   async deleteProposal(id: string): Promise<void> {
-    await this.prisma.proposal.delete({
-      where: { id }
-    })
+    await this.repository.delete(id)
   }
 }

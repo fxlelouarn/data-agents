@@ -10,11 +10,15 @@ export {
 // Export the refactored DatabaseService
 export { DatabaseService } from './DatabaseService'
 
+// Export repositories (Repository Pattern - Phase 4 Refactoring)
+export * from './repositories'
+
 // Export services and interfaces
 export * from './services/interfaces'
 export { AgentService } from './services/AgentService'
 export { ProposalService } from './services/ProposalService'
 export { ProposalApplicationService } from './services/ProposalApplicationService'
+export { ProposalDomainService } from './services/proposal-domain.service'
 export { RunService, LogService } from './services/RunService'
 export { ConnectionService } from './services/ConnectionService'
 export { AgentStateService } from './services/AgentStateService'
