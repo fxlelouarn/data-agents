@@ -6,7 +6,9 @@ import {
 import {
   ChevronLeft as ChevronLeftIcon,
   Archive as ArchiveIcon,
-  Undo as UndoIcon
+  Undo as UndoIcon,
+  CheckCircle as ApproveAllIcon,
+  Delete as KillIcon
 } from '@mui/icons-material'
 
 interface ProposalNavigationProps {
@@ -22,6 +24,10 @@ interface ProposalNavigationProps {
   onArchive?: () => void
   showUnapproveButton?: boolean
   onUnapprove?: () => void
+  showApproveAllButton?: boolean
+  onApproveAll?: () => void
+  showKillEventButton?: boolean
+  onKillEvent?: () => void
   disabled?: boolean
   // Bouton retour
   showBackButton?: boolean
@@ -34,6 +40,10 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   onArchive,
   showUnapproveButton = false,
   onUnapprove,
+  showApproveAllButton = false,
+  onApproveAll,
+  showKillEventButton = false,
+  onKillEvent,
   disabled = false,
   showBackButton = true,
   onBack
@@ -84,6 +94,30 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
       </Box>
       
       <Box sx={{ display: 'flex', gap: 1 }}>
+        {showApproveAllButton && onApproveAll && (
+          <Button
+            variant="contained"
+            color="success"
+            size="small"
+            startIcon={<ApproveAllIcon />}
+            onClick={onApproveAll}
+            disabled={disabled}
+          >
+            Tout valider
+          </Button>
+        )}
+        {showKillEventButton && onKillEvent && (
+          <Button
+            variant="outlined"
+            color="error"
+            size="small"
+            startIcon={<KillIcon />}
+            onClick={onKillEvent}
+            disabled={disabled}
+          >
+            Tuer l'événement
+          </Button>
+        )}
         {showUnapproveButton && onUnapprove && (
           <Button
             variant="outlined"

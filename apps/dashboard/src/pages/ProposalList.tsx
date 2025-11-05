@@ -390,27 +390,17 @@ const ProposalList: React.FC = () => {
       ),
     },
     {
-      field: 'changes',
-      headerName: 'Modifications proposées',
-      flex: 1,
-      minWidth: 250,
-      renderCell: (params) => {
-        const summary = getChangesSummary(params.value)
-        const changeKeys = Object.keys(params.value)
-        
-        return (
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <Typography variant="body2">
-              {summary}
-            </Typography>
-            {changeKeys.length > 1 && (
-              <Tooltip title={`Champs modifiés: ${changeKeys.join(', ')}`}>
-                <InfoIcon sx={{ ml: 1, fontSize: 16, color: 'text.secondary' }} />
-              </Tooltip>
-            )}
-          </Box>
-        )
-      },
+      field: 'type',
+      headerName: 'Type',
+      width: 200,
+      renderCell: (params) => (
+        <Chip
+          size="small"
+          label={proposalTypeLabels[params.value as ProposalType]}
+          color="info"
+          variant="outlined"
+        />
+      ),
     },
     {
       field: 'confidence',
@@ -779,6 +769,16 @@ const ProposalList: React.FC = () => {
                     {getEventTitle(groupKey, proposals)}
                   </Typography>
                   <Box sx={{ display: 'flex', gap: 1 }}>
+                    {/* Afficher les types uniques */}
+                    {[...new Set(proposals.map(p => p.type))].map((type) => (
+                      <Chip
+                        key={type}
+                        size="small"
+                        label={proposalTypeLabels[type as ProposalType]}
+                        color="info"
+                        variant="outlined"
+                      />
+                    ))}
                     {/* Afficher uniquement les statuts uniques */}
                     {[...new Set(proposals.map(p => p.status))].map((status) => {
                       const count = proposals.filter(p => p.status === status).length

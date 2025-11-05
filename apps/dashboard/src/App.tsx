@@ -14,8 +14,8 @@ import AgentDetail from '@/pages/AgentDetail'
 import AgentEdit from '@/pages/AgentEdit'
 import AgentLogs from '@/pages/AgentLogs'
 import ProposalList from '@/pages/ProposalList'
-import ProposalDetail from '@/pages/ProposalDetail'
-import GroupedProposalDetail from '@/pages/GroupedProposalDetail'
+import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher'
+import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDetailDispatcher'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
 import Dashboard from '@/pages/Dashboard'
@@ -133,8 +133,8 @@ function App() {
                     
                     {/* Proposals routes */}
                     <Route path="/proposals" element={<ProposalList />} />
-                    <Route path="/proposals/group/:groupKey" element={<GroupedProposalDetail />} />
-                    <Route path="/proposals/:id" element={<ProposalDetail />} />
+                    <Route path="/proposals/group/:groupKey" element={<GroupedProposalDetailDispatcher />} />
+                    <Route path="/proposals/:id" element={<ProposalDetailDispatcher />} />
                     
                     {/* Updates routes */}
                     <Route path="/updates" element={<UpdateList />} />
