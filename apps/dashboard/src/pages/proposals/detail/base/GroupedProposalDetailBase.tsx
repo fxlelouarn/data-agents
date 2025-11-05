@@ -1,5 +1,5 @@
 import React, { useState, useMemo, useEffect, useRef } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useNavigate } from 'react-router-dom'
 import { useQueryClient } from '@tanstack/react-query'
 import {
   Box,
@@ -8,35 +8,105 @@ import {
   Card,
   CardContent,
   Grid,
-  Button,
   Dialog,
   DialogTitle,
   DialogContent,
   DialogActions,
   TextField,
+  Button,
   Typography
 } from '@mui/material'
-import {
-  CheckCircle as ApproveIcon,
-  Cancel as RejectIcon,
-  Language as WebsiteIcon,
-  Facebook as FacebookIcon,
-  Instagram as InstagramIcon
-} from '@mui/icons-material'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
-import EventChangesTable from '@/components/proposals/EventChangesTable'
-import EditionChangesTable from '@/components/proposals/EditionChangesTable'
-import RaceChangesSection from '@/components/proposals/RaceChangesSection'
-import DateSourcesSection from '@/components/proposals/DateSourcesSection'
-import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
-import EventLinksEditor from '@/components/proposals/EventLinksEditor'
-import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
-import { useProposals, useUpdateProposal, useBulkArchiveProposals, useUnapproveProposal, useKillEvent, useReviveEvent, useProposalGroup } from '@/hooks/useApi'
+import { 
+  useProposals, 
+  useUpdateProposal, 
+  useBulkArchiveProposals, 
+  useUnapproveProposal, 
+  useKillEvent, 
+  useReviveEvent, 
+  useProposalGroup 
+} from '@/hooks/useApi'
+import type { Proposal } from '@/types'
 
-const GroupedProposalDetail: React.FC = () => {
-  const { groupKey } = useParams<{ groupKey: string }>()
+export interface ConsolidatedChange {
+  field: string
+  options: Array<{
+    proposalId: string
+    agentName: string
+    proposedValue: any
+    confidence: number
+    createdAt: string
+  }>
+  currentValue: any
+}
+
+export interface RaceChange {
+  raceIndex: number
+  raceName: string
+  proposalIds: string[]
+  fields: Record<string, any>
+}
+
+export interface ProposalContext {
+  proposal: Proposal
+  selectedChanges: Record<string, any>
+  userModifiedChanges: Record<string, any>
+  handleFieldSelect: (fieldName: string, value: any) => void
+  handleFieldModify: (fieldName: string, newValue: any, reason?: string) => void
+  handleApproveField: (fieldName: string) => Promise<void>
+  handleApproveAll: () => Promise<void>
+  handleRejectAll: () => Promise<void>
+  formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
+  formatAgentsList: (agents: Array<{agentName: string, confidence: number}>) => string
+  isLoading: boolean
+  isPending: boolean
+  isEventDead: boolean
+}
+
+export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'> {
+  groupProposals: Proposal[]
+  consolidatedChanges: ConsolidatedChange[]
+  consolidatedRaceChanges: RaceChange[]
+  averageConfidence: number
+  allPending: boolean
+  hasApproved: boolean
+  allApproved: boolean
+  editionTimezone: string
+  isNewEvent: boolean
+  getEventTitle: (proposal: any, isNewEvent: boolean) => string
+  getEditionYear: (proposal: any) => string | undefined
+  // Actions spécifiques aux courses
+  handleApproveRace: (raceData: any) => Promise<void>
+  handleApproveAllRaces: () => Promise<void>
+  handleRejectAllRaces: () => Promise<void>
+  handleRaceFieldModify: (raceIndex: number, fieldName: string, newValue: any) => void
+  userModifiedRaceChanges: Record<number, Record<string, any>>
+  // Actions événement mort
+  handleKillEvent: () => Promise<void>
+  handleReviveEvent: () => Promise<void>
+  // État UI
+  killDialogOpen: boolean
+  setKillDialogOpen: (open: boolean) => void
+  isEditionCanceled: boolean
+}
+
+export interface GroupedProposalDetailBaseProps {
+  groupKey: string
+  renderMainContent: (context: GroupedProposalContext) => React.ReactNode
+  renderSidebar?: (context: GroupedProposalContext) => React.ReactNode
+  customHeaderProps?: Partial<React.ComponentProps<typeof ProposalHeader>>
+  hideNavigation?: boolean
+}
+
+const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({ 
+  groupKey,
+  renderMainContent,
+  renderSidebar,
+  customHeaderProps,
+  hideNavigation = false
+}) => {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
@@ -45,9 +115,9 @@ const GroupedProposalDetail: React.FC = () => {
   const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
   const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
   
-  // Use the new group-specific hook to load only the proposals for this group
+  // Hooks API
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
-  const { data: allProposalsData } = useProposals({}, 100) // Still needed for navigation
+  const { data: allProposalsData } = useProposals({}, 100)
   const updateProposalMutation = useUpdateProposal()
   const bulkArchiveMutation = useBulkArchiveProposals()
   const unapproveProposalMutation = useUnapproveProposal()
@@ -65,19 +135,17 @@ const GroupedProposalDetail: React.FC = () => {
     consolidateRaceChanges
   } = useProposalLogic()
   
-  // Gérer la sélection d'une valeur dans le dropdown (pas d'approbation)
+  // Handlers
   const handleSelectField = (fieldName: string, selectedValue: any) => {
     setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
   }
   
-  // Gérer les modifications manuelles
   const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
     setUserModifiedChanges(prev => ({
       ...prev,
       [fieldName]: newValue
     }))
     
-    // Aussi mettre à jour dans selectedChanges
     setSelectedChanges(prev => ({
       ...prev,
       [fieldName]: newValue
@@ -94,22 +162,18 @@ const GroupedProposalDetail: React.FC = () => {
     }))
   }
   
-  // Gérer l'approbation du champ (bouton "Approuver")
   const handleApproveField = async (fieldName: string) => {
     const selectedValue = selectedChanges[fieldName]
     if (selectedValue === undefined) return
     
-    // Trouver le changement correspondant
     const change = consolidatedChanges.find(c => c.field === fieldName)
     if (!change) return
     
     try {
-      // Pour chaque option de ce champ
       for (const option of change.options) {
         const optionValueStr = JSON.stringify(option.proposedValue)
         const selectedValueStr = JSON.stringify(selectedValue)
         
-        // Approuver les propositions qui correspondent à la valeur sélectionnée
         if (optionValueStr === selectedValueStr) {
           await updateProposalMutation.mutateAsync({
             id: option.proposalId,
@@ -118,7 +182,6 @@ const GroupedProposalDetail: React.FC = () => {
             appliedChanges: { [fieldName]: selectedValue }
           })
         } else {
-          // Rejeter les autres propositions du même champ
           await updateProposalMutation.mutateAsync({
             id: option.proposalId,
             status: 'REJECTED',
@@ -131,10 +194,9 @@ const GroupedProposalDetail: React.FC = () => {
     }
   }
 
-  // Déterminer si c'est un nouvel événement
+  // Navigation
   const isNewEvent = Boolean(groupKey?.startsWith('new-event-'))
-
-  // Navigation logic
+  
   const allGroupKeys = useMemo(() => {
     if (!allProposalsData?.data) return []
     const keys = new Set<string>()
@@ -159,11 +221,10 @@ const GroupedProposalDetail: React.FC = () => {
     }
   }
 
-  // Récupérer les propositions du groupe et les trier par confiance décroissante
+  // Récupérer les propositions du groupe
   const groupProposals = useMemo(() => {
     if (!groupProposalsData?.data || !groupKey) return []
     
-    // Les propositions sont déjà filtrées par le backend, juste les trier par confiance
     return groupProposalsData.data.sort((a, b) => {
       const confidenceA = a.confidence || 0
       const confidenceB = b.confidence || 0
@@ -171,9 +232,8 @@ const GroupedProposalDetail: React.FC = () => {
     })
   }, [groupProposalsData?.data, groupKey])
   
-  // Extraire la timezone de l'édition (prend en compte les modifications utilisateur)
+  // Extraire la timezone de l'édition
   const editionTimezone = useMemo(() => {
-    // Si l'utilisateur a modifié la timezone, l'utiliser
     if (selectedChanges.timeZone) {
       return selectedChanges.timeZone
     }
@@ -182,7 +242,7 @@ const GroupedProposalDetail: React.FC = () => {
     const firstProposal = groupProposals[0]
     if (!firstProposal?.changes) return 'Europe/Paris'
     const changes = firstProposal.changes as any
-    // Chercher le timeZone dans les changements
+    
     if (changes.timeZone) {
       if (typeof changes.timeZone === 'string') return changes.timeZone
       if (typeof changes.timeZone === 'object' && 'proposed' in changes.timeZone) return changes.timeZone.proposed
@@ -192,14 +252,13 @@ const GroupedProposalDetail: React.FC = () => {
     return 'Europe/Paris'
   }, [groupProposals, selectedChanges.timeZone])
 
-  // Consolider les changements en utilisant le hook
+  // Consolider les changements
   const consolidatedChanges = useMemo(() => {
     const changes = consolidateChanges(groupProposals, isNewEvent)
     const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
     
-    // Ne PAS ajouter calendarStatus et timeZone pour les EVENT_UPDATE (ce sont des champs d'Edition)
     if (!isEventUpdateDisplay) {
-      // Ajouter le champ timeZone comme premier champ pour visibilité
+      // Ajouter timeZone si absent
       const hasTimezone = changes.some(c => c.field === 'timeZone')
       if (!hasTimezone && groupProposals.length > 0) {
         const firstProposal = groupProposals[0]
@@ -216,11 +275,10 @@ const GroupedProposalDetail: React.FC = () => {
         })
       }
       
-      // Ajouter le champ calendarStatus avec CONFIRMED par défaut
+      // Ajouter calendarStatus si absent
       const hasCalendarStatus = changes.some(c => c.field === 'calendarStatus')
       if (!hasCalendarStatus && groupProposals.length > 0) {
         const firstProposal = groupProposals[0]
-        // Récupérer la valeur actuelle de la base ou TO_BE_CONFIRMED par défaut
         const currentCalendarStatus = (firstProposal.changes as any)?.calendarStatus?.current || 'TO_BE_CONFIRMED'
         changes.unshift({
           field: 'calendarStatus',
@@ -235,7 +293,7 @@ const GroupedProposalDetail: React.FC = () => {
         })
       }
       
-      // Ajouter le champ endDate avec la même valeur que startDate si elle existe
+      // Ajouter endDate si absent et startDate présent
       const hasEndDate = changes.some(c => c.field === 'endDate')
       const startDateChange = changes.find(c => c.field === 'startDate')
       if (!hasEndDate && startDateChange && groupProposals.length > 0) {
@@ -257,21 +315,14 @@ const GroupedProposalDetail: React.FC = () => {
       }
     }
     
-    // Filtrer calendarStatus et timeZone pour les EVENT_UPDATE
+    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE
     return isEventUpdateDisplay
       ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
       : changes
   }, [groupProposals, isNewEvent, consolidateChanges, editionTimezone])
   
-  // Déterminer si c'est une modification d'événement (pour affichage)
-  const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
-  
-  // Déterminer si les champs doivent être disabled (si calendarStatus === CANCELED)
+  // Déterminer si l'édition est annulée
   const isEditionCanceled = useMemo(() => {
-    // Chercher la valeur de calendarStatus dans l'ordre de priorité :
-    // 1. Modifications utilisateur
-    // 2. Changements sélectionnés
-    // 3. Valeur par défaut proposée
     const calendarStatus = userModifiedChanges['calendarStatus'] || 
                           selectedChanges['calendarStatus'] || 
                           consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
@@ -284,9 +335,7 @@ const GroupedProposalDetail: React.FC = () => {
   )
   
   // Cascade startDate changes to races
-  // Si l'utilisateur change la date de l'édition (startDate), les races doivent être mises à jour aussi
   const consolidatedRaceChangesWithCascade = useMemo(() => {
-    // Utiliser la startDate de l'édition (modifiée ou proposée)
     const startDateChange = consolidatedChanges.find(c => c.field === 'startDate')
     const editionStartDate = selectedChanges['startDate'] || startDateChange?.options[0]?.proposedValue
     
@@ -296,7 +345,6 @@ const GroupedProposalDetail: React.FC = () => {
       ...raceChange,
       fields: Object.entries(raceChange.fields).reduce((acc, [fieldName, fieldData]) => {
         if (fieldName === 'startDate') {
-          // Mettre à jour le startDate de la course avec la date de l'édition
           return {
             ...acc,
             [fieldName]: {
@@ -317,17 +365,14 @@ const GroupedProposalDetail: React.FC = () => {
   const lastComputedDatesRef = useRef<{startDate?: string, endDate?: string}>({})
   
   // Ajuster automatiquement startDate et endDate si des courses sont modifiées
-  React.useEffect(() => {
-    // Vérifier si l'utilisateur a modifié manuellement les dates de l'édition
+  useEffect(() => {
     const hasManualStartDate = userModifiedChanges['startDate'] !== undefined
     const hasManualEndDate = userModifiedChanges['endDate'] !== undefined
     
-    // Si l'utilisateur a modifié manuellement les deux dates, ne rien faire
     if (hasManualStartDate && hasManualEndDate) {
       return
     }
     
-    // Récupérer toutes les startDate des courses (y compris celles modifiées)
     const raceStartDates: Date[] = []
     
     consolidatedRaceChangesWithCascade.forEach(raceChange => {
@@ -342,13 +387,11 @@ const GroupedProposalDetail: React.FC = () => {
     })
     
     if (raceStartDates.length > 0) {
-      // Trouver la date min et max des courses
       const minRaceDate = new Date(Math.min(...raceStartDates.map(d => d.getTime())))
       const maxRaceDate = new Date(Math.max(...raceStartDates.map(d => d.getTime())))
       
       const updates: Record<string, string> = {}
       
-      // Ajuster startDate si pas modifiée manuellement
       if (!hasManualStartDate) {
         const newStartDate = minRaceDate.toISOString()
         if (newStartDate !== lastComputedDatesRef.current.startDate) {
@@ -356,7 +399,6 @@ const GroupedProposalDetail: React.FC = () => {
         }
       }
       
-      // Ajuster endDate si pas modifiée manuellement
       if (!hasManualEndDate) {
         const newEndDate = maxRaceDate.toISOString()
         if (newEndDate !== lastComputedDatesRef.current.endDate) {
@@ -380,7 +422,6 @@ const GroupedProposalDetail: React.FC = () => {
     
     consolidatedChanges.forEach(change => {
       if (!selectedChanges[change.field] && change.options.length > 0) {
-        // Prendre la première option (déjà triée par consensus/confiance dans le hook)
         newSelections[change.field] = change.options[0].proposedValue
       }
     })
@@ -390,18 +431,13 @@ const GroupedProposalDetail: React.FC = () => {
     }
   }, [consolidatedChanges, selectedChanges, setSelectedChanges])
 
-  // Première proposition pour les actions et l'affichage
-  const firstProposal = groupProposals[0]
-  const firstProposalForActions = firstProposal
-
+  // Actions principales
   const handleApproveRace = async (raceData: any) => {
     try {
-      // Récupérer toutes les propositions concernées par cette course
       const raceProposalIds = raceData.proposalIds
       const concernedProposals = groupProposals.filter(p => raceProposalIds.includes(p.id))
       
       for (const proposal of concernedProposals) {
-        // Trouver les changements de cette course dans la proposition
         const racesData = proposal.changes.races
         if (racesData && Array.isArray(racesData)) {
           const raceInProposal = racesData.find((race: any) => 
@@ -419,7 +455,6 @@ const GroupedProposalDetail: React.FC = () => {
         }
       }
       
-      // Invalider une seule fois après toutes les mutations
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving race changes:', error)
@@ -429,12 +464,10 @@ const GroupedProposalDetail: React.FC = () => {
   const handleApproveAllRaces = async () => {
     try {
       for (const raceChange of consolidatedRaceChanges) {
-        // Récupérer toutes les propositions concernées par cette course
         const raceProposalIds = raceChange.proposalIds
         const concernedProposals = groupProposals.filter(p => raceProposalIds.includes(p.id))
         
         for (const proposal of concernedProposals) {
-          // Trouver les changements de cette course dans la proposition
           const racesData = proposal.changes.races
           if (racesData && Array.isArray(racesData)) {
             const raceInProposal = racesData.find((race: any) => 
@@ -453,7 +486,6 @@ const GroupedProposalDetail: React.FC = () => {
         }
       }
       
-      // Invalider une seule fois après toutes les mutations
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving all races:', error)
@@ -462,7 +494,6 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleRejectAllRaces = async () => {
     try {
-      // Rejeter toutes les propositions qui ont des changements de courses
       const raceProposalIds = consolidatedRaceChanges.flatMap(race => race.proposalIds)
       const uniqueProposalIds = Array.from(new Set(raceProposalIds))
       const concernedProposals = groupProposals.filter(p => uniqueProposalIds.includes(p.id))
@@ -475,7 +506,6 @@ const GroupedProposalDetail: React.FC = () => {
         })
       }
       
-      // Invalider une seule fois après toutes les mutations
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error rejecting all races:', error)
@@ -484,19 +514,16 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleApproveAll = async () => {
     try {
-      // Pour chaque champ avec une valeur sélectionnée, approuver/rejeter les propositions correspondantes
       for (const change of consolidatedChanges) {
         const fieldName = change.field
         const selectedValue = selectedChanges[fieldName]
         
         if (selectedValue === undefined) continue
         
-        // Pour chaque option de ce champ
         for (const option of change.options) {
           const optionValueStr = JSON.stringify(option.proposedValue)
           const selectedValueStr = JSON.stringify(selectedValue)
           
-          // Approuver les propositions qui correspondent à la valeur sélectionnée
           if (optionValueStr === selectedValueStr) {
             await updateProposalMutation.mutateAsync({
               id: option.proposalId,
@@ -508,7 +535,6 @@ const GroupedProposalDetail: React.FC = () => {
               modifiedBy: 'Utilisateur'
             })
           } else {
-            // Rejeter les autres propositions du même champ
             await updateProposalMutation.mutateAsync({
               id: option.proposalId,
               status: 'REJECTED',
@@ -518,7 +544,6 @@ const GroupedProposalDetail: React.FC = () => {
         }
       }
       
-      // Invalider les requêtes UNE SEULE FOIS après toutes les mises à jour
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving proposals:', error)
@@ -535,7 +560,6 @@ const GroupedProposalDetail: React.FC = () => {
         })
       }
       
-      // Invalider une seule fois après toutes les mutations
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error rejecting proposals:', error)
@@ -548,10 +572,8 @@ const GroupedProposalDetail: React.FC = () => {
       await bulkArchiveMutation.mutateAsync({
         proposalIds,
         reviewedBy: 'Utilisateur',
-        archiveReason: archiveReason.trim() || undefined
+        archiveReason: undefined // Pas de raison requise
       })
-      setArchiveDialogOpen(false)
-      setArchiveReason('')
     } catch (error) {
       console.error('Error archiving proposals:', error)
     }
@@ -559,13 +581,11 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleUnapproveAll = async () => {
     try {
-      // Annuler l'approbation pour toutes les propositions APPROVED du groupe
       const approvedProposals = groupProposals.filter(p => p.status === 'APPROVED')
       for (const proposal of approvedProposals) {
         await unapproveProposalMutation.mutateAsync(proposal.id)
       }
       
-      // Invalider une seule fois après toutes les mutations
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error unapproving proposals:', error)
@@ -574,7 +594,7 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleKillEvent = async () => {
     try {
-      const eventId = firstProposalForActions?.eventId
+      const eventId = firstProposal?.eventId
       if (!eventId) {
         console.error('No eventId found')
         return
@@ -588,7 +608,7 @@ const GroupedProposalDetail: React.FC = () => {
 
   const handleReviveEvent = async () => {
     try {
-      const eventId = firstProposalForActions?.eventId
+      const eventId = firstProposal?.eventId
       if (!eventId) {
         console.error('No eventId found')
         return
@@ -599,15 +619,12 @@ const GroupedProposalDetail: React.FC = () => {
     }
   }
 
-
-
-  // Extraire eventId et eventStatus de la première proposition
-  const eventId = firstProposalForActions?.eventId
-  const eventStatus = firstProposalForActions?.eventStatus
+  // Calculs pour l'interface
+  const firstProposal = groupProposals[0]
+  const eventId = firstProposal?.eventId
+  const eventStatus = firstProposal?.eventStatus
   const isEventDead = eventStatus === 'DEAD'
 
-  // Calculs pour l'interface
-  // Calculer la confiance moyenne en ignorant les propositions sans confiance définie
   const proposalsWithValidConfidence = groupProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
   const averageConfidence = proposalsWithValidConfidence.length > 0
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
@@ -615,6 +632,43 @@ const GroupedProposalDetail: React.FC = () => {
   const allPending = groupProposals.every(p => p.status === 'PENDING')
   const hasApproved = groupProposals.some(p => p.status === 'APPROVED')
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
+
+  // Context pour le render
+  const context: GroupedProposalContext = {
+    groupProposals,
+    consolidatedChanges,
+    consolidatedRaceChanges: consolidatedRaceChangesWithCascade,
+    selectedChanges,
+    userModifiedChanges,
+    userModifiedRaceChanges,
+    handleFieldSelect: handleSelectField,
+    handleFieldModify,
+    handleApproveField,
+    handleApproveAll,
+    handleRejectAll,
+    handleApproveRace,
+    handleApproveAllRaces,
+    handleRejectAllRaces,
+    handleRaceFieldModify,
+    handleKillEvent,
+    handleReviveEvent,
+    formatValue,
+    formatAgentsList,
+    getEventTitle,
+    getEditionYear,
+    isLoading,
+    isPending: updateProposalMutation.isPending || bulkArchiveMutation.isPending,
+    isEventDead,
+    averageConfidence,
+    allPending,
+    hasApproved,
+    allApproved,
+    editionTimezone,
+    isNewEvent,
+    killDialogOpen,
+    setKillDialogOpen,
+    isEditionCanceled
+  }
 
   if (isLoading) return <LinearProgress />
 
@@ -628,27 +682,35 @@ const GroupedProposalDetail: React.FC = () => {
     )
   }
 
+  const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
+
   return (
     <Box>
-      <ProposalNavigation
-        navigation={{
-          hasPrevious: canGoToPrev,
-          hasNext: canGoToNext,
-          onPrevious: () => navigateToGroup('prev'),
-          onNext: () => navigateToGroup('next')
-        }}
-        showArchiveButton={allPending}
-        onArchive={() => setArchiveDialogOpen(true)}
-        showUnapproveButton={hasApproved}
-        onUnapprove={handleUnapproveAll}
-        disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || unapproveProposalMutation.isPending}
-        showBackButton={true}
-      />
+      {!hideNavigation && (
+        <ProposalNavigation
+          navigation={{
+            hasPrevious: canGoToPrev,
+            hasNext: canGoToNext,
+            onPrevious: () => navigateToGroup('prev'),
+            onNext: () => navigateToGroup('next')
+          }}
+          showApproveAllButton={allPending && !isEventDead}
+          onApproveAll={handleApproveAll}
+          showKillEventButton={allPending && !isEventDead && !isNewEvent && Boolean(eventId)}
+          onKillEvent={() => setKillDialogOpen(true)}
+          showArchiveButton={allPending}
+          onArchive={handleArchive}
+          showUnapproveButton={hasApproved}
+          onUnapprove={handleUnapproveAll}
+          disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || unapproveProposalMutation.isPending}
+          showBackButton={true}
+        />
+      )}
       
       <ProposalHeader
         title={isNewEvent ? 'Nouvel événement proposé' : 'Proposition de modification'}
-        eventTitle={!isNewEvent ? getEventTitle(firstProposalForActions, isNewEvent) : undefined}
-        editionYear={!isNewEvent && !isEventUpdateDisplay && firstProposalForActions ? getEditionYear(firstProposalForActions) : undefined}
+        eventTitle={!isNewEvent && firstProposal?.eventId ? (getEventTitle(firstProposal, isNewEvent) || `Event ID: ${firstProposal.eventId}`) : undefined}
+        editionYear={!isNewEvent && !isEventUpdateDisplay && firstProposal?.editionId ? (getEditionYear(firstProposal) ? `${getEditionYear(firstProposal)} (${firstProposal.editionId})` : `Edition ID: ${firstProposal.editionId}`) : undefined}
         chips={[
           {
             label: `${groupProposals.length} propositions groupées`,
@@ -664,219 +726,20 @@ const GroupedProposalDetail: React.FC = () => {
             color: (averageConfidence || 0) > 0.8 ? 'success' : (averageConfidence || 0) > 0.6 ? 'warning' : 'error'
           }
         ]}
+        {...customHeaderProps}
       />
 
       <Grid container spacing={3}>
-        <Grid item xs={12} md={8}>
-          {isEventUpdateDisplay ? (
-            <EventChangesTable
-              title="Modification de l'événement"
-              changes={consolidatedChanges}
-              isNewEvent={false}
-              selectedChanges={selectedChanges}
-              onFieldSelect={handleSelectField}
-              onFieldApprove={handleApproveField}
-              onFieldModify={handleFieldModify}
-              userModifiedChanges={userModifiedChanges}
-              formatValue={formatValue}
-              formatAgentsList={formatAgentsList}
-              timezone={editionTimezone}
-              disabled={!allPending || updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-              actions={allPending ? (
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="small"
-                    startIcon={<ApproveIcon />}
-                    onClick={handleApproveAll}
-                    disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-                  >
-                    Tout approuver
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<RejectIcon />}
-                    onClick={handleRejectAll}
-                    disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-                  >
-                    Tout rejeter
-                  </Button>
-                  {!isNewEvent && eventId && (
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      size="small"
-                      onClick={() => setKillDialogOpen(true)}
-                      disabled={killEventMutation.isPending || isEventDead}
-                    >
-                      Tuer l'événement
-                    </Button>
-                  )}
-                </Box>
-              ) : isEventDead && !isNewEvent && eventId ? (
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                    onClick={handleReviveEvent}
-                    disabled={reviveEventMutation.isPending}
-                  >
-                    Ressusciter l'événement
-                  </Button>
-                </Box>
-              ) : undefined}
-            />
-          ) : (
-            <EditionChangesTable
-              title={isNewEvent ? 'Données du nouvel événement' : 'Modification de l\'édition'}
-              changes={consolidatedChanges}
-              isNewEvent={isNewEvent}
-              selectedChanges={selectedChanges}
-              onFieldSelect={handleSelectField}
-              onFieldApprove={handleApproveField}
-              onFieldModify={handleFieldModify}
-              userModifiedChanges={userModifiedChanges}
-              formatValue={formatValue}
-              formatAgentsList={formatAgentsList}
-              timezone={editionTimezone}
-              disabled={!allPending || updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-              isEditionCanceled={isEditionCanceled || isEventDead}
-              actions={allPending ? (
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="small"
-                    startIcon={<ApproveIcon />}
-                    onClick={handleApproveAll}
-                    disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-                  >
-                    Tout approuver
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<RejectIcon />}
-                    onClick={handleRejectAll}
-                    disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || isEventDead}
-                  >
-                    Tout rejeter
-                  </Button>
-                  {!isNewEvent && eventId && (
-                    <Button
-                      variant="outlined"
-                      color="warning"
-                      size="small"
-                      onClick={() => setKillDialogOpen(true)}
-                      disabled={killEventMutation.isPending || isEventDead}
-                    >
-                      Tuer l'événement
-                    </Button>
-                  )}
-                </Box>
-              ) : isEventDead && !isNewEvent && eventId ? (
-                <Box sx={{ display: 'flex', gap: 1 }}>
-                  <Button
-                    variant="contained"
-                    color="primary"
-                    size="small"
-                    onClick={handleReviveEvent}
-                    disabled={reviveEventMutation.isPending}
-                  >
-                    Ressusciter l'événement
-                  </Button>
-                </Box>
-              ) : undefined}
-            />
-          )}
-          
-          <RaceChangesSection
-            raceChanges={consolidatedRaceChangesWithCascade}
-            formatValue={formatValue}
-            timezone={editionTimezone}
-            onRaceApprove={handleApproveRace}
-            onApproveAll={allPending ? handleApproveAllRaces : undefined}
-            onRejectAll={allPending ? handleRejectAllRaces : undefined}
-            onFieldModify={handleRaceFieldModify}
-            userModifiedRaceChanges={userModifiedRaceChanges}
-            disabled={!allPending || updateProposalMutation.isPending || isEventDead}
-            isEditionCanceled={isEditionCanceled || isEventDead}
-          />
-          
-          {/* Sources des dates extraites */}
-          <DateSourcesSection justifications={groupProposals.flatMap(p => p.justification || [])} />
+        <Grid item xs={12} md={renderSidebar ? 8 : 12}>
+          {renderMainContent(context)}
         </Grid>
         
-        <Grid item xs={12} md={4}>
-          <AgentInfoSection proposals={groupProposals.map(p => ({ ...p, confidence: p.confidence || 0, status: p.status }))} />
-          
-          {/* URLs de l'événement */}
-          {firstProposal && (
-            <Box sx={{ mt: 3 }}>
-              <EventLinksEditor
-                websiteUrl={firstProposal.changes.websiteUrl}
-                facebookUrl={firstProposal.changes.facebookUrl}
-                instagramUrl={firstProposal.changes.instagramUrl}
-                onSave={(links) => {
-                  handleFieldModify('websiteUrl', links.websiteUrl)
-                  handleFieldModify('facebookUrl', links.facebookUrl)
-                  handleFieldModify('instagramUrl', links.instagramUrl)
-                }}
-                editable={allPending}
-              />
-            </Box>
-          )}
-          
-          {/* Informations contextuelles de l'édition */}
-          {firstProposal && (
-            <EditionContextInfo
-              currentCalendarStatus={
-                userModifiedChanges['calendarStatus'] || 
-                selectedChanges['calendarStatus'] || 
-                (typeof firstProposal.changes.calendarStatus === 'string' 
-                  ? firstProposal.changes.calendarStatus 
-                  : (firstProposal.changes.calendarStatus as any)?.current || (firstProposal.changes.calendarStatus as any)?.proposed)
-              }
-              currentEditionYear={getEditionYear(firstProposal) ? parseInt(getEditionYear(firstProposal)!) : undefined}
-              previousEditionYear={(firstProposal as any).previousEditionYear}
-              previousCalendarStatus={(firstProposal as any).previousEditionCalendarStatus}
-              previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
-            />
-          )}
-        </Grid>
+        {renderSidebar && (
+          <Grid item xs={12} md={4}>
+            {renderSidebar(context)}
+          </Grid>
+        )}
       </Grid>
-
-      {/* Dialog d'archivage */}
-      <Dialog open={archiveDialogOpen} onClose={() => setArchiveDialogOpen(false)} maxWidth="sm" fullWidth>
-        <DialogTitle>Archiver le groupe de propositions</DialogTitle>
-        <DialogContent>
-          <TextField
-            fullWidth
-            multiline
-            rows={3}
-            label="Raison de l'archivage"
-            value={archiveReason}
-            onChange={(e) => setArchiveReason(e.target.value)}
-            sx={{ mt: 2 }}
-          />
-        </DialogContent>
-        <DialogActions>
-          <Button onClick={() => setArchiveDialogOpen(false)}>Annuler</Button>
-          <Button
-            onClick={handleArchive}
-            color="warning"
-            variant="contained"
-            disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || !archiveReason.trim()}
-          >
-            Archiver
-          </Button>
-        </DialogActions>
-      </Dialog>
 
       {/* Dialog de confirmation pour tuer l'événement */}
       <Dialog open={killDialogOpen} onClose={() => setKillDialogOpen(false)} maxWidth="sm" fullWidth>
@@ -908,4 +771,4 @@ const GroupedProposalDetail: React.FC = () => {
   )
 }
 
-export default GroupedProposalDetail
+export default GroupedProposalDetailBase
