@@ -1,0 +1,27 @@
+{
+  "name": "@data-agents/utils",
+  "version": "1.0.0",
+  "description": "Shared utility functions for data extraction, parsing, and transformation",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "scripts": {
+    "build": "tsc",
+    "test": "jest",
+    "test:watch": "jest --watch"
+  },
+  "keywords": [
+    "utils",
+    "helpers",
+    "data-extraction",
+    "parsing"
+  ],
+  "author": "Data Agents Team",
+  "license": "MIT",
+  "dependencies": {
+    "string-similarity": "^4.0.4"
+  },
+  "devDependencies": {
+    "@types/string-similarity": "^4.0.2",
+    "typescript": "^5.3.3"
+  }
+}
