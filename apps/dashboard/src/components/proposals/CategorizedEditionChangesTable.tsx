@@ -6,6 +6,12 @@ import TimezoneEditor from './TimezoneEditor'
 
 interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps, 'renderCustomEditor' | 'isFieldDisabledFn'> {
   isEditionCanceled?: boolean // Désactiver tous les champs sauf calendarStatus quand l'édition est annulée
+  // Props de validation par bloc
+  isBlockValidated?: boolean
+  onValidateBlock?: () => Promise<void>
+  onUnvalidateBlock?: () => Promise<void>
+  isBlockPending?: boolean
+  validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
 }
 
 /**
@@ -15,10 +21,17 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
  */
 const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTableProps> = ({ 
   isEditionCanceled = false,
+  isBlockValidated = false,
+  onValidateBlock,
+  onUnvalidateBlock,
+  isBlockPending = false,
+  validationDisabled = false,
   ...props 
 }) => {
   // Fonction pour déterminer si un champ doit être désactivé
   const isFieldDisabledFn = (fieldName: string): boolean => {
+    // Si le bloc est validé, tous les champs sont désactivés
+    if (isBlockValidated) return true
     // Si l'édition est annulée, tous les champs sauf calendarStatus sont désactivés
     return isEditionCanceled && fieldName !== 'calendarStatus'
   }
@@ -61,6 +74,11 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
       entityType="EDITION"
       isFieldDisabledFn={isFieldDisabledFn}
       renderCustomEditor={renderCustomEditor}
+      isBlockValidated={isBlockValidated}
+      onValidateBlock={onValidateBlock}
+      onUnvalidateBlock={onUnvalidateBlock}
+      isBlockPending={isBlockPending}
+      validationDisabled={validationDisabled}
     />
   )
 }
