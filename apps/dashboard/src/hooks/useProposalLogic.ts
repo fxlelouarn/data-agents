@@ -133,25 +133,29 @@ export const useProposalLogic = () => {
   }
 
   const getEventTitle = (firstProposal: any, isNewEvent: boolean) => {
-    if (!firstProposal) return 'Groupe inconnu'
+    if (!firstProposal) return undefined
     
     if (isNewEvent) {
-      const eventName = firstProposal.changes.eventName
-      return typeof eventName === 'string' ? eventName : 'Nouvel événement'
+      // Pour NEW_EVENT, chercher dans changes.eventName
+      const eventName = firstProposal.changes?.eventName
+      if (typeof eventName === 'string') return eventName
+      if (typeof eventName === 'object' && eventName?.new) return eventName.new
+      if (typeof eventName === 'object' && eventName?.proposed) return eventName.proposed
+      return undefined // Pas de nom pour nouveau événement
     }
     
-    if (!firstProposal.eventId) return 'Événement inconnu'
+    if (!firstProposal.eventId) return undefined
     
     const eventId = firstProposal.eventId
     
-    // Pour EVENT_UPDATE, utiliser le eventName enrichi par le backend
-    if (firstProposal.type === 'EVENT_UPDATE' && firstProposal.eventName) {
+    // PRIORITÉ 1: Utiliser les champs enrichis directement dans la Proposal (eventName, eventCity)
+    if (firstProposal.eventName) {
       const eventCity = firstProposal.eventCity
       const baseName = eventCity ? `${firstProposal.eventName} - ${eventCity}` : firstProposal.eventName
       return `${baseName} (${eventId})`
     }
     
-    // Essayer d'extraire le nom depuis les métadonnées de justification
+    // PRIORITÉ 2: Essayer d'extraire depuis les métadonnées de justification
     if (firstProposal.justification && Array.isArray(firstProposal.justification)) {
       for (const justif of firstProposal.justification) {
         if (justif.metadata && justif.metadata.eventName) {
@@ -165,20 +169,17 @@ export const useProposalLogic = () => {
       }
     }
     
-    // Fallback: logique existante avec ID
-    let eventName = eventId.toString().replace('event_', '')
+    // Fallback: retourner undefined pour ne pas afficher d'info incorrecte
+    // Le ProposalHeader ne l'affichera pas si undefined
+    console.warn('[getEventTitle] Aucun nom d\'événement trouvé pour:', {
+      eventId,
+      type: firstProposal.type,
+      hasEventName: !!firstProposal.eventName,
+      hasJustification: !!firstProposal.justification,
+      justificationLength: firstProposal.justification?.length || 0
+    })
     
-    if (eventName.includes('marathon_paris')) {
-      eventName = 'Marathon de Paris'
-    } else if (eventName.includes('10km_boulogne')) {
-      eventName = '10km de Boulogne'
-    } else if (eventName.includes('semi_marathon_boulogne')) {
-      eventName = 'Semi-marathon de Boulogne'
-    } else {
-      eventName = eventName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
-    }
-    
-    return `${eventName} (${eventId})`
+    return undefined
   }
 
   // Consolider les changements par champ (excluant les races)
@@ -187,14 +188,57 @@ export const useProposalLogic = () => {
 
     const changesByField: Record<string, any> = {}
     const isEventUpdate = groupProposals[0]?.type === 'EVENT_UPDATE'
+    const isEditionUpdate = groupProposals[0]?.type === 'EDITION_UPDATE'
 
     groupProposals.forEach(proposal => {
       Object.entries(proposal.changes).forEach(([field, value]) => {
         // Ignorer les champs non modifiables et les races (traitées séparément)
         if (nonModifiableFields.includes(field) || field === 'races') return
         
+        // Pour NEW_EVENT, décomposer le champ 'edition' en champs individuels
+        if (field === 'edition' && typeof value === 'object' && value !== null) {
+          // La structure est {new: {...}, confidence: 0.36}
+          const editionConfidence = (value as any).confidence || proposal.confidence || 0
+          const editionData = (value as any).new || value
+          
+          // Extraire les champs de l'édition (sauf 'races' qui est traité séparément)
+          Object.entries(editionData).forEach(([editionField, editionValue]) => {
+            if (editionField === 'races' || editionField === 'confidence') return
+            
+            if (!changesByField[editionField]) {
+              changesByField[editionField] = {
+                field: editionField,
+                options: [],
+                currentValue: null
+              }
+            }
+            
+            // Utiliser la structure {new: value, confidence: number}
+            const proposedValue = typeof editionValue === 'object' && editionValue !== null && 'new' in editionValue
+              ? (editionValue as any).new
+              : editionValue
+            
+            const confidence = typeof editionValue === 'object' && editionValue !== null && 'confidence' in editionValue
+              ? (editionValue as any).confidence
+              : editionConfidence
+            
+            changesByField[editionField].options.push({
+              proposalId: proposal.id,
+              agentName: proposal.agent.name,
+              proposedValue,
+              confidence,
+              createdAt: proposal.createdAt
+            })
+          })
+          
+          return // Ne pas traiter 'edition' comme un champ normal
+        }
+        
         // Pour EVENT_UPDATE, ne garder que les champs d'événement
         if (isEventUpdate && !eventFields.includes(field)) return
+        
+        // Pour EDITION_UPDATE, ne garder que les champs qui ne sont PAS des champs d'événement
+        if (isEditionUpdate && eventFields.includes(field)) return
         
         if (!changesByField[field]) {
           changesByField[field] = {
@@ -278,7 +322,15 @@ export const useProposalLogic = () => {
     const raceChangesByRace: Record<string, any> = {}
 
     groupProposals.forEach(proposal => {
-      const racesData = proposal.changes.races
+      // Pour NEW_EVENT, les races peuvent être dans proposal.changes.edition.new.races
+      let racesData = proposal.changes.races
+      
+      if (!racesData && proposal.changes.edition) {
+        const editionData = proposal.changes.edition
+        const editionNew = (editionData as any).new || editionData
+        racesData = editionNew.races
+      }
+      
       if (racesData && Array.isArray(racesData)) {
         racesData.forEach((race: any, raceIndex: number) => {
           if (typeof race === 'object' && race !== null) {
@@ -403,27 +455,54 @@ export const useProposalLogic = () => {
 
   // Fonction pour extraire l'année de l'édition depuis les métadonnées
   const getEditionYear = (proposal: any) => {
-    // Essayer d'extraire depuis les métadonnées de justification
-    if (proposal.justification && Array.isArray(proposal.justification)) {
+    // PRIORITÉ 1: Utiliser le champ enrichi directement dans la Proposal (editionYear)
+    if (proposal?.editionYear !== null && proposal?.editionYear !== undefined) {
+      return proposal.editionYear.toString()
+    }
+    
+    // PRIORITÉ 2: Essayer d'extraire depuis les métadonnées de justification
+    if (proposal?.justification && Array.isArray(proposal.justification)) {
       for (const justif of proposal.justification) {
         if (justif.metadata && justif.metadata.editionYear) {
-          return justif.metadata.editionYear
+          return justif.metadata.editionYear.toString()
         }
       }
     }
     
-    // Fallback: extraire depuis l'editionId (si format reconnaissable)
-    if (proposal.editionId) {
-      const yearMatch = proposal.editionId.toString().match(/202\d/)
+    // PRIORITÉ 3: Essayer depuis les changes si c'est un NEW_EVENT ou EDITION_UPDATE
+    if (proposal?.changes) {
+      // Pour NEW_EVENT avec structure edition
+      if (proposal.changes.edition && typeof proposal.changes.edition === 'object') {
+        const editionData = proposal.changes.edition.new || proposal.changes.edition
+        if (editionData.year) {
+          return editionData.year.toString()
+        }
+      }
+      // Pour EDITION_UPDATE avec year direct
+      if (proposal.changes.year) {
+        const yearValue = typeof proposal.changes.year === 'object' 
+          ? (proposal.changes.year.proposed || proposal.changes.year.new || proposal.changes.year.current)
+          : proposal.changes.year
+        if (yearValue) return yearValue.toString()
+      }
+    }
+    
+    // PRIORITÉ 4: Fallback: extraire depuis l'editionId (si format reconnaissable)
+    if (proposal?.editionId) {
+      const yearMatch = proposal.editionId.toString().match(/20\d{2}/)
       if (yearMatch) {
         return yearMatch[0]
       }
-      // Essayer de nettoyer l'editionId
-      const cleaned = proposal.editionId.replace('edition_', '').replace(/_/g, ' ')
-      return cleaned
     }
     
-    return null
+    console.warn('[getEditionYear] Aucune année trouvée pour:', {
+      editionId: proposal?.editionId,
+      type: proposal?.type,
+      hasEditionYear: !!proposal?.editionYear,
+      hasJustification: !!proposal?.justification
+    })
+    
+    return undefined
   }
 
   return {

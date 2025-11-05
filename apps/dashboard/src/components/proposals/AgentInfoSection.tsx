@@ -23,11 +23,18 @@ interface Proposal {
   id: string
   agent: {
     name: string
+    type?: string
   }
   confidence: number
   createdAt: string
   type: string
   status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+  // Champs enrichis pour affichage
+  eventName?: string
+  eventCity?: string
+  editionYear?: number
+  eventId?: string
+  editionId?: string
 }
 
 interface AgentInfoSectionProps {
@@ -81,6 +88,23 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
         
         {proposals.map((proposal, index) => (
           <Box key={proposal.id} sx={{ mb: 1.5, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
+            {/* Nom de l'événement et année de l'édition */}
+            {(proposal.eventName || proposal.editionYear) && (
+              <Box sx={{ mb: 1, pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+                {proposal.eventName && (
+                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+                    {proposal.eventName}
+                    {proposal.eventCity && ` - ${proposal.eventCity}`}
+                  </Typography>
+                )}
+                {proposal.editionYear && (
+                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+                    Édition : {proposal.editionYear}
+                  </Typography>
+                )}
+              </Box>
+            )}
+            
             <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                 {getStatusIcon(proposal.status)}
@@ -100,6 +124,11 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
             <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
               <PersonIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
               {proposal.agent.name}
+              {proposal.agent.type && (
+                <Typography component="span" variant="caption" sx={{ ml: 1, px: 0.5, py: 0.25, bgcolor: 'primary.light', borderRadius: 0.5, color: 'primary.contrastText', fontSize: '0.65rem' }}>
+                  {proposal.agent.type}
+                </Typography>
+              )}
             </Typography>
             
             <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1 }}>

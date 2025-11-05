@@ -80,6 +80,11 @@ export interface Proposal {
     metadata?: Record<string, any>
   }>
   confidence?: number
+  // Champs de contexte enrichis
+  eventName?: string
+  eventCity?: string
+  editionYear?: number
+  raceName?: string
   createdAt: string
   updatedAt: string
   reviewedAt?: string

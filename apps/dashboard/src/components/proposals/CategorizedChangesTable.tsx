@@ -2,10 +2,6 @@ import React, { useMemo } from 'react'
 import {
   Box,
   Typography,
-  Accordion,
-  AccordionSummary,
-  AccordionDetails,
-  Chip,
   Table,
   TableBody,
   TableCell,
@@ -17,10 +13,10 @@ import {
   MenuItem,
   IconButton,
   Tooltip,
-  Paper
+  Paper,
+  Chip
 } from '@mui/material'
 import {
-  ExpandMore as ExpandMoreIcon,
   Schedule as ScheduleIcon,
   LocationOn as LocationIcon,
   Euro as PriceIcon,
@@ -31,7 +27,7 @@ import {
   EditNote as EditNoteIcon
 } from '@mui/icons-material'
 import { ConsolidatedChange, ChangeOption } from './BaseChangesTable'
-import { groupChangesByCategory, FieldCategory } from '@/constants/fieldCategories'
+import { isFieldOfEntityType } from '@/constants/fieldCategories'
 import FieldEditor from './FieldEditor'
 
 interface CategorizedChangesTableProps {
@@ -75,13 +71,13 @@ const CategorizedChangesTable: React.FC<CategorizedChangesTableProps> = ({
 }) => {
   const [editingField, setEditingField] = React.useState<string | null>(null)
   
-  // Grouper les changements par catégorie
-  const categorizedChanges = useMemo(() => {
-    return groupChangesByCategory(changes, entityType)
+  // Filtrer les champs selon l'entityType
+  const filteredChanges = React.useMemo(() => {
+    return changes.filter(change => isFieldOfEntityType(change.field, entityType))
   }, [changes, entityType])
   
   // Si aucun changement, ne rien afficher
-  if (categorizedChanges.length === 0) return null
+  if (filteredChanges.length === 0) return null
   
   const handleStartEdit = (fieldName: string) => {
     const isFieldDisabled = disabled || (isFieldDisabledFn && isFieldDisabledFn(fieldName))
@@ -114,6 +110,7 @@ const CategorizedChangesTable: React.FC<CategorizedChangesTableProps> = ({
     if (fieldName === 'distance') return <DistanceIcon fontSize="small" />
     return <InfoIcon fontSize="small" />
   }
+  
 
   const renderFieldComparison = (change: ConsolidatedChange) => {
     const { field: fieldName } = change
@@ -303,59 +300,21 @@ const CategorizedChangesTable: React.FC<CategorizedChangesTableProps> = ({
         {actions}
       </Box>
       
-      <Box sx={{ p: 2 }}>
-        {categorizedChanges.map(({ category, changes: categoryChanges }) => (
-          <Accordion key={category.id} defaultExpanded disableGutters elevation={0} sx={{ mb: 1, '&:before': { display: 'none' } }}>
-            <AccordionSummary
-              expandIcon={<ExpandMoreIcon />}
-              sx={{
-                backgroundColor: 'action.hover',
-                borderRadius: 1,
-                '&:hover': {
-                  backgroundColor: 'action.selected'
-                }
-              }}
-            >
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%' }}>
-                <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                  {category.icon}
-                  <Typography variant="subtitle1" fontWeight={600}>
-                    {category.label}
-                  </Typography>
-                </Box>
-                <Chip 
-                  label={`${categoryChanges.length} ${categoryChanges.length > 1 ? 'champs' : 'champ'}`}
-                  size="small"
-                  color="primary"
-                  variant="outlined"
-                />
-                {category.description && (
-                  <Typography variant="caption" color="text.secondary" sx={{ flexGrow: 1 }}>
-                    {category.description}
-                  </Typography>
-                )}
-              </Box>
-            </AccordionSummary>
-            <AccordionDetails sx={{ p: 0 }}>
-              <TableContainer>
-                <Table size="small">
-                  <TableHead>
-                    <TableRow>
-                      <TableCell sx={{ width: '15%', minWidth: 120 }}>Champ</TableCell>
-                      {!isNewEvent && <TableCell sx={{ width: '20%', minWidth: 120 }}>Valeur actuelle</TableCell>}
-                      <TableCell sx={{ width: isNewEvent ? '50%' : '45%', minWidth: 200 }}>Valeur proposée</TableCell>
-                      <TableCell sx={{ width: isNewEvent ? '20%' : '15%', minWidth: 100 }}>Confiance</TableCell>
-                    </TableRow>
-                  </TableHead>
-                  <TableBody>
-                    {categoryChanges.map(renderFieldComparison)}
-                  </TableBody>
-                </Table>
-              </TableContainer>
-            </AccordionDetails>
-          </Accordion>
-        ))}
-      </Box>
+      <TableContainer>
+        <Table size="small">
+          <TableHead>
+            <TableRow>
+              <TableCell sx={{ width: '15%', minWidth: 120 }}>Champ</TableCell>
+              {!isNewEvent && <TableCell sx={{ width: '20%', minWidth: 120 }}>Valeur actuelle</TableCell>}
+              <TableCell sx={{ width: isNewEvent ? '50%' : '45%', minWidth: 200 }}>Valeur proposée</TableCell>
+              <TableCell sx={{ width: isNewEvent ? '20%' : '15%', minWidth: 100 }}>Confiance</TableCell>
+            </TableRow>
+          </TableHead>
+          <TableBody>
+            {filteredChanges.map(renderFieldComparison)}
+          </TableBody>
+        </Table>
+      </TableContainer>
     </Paper>
   )
 }

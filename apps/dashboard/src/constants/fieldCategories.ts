@@ -1,29 +1,7 @@
-import { ReactNode } from 'react'
-import {
-  Info as InfoIcon,
-  Language as LanguageIcon,
-  Event as EventIcon,
-  PersonAdd as PersonAddIcon,
-  Work as WorkIcon,
-  LocalShipping as LocalShippingIcon,
-  AttachMoney as AttachMoneyIcon,
-  Handshake as HandshakeIcon,
-  Straighten as StraightenIcon,
-  Terrain as TerrainIcon,
-  Category as CategoryIcon,
-  EuroSymbol as EuroIcon,
-  Groups as GroupsIcon,
-  Badge as BadgeIcon,
-  Assignment as AssignmentIcon,
-  Inventory as InventoryIcon,
-  Link as LinkIcon,
-  Storage as StorageIcon
-} from '@mui/icons-material'
-
 export interface FieldCategory {
   id: string
   label: string
-  icon?: ReactNode
+  iconName?: string // Nom de l'icône MUI
   description?: string
   fields: string[]
   priority: number // Pour l'ordre d'affichage
@@ -37,7 +15,7 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
   {
     id: 'event-basic',
     label: 'Informations de base',
-    icon: <InfoIcon />,
+    iconName: 'Info',
     description: 'Nom, localisation et adresse',
     entityType: 'EVENT',
     priority: 1,
@@ -57,7 +35,7 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
   {
     id: 'event-media',
     label: 'Médias et visibilité',
-    icon: <LanguageIcon />,
+    iconName: 'Language',
     description: 'Site web, réseaux sociaux et images',
     entityType: 'EVENT',
     priority: 2,
@@ -76,7 +54,7 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
   {
     id: 'event-metadata',
     label: 'Métadonnées',
-    icon: <StorageIcon />,
+    iconName: 'Storage',
     description: 'Source des données et statut',
     entityType: 'EVENT',
     priority: 3,
@@ -94,7 +72,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-dates',
     label: 'Dates de l\'édition',
-    icon: <EventIcon />,
+    iconName: 'Event',
     description: 'Dates de début, fin et fuseau horaire',
     entityType: 'EDITION',
     priority: 1,
@@ -108,7 +86,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-registration',
     label: 'Inscriptions',
-    icon: <PersonAddIcon />,
+    iconName: 'PersonAdd',
     description: 'Dates d\'ouverture/fermeture et nombre d\'inscrits',
     entityType: 'EDITION',
     priority: 2,
@@ -121,7 +99,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-status',
     label: 'Statut et organisation',
-    icon: <WorkIcon />,
+    iconName: 'Work',
     description: 'Statut calendrier, client et type',
     entityType: 'EDITION',
     priority: 3,
@@ -134,7 +112,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-bib-withdrawal',
     label: 'Retrait des dossards',
-    icon: <LocalShippingIcon />,
+    iconName: 'LocalShipping',
     description: 'Lieu et informations de retrait',
     entityType: 'EDITION',
     priority: 4,
@@ -152,7 +130,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-commerce',
     label: 'Commerce',
-    icon: <AttachMoneyIcon />,
+    iconName: 'AttachMoney',
     description: 'Devise, assurance et inclusions',
     entityType: 'EDITION',
     priority: 5,
@@ -167,7 +145,7 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-partnerships',
     label: 'Partenariats et affiliations',
-    icon: <HandshakeIcon />,
+    iconName: 'Handshake',
     description: 'Fédération et règlement',
     entityType: 'EDITION',
     priority: 6,
@@ -185,7 +163,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-basic',
     label: 'Informations de base',
-    icon: <InfoIcon />,
+    iconName: 'Info',
     description: 'Nom et date de départ',
     entityType: 'RACE',
     priority: 1,
@@ -198,7 +176,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-distances',
     label: 'Distances',
-    icon: <StraightenIcon />,
+    iconName: 'Straighten',
     description: 'Distances natation, vélo, course, etc.',
     entityType: 'RACE',
     priority: 2,
@@ -215,7 +193,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-elevations',
     label: 'Dénivelés',
-    icon: <TerrainIcon />,
+    iconName: 'Terrain',
     description: 'Dénivelés positifs et négatifs',
     entityType: 'RACE',
     priority: 3,
@@ -231,7 +209,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-classification',
     label: 'Classification',
-    icon: <CategoryIcon />,
+    iconName: 'Category',
     description: 'Type et catégorie de course',
     entityType: 'RACE',
     priority: 4,
@@ -246,7 +224,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-pricing',
     label: 'Tarification',
-    icon: <EuroIcon />,
+    iconName: 'EuroSymbol',
     description: 'Prix et type de paiement',
     entityType: 'RACE',
     priority: 5,
@@ -259,7 +237,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-teams',
     label: 'Équipes',
-    icon: <GroupsIcon />,
+    iconName: 'Groups',
     description: 'Taille min/max des équipes',
     entityType: 'RACE',
     priority: 6,
@@ -271,7 +249,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-licenses',
     label: 'Licences et justificatifs',
-    icon: <BadgeIcon />,
+    iconName: 'Badge',
     description: 'Type de licence et justificatifs requis',
     entityType: 'RACE',
     priority: 7,
@@ -284,7 +262,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-forms',
     label: 'Formulaires et inscriptions',
-    icon: <AssignmentIcon />,
+    iconName: 'Assignment',
     description: 'Champs demandés lors de l\'inscription',
     entityType: 'RACE',
     priority: 8,
@@ -301,7 +279,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-stock',
     label: 'Stock et disponibilité',
-    icon: <InventoryIcon />,
+    iconName: 'Inventory',
     description: 'Gestion du stock et disponibilité',
     entityType: 'RACE',
     priority: 9,
@@ -317,7 +295,7 @@ export const RACE_CATEGORIES: FieldCategory[] = [
   {
     id: 'race-integrations',
     label: 'Intégrations externes',
-    icon: <LinkIcon />,
+    iconName: 'Link',
     description: 'URLs et IDs externes',
     entityType: 'RACE',
     priority: 10,
