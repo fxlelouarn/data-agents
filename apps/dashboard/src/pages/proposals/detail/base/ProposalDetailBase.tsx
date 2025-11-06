@@ -17,6 +17,7 @@ import {
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
+import { useBlockValidation } from '@/hooks/useBlockValidation'
 import { 
   useProposal,
   useProposals, 
@@ -74,6 +75,12 @@ export interface ProposalContext {
   killDialogOpen: boolean
   setKillDialogOpen: (open: boolean) => void
   isEditionCanceled: boolean
+  // Validation par blocs
+  validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  unvalidateBlock: (blockKey: string) => Promise<void>
+  isBlockValidated: (blockKey: string) => boolean
+  isBlockPending: boolean
+  blockProposals: Record<string, string[]>
 }
 
 export interface ProposalDetailBaseProps {
@@ -254,6 +261,48 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     return consolidateRaceChanges([proposalData.data])
   }, [proposalData, consolidateRaceChanges])
   
+  // Définir proposal avant de l'utiliser
+  const proposal = proposalData?.data
+  
+  // Identifier les propositions par bloc (pour propositions individuelles)
+  const blockProposals = useMemo(() => {
+    if (!proposal) return {}
+    
+    const blocks: Record<string, string[]> = {}
+    
+    // Bloc Edition - tous les champs sauf organizer et racesToAdd
+    const hasEditionChanges = consolidatedChanges.some(c => 
+      !['organizer', 'racesToAdd'].includes(c.field)
+    )
+    if (hasEditionChanges) {
+      blocks['edition'] = [proposal.id]
+    }
+    
+    // Bloc Organisateur
+    const hasOrganizerChange = consolidatedChanges.some(c => c.field === 'organizer')
+    if (hasOrganizerChange) {
+      blocks['organizer'] = [proposal.id]
+    }
+    
+    // Bloc Courses
+    if (consolidatedRaceChanges.length > 0) {
+      blocks['races'] = [proposal.id]
+    }
+    
+    return blocks
+  }, [proposal, consolidatedChanges, consolidatedRaceChanges])
+  
+  // Hook de validation par blocs
+  const {
+    validateBlock,
+    unvalidateBlock,
+    isBlockValidated,
+    isPending: isBlockPending
+  } = useBlockValidation({
+    proposals: proposal ? [proposal] : [],
+    blockProposals
+  })
+  
   // Auto-sélection des meilleures valeurs au chargement
   React.useEffect(() => {
     const newSelections: Record<string, any> = {}
@@ -341,7 +390,6 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   }
   
   // Calculs pour l'interface
-  const proposal = proposalData?.data
   const eventId = proposal?.eventId
   const eventStatus = proposal?.eventStatus
   const isEventDead = eventStatus === 'DEAD'
@@ -376,7 +424,13 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     hasApproved,
     killDialogOpen,
     setKillDialogOpen,
-    isEditionCanceled
+    isEditionCanceled,
+    // Validation par blocs
+    validateBlock,
+    unvalidateBlock,
+    isBlockValidated,
+    isBlockPending,
+    blockProposals
   }
   
   if (isLoading) return <LinearProgress />

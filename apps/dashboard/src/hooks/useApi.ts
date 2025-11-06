@@ -168,14 +168,25 @@ export const useResetAgentCursor = () => {
     onSuccess: (response, id) => {
       queryClient.invalidateQueries({ queryKey: ['agents'] })
       queryClient.invalidateQueries({ queryKey: ['agents', id] })
-      enqueueSnackbar(response.message || 'Curseur réinitialisé avec succès', { variant: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['agents', id, 'state'] })
+      enqueueSnackbar(response.message || 'État réinitialisé avec succès', { variant: 'success' })
     },
     onError: (error: any) => {
       enqueueSnackbar(
-        error.response?.data?.error?.message || 'Erreur lors de la réinitialisation du curseur',
+        error.response?.data?.error?.message || 'Erreur lors de la réinitialisation',
         { variant: 'error' }
       )
     },
+  })
+}
+
+export const useAgentState = (id: string, key?: string) => {
+  return useQuery({
+    queryKey: ['agents', id, 'state', key],
+    queryFn: () => agentsApi.getState(id, key),
+    enabled: !!id,
+    staleTime: 10000, // 10 secondes
+    refetchInterval: 30000, // Rafraîchir toutes les 30s pour voir la progression
   })
 }
 

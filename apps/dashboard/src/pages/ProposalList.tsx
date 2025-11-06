@@ -43,7 +43,10 @@ import {
   ArrowDropDown as ArrowDropDownIcon,
   Event as EventIcon,
   Edit as EditIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  AddCircleOutline as AddCircleOutlineIcon,
+  EditOutlined as EditOutlinedIcon,
+  Update as UpdateIcon
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
@@ -69,6 +72,71 @@ const proposalTypeLabels: Record<ProposalType, string> = {
   EVENT_UPDATE: 'Modification événement',
   EDITION_UPDATE: 'Modification édition',
   RACE_UPDATE: 'Modification course',
+}
+
+const getProposalTypeStyle = (type: ProposalType) => {
+  switch(type) {
+    case 'NEW_EVENT':
+      return {
+        backgroundColor: '#10b981',
+        color: 'white',
+        borderColor: '#059669',
+        '& .MuiChip-icon': {
+          color: '#059669'
+        }
+      }
+    case 'EDITION_UPDATE':
+      return {
+        backgroundColor: '#3b82f6',
+        color: 'white',
+        borderColor: '#2563eb',
+        '& .MuiChip-icon': {
+          color: '#1d4ed8'
+        }
+      }
+    case 'EVENT_UPDATE':
+      return {
+        backgroundColor: '#8b5cf6',
+        color: 'white',
+        borderColor: '#7c3aed',
+        '& .MuiChip-icon': {
+          color: '#6d28d9'
+        }
+      }
+    case 'RACE_UPDATE':
+      return {
+        backgroundColor: '#f59e0b',
+        color: 'white',
+        borderColor: '#d97706',
+        '& .MuiChip-icon': {
+          color: '#b45309'
+        }
+      }
+    default:
+      return {
+        backgroundColor: '#6b7280',
+        color: 'white',
+        borderColor: '#4b5563',
+        '& .MuiChip-icon': {
+          color: '#374151'
+        }
+      }
+  }
+}
+
+const getProposalTypeIcon = (type: ProposalType) => {
+  switch(type) {
+    case 'NEW_EVENT':
+      return <AddCircleOutlineIcon sx={{ fontSize: 16 }} />
+    case 'EDITION_UPDATE':
+      return <EditOutlinedIcon sx={{ fontSize: 16 }} />
+    case 'EVENT_UPDATE':
+      return <UpdateIcon sx={{ fontSize: 16 }} />
+    case 'RACE_UPDATE':
+      return <EditIcon sx={{ fontSize: 16 }} />
+    default:
+      return null
+  }
 }
 
 const ProposalList: React.FC = () => {
@@ -395,10 +463,10 @@ const ProposalList: React.FC = () => {
       width: 200,
       renderCell: (params) => (
         <Chip
+          icon={getProposalTypeIcon(params.value as ProposalType)}
           size="small"
           label={proposalTypeLabels[params.value as ProposalType]}
-          color="info"
-          variant="outlined"
+          sx={getProposalTypeStyle(params.value as ProposalType)}
         />
       ),
     },
@@ -773,10 +841,10 @@ const ProposalList: React.FC = () => {
                     {[...new Set(proposals.map(p => p.type))].map((type) => (
                       <Chip
                         key={type}
+                        icon={getProposalTypeIcon(type as ProposalType)}
                         size="small"
                         label={proposalTypeLabels[type as ProposalType]}
-                        color="info"
-                        variant="outlined"
+                        sx={getProposalTypeStyle(type as ProposalType)}
                       />
                     ))}
                     {/* Afficher uniquement les statuts uniques */}
@@ -803,10 +871,10 @@ const ProposalList: React.FC = () => {
                           primary={
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                               <Chip
+                                icon={getProposalTypeIcon(proposal.type as ProposalType)}
                                 size="small"
                                 label={proposalTypeLabels[proposal.type as ProposalType]}
-                                color="primary"
-                                variant="outlined"
+                                sx={getProposalTypeStyle(proposal.type as ProposalType)}
                               />
                               <Typography component="span" variant="body2" color="text.secondary">
                                 par {proposal.agent.name}
