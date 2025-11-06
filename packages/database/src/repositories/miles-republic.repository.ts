@@ -172,6 +172,7 @@ export class MilesRepublicRepository {
     registrationClosingDate?: Date | null
     federationId?: string
     isActive?: boolean
+    type?: any  // RaceType (deprecated but still usable)
   }) {
     return this.milesDb.race.create({
       data: {
@@ -214,6 +215,15 @@ export class MilesRepublicRepository {
         edition: true,
         event: true
       }
+    })
+  }
+  
+  /**
+   * Delete a race
+   */
+  async deleteRace(raceId: number) {
+    return this.milesDb.race.delete({
+      where: { id: raceId }
     })
   }
 

@@ -300,6 +300,38 @@ export async function enrichProposal(proposal: any) {
           enriched.previousEditionStartDate = previousEdition.startDate
         }
       }
+      
+      // Pour EDITION_UPDATE, récupérer les courses existantes de l'édition
+      if (proposal.type === 'EDITION_UPDATE' && proposal.editionId) {
+        const numericEditionId = typeof proposal.editionId === 'string' && /^\d+$/.test(proposal.editionId)
+          ? parseInt(proposal.editionId)
+          : proposal.editionId
+        
+        const existingRaces = await connection.race.findMany({
+          where: { editionId: numericEditionId },
+          select: {
+            id: true,
+            name: true,
+            runDistance: true,
+            walkDistance: true,
+            swimDistance: true,
+            bikeDistance: true,
+            runPositiveElevation: true,
+            startDate: true,
+            type: true
+          },
+          orderBy: { name: 'asc' }
+        })
+        
+        enriched.existingRaces = existingRaces.map((race: any) => ({
+          id: race.id,
+          name: race.name,
+          distance: (race.runDistance || 0) + (race.walkDistance || 0) + (race.swimDistance || 0) + (race.bikeDistance || 0),
+          elevation: race.runPositiveElevation,
+          startDate: race.startDate,
+          type: race.type
+        }))
+      }
 
       return enriched
     } catch (error) {

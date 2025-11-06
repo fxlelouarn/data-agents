@@ -82,11 +82,22 @@ export interface Proposal {
   confidence?: number
   // Approbation par blocs
   approvedBlocks?: Record<string, boolean>
+  // Modifications utilisateur
+  userModifiedChanges?: Record<string, any>
   // Champs de contexte enrichis
   eventName?: string
   eventCity?: string
   editionYear?: number
   raceName?: string
+  // Courses existantes de l'édition (enrichies)
+  existingRaces?: Array<{
+    id: number
+    name: string
+    distance?: number
+    elevation?: number
+    type?: string
+    startDate?: string
+  }>
   createdAt: string
   updatedAt: string
   reviewedAt?: string

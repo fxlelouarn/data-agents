@@ -91,7 +91,7 @@ export class ProposalDomainService {
           if (!proposal.editionId) {
             throw new Error('EditionId manquant pour EDITION_UPDATE')
           }
-          result = await this.applyEditionUpdate(proposal.editionId, finalChanges, filteredSelectedChanges, options)
+          result = await this.applyEditionUpdate(proposal.editionId, finalChanges, filteredSelectedChanges, options, proposal)
           break
 
         case 'RACE_UPDATE':
@@ -215,7 +215,8 @@ export class ProposalDomainService {
     editionId: string,
     changes: any,
     selectedChanges: Record<string, any>,
-    options: ApplyOptions = {}
+    options: ApplyOptions = {},
+    proposal?: any
   ): Promise<ProposalApplicationResult> {
     try {
       const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
@@ -227,11 +228,23 @@ export class ProposalDomainService {
 
       // Separate races from other changes
       let racesChanges: any[] | undefined
+      let racesToAdd: any[] | undefined
+      let racesToDelete: number[] | undefined
       const updateData: Record<string, any> = { calendarStatus: 'CONFIRMED' }
 
       for (const [field, value] of Object.entries(selectedChanges)) {
         if (field === 'races') {
           racesChanges = value as any[]
+          continue
+        }
+        
+        if (field === 'racesToAdd') {
+          racesToAdd = this.extractNewValue(value) as any[]
+          continue
+        }
+        
+        if (field === 'racesToDelete') {
+          racesToDelete = value as number[]
           continue
         }
 
@@ -263,6 +276,81 @@ export class ProposalDomainService {
 
           const raceUpdateData = this.buildRaceUpdateData(raceChange)
           await milesRepo.updateRace(raceId, raceUpdateData)
+        }
+      }
+      
+      // Add races if any
+      if (racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
+        // Récupérer les modifications utilisateur depuis userModifiedChanges
+        const racesToAddFiltered = (proposal?.userModifiedChanges as any)?.racesToAddFiltered || []
+        const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
+        
+        // Filtrer les courses marquées pour suppression
+        const racesToAddEffective = racesToAdd.filter((_, index) => !racesToAddFiltered.includes(index))
+        
+        this.logger.info(`Ajout de ${racesToAddEffective.length} course(s) à l'édition ${numericEditionId}`)
+        for (let i = 0; i < racesToAdd.length; i++) {
+          if (racesToAddFiltered.includes(i)) {
+            this.logger.info(`Course index ${i} filtrée (supprimée par l'utilisateur)`)
+            continue
+          }
+          
+          const raceData = racesToAdd[i]
+          const editedData = raceEdits[`new-${i}`] || {}
+          
+          const racePayload: any = {
+            editionId: numericEditionId,
+            eventId: edition?.eventId,
+            name: editedData.name || raceData.name,
+            runDistance: editedData.distance ? parseFloat(editedData.distance) : raceData.distance,
+            runPositiveElevation: editedData.elevation ? parseFloat(editedData.elevation) : raceData.elevation,
+            startDate: raceData.startDate ? new Date(raceData.startDate) : null
+          }
+          
+          // Type est déprécié dans le schéma mais peut être utilisé
+          const finalType = editedData.type || raceData.type
+          if (finalType) {
+            racePayload.type = finalType
+          }
+          
+          await milesRepo.createRace(racePayload)
+        }
+      }
+      
+      // Update existing races if edited
+      const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
+      const existingRaceEdits = Object.keys(raceEdits)
+        .filter(key => key.startsWith('existing-'))
+        .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
+      
+      if (existingRaceEdits.length > 0) {
+        this.logger.info(`Mise à jour de ${existingRaceEdits.length} course(s) existante(s)`)
+        
+        // Récupérer les courses existantes enrichies
+        const existingRaces = (proposal as any).existingRaces || []
+        
+        for (const { index, edits } of existingRaceEdits) {
+          const race = existingRaces[index]
+          if (!race) continue
+          
+          const updateData: any = {}
+          
+          if (edits.name) updateData.name = edits.name
+          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
+          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
+          if (edits.type) updateData.type = edits.type
+          
+          if (Object.keys(updateData).length > 0) {
+            await milesRepo.updateRace(race.id, updateData)
+          }
+        }
+      }
+      
+      // Delete races if any
+      if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
+        this.logger.info(`Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
+        for (const raceId of racesToDelete) {
+          await milesRepo.deleteRace(raceId)
         }
       }
 

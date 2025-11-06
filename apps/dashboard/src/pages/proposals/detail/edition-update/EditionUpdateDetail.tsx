@@ -6,7 +6,7 @@ import ProposalJustificationsCard from '@/components/proposals/ProposalJustifica
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
-import RacesToAddSection from '@/components/proposals/edition-update/RacesToAddSection'
+import RacesChangesTable from '@/components/proposals/edition-update/RacesChangesTable'
 
 interface EditionUpdateDetailProps {
   proposalId: string
@@ -96,12 +96,13 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
               />
             )}
             
-            {racesToAddChange && (
-              <RacesToAddSection
-                change={racesToAddChange}
-                onApprove={() => {/* Single proposal - no field-specific approve */}}
-                disabled={!allPending || isPending || isEventDead}
+            {((racesToAddChange && racesToAddChange.options[0]?.proposedValue?.length > 0) || (proposal?.existingRaces && proposal.existingRaces.length > 0)) && (
+              <RacesChangesTable
+                existingRaces={proposal?.existingRaces || []}
+                racesToAdd={racesToAddChange?.options[0]?.proposedValue || []}
                 proposalId={proposalId}
+                proposal={proposal}
+                disabled={!allPending || isPending || isEventDead}
               />
             )}
             

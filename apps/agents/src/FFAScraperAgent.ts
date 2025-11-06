@@ -936,6 +936,34 @@ export class FFAScraperAgent extends BaseAgent {
         }
       }
 
+      // Calculer la prochaine position de scraping
+      const allMonths = generateMonthsToScrape(config.scrapingWindowMonths)
+      const lastProcessedMonth = months[months.length - 1]
+      const lastProcessedLigue = ligues[ligues.length - 1]
+      
+      const lastMonthIndex = allMonths.indexOf(lastProcessedMonth)
+      const lastLigueIndex = FFA_LIGUES.indexOf(lastProcessedLigue as any)
+      
+      // Avancer au mois suivant ou à la ligue suivante si tous les mois sont traités
+      if (lastMonthIndex + 1 < allMonths.length) {
+        // Il reste des mois à traiter pour cette ligue
+        progress.currentMonth = allMonths[lastMonthIndex + 1]
+        progress.currentLigue = lastProcessedLigue
+        context.logger.info(`⏭️  Prochaine position: ${progress.currentLigue} - ${progress.currentMonth}`)
+      } else {
+        // Tous les mois traités pour cette ligue, passer à la suivante
+        if (lastLigueIndex + 1 < FFA_LIGUES.length) {
+          progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
+          progress.currentMonth = allMonths[0] // Recommencer au premier mois
+          context.logger.info(`⏭️  Ligue complétée, passage à: ${progress.currentLigue} - ${progress.currentMonth}`)
+        } else {
+          // Toutes les ligues complétées, recommencer au début
+          progress.currentLigue = FFA_LIGUES[0]
+          progress.currentMonth = allMonths[0]
+          context.logger.info(`🔄 Cycle complet terminé, redémarrage: ${progress.currentLigue} - ${progress.currentMonth}`)
+        }
+      }
+
       // Mettre à jour la progression
       progress.totalCompetitionsScraped += totalCompetitions
       progress.lastCompletedAt = new Date()
