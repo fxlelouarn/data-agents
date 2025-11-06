@@ -27,6 +27,7 @@ import {
 } from '@mui/icons-material'
 import { useAgent, useRunAgent, useAgents, useFailureReport, useToggleAgent, useDeleteAgent } from '@/hooks/useApi'
 import AgentNavigation from '@/components/agents/AgentNavigation'
+import ScraperProgressCard from '@/components/ScraperProgressCard'
 
 const AgentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -360,7 +361,7 @@ const AgentDetail: React.FC = () => {
         
         {/* Colonne secondaire - Détails de l'agent */}
         <Grid item xs={12} md={4}>
-          <Card>
+          <Card sx={{ mb: 3 }}>
             <CardContent>
               <Typography variant="h6" sx={{ mb: 2 }}>Détails de l'agent</Typography>
               <List dense>
@@ -400,6 +401,11 @@ const AgentDetail: React.FC = () => {
               </List>
             </CardContent>
           </Card>
+          
+          {/* Progression du scraping (pour agents scraper) */}
+          {(agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
+            <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
+          )}
         </Grid>
       </Grid>
       
