@@ -210,10 +210,12 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
     const fs = require('fs')
 
     const schemaDir = path.dirname(schemaPath)
+    // Miles Republic utilise client-miles, pas client
     const possiblePaths = [
-      path.join(schemaDir, 'node_modules', '.prisma', 'client'),
-      path.join(projectRoot, 'node_modules', '.prisma', 'client'),
-      path.join(schemaDir, '..', 'node_modules', '.prisma', 'client')
+      path.join(projectRoot, 'apps', 'node_modules', '.prisma', 'client-miles'),
+      path.join(schemaDir, '..', 'node_modules', '.prisma', 'client-miles'),
+      path.join(projectRoot, 'node_modules', '.prisma', 'client-miles'),
+      path.join(schemaDir, 'node_modules', '.prisma', 'client-miles')
     ]
 
     for (const tryPath of possiblePaths) {
@@ -236,8 +238,10 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
   private async createDefaultMilesConnection(connectionUrl: string, logger: AgentLogger): Promise<any> {
     try {
       const path = require('path')
-      const agentsDir = path.resolve(__dirname, '../../../../apps/agents')
-      const milesClient = await import(`${agentsDir}/node_modules/.prisma/client/index.js`)
+      // Client Miles Republic est dans apps/node_modules/.prisma/client-miles
+      const projectRoot = path.resolve(__dirname, '../../../..')
+      const clientPath = path.join(projectRoot, 'apps', 'node_modules', '.prisma', 'client-miles')
+      const milesClient = await import(clientPath)
 
       logger.info('Utilisation du client Prisma Miles Republic par défaut')
 
