@@ -53,6 +53,33 @@ Script d'installation et de configuration de l'environnement de test.
 - ✅ Teste l'installation avec l'agent de test
 - ✅ Affiche un résumé et les prochaines étapes
 
+### `verify-deployment.sh` 🚀
+Script de vérification pré-déploiement pour Render.
+
+**Usage :**
+```bash
+./scripts/verify-deployment.sh
+```
+
+**Ce que vérifie le script :**
+- ✅ Node.js version >= 18
+- ✅ Schémas Prisma (principal + Miles Republic)
+- ✅ Fichiers de configuration (package.json, turbo.json, render.yaml, Dockerfile)
+- ✅ Sécurité (aucun fichier .env commité)
+- ✅ Génération des clients Prisma (les deux)
+- ✅ Build complet de l'application
+- ✅ Fichiers compilés dans dist/
+- ✅ Dépendances critiques
+- ✅ Configuration render.yaml correcte
+
+**Quand l'utiliser :**
+- Avant de pousser sur Git pour déployer sur Render
+- Après avoir modifié les schémas Prisma
+- Pour diagnostiquer des problèmes de build
+- Avant une démo importante
+
+**Voir aussi :** [DEPLOY.md](../DEPLOY.md) - Guide complet de déploiement
+
 ## 🚀 Installation rapide
 
 Si vous venez de cloner le projet ou voulez configurer l'environnement de test :
