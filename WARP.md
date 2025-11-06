@@ -83,6 +83,9 @@ data-agents/
 │   ├── api/                # API Node.js/Express
 │   ├── dashboard/          # Interface de gestion React
 │   └── agents/             # Agents d'extraction de données
+│       ├── src/ffa/        # Agent FFA avec algorithme de matching
+│       │   └── MATCHING.md # Documentation de l'algorithme de matching
+│       └── prisma/         # Schéma Miles Republic
 ├── packages/
 │   ├── types/              # Types partagés (OBLIGATOIRE)
 │   ├── agent-framework/    # Framework pour créer des agents
@@ -183,6 +186,33 @@ Les agents sont des processus qui :
 - S'exécutent selon un calendrier défini
 - Peuvent être activés/désactivés depuis l'interface d'administration
 
+### Agent FFA
+
+L'agent FFA scrape les compétitions depuis le site de la Fédération Française d'Athlétisme et utilise un **algorithme de matching avancé** pour les associer aux événements existants dans Miles Republic.
+
+**Documentation complète** : `apps/agents/src/ffa/MATCHING.md`
+
+**Points clés** :
+- **2 passes SQL** : Même département + Nom, puis Nom OU Ville (tous départements)
+- **Fuzzy matching** : fuse.js avec scoring pondéré (50% nom, 30% ville, 20% keywords)
+- **Bonus département** : +15% si même département mais villes différentes (v2.1)
+- **Proximité temporelle** : Fenêtre ±90 jours avec pénalité 70-100% selon écart de date (v2.1)
+- **Gestion des villes différentes** : Trouve "Diab'olo Run" à Dijon même si la FFA dit Saint-Apollinaire
+- **Normalisation** : Gestion des accents, apostrophes, ponctuation
+- **Seuil** : 0.75 (accepte les matches avec incertitude temporelle)
+
+**Exemples v2.1** :
+
+1. **Diab'olo Run** (date exacte) :
+   - FFA : Saint-Apollinaire (dept: 21) - 24/11/2025
+   - Base : Dijon (dept: 21) - 24/11/2025
+   - Résultat : Score 1.000 (bonus département +0.15, aucune pénalité temporelle)
+
+2. **Trail des Ducs** (date éloignée) :
+   - FFA : Valentigney (dept: 25) - 16/11/2025
+   - Base : Montbéliard (dept: 25) - 18/02/2025
+   - Résultat : Score 0.769 (bonus département +0.15, pénalité temporelle -27%)
+
 ## Changelog
 
 ### 2025-01-05 - Fix ConnectionManager pour multi-schema Prisma
@@ -268,3 +298,47 @@ npm run build:prod
 
 #### Documentation
 - Mise à jour de `docs/PROPOSAL-APPLICATION.md`
+
+### 2025-11-06 - Fix: Connexions multiples à Miles Republic
+
+**Problème résolu :** Au chargement d'une page de propositions, l'API créait 20+ connexions simultanées à Miles Republic au lieu de réutiliser une connexion unique.
+
+#### Symptômes
+```
+info: Connexion créée pour: localhost
+info: Connexion établie à la base de données: localhost
+[... répété 20+ fois ...]
+```
+
+#### Cause
+La fonction `enrichProposal()` appelée pour chaque proposition (via `Promise.all()`) initialisait `DatabaseManager` mais ne cachait pas la **connexion Prisma** elle-même. Chaque appel concurrent exécutait `getConnection()` qui, bien que retournant la même connexion depuis le cache du `DatabaseManager`, créait quand même une initialisation multiple due à la concurrence.
+
+#### Solution
+**Cacher la connexion Prisma au niveau du module** dans `apps/api/src/routes/proposals.ts` :
+
+```typescript
+// Variables de cache au niveau module
+let enrichProposalDbManager: any = null
+let milesRepublicConnectionId: string | null = null
+let milesRepublicConnection: any = null // ✅ Cache la connexion Prisma
+
+export async function enrichProposal(proposal: any) {
+  // Initialisation lazy UNIQUE au premier appel
+  if (!milesRepublicConnection) {
+    // ... initialiser DatabaseManager
+    milesRepublicConnection = await enrichProposalDbManager.getConnection(id)
+  }
+  
+  // ✅ Réutiliser la connexion en cache
+  const connection = milesRepublicConnection
+}
+```
+
+#### Bénéfices
+- **Performance** : 1 seule connexion au lieu de 20+
+- **Scalabilité** : Pas d'épuisement du pool PostgreSQL
+- **Logs propres** : 1 ligne au lieu de 20+
+- **Coût réduit** : Moins de ressources réseau/DB
+
+#### Documentation
+- `docs/DATABASE-CONNECTION-POOLING.md` - Documentation complète du problème et de la solution
