@@ -1,8 +1,10 @@
 import { CronJob } from 'cron'
-import { DatabaseService, createApiLogger, createAgentLogger } from '@data-agents/database'
+import { createApiLogger, createAgentLogger } from '@data-agents/database'
 import { agentRegistry, AgentConfig, AgentContext, createLogger } from '@data-agents/agent-framework'
 import { AgentFailureMonitor } from './agent-failure-monitor'
 import { settingsService } from '../config/settings'
+import { getDatabaseServiceSync } from './database'
+import type { DatabaseService } from '@data-agents/database'
 import * as fs from 'fs'
 import * as path from 'path'
 
@@ -15,7 +17,7 @@ export class AgentScheduler {
   private logger = createApiLogger().child({ component: 'scheduler' })
 
   constructor() {
-    this.db = new DatabaseService()
+    this.db = getDatabaseServiceSync()
     this.failureMonitor = new AgentFailureMonitor()
   }
 

@@ -1,9 +1,9 @@
 import { Router } from 'express'
-import { DatabaseService } from '@data-agents/database'
+import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler } from '../middleware/error-handler'
 
 const router = Router()
-const db = new DatabaseService()
+const db = getDatabaseServiceSync()
 
 // GET /api/health - Health check endpoint
 router.get('/', asyncHandler(async (req: any, res: any) => {

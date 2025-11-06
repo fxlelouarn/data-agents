@@ -1,13 +1,13 @@
 import { Router } from 'express'
 import { param, query, body, validationResult } from 'express-validator'
-import { DatabaseService } from '@data-agents/database'
-import { ProposalApplicationService } from '@data-agents/database/src/services/ProposalApplicationService'
+import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichProposal } from './proposals'
 
 const router = Router()
-const db = new DatabaseService()
-const applicationService = new ProposalApplicationService(db.prisma)
+const db = getDatabaseServiceSync()
+// Use db.proposalApplication instead of direct instantiation
+const applicationService = db.proposalApplication
 
 // Validation middleware
 const validateRequest = (req: any, res: any, next: any) => {

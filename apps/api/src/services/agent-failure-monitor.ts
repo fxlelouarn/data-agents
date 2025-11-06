@@ -1,5 +1,7 @@
-import { DatabaseService, createApiLogger } from '@data-agents/database'
+import { createApiLogger } from '@data-agents/database'
 import { settingsService } from '../config/settings'
+import { getDatabaseServiceSync } from './database'
+import type { DatabaseService } from '@data-agents/database'
 
 export interface ConsecutiveFailureCheck {
   agentId: string
@@ -20,7 +22,7 @@ export class AgentFailureMonitor {
   private logger = createApiLogger().child({ component: 'failure-monitor' })
 
   constructor() {
-    this.db = new DatabaseService()
+    this.db = getDatabaseServiceSync()
   }
 
   /**

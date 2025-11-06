@@ -1,10 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
-import { DatabaseService } from '@data-agents/database'
+import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 
 const router = Router()
-const db = new DatabaseService()
+const db = getDatabaseServiceSync()
 
 // Validation middleware
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {

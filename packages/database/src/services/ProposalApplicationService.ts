@@ -1,8 +1,10 @@
 import { PrismaClient } from '@prisma/client'
 import { IProposalApplicationService, ProposalApplicationResult, ApplyOptions } from './interfaces'
-import { DatabaseManager } from '@data-agents/agent-framework'
 import { ProposalRepository } from '../repositories/proposal.repository'
 import { ProposalDomainService } from './proposal-domain.service'
+
+// DatabaseManager type to avoid circular dependency
+type DatabaseManager = any
 
 /**
  * Proposal Application Service - Facade Pattern
@@ -27,14 +29,19 @@ export class ProposalApplicationService implements IProposalApplicationService {
   private dbManager: DatabaseManager
   private domainService: ProposalDomainService
   
-  constructor(private prisma: PrismaClient) {
+  constructor(private prisma: PrismaClient, dbManager?: DatabaseManager) {
     const logger = {
       info: (msg: string, data?: any) => console.log(`[INFO] ${msg}`, data || ''),
       error: (msg: string, data?: any) => console.error(`[ERROR] ${msg}`, data || ''),
       warn: (msg: string, data?: any) => console.warn(`[WARN] ${msg}`, data || ''),
       debug: (msg: string, data?: any) => console.debug(`[DEBUG] ${msg}`, data || '')
     }
-    this.dbManager = DatabaseManager.getInstance(logger)
+    
+    // Use provided dbManager or throw error (will be provided by API)
+    if (!dbManager) {
+      throw new Error('DatabaseManager must be provided to ProposalApplicationService')
+    }
+    this.dbManager = dbManager
     
     const proposalRepo = new ProposalRepository(prisma)
     this.domainService = new ProposalDomainService(proposalRepo, this.dbManager, logger)

@@ -1,11 +1,11 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
-import { DatabaseService } from '@data-agents/database'
+import { getDatabaseServiceSync } from '../services/database'
 import { AgentScheduler } from '../services/scheduler'
 import { asyncHandler, createError } from '../middleware/error-handler'
 
 const router = Router()
-const db = new DatabaseService()
+const db = getDatabaseServiceSync()
 const scheduler = new AgentScheduler()
 
 // Function to validate cron expressions with support for intervals
@@ -249,6 +249,51 @@ router.post('/:id/reinstall', [
   })
 }))
 
+// GET /api/agents/:id/state - Get agent state (progress, cursor, etc.)
+router.get('/:id/state', [
+  param('id').isString().notEmpty(),
+  query('key').optional().isString(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { key } = req.query
+
+  const agent = await db.getAgent(id)
+  if (!agent) {
+    throw createError(404, 'Agent not found', 'AGENT_NOT_FOUND')
+  }
+
+  if (key) {
+    // Récupérer une clé spécifique
+    const state = await db.prisma.agentState.findFirst({
+      where: {
+        agentId: id,
+        key: key as string
+      }
+    })
+    
+    res.json({
+      success: true,
+      data: state ? state.value : null
+    })
+  } else {
+    // Récupérer toutes les clés
+    const states = await db.prisma.agentState.findMany({
+      where: { agentId: id }
+    })
+    
+    const stateMap = states.reduce((acc, s) => {
+      acc[s.key] = s.value
+      return acc
+    }, {} as Record<string, any>)
+    
+    res.json({
+      success: true,
+      data: stateMap
+    })
+  }
+}))
+
 // POST /api/agents/:id/reset-cursor - Reset agent cursor to zero
 router.post('/:id/reset-cursor', [
   param('id').isString().notEmpty(),
@@ -261,17 +306,14 @@ router.post('/:id/reset-cursor', [
     throw createError(404, 'Agent not found', 'AGENT_NOT_FOUND')
   }
 
-  // Delete or reset the cursor state for this agent
+  // Delete all state for this agent (cursor, progress, etc.)
   await db.prisma.agentState.deleteMany({
-    where: {
-      agentId: id,
-      key: 'cursor'
-    }
+    where: { agentId: id }
   })
 
   res.json({
     success: true,
-    message: 'Agent cursor reset successfully to zero'
+    message: 'Agent state reset successfully'
   })
 }))
 

@@ -25,15 +25,28 @@ export class DatabaseService {
   private connectionService: IConnectionService
   private stateService: IAgentStateService
 
-  constructor(private db: PrismaClient = prisma) {
+  constructor(private db: PrismaClient = prisma, dbManager?: any) {
     // Initialize services with dependency injection
     this.connectionService = new ConnectionService(this.db)
     this.agentService = new AgentService(this.db, this.connectionService)
     this.proposalService = new ProposalService(this.db)
-    this.proposalApplicationService = new ProposalApplicationService(this.db)
+    
+    // ProposalApplicationService needs DatabaseManager - lazy load it
+    if (dbManager) {
+      this.proposalApplicationService = new ProposalApplicationService(this.db, dbManager)
+    } else {
+      // Lazy initialization - will be set when DatabaseManager is available
+      this.proposalApplicationService = null as any
+    }
+    
     this.runService = new RunService(this.db)
     this.logService = new LogService(this.db)
     this.stateService = new AgentStateService(this.db)
+  }
+  
+  // Method to set DatabaseManager after initialization
+  setDatabaseManager(dbManager: any) {
+    this.proposalApplicationService = new ProposalApplicationService(this.db, dbManager)
   }
 
   // Expose prisma client for advanced operations

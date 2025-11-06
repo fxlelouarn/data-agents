@@ -1,11 +1,12 @@
 import { Router, Request, Response } from 'express'
 import { query, validationResult } from 'express-validator'
-import { DatabaseService, getMeilisearchService, MeilisearchEvent } from '@data-agents/database'
+import { getMeilisearchService, MeilisearchEvent } from '@data-agents/database'
+import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { settingsService } from '../config/settings'
 
 const router = Router()
-const db = new DatabaseService()
+const db = getDatabaseServiceSync()
 
 // Validation middleware
 const validateRequest = (req: Request, res: Response, next: Function) => {

@@ -1,11 +1,9 @@
 // Export Prisma client and types
 export { prisma } from './prisma'
 export * from '@prisma/client'
-export {
-  AgentType,
-  LogLevel,
-  ProposalType,
-} from '@data-agents/types'
+
+// Re-export Prisma enums explicitly for better IDE support
+export { AgentType, LogLevel, ProposalType, ProposalStatus } from '@prisma/client'
 
 // Export the refactored DatabaseService
 export { DatabaseService } from './DatabaseService'

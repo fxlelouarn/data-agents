@@ -1,7 +1,9 @@
 import { ProposalRepository } from '../repositories/proposal.repository'
 import { MilesRepublicRepository } from '../repositories/miles-republic.repository'
-import { DatabaseManager } from '@data-agents/agent-framework'
 import { ApplyOptions, ProposalApplicationResult } from './interfaces'
+
+// DatabaseManager type to avoid circular dependency
+type DatabaseManager = any
 
 /**
  * Domain Service - Business logic for proposal application
@@ -384,7 +386,7 @@ export class ProposalDomainService {
 
     const availableDbs = await this.dbManager.getAvailableDatabases()
     const milesDb = availableDbs.find(
-      db => db.type === 'miles-republic' || db.name.toLowerCase().includes('miles')
+      (db: any) => db.type === 'miles-republic' || db.name.toLowerCase().includes('miles')
     )
 
     if (!milesDb) {

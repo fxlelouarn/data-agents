@@ -22,16 +22,10 @@ export class ConfigLoader {
     const configs: DatabaseConfig[] = []
 
     try {
-      const { PrismaClient } = await import('@prisma/client')
-      const prisma = new PrismaClient({
-        datasources: {
-          db: {
-            url: process.env.DATABASE_URL
-          }
-        }
-      })
-
-      await prisma.$connect()
+      // Use the shared Prisma instance from @data-agents/database
+      const { prisma } = await import('@data-agents/database')
+      
+      // No need to connect, it's already connected
       
       const dbConnections = await prisma.databaseConnection.findMany({
         where: {
@@ -58,8 +52,8 @@ export class ConfigLoader {
         
         configs.push(config)
       }
-
-      await prisma.$disconnect()
+      
+      // No need to disconnect, prisma instance is managed by @data-agents/database
       
       this.logger.info(`${dbConnections.length} configurations chargées depuis la BD`)
 
