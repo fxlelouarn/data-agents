@@ -152,31 +152,33 @@ router.post('/', [
  * @param proposal - The proposal to enrich
  * @returns Enriched proposal with additional context fields
  */
-// Singleton DatabaseManager instance for enrichProposal
+// Singleton DatabaseManager instance for enrichProposal - INIT MODULE LEVEL
 let enrichProposalDbManager: any = null
 let milesRepublicConnectionId: string | null = null
+let milesRepublicConnection: any = null // Cache de la connexion Prisma réutilisable
 
 export async function enrichProposal(proposal: any) {
   // EVENT_UPDATE: Enrich with event name, city and status
   if (proposal.type === 'EVENT_UPDATE' && proposal.eventId) {
     try {
-      // Lazy load and cache Miles Republic connection
-      if (!milesRepublicConnectionId) {
-        const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      // Lazy load and cache Miles Republic connection (une seule fois au démarrage)
+      if (!milesRepublicConnection) {
+        const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
           where: { type: 'MILES_REPUBLIC', isActive: true }
         })
-        if (!milesRepublicConnection) return proposal
-        milesRepublicConnectionId = milesRepublicConnection.id
-      }
+        if (!milesRepublicConn) return proposal
+        milesRepublicConnectionId = milesRepublicConn.id
 
-      // Lazy load DatabaseManager singleton
-      if (!enrichProposalDbManager) {
+        // Lazy load DatabaseManager singleton
         const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
         const logger = createConsoleLogger('API', 'proposals-api')
         enrichProposalDbManager = DatabaseManager.getInstance(logger)
+        
+        // Obtenir et cacher la connexion Prisma
+        milesRepublicConnection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
       }
 
-      const connection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
+      const connection = milesRepublicConnection
 
       const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
         ? parseInt(proposal.eventId)
@@ -208,23 +210,24 @@ export async function enrichProposal(proposal: any) {
   // Pour les EDITION_UPDATE et NEW_EVENT
   if (proposal.type === 'EDITION_UPDATE' || proposal.type === 'NEW_EVENT') {
     try {
-      // Lazy load and cache Miles Republic connection
-      if (!milesRepublicConnectionId) {
-        const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      // Lazy load and cache Miles Republic connection (une seule fois au démarrage)
+      if (!milesRepublicConnection) {
+        const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
           where: { type: 'MILES_REPUBLIC', isActive: true }
         })
-        if (!milesRepublicConnection) return proposal
-        milesRepublicConnectionId = milesRepublicConnection.id
-      }
+        if (!milesRepublicConn) return proposal
+        milesRepublicConnectionId = milesRepublicConn.id
 
-      // Lazy load DatabaseManager singleton
-      if (!enrichProposalDbManager) {
+        // Lazy load DatabaseManager singleton
         const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
         const logger = createConsoleLogger('API', 'proposals-api')
         enrichProposalDbManager = DatabaseManager.getInstance(logger)
+        
+        // Obtenir et cacher la connexion Prisma
+        milesRepublicConnection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
       }
 
-      const connection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
+      const connection = milesRepublicConnection
 
       let numericEventId: number | undefined
       let editionYear: number | undefined
