@@ -1,10 +1,10 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
-import { DatabaseService } from '@data-agents/database'
+import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 
 const router = Router()
-const db = new DatabaseService()
+const db = getDatabaseServiceSync()
 
 // Validation middleware
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {
@@ -152,20 +152,31 @@ router.post('/', [
  * @param proposal - The proposal to enrich
  * @returns Enriched proposal with additional context fields
  */
+// Singleton DatabaseManager instance for enrichProposal
+let enrichProposalDbManager: any = null
+let milesRepublicConnectionId: string | null = null
+
 export async function enrichProposal(proposal: any) {
   // EVENT_UPDATE: Enrich with event name, city and status
   if (proposal.type === 'EVENT_UPDATE' && proposal.eventId) {
     try {
-      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
-        where: { type: 'MILES_REPUBLIC', isActive: true }
-      })
+      // Lazy load and cache Miles Republic connection
+      if (!milesRepublicConnectionId) {
+        const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+          where: { type: 'MILES_REPUBLIC', isActive: true }
+        })
+        if (!milesRepublicConnection) return proposal
+        milesRepublicConnectionId = milesRepublicConnection.id
+      }
 
-      if (!milesRepublicConnection) return proposal
+      // Lazy load DatabaseManager singleton
+      if (!enrichProposalDbManager) {
+        const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+        const logger = createConsoleLogger('API', 'proposals-api')
+        enrichProposalDbManager = DatabaseManager.getInstance(logger)
+      }
 
-      const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
-      const logger = createConsoleLogger('API', 'proposals-api')
-      const dbManager = DatabaseManager.getInstance(logger)
-      const connection = await dbManager.getConnection(milesRepublicConnection.id)
+      const connection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
 
       const numericEventId = typeof proposal.eventId === 'string' && /^\d+$/.test(proposal.eventId)
         ? parseInt(proposal.eventId)
@@ -197,16 +208,23 @@ export async function enrichProposal(proposal: any) {
   // Pour les EDITION_UPDATE et NEW_EVENT
   if (proposal.type === 'EDITION_UPDATE' || proposal.type === 'NEW_EVENT') {
     try {
-      const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
-        where: { type: 'MILES_REPUBLIC', isActive: true }
-      })
+      // Lazy load and cache Miles Republic connection
+      if (!milesRepublicConnectionId) {
+        const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+          where: { type: 'MILES_REPUBLIC', isActive: true }
+        })
+        if (!milesRepublicConnection) return proposal
+        milesRepublicConnectionId = milesRepublicConnection.id
+      }
 
-      if (!milesRepublicConnection) return proposal
+      // Lazy load DatabaseManager singleton
+      if (!enrichProposalDbManager) {
+        const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+        const logger = createConsoleLogger('API', 'proposals-api')
+        enrichProposalDbManager = DatabaseManager.getInstance(logger)
+      }
 
-      const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
-      const logger = createConsoleLogger('API', 'proposals-api')
-      const dbManager = DatabaseManager.getInstance(logger)
-      const connection = await dbManager.getConnection(milesRepublicConnection.id)
+      const connection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
 
       let numericEventId: number | undefined
       let editionYear: number | undefined
@@ -515,28 +533,63 @@ router.put('/:id', [
   // If approved, create a ProposalApplication but don't apply yet
   let createdApplication = null
   if (status === 'APPROVED') {
-    // Check if application already exists
+    // Check if application already exists for this proposal
     const existingApp = await db.prisma.proposalApplication.findFirst({
       where: { proposalId: id }
     })
 
     if (!existingApp) {
-      createdApplication = await db.prisma.proposalApplication.create({
-        data: {
-          proposalId: id,
-          status: 'PENDING'
-        }
+      // Check if there's an existing PENDING application with identical changes
+      // This avoids creating duplicate updates for grouped proposals
+      const proposalChanges = JSON.stringify(proposal.changes)
+      const allPendingApplications = await db.prisma.proposalApplication.findMany({
+        where: { status: 'PENDING' },
+        include: { proposal: true }
       })
+      
+      const duplicateApp = allPendingApplications.find(app => {
+        // Check if same type and same target (event/edition/race)
+        if (app.proposal.type !== proposal.type) return false
+        if (app.proposal.eventId !== proposal.eventId) return false
+        if (app.proposal.editionId !== proposal.editionId) return false
+        if (app.proposal.raceId !== proposal.raceId) return false
+        
+        // Check if changes are identical
+        const appChanges = JSON.stringify(app.proposal.changes)
+        return appChanges === proposalChanges
+      })
+      
+      if (duplicateApp) {
+        // Don't create a new application - reuse the existing one
+        await db.createLog({
+          agentId: proposal.agentId,
+          level: 'INFO',
+          message: `Proposal ${id} approved - Identical update already pending (${duplicateApp.id})`,
+          data: { 
+            proposalId: id,
+            existingApplicationId: duplicateApp.id,
+            reason: 'duplicate_changes'
+          }
+        })
+      } else {
+        // Create a new application
+        createdApplication = await db.prisma.proposalApplication.create({
+          data: {
+            proposalId: id,
+            status: 'PENDING'
+          }
+        })
 
-      await db.createLog({
-        agentId: proposal.agentId,
-        level: 'INFO',
-        message: `Proposal ${id} approved - Application created and ready for deployment`,
-        data: { 
-          proposalId: id,
-          applicationId: createdApplication.id
-        }
-      })
+        await db.createLog({
+          agentId: proposal.agentId,
+          level: 'INFO',
+          message: `Proposal ${id} approved - Application created and ready for deployment`,
+          data: { 
+            proposalId: id,
+            applicationId: createdApplication.id
+          }
+        })
+      }
     } else {
       await db.createLog({
         agentId: proposal.agentId,
@@ -898,18 +951,56 @@ router.post('/bulk-approve', [
       })
     }
 
-    // Create ProposalApplication for each approved proposal (only if not exists)
+    // Create ProposalApplication for each approved proposal (only if not exists and not duplicate)
+    // Group proposals by identical changes to avoid duplicate updates
     const applicationsToCreate = []
+    const processedChanges = new Set<string>()
+    
     for (const proposal of pendingProposals) {
       const existingApp = await tx.proposalApplication.findFirst({
         where: { proposalId: proposal.id }
       })
       
-      if (!existingApp) {
+      if (existingApp) continue // Already has an application
+      
+      // Create a unique key based on type, target, and changes
+      const changeKey = JSON.stringify({
+        type: proposal.type,
+        eventId: proposal.eventId,
+        editionId: proposal.editionId,
+        raceId: proposal.raceId,
+        changes: proposal.changes
+      })
+      
+      // Skip if we've already processed this exact change in this batch
+      if (processedChanges.has(changeKey)) {
+        continue
+      }
+      
+      // Check if there's already a PENDING application with identical changes
+      const allPendingApplications = await tx.proposalApplication.findMany({
+        where: { status: 'PENDING' },
+        include: { proposal: true }
+      })
+      
+      const duplicateApp = allPendingApplications.find(app => {
+        if (app.proposal.type !== proposal.type) return false
+        if (app.proposal.eventId !== proposal.eventId) return false
+        if (app.proposal.editionId !== proposal.editionId) return false
+        if (app.proposal.raceId !== proposal.raceId) return false
+        
+        const appChanges = JSON.stringify(app.proposal.changes)
+        const proposalChanges = JSON.stringify(proposal.changes)
+        return appChanges === proposalChanges
+      })
+      
+      if (!duplicateApp) {
+        // No duplicate found - create new application
         applicationsToCreate.push({
           proposalId: proposal.id,
           status: 'PENDING' as const
         })
+        processedChanges.add(changeKey)
       }
     }
 
