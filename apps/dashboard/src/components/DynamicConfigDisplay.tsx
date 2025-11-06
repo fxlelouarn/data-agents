@@ -8,7 +8,7 @@ import {
   CardContent,
   Divider
 } from '@mui/material'
-import { ConfigField, ConfigCategory, ConfigSchema } from '@data-agents/agent-framework'
+import { ConfigField, ConfigCategory, ConfigSchema } from '@data-agents/types'
 
 interface DynamicConfigDisplayProps {
   configSchema: ConfigSchema

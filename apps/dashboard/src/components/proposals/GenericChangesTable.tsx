@@ -34,7 +34,7 @@ export interface GenericChangesTableProps {
   isNewEvent: boolean
   selectedChanges: Record<string, any>
   onFieldSelect?: (fieldName: string, value: any) => void
-  onFieldApprove: (fieldName: string, value: any) => void
+  onFieldApprove?: (fieldName: string, value: any) => void
   onFieldReject?: (fieldName: string) => void
   onFieldModify?: (fieldName: string, newValue: any, reason?: string) => void
   userModifiedChanges?: Record<string, any>

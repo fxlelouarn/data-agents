@@ -124,7 +124,6 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           <>
             <AgentCard
               agent={{
-                id: proposal.agent.id,
                 name: proposal.agent.name,
                 type: proposal.agent.type
               }}

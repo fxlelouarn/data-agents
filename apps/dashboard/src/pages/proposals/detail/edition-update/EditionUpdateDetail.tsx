@@ -33,7 +33,13 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
           isPending,
           isEventDead,
           isEditionCanceled,
-          proposal
+          proposal,
+          // Validation par blocs
+          validateBlock,
+          unvalidateBlock,
+          isBlockValidated,
+          isBlockPending,
+          blockProposals
         } = context
         
         // Séparer les champs standards des champs spéciaux
@@ -65,8 +71,13 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 formatValue={formatValue}
                 formatAgentsList={formatAgentsList}
                 timezone={editionTimezone}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('edition') || isEventDead}
                 isEditionCanceled={isEditionCanceled || isEventDead}
+                isBlockValidated={isBlockValidated('edition')}
+                onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('edition')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             
@@ -76,7 +87,12 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onApprove={() => {/* Single proposal - no field-specific approve */}}
                 onFieldModify={handleFieldModify}
                 userModifiedChanges={userModifiedChanges}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('organizer') || isEventDead}
+                isBlockValidated={isBlockValidated('organizer')}
+                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             
@@ -97,8 +113,13 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onRaceApprove={() => {/* Single proposal - handled by approve all */}}
                 onFieldModify={handleRaceFieldModify}
                 userModifiedRaceChanges={userModifiedRaceChanges}
-                disabled={!allPending || isPending || isEventDead}
+                disabled={isBlockValidated('races') || isEventDead}
                 isEditionCanceled={isEditionCanceled || isEventDead}
+                isBlockValidated={isBlockValidated('races')}
+                onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('races')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             
@@ -121,7 +142,6 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
           <>
             <AgentCard
               agent={{
-                id: proposal.agent.id,
                 name: proposal.agent.name,
                 type: proposal.agent.type
               }}

@@ -277,17 +277,18 @@ const AgentEdit: React.FC = () => {
           </Button>
           
           <Box sx={{ display: 'flex', gap: 1 }}>
-            <Button
-              variant="outlined"
-              size="small"
-              startIcon={<RefreshIcon />}
-              onClick={() => handleResetCursor()}
-              disabled={resetCursorMutation.isPending}
-              color="warning"
-              title="Réinitialise le curseur de traitement de l'agent à zéro"
-            >
-              {resetCursorMutation.isPending ? 'Réinitialisation...' : 'Réinitialiser'}
-            </Button>
+            <Tooltip title="Réinitialise complètement l'état de l'agent (progression, curseur, etc.)">
+              <Button
+                variant="outlined"
+                size="small"
+                startIcon={<RefreshIcon />}
+                onClick={() => handleResetCursor()}
+                disabled={resetCursorMutation.isPending}
+                color="warning"
+              >
+                {resetCursorMutation.isPending ? 'Réinitialisation...' : 'Réinitialiser l\'avancement'}
+              </Button>
+            </Tooltip>
             
             <Button
               variant="outlined"
