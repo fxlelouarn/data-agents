@@ -275,6 +275,15 @@ export async function findCandidateEvents(
   sourceDb: any
 ): Promise<Array<{ id: string, name: string, city: string, editions?: any[] }>> {
   try {
+    // DEBUG: Vérifier sourceDb
+    console.log('🔍 [MATCHER DEBUG] findCandidateEvents appelée', {
+      sourceDbDefined: !!sourceDb,
+      sourceDbType: typeof sourceDb,
+      hasEvent: sourceDb && typeof sourceDb.Event !== 'undefined',
+      hasEventLower: sourceDb && typeof sourceDb.event !== 'undefined',
+      sourceDbKeys: sourceDb ? Object.keys(sourceDb).filter(k => !k.startsWith('$')).slice(0, 15) : 'NO_SOURCEDB'
+    })
+    
     // Calculer la fenêtre temporelle (±60 jours)
     const startDate = new Date(date)
     startDate.setDate(startDate.getDate() - 60)
@@ -290,7 +299,7 @@ export async function findCandidateEvents(
     // Passe 1 : Rechercher avec nom ET ville (plus restrictif, prioritaire)
     const namePrefix = nameWords.length > 0 ? nameWords[0].substring(0, 5) : ''
     
-    let allEvents = await sourceDb.Event.findMany({
+    let allEvents = await sourceDb.event.findMany({
       where: {
         AND: [
           {
@@ -341,7 +350,7 @@ export async function findCandidateEvents(
     
     // Passe 2 : Si peu de résultats, élargir avec OR
     if (allEvents.length < 10) {
-      const moreEvents = await sourceDb.Event.findMany({
+      const moreEvents = await sourceDb.event.findMany({
         where: {
           AND: [
             {
@@ -406,7 +415,7 @@ export async function findCandidateEvents(
     // Passe 3 : Si toujours peu de résultats et que le nom est distinctif,
     // rechercher uniquement par nom (pour gérer les cas de villes différentes)
     if (allEvents.length < 5 && namePrefix.length >= 5) {
-      const nameOnlyEvents = await sourceDb.Event.findMany({
+      const nameOnlyEvents = await sourceDb.event.findMany({
         where: {
           AND: [
             {

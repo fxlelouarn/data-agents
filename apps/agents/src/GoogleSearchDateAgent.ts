@@ -1,5 +1,5 @@
-import { BaseAgent } from '@data-agents/agent-framework'
-import { AgentType, IAgentStateService, AgentStateService } from '@data-agents/database'
+import { BaseAgent, AgentType } from '@data-agents/agent-framework'
+import { IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
 import { GoogleSearchDateAgentConfigSchema } from './GoogleSearchDateAgent.configSchema'
@@ -68,7 +68,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       id: config.id || 'google-search-date-agent',
       name: config.name || 'Google Search Date Agent',
       description: 'Agent qui recherche les dates d\'événements via Google Search et propose des mises à jour',
-      type: AgentType.EXTRACTOR,
+      type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */6 * * *', // Toutes les 6 heures par défaut
       isActive: config.isActive ?? true,
       config: {
@@ -264,9 +264,9 @@ export class GoogleSearchDateAgent extends BaseAgent {
       
       this.logger.info('📊 Exécution de la requête Prisma...')
       
-      // Vérifier que this.sourceDb a bien la méthode Event (majuscule - schéma Miles Republic)
-      if (!this.sourceDb || !this.sourceDb.Event) {
-        throw new Error('La base source ne contient pas le modèle "Event" - vérifiez la configuration de la base de données')
+      // Vérifier que this.sourceDb a bien la méthode event (minuscule - modèle Prisma)
+      if (!this.sourceDb || !this.sourceDb.event) {
+        throw new Error('La base source ne contient pas le modèle "event" - vérifiez la configuration de la base de données')
       }
       
       // Calculer les années à traiter (année courante et suivante)
@@ -317,7 +317,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
         const eventIdNumbers = eventIds.map((row: {id: number, estimatedDate: Date | null}) => row.id)
         const eventOrderMap = new Map<number, number>(eventIds.map((row: {id: number, estimatedDate: Date | null}, index: number) => [row.id, index]))
         
-        const eventsFromDb = await this.sourceDb.Event.findMany({
+        const eventsFromDb = await this.sourceDb.event.findMany({
           where: {
             id: {
               in: eventIdNumbers
