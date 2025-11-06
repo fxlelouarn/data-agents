@@ -23,6 +23,7 @@ COPY turbo.json ./
 COPY tsconfig.json ./
 
 # Copy workspace packages
+COPY packages/types/package.json ./packages/types/
 COPY packages/database/package.json ./packages/database/
 COPY packages/agent-framework/package.json ./packages/agent-framework/
 
@@ -37,11 +38,13 @@ RUN npm ci --only=production
 COPY packages/ ./packages/
 COPY apps/ ./apps/
 
-# Generate Prisma client
-RUN cd packages/database && npx prisma generate
+# Generate all Prisma clients (main + Miles Republic)
+# Order matters: main schema first, then specialized schemas
+RUN cd packages/database && npx prisma generate --schema=prisma/schema.prisma
+RUN cd apps/agents && npx prisma generate --schema=prisma/miles-republic.prisma
 
-# Build the application
-RUN npm run build
+# Build the application (types -> database -> framework -> agents -> api)
+RUN npm run build:prod
 
 # Production stage
 FROM node:20-alpine AS runner
