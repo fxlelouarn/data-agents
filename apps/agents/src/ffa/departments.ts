@@ -132,26 +132,33 @@ export function getDepartmentName(code: string | null | undefined): string {
 }
 
 /**
- * Normalise un code département pour l'affichage (2 chiffres)
+ * Normalise un code département pour l'affichage
  * 
- * @param code Code département (ex: "063", "06")
- * @returns Code normalisé sur 2 chiffres (ex: "06")
+ * Règles :
+ * - Codes DOM-TOM (971-976) : garder 3 chiffres
+ * - Codes métropole avec zéro devant (021, 063) : retirer le zéro (-> 21, 63)
+ * - Autres codes : garder tels quels
+ * 
+ * @param code Code département (ex: "063", "06", "974")
+ * @returns Code normalisé (ex: "63", "06", "974")
  */
 export function normalizeDepartmentCode(code: string | null | undefined): string {
   if (!code) return ''
   
   const trimmed = code.trim()
   
-  // Si c'est un code numérique sur 3 chiffres, retirer le zéro de gauche
-  if (/^\d{3}$/.test(trimmed)) {
-    return trimmed.substring(1) // "063" -> "63", mais devrait être "06"... wait
+  // Cas spécial : DOM-TOM (codes 971-976) -> garder 3 chiffres
+  if (/^97[1-6]$/.test(trimmed)) {
+    return trimmed
   }
   
-  // En fait, si on a "063", ça correspond au département 63 (Puy-de-Dôme)
-  // Il faut donc juste retirer le zéro de gauche s'il y a 3 chiffres et que ça commence par 0
+  // Codes métropole avec zéro devant : "0XX" -> "XX"
+  // Exemples : "021" -> "21", "063" -> "63", "069" -> "69"
   if (/^0\d{2}$/.test(trimmed)) {
-    return trimmed.substring(1) // "063" -> "63"... mais 63 != 06
+    return trimmed.substring(1)
   }
   
+  // Cas spécial Corse : garder tel quel (2A, 2B)
+  // Tous les autres codes : garder tels quels
   return trimmed
 }

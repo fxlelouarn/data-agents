@@ -10,6 +10,7 @@
 import { FFACompetitionDetails, FFARace, MatchResult, FFAScraperConfig } from './types'
 import Fuse from 'fuse.js'
 import { removeStopwords, getPrimaryKeyword, extractKeywords } from './stopwords'
+import { normalizeDepartmentCode } from './departments'
 
 /**
  * Match une compétition FFA avec un événement Miles Republic existant
@@ -26,7 +27,8 @@ export async function matchCompetition(
     const cleanedName = removeEditionNumber(competition.competition.name)
     const searchName = normalizeString(cleanedName)
     const searchCity = normalizeString(competition.competition.city)
-    const searchDepartment = competition.competition.department
+    // Normaliser le code département pour retirer le zéro devant ("021" -> "21")
+    const searchDepartment = normalizeDepartmentCode(competition.competition.department)
     const searchDate = competition.competition.date
     const searchYear = searchDate.getFullYear().toString()
 
@@ -336,14 +338,16 @@ function levenshteinDistance(str1: string, str2: string): number {
 
 /**
  * Normalise une chaîne pour la comparaison
+ * Préserve les apostrophes pour les noms comme "Diab'olo", "L'Échappée", etc.
  */
 function normalizeString(str: string): string {
   return str
     .toLowerCase()
     .normalize('NFD')
-    .replace(/[\u0300-\u036f]/g, '') // Retirer accents
-    .replace(/[^\w\s]/g, ' ')        // Retirer ponctuation
-    .replace(/\s+/g, ' ')            // Normaliser espaces
+    .replace(/[\u0300-\u036f]/g, '')       // Retirer accents
+    .replace(/[''‛]/g, "'")                // Unifier apostrophes typographiques vers ASCII
+    .replace(/[^\w\s']/g, ' ')             // Retirer ponctuation SAUF apostrophes
+    .replace(/\s+/g, ' ')                  // Normaliser espaces
     .trim()
 }
 
