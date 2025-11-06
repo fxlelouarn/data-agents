@@ -7,8 +7,8 @@
  * - Créer des propositions de création/modification d'événements, éditions et courses
  */
 
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
-import { AgentType, IAgentStateService, AgentStateService, prisma, ProposalType } from '@data-agents/database'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
+import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import { FFAScraperAgentConfigSchema } from './FFAScraperAgent.configSchema'
 import { 
   FFAScraperConfig, 
@@ -30,6 +30,7 @@ import {
 } from './ffa/scraper'
 import { matchCompetition, calculateAdjustedConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
+import { hasIdenticalPendingProposal, hasNewInformation, filterNewChanges } from './ffa/deduplication'
 
 export class FFAScraperAgent extends BaseAgent {
   private sourceDb: any
@@ -41,7 +42,7 @@ export class FFAScraperAgent extends BaseAgent {
       id: config.id || 'ffa-scraper-agent',
       name: config.name || 'FFA Scraper Agent',
       description: 'Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied',
-      type: AgentType.EXTRACTOR,
+      type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */12 * * *', // Toutes les 12 heures par défaut
       isActive: config.isActive ?? true,
       config: {
@@ -71,8 +72,22 @@ export class FFAScraperAgent extends BaseAgent {
    * @deprecated Cette méthode utilise maintenant connectToSource() de BaseAgent
    */
   private async initializeSourceConnection(config: FFAScraperConfig): Promise<void> {
+    this.logger.debug('🔍 [DEBUG] initializeSourceConnection appelée', {
+      hasSourceDb: !!this.sourceDb,
+      sourceDatabase: config.sourceDatabase
+    })
+    
     if (!this.sourceDb) {
+      this.logger.debug('🔍 [DEBUG] Appel de connectToSource...')
       this.sourceDb = await this.connectToSource(config.sourceDatabase)
+      
+      this.logger.debug('🔍 [DEBUG] Résultat de connectToSource', {
+        sourceDbDefined: !!this.sourceDb,
+        sourceDbType: typeof this.sourceDb,
+        hasEventModel: this.sourceDb && typeof this.sourceDb.event !== 'undefined',
+        hasEventModelCapital: this.sourceDb && typeof this.sourceDb.Event !== 'undefined',
+        sourceDbKeys: this.sourceDb ? Object.keys(this.sourceDb).slice(0, 10) : []
+      })
     }
   }
 
@@ -109,6 +124,7 @@ export class FFAScraperAgent extends BaseAgent {
 
   /**
    * Détermine les prochaines ligues/mois à scraper
+   * Respecte le cooldown global (rescanDelayDays) avant de recommencer un cycle complet
    */
   private getNextTargets(
     progress: ScrapingProgress,
@@ -116,6 +132,32 @@ export class FFAScraperAgent extends BaseAgent {
   ): { ligues: string[], months: string[] } {
     // Générer la liste des mois dans la fenêtre
     const allMonths = generateMonthsToScrape(config.scrapingWindowMonths)
+    
+    // Vérifier si on a terminé un cycle complet (toutes les ligues)
+    const allLiguesCompleted = FFA_LIGUES.every(ligue => {
+      const completedMonthsForLigue = progress.completedMonths[ligue] || []
+      // Une ligue est complète si elle a scanné tous les mois de la fenêtre
+      return allMonths.every(month => completedMonthsForLigue.includes(month))
+    })
+    
+    if (allLiguesCompleted && progress.lastCompletedAt) {
+      // Calculer le temps écoulé depuis le dernier cycle complet
+      const daysSinceLastComplete = 
+        (Date.now() - new Date(progress.lastCompletedAt).getTime()) / (1000 * 60 * 60 * 24)
+      
+      if (daysSinceLastComplete < config.rescanDelayDays) {
+        this.logger.info(`⏸️  Cooldown actif: ${Math.ceil(daysSinceLastComplete)}/${config.rescanDelayDays} jours écoulés depuis le dernier cycle complet`)
+        this.logger.info(`⏭️  Prochain scan dans ${Math.ceil(config.rescanDelayDays - daysSinceLastComplete)} jours`)
+        // Retourner des listes vides pour indiquer qu'il faut attendre
+        return { ligues: [], months: [] }
+      }
+      
+      // Le cooldown est écoulé, recommencer un nouveau cycle
+      this.logger.info(`🔄 Cooldown terminé (${Math.ceil(daysSinceLastComplete)} jours), redémarrage d'un nouveau cycle complet`)
+      progress.completedMonths = {}
+      progress.currentLigue = FFA_LIGUES[0]
+      progress.currentMonth = allMonths[0]
+    }
     
     // Déterminer les ligues à traiter
     const currentLigueIndex = FFA_LIGUES.indexOf(progress.currentLigue as any)
@@ -570,7 +612,6 @@ export class FFAScraperAgent extends BaseAgent {
       // Créer un nouvel événement
       proposals.push({
         type: ProposalType.NEW_EVENT,
-        eventName: competition.competition.name,
         changes: {
           name: {
             new: competition.competition.name,
@@ -650,6 +691,9 @@ export class FFAScraperAgent extends BaseAgent {
           type: 'text',
           content: `Nouvelle compétition FFA: ${competition.competition.name}`,
           metadata: {
+            eventName: competition.competition.name,
+            eventCity: competition.competition.city,
+            editionYear: competition.competition.date.getFullYear(),
             ffaId: competition.competition.ffaId,
             confidence,
             source: competition.competition.detailUrl,
@@ -719,19 +763,84 @@ export class FFAScraperAgent extends BaseAgent {
             })
           }
           
-          // Si on a des changements, créer la proposition
+          // Si on a des changements, vérifier la déduplication
           if (Object.keys(changes).length > 0) {
-            context.logger.info(`📝 Proposition EDITION_UPDATE pour ${matchResult.event!.name} (édition ${matchResult.edition.id})`, {
-              changesCount: Object.keys(changes).length,
-              changeTypes: Object.keys(changes)
+            // Récupérer les propositions en attente pour cette édition
+            const pendingProposals = await this.prisma.proposal.findMany({
+              where: {
+                editionId: matchResult.edition.id.toString(),
+                status: 'PENDING',
+                type: ProposalType.EDITION_UPDATE
+              },
+              select: {
+                id: true,
+                type: true,
+                eventId: true,
+                editionId: true,
+                raceId: true,
+                changes: true,
+                status: true,
+                createdAt: true
+              }
             })
+            
+            // Vérifier si une proposition identique existe déjà
+            if (hasIdenticalPendingProposal(changes, pendingProposals)) {
+              context.logger.info(`⏭️  Proposition identique déjà en attente pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
+                pendingCount: pendingProposals.length,
+                changesHash: require('crypto').createHash('sha256').update(JSON.stringify(changes)).digest('hex').substring(0, 8)
+              })
+              return proposals // Ne pas créer de nouvelle proposition
+            }
+            
+            // Filtrer pour ne garder que les nouvelles informations
+            const filteredChanges = filterNewChanges(changes, fullEdition, pendingProposals)
+            
+            if (Object.keys(filteredChanges).length === 0) {
+              context.logger.info(`⏭️  Aucune nouvelle information pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
+                originalChangesCount: Object.keys(changes).length,
+                pendingProposalsCount: pendingProposals.length
+              })
+              return proposals
+            }
+            
+            // Log si on a filtré des changements
+            if (Object.keys(filteredChanges).length < Object.keys(changes).length) {
+              context.logger.info(`🔍 Filtrage des changements pour ${matchResult.event!.name}:`, {
+                original: Object.keys(changes).length,
+                filtered: Object.keys(filteredChanges).length,
+                removed: Object.keys(changes).filter(k => !filteredChanges[k])
+              })
+            }
+            
+            context.logger.info(`📝 Proposition EDITION_UPDATE pour ${matchResult.event!.name} (édition ${matchResult.edition.id})`, {
+              changesCount: Object.keys(filteredChanges).length,
+              changeTypes: Object.keys(filteredChanges),
+              pendingProposalsChecked: pendingProposals.length
+            })
+            
+            // Ajouter les métadonnées de contexte dans la justification
+            const enrichedJustifications = justifications.map((justif, index) => {
+              if (index === 0) {
+                return {
+                  ...justif,
+                  metadata: {
+                    ...justif.metadata,
+                    eventName: matchResult.event!.name,
+                    eventCity: matchResult.event!.city,
+                    editionYear: fullEdition.year ? parseInt(fullEdition.year) : undefined
+                  }
+                }
+              }
+              return justif
+            })
+            
             proposals.push({
               type: ProposalType.EDITION_UPDATE,
-              eventName: matchResult.event!.name,
-              eventId: matchResult.event!.id,
-              editionId: matchResult.edition.id,
-              changes,
-              justification: justifications
+              eventId: matchResult.event!.id.toString(),
+              editionId: matchResult.edition.id.toString(),
+              changes: filteredChanges,
+              justification: enrichedJustifications
             })
           }
         }
@@ -757,6 +866,15 @@ export class FFAScraperAgent extends BaseAgent {
 
       // Initialiser la connexion source
       await this.initializeSourceConnection(config)
+      
+      // Vérifier que la connexion a été établie
+      if (!this.sourceDb) {
+        throw new Error(`Échec de la connexion à la base de données source: ${config.sourceDatabase}`)
+      }
+      
+      context.logger.info('✅ Connexion à la base source établie', {
+        sourceDatabase: config.sourceDatabase
+      })
       
       // Charger la progression
       const progress = await this.loadProgress()
@@ -842,7 +960,6 @@ export class FFAScraperAgent extends BaseAgent {
         } catch (error) {
           context.logger.error(`Erreur lors de la création d'une proposition`, { 
             type: proposal.type,
-            eventName: proposal.eventName,
             error: String(error) 
           })
         }
