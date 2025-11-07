@@ -32,17 +32,19 @@ interface ExistingRace {
   name: string
   distance?: number
   elevation?: number
-  type?: string
   startDate?: string
+  categoryLevel1?: string
+  categoryLevel2?: string
 }
 
 interface RaceToAdd {
   name: string
-  type?: string
   distance?: number
   startDate?: string
   elevation?: number
   registrationUrl?: string
+  categoryLevel1?: string
+  categoryLevel2?: string
 }
 
 interface RacesChangesTableProps {
@@ -63,9 +65,10 @@ type RaceField = {
 
 const RACE_FIELDS: RaceField[] = [
   { key: 'name', label: 'Nom' },
+  { key: 'categoryLevel1', label: 'Catégorie 1' },
+  { key: 'categoryLevel2', label: 'Catégorie 2' },
   { key: 'distance', label: 'Distance (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'elevation', label: 'D+ (m)', format: (v) => v ? `${v} m` : '-' },
-  { key: 'type', label: 'Type', format: (v) => v ? String(v).toUpperCase() : '-' },
 ]
 
 const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
@@ -174,9 +177,10 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const getRaceCurrentValue = (race: ExistingRace, field: string): any => {
     switch (field) {
       case 'name': return race.name
+      case 'categoryLevel1': return race.categoryLevel1
+      case 'categoryLevel2': return race.categoryLevel2
       case 'distance': return race.distance
       case 'elevation': return race.elevation
-      case 'type': return race.type
       default: return null
     }
   }
@@ -184,9 +188,10 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const getRaceProposedValue = (race: RaceToAdd, field: string): any => {
     switch (field) {
       case 'name': return race.name
+      case 'categoryLevel1': return race.categoryLevel1
+      case 'categoryLevel2': return race.categoryLevel2
       case 'distance': return race.distance
       case 'elevation': return race.elevation
-      case 'type': return race.type
       default: return null
     }
   }

@@ -42,10 +42,11 @@ interface RacesToAddSectionProps {
 
 interface RaceToAdd {
   name: string
-  type?: string
   distance?: number
   startDate?: string
   registrationUrl?: string
+  categoryLevel1?: string
+  categoryLevel2?: string
 }
 
 interface ExistingRace {
@@ -53,8 +54,9 @@ interface ExistingRace {
   name: string
   distance?: number
   elevation?: number
-  type?: string
   startDate?: string
+  categoryLevel1?: string
+  categoryLevel2?: string
 }
 
 const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove, disabled, proposalId, proposal }) => {
@@ -173,12 +175,13 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
   
   races.forEach((race, raceIndex) => {
     const raceFields = [
-      { label: 'Nom', currentValue: null, proposedValue: race.name },
-      { label: 'Type', currentValue: null, proposedValue: race.type },
-      { label: 'Distance (km)', currentValue: null, proposedValue: race.distance },
-      { label: 'Date', currentValue: null, proposedValue: race.startDate ? new Date(race.startDate).toLocaleDateString('fr-FR') : null },
-      { label: 'URL inscription', currentValue: null, proposedValue: race.registrationUrl }
-    ].filter(f => f.proposedValue) // Ne garder que les champs qui ont une valeur
+      { label: 'Nom', currentValue: null, proposedValue: race.name, alwaysShow: true },
+      { label: 'Catégorie 1', currentValue: null, proposedValue: race.categoryLevel1 || null, alwaysShow: true },
+      { label: 'Catégorie 2', currentValue: null, proposedValue: race.categoryLevel2 || null, alwaysShow: true },
+      { label: 'Distance (km)', currentValue: null, proposedValue: race.distance, alwaysShow: false },
+      { label: 'Date', currentValue: null, proposedValue: race.startDate ? new Date(race.startDate).toLocaleDateString('fr-FR') : null, alwaysShow: false },
+      { label: 'URL inscription', currentValue: null, proposedValue: race.registrationUrl, alwaysShow: false }
+    ].filter(f => f.alwaysShow || f.proposedValue) // Toujours afficher Nom, Cat1, Cat2, sinon que si valeur
     
     raceFields.forEach((field, fieldIndex) => {
       rows.push({
@@ -201,11 +204,6 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
           <Typography variant="body2" sx={{ fontSize: '0.8rem' }}>{value}</Typography>
         </Link>
       )
-    }
-    
-    if (fieldLabel === 'Type') {
-      // Afficher en majuscule
-      return <Chip size="small" label={String(value).toUpperCase()} variant="outlined" />
     }
     
     return <Typography variant="body2">{value}</Typography>
