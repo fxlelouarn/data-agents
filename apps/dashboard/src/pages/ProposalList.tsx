@@ -150,6 +150,17 @@ const ProposalList: React.FC = () => {
   const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
   const [creationType, setCreationType] = useState<'NEW_EVENT' | 'EDIT_EVENT'>('NEW_EVENT')
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 50 })
+  
+  // Charger l'ordre de tri depuis localStorage au montage
+  const [groupSort, setGroupSort] = useState<'date-asc' | 'date-desc' | 'created-desc'>(() => {
+    const saved = localStorage.getItem('proposalGroupSort')
+    return (saved as 'date-asc' | 'date-desc' | 'created-desc') || 'date-asc'
+  })
+  
+  // Sauvegarder l'ordre de tri dans localStorage quand il change
+  React.useEffect(() => {
+    localStorage.setItem('proposalGroupSort', groupSort)
+  }, [groupSort])
 
   const { data: proposalsData, isLoading, refetch } = useProposals(
     { 
@@ -243,6 +254,56 @@ const ProposalList: React.FC = () => {
     
     return groups
   }, [filteredProposals])
+  
+  // Trier les groupes selon le critère sélectionné
+  const sortedGroupKeys = useMemo(() => {
+    const keys = Object.keys(groupedProposals)
+    
+    return keys.sort((keyA, keyB) => {
+      const groupA = groupedProposals[keyA]
+      const groupB = groupedProposals[keyB]
+      
+      if (groupSort === 'created-desc') {
+        // Tri par date de création : plus récent en premier
+        const latestA = Math.max(...groupA.map(p => new Date(p.createdAt).getTime()))
+        const latestB = Math.max(...groupB.map(p => new Date(p.createdAt).getTime()))
+        return latestB - latestA
+      }
+      
+      // Tri par startDate proposée
+      // Extraire la startDate minimale de chaque groupe (date la plus proche)
+      const getMinStartDate = (proposals: typeof filteredProposals) => {
+        const dates: number[] = []
+        
+        for (const proposal of proposals) {
+          // Chercher startDate dans changes
+          if (proposal.changes?.startDate) {
+            const startDate = typeof proposal.changes.startDate === 'object' && proposal.changes.startDate.new
+              ? proposal.changes.startDate.new
+              : proposal.changes.startDate
+            if (startDate) {
+              dates.push(new Date(startDate).getTime())
+            }
+          }
+        }
+        
+        // Retourner la date la plus proche (minimum)
+        // Si aucune date, retourner Infinity pour mettre à la fin
+        return dates.length > 0 ? Math.min(...dates) : Infinity
+      }
+      
+      const dateA = getMinStartDate(groupA)
+      const dateB = getMinStartDate(groupB)
+      
+      if (groupSort === 'date-asc') {
+        // startDate la plus proche en premier (ordre croissant)
+        return dateA - dateB
+      } else {
+        // startDate la plus éloignée en premier (ordre décroissant)
+        return dateB - dateA
+      }
+    })
+  }, [groupedProposals, groupSort])
   
   const handleToggleGroup = (groupKey: string, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -747,6 +808,22 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
+            {viewMode === 'grouped' && (
+              <Grid item xs={12} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Tri</InputLabel>
+                  <Select
+                    value={groupSort}
+                    label="Tri"
+                    onChange={(e) => setGroupSort(e.target.value as 'date-asc' | 'date-desc' | 'created-desc')}
+                  >
+                    <MenuItem value="date-asc">startDate proche en premier</MenuItem>
+                    <MenuItem value="date-desc">startDate éloignée en premier</MenuItem>
+                    <MenuItem value="created-desc">createdAt récent en premier</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
           </Grid>
         </CardContent>
       </Card>
@@ -782,7 +859,8 @@ const ProposalList: React.FC = () => {
             </Box>
           )}
           
-          {Object.entries(groupedProposals).map(([groupKey, proposals]) => {
+          {sortedGroupKeys.map(groupKey => {
+            const proposals = groupedProposals[groupKey]
             const isExpanded = expandedGroups.has(groupKey)
             return (
             <Accordion key={groupKey} expanded={isExpanded} sx={{ mb: 2 }}>
