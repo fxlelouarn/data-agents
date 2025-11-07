@@ -424,15 +424,33 @@ export class FFAScraperAgent extends BaseAgent {
 
         if (!matchingRace) {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
+          
+          // Mapper le type FFA vers categoryLevel1
+          let categoryLevel1: string | undefined
+          switch (ffaRace.type) {
+            case 'running':
+              categoryLevel1 = 'RUNNING'
+              break
+            case 'trail':
+              categoryLevel1 = 'TRAIL'
+              break
+            case 'walk':
+              categoryLevel1 = 'WALK'
+              break
+            default:
+              categoryLevel1 = 'RUNNING'
+          }
+          
           racesToAdd.push({
             name: ffaRace.name,
             distance: ffaRace.distance ? ffaRace.distance / 1000 : undefined,
             elevation: ffaRace.positiveElevation,
             startTime: ffaRace.startTime,
-            type: ffaRace.type,
+            categoryLevel1,
+            categoryLevel2: undefined, // Sera renseigné manuellement si besoin
             categories: ffaRace.categories
           })
-        } else {
+        }
           this.logger.info(`✅ Course FFA matchée: ${ffaRace.name} (${ffaRace.distance}m) ↔ ${matchingRace.name} (${matchingRace.totalDistanceMeters}m)`)
           const raceUpdates: any = {}
           
@@ -597,7 +615,8 @@ export class FFAScraperAgent extends BaseAgent {
     competition: FFACompetitionDetails,
     matchResult: MatchResult,
     config: FFAScraperConfig,
-    context: AgentContext
+    context: AgentContext,
+    proposalsCache?: Map<string, Set<string>> // FIX 1: Cache optionnel pour déduplication intra-run
   ): Promise<ProposalData[]> {
     const proposals: ProposalData[] = []
     
@@ -784,13 +803,35 @@ export class FFAScraperAgent extends BaseAgent {
               }
             })
             
-            // Vérifier si une proposition identique existe déjà
+            // Vérifier si une proposition identique existe déjà en DB
             if (hasIdenticalPendingProposal(changes, pendingProposals)) {
               context.logger.info(`⏭️  Proposition identique déjà en attente pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
                 pendingCount: pendingProposals.length,
                 changesHash: require('crypto').createHash('sha256').update(JSON.stringify(changes)).digest('hex').substring(0, 8)
               })
               return proposals // Ne pas créer de nouvelle proposition
+            }
+            
+            // FIX 1: Vérifier si une proposition identique a déjà été créée dans ce run
+            if (proposalsCache) {
+              const changeHash = require('crypto').createHash('sha256')
+                .update(JSON.stringify(changes))
+                .digest('hex')
+              const cacheKey = matchResult.edition.id.toString()
+              
+              if (!proposalsCache.has(cacheKey)) {
+                proposalsCache.set(cacheKey, new Set())
+              }
+              
+              if (proposalsCache.get(cacheKey)!.has(changeHash)) {
+                context.logger.info(`⏭️  Proposition identique déjà créée dans ce run pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
+                  changeHash: changeHash.substring(0, 8)
+                })
+                return proposals
+              }
+              
+              // Ajouter ce hash au cache
+              proposalsCache.get(cacheKey)!.add(changeHash)
             }
             
             // Filtrer pour ne garder que les nouvelles informations
@@ -886,6 +927,10 @@ export class FFAScraperAgent extends BaseAgent {
 
       const allProposals: ProposalData[] = []
       let totalCompetitions = 0
+      
+      // FIX 1: Cache en mémoire pour déduplication intra-run
+      // Map<editionId, Set<changeHash>> pour éviter les propositions identiques dans le même run
+      const proposalsCache = new Map<string, Set<string>>()
 
       // Scraper chaque combinaison ligue/mois
       for (const ligue of ligues) {
@@ -909,7 +954,8 @@ export class FFAScraperAgent extends BaseAgent {
               competition,
               matchResult,
               config,
-              context
+              context,
+              proposalsCache // FIX 1: Passer le cache à la méthode
             )
 
             if (matchResult.type !== 'NO_MATCH') {
@@ -931,6 +977,11 @@ export class FFAScraperAgent extends BaseAgent {
           if (!progress.completedMonths[ligue].includes(month)) {
             progress.completedMonths[ligue].push(month)
           }
+          
+          // FIX 2: Sauvegarder la progression après chaque mois complété
+          // Évite de refaire la dernière combinaison en cas de crash
+          await this.saveProgress(progress)
+          context.logger.info(`💾 Progression sauvegardée: ${ligue} - ${month}`)
 
           await humanDelay(config.humanDelayMs)
         }
@@ -964,9 +1015,10 @@ export class FFAScraperAgent extends BaseAgent {
         }
       }
 
-      // Mettre à jour la progression
+      // Mettre à jour les statistiques finales
       progress.totalCompetitionsScraped += totalCompetitions
       progress.lastCompletedAt = new Date()
+      // FIX 2: Sauvegarde finale pour les statistiques (progression déjà sauvegardée après chaque mois)
       await this.saveProgress(progress)
 
       // Sauvegarder les propositions en base de données
