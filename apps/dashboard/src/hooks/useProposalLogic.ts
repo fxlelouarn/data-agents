@@ -252,11 +252,11 @@ export const useProposalLogic = () => {
         let currentValue, proposedValue, confidence
         if (typeof value === 'object' && value !== null) {
           if ('proposed' in value && 'current' in value) {
-            currentValue = value.current || null
+            currentValue = value.current ?? null
             proposedValue = value.proposed
             confidence = (value as any).confidence || proposal.confidence || 0
           } else if ('new' in value && 'old' in value) {
-            currentValue = value.old || null
+            currentValue = value.old ?? null
             proposedValue = value.new
             confidence = (value as any).confidence || proposal.confidence || 0
           } else if ('new' in value && 'confidence' in value && Object.keys(value).length === 2) {
@@ -275,7 +275,9 @@ export const useProposalLogic = () => {
           confidence = proposal.confidence
         }
 
-        if (changesByField[field].currentValue === null) {
+        // Assigner la valeur actuelle seulement si elle n'a pas déjà été définie
+        // et éviter d'écraser avec une autre valeur null
+        if (changesByField[field].currentValue === null && currentValue !== null) {
           changesByField[field].currentValue = currentValue
         }
 
