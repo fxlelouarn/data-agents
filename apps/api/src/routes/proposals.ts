@@ -318,7 +318,8 @@ export async function enrichProposal(proposal: any) {
             bikeDistance: true,
             runPositiveElevation: true,
             startDate: true,
-            type: true
+            categoryLevel1: true,
+            categoryLevel2: true
           },
           orderBy: { name: 'asc' }
         })
@@ -329,7 +330,8 @@ export async function enrichProposal(proposal: any) {
           distance: (race.runDistance || 0) + (race.walkDistance || 0) + (race.swimDistance || 0) + (race.bikeDistance || 0),
           elevation: race.runPositiveElevation,
           startDate: race.startDate,
-          type: race.type
+          categoryLevel1: race.categoryLevel1,
+          categoryLevel2: race.categoryLevel2
         }))
       }
 
