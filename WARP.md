@@ -342,3 +342,73 @@ export async function enrichProposal(proposal: any) {
 
 #### Documentation
 - `docs/DATABASE-CONNECTION-POOLING.md` - Documentation complète du problème et de la solution
+
+### 2025-11-06 - Fix: Déduplication propositions et progression scraper
+
+**Problèmes résolus :**
+1. 🔴 Propositions dupliquées (race condition dans déduplication)
+2. 🟡 État d'avancement refaisant la dernière combinaison ligue-mois
+
+#### Problème 1 : Propositions dupliquées
+
+**Symptômes** : Plusieurs propositions identiques pour la même édition (ex: 3 propositions identiques pour `10172-40098`).
+
+**Cause** : Race condition lors de la déduplication. Les propositions étaient créées en mémoire pendant le traitement de toutes les compétitions, puis sauvegardées en batch à la fin. Si plusieurs compétitions matchaient la même édition, la requête Prisma de vérification ne voyait que les propositions déjà persistées en DB, pas celles en mémoire.
+
+**Solution** : Cache en mémoire partagé entre toutes les compétitions d'un même run.
+
+```typescript
+// Dans run() - ligne 915
+const proposalsCache = new Map<string, Set<string>>()
+// Map<editionId, Set<changeHash>>
+
+// Vérification dans createProposalsForCompetition() - lignes 798-817
+if (proposalsCache) {
+  const changeHash = crypto.createHash('sha256')
+    .update(JSON.stringify(changes))
+    .digest('hex')
+  const cacheKey = matchResult.edition.id.toString()
+  
+  if (!proposalsCache.has(cacheKey)) {
+    proposalsCache.set(cacheKey, new Set())
+  }
+  
+  if (proposalsCache.get(cacheKey)!.has(changeHash)) {
+    // ✅ Déjà créée dans ce run, skip
+    return proposals
+  }
+  
+  proposalsCache.get(cacheKey)!.add(changeHash)
+}
+```
+
+**Résultat** : Double protection
+1. Vérification DB : propositions déjà persistées
+2. Vérification cache : propositions créées dans ce run
+
+#### Problème 2 : Progression perdue après crash
+
+**Symptômes** : Après un crash/erreur, le scraper refait la dernière combinaison ligue-mois.
+
+**Cause** : Sauvegarde tardive de la progression. Le mois était marqué comme complété en mémoire, mais `saveProgress()` n'était appelé qu'après le traitement de toutes les ligues/mois.
+
+**Solution** : Sauvegarde immédiate après chaque mois complété.
+
+```typescript
+// Ligne 965-966
+await this.saveProgress(progress)
+context.logger.info(`💾 Progression sauvegardée: ${ligue} - ${month}`)
+```
+
+**Bénéfices** :
+- ✅ Crash pendant `Février` → Janvier déjà sauvegardé → reprend à Février
+- ✅ Pas de perte de progression
+- ✅ Idempotence : refaire un mois n'est pas grave (déduplication en place)
+
+#### Impact performances
+
+- **Cache mémoire** : O(P) mémoire, mais évite P² requêtes Prisma potentielles → **gain net**
+- **Sauvegarde progressive** : N×M écritures DB au lieu de 1, mais négligeable (AgentState) → **résilience prioritaire**
+
+#### Documentation
+- `docs/FIX-DEDUPLICATION-PROGRESSION.md` - Documentation complète avec diagrammes et tests
