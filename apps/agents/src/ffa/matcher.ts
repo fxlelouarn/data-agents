@@ -594,6 +594,7 @@ export async function findCandidateEvents(
 
 /**
  * Calcule un score de confiance ajusté basé sur différents facteurs
+ * Utilisé pour les propositions EDITION_UPDATE et RACE_UPDATE
  */
 export function calculateAdjustedConfidence(
   baseConfidence: number,
@@ -620,6 +621,67 @@ export function calculateAdjustedConfidence(
   // Pénalité si similarité faible
   if (matchResult.confidence < 0.8) {
     confidence *= matchResult.confidence
+  }
+
+  return Math.round(confidence * 100) / 100
+}
+
+/**
+ * Calcule la confiance pour la création d'un NOUVEL événement
+ * 
+ * Logique inversée : Plus le match avec l'existant est faible, plus on est confiant
+ * qu'il s'agit d'un nouvel événement à créer.
+ * 
+ * @param baseConfidence - Confiance de base (typiquement 0.9)
+ * @param competition - Données de la compétition FFA
+ * @param matchResult - Résultat du matching (devrait être NO_MATCH)
+ * @returns Score de confiance entre 0 et 1
+ * 
+ * @example
+ * // Aucun candidat trouvé → Confiance max
+ * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0 })
+ * // → 0.95 (très confiant de créer)
+ * 
+ * // Match faible trouvé (0.3) → Confiance haute
+ * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0.3 })
+ * // → 0.76 (confiant de créer)
+ * 
+ * // Match fort trouvé (0.7) → Confiance faible
+ * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0.7 })
+ * // → 0.52 (risque de doublon, peu confiant)
+ */
+export function calculateNewEventConfidence(
+  baseConfidence: number,
+  competition: FFACompetitionDetails,
+  matchResult: MatchResult
+): number {
+  let confidence = baseConfidence  // 0.9 par défaut
+
+  // LOGIQUE INVERSÉE : Plus le match est fort, moins on veut créer
+  if (matchResult.confidence === 0) {
+    // Aucun candidat trouvé → Confiance maximale
+    confidence = Math.min(confidence + 0.05, 1)  // 0.95
+  } else {
+    // Match trouvé mais rejeté → Réduire proportionnellement
+    // matchResult.confidence de 0.1 à 0.5 → Facteur de 0.95 à 0.75 (reste haute)
+    // matchResult.confidence de 0.6 à 0.9 → Facteur de 0.70 à 0.55 (devient faible)
+    const penalty = matchResult.confidence * 0.5
+    confidence *= (1 - penalty)
+  }
+
+  // Bonus si on a des informations d'organisateur (source fiable FFA)
+  if (competition.organizerEmail || competition.organizerWebsite) {
+    confidence = Math.min(confidence + 0.03, 1)
+  }
+
+  // Bonus si plusieurs courses (événement structuré, pas un one-shot)
+  if (competition.races.length > 1) {
+    confidence = Math.min(confidence + 0.02, 1)
+  }
+
+  // Bonus si niveau régional ou supérieur (plus fiable que départemental)
+  if (competition.competition.level === 'Régional' || competition.competition.level === 'National') {
+    confidence = Math.min(confidence + 0.01, 1)
   }
 
   return Math.round(confidence * 100) / 100
