@@ -130,8 +130,8 @@ export async function fetchCompetitionsList(
     
     const html = response.data
     
-    // Parser les compétitions
-    let competitions = parseCompetitionsList(html)
+    // Parser les compétitions en passant la date de référence (mois scrapé)
+    let competitions = parseCompetitionsList(html, startDate)
     
     // Filtrer par niveaux si spécifié
     if (levels && levels.length > 0) {
@@ -198,6 +198,8 @@ export async function fetchCompetitionDetails(
       // Retourner les infos de base sans les détails
       return {
         competition,
+        startDate: competition.date,
+        endDate: competition.date,
         races: []
       }
     }
