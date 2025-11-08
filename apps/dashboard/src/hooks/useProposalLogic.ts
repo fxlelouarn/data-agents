@@ -2,6 +2,7 @@ import React, { useState } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { formatDateInTimezone } from '@/utils/timezone'
+import { getCategoriesForEntityType } from '@/constants/fieldCategories'
 
 export interface ChangeOption {
   proposalId: string
@@ -291,20 +292,9 @@ export const useProposalLogic = () => {
       })
     })
 
-    // Filtrer les champs qui n'ont pas de changement réel
-    const filteredChanges = Object.values(changesByField).filter((change: any) => {
-      // Pour les nouveaux événements, afficher tous les champs
-      if (isNewEvent) return true
-      
-      // Vérifier s'il y a au moins une proposition avec une valeur différente de la valeur actuelle
-      const hasActualChange = change.options.some((option: any) => {
-        const currentStr = JSON.stringify(change.currentValue)
-        const proposedStr = JSON.stringify(option.proposedValue)
-        return currentStr !== proposedStr
-      })
-      
-      return hasActualChange
-    })
+    // Ne plus filtrer les champs - afficher tous les champs proposés par le backend
+    // même s'ils n'ont pas changé (ex: timeZone, calendarStatus, endDate)
+    const filteredChanges = Object.values(changesByField)
     
     // Trier les options de chaque champ par confiance décroissante
     filteredChanges.forEach((change: any) => {
@@ -313,6 +303,50 @@ export const useProposalLogic = () => {
         return (b.confidence || 0) - (a.confidence || 0)
       })
     })
+
+    // Trier les champs selon l'ordre défini dans fieldCategories
+    // Pour NEW_EVENT et EDITION_UPDATE, les champs doivent suivre l'ordre de leur catégorie
+    if (isNewEvent || isEditionUpdate) {
+      const categories = isEventUpdate 
+        ? getCategoriesForEntityType('EVENT')
+        : getCategoriesForEntityType('EDITION')
+      const fieldOrder = categories.flatMap(cat => cat.fields)
+      
+      filteredChanges.sort((a: any, b: any) => {
+        const indexA = fieldOrder.indexOf(a.field)
+        const indexB = fieldOrder.indexOf(b.field)
+        
+        // Si les deux champs sont dans fieldOrder, trier selon cet ordre
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB
+        }
+        
+        // Si seulement A est dans fieldOrder, il vient avant
+        if (indexA !== -1) return -1
+        
+        // Si seulement B est dans fieldOrder, il vient avant
+        if (indexB !== -1) return 1
+        
+        // Sinon, garder l'ordre actuel
+        return 0
+      })
+    } else if (isEventUpdate) {
+      // EVENT_UPDATE : trier selon les catégories EVENT
+      const eventCategories = getCategoriesForEntityType('EVENT')
+      const fieldOrder = eventCategories.flatMap(cat => cat.fields)
+      
+      filteredChanges.sort((a: any, b: any) => {
+        const indexA = fieldOrder.indexOf(a.field)
+        const indexB = fieldOrder.indexOf(b.field)
+        
+        if (indexA !== -1 && indexB !== -1) {
+          return indexA - indexB
+        }
+        if (indexA !== -1) return -1
+        if (indexB !== -1) return 1
+        return 0
+      })
+    }
 
     return filteredChanges
   }

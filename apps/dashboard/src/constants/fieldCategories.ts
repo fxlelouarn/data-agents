@@ -13,14 +13,24 @@ export interface FieldCategory {
 // ========================================
 export const EVENT_CATEGORIES: FieldCategory[] = [
   {
-    id: 'event-basic',
-    label: 'Informations de base',
-    iconName: 'Info',
-    description: 'Nom, localisation et adresse',
+    id: 'event-name',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Nom de l\'événement',
     entityType: 'EVENT',
     priority: 1,
     fields: [
-      'name',
+      'name'
+    ]
+  },
+  {
+    id: 'event-location',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Localisation',
+    entityType: 'EVENT',
+    priority: 2,
+    fields: [
       'city',
       'country',
       'countrySubdivisionNameLevel1',
@@ -33,17 +43,27 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
     ]
   },
   {
-    id: 'event-media',
-    label: 'Médias et visibilité',
-    iconName: 'Language',
-    description: 'Site web, réseaux sociaux et images',
+    id: 'event-urls',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Liens web et réseaux sociaux',
     entityType: 'EVENT',
-    priority: 2,
+    priority: 3,
     fields: [
       'websiteUrl',
       'facebookUrl',
       'instagramUrl',
-      'twitterUrl',
+      'twitterUrl'
+    ]
+  },
+  {
+    id: 'event-media',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Images et visibilité',
+    entityType: 'EVENT',
+    priority: 4,
+    fields: [
       'coverImage',
       'images',
       'isPrivate',
@@ -53,11 +73,11 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
   },
   {
     id: 'event-metadata',
-    label: 'Métadonnées',
-    iconName: 'Storage',
-    description: 'Source des données et statut',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Métadonnées',
     entityType: 'EVENT',
-    priority: 3,
+    priority: 5,
     fields: [
       'dataSource',
       'status'
@@ -71,23 +91,23 @@ export const EVENT_CATEGORIES: FieldCategory[] = [
 export const EDITION_CATEGORIES: FieldCategory[] = [
   {
     id: 'edition-dates',
-    label: 'Dates de l\'édition',
-    iconName: 'Event',
-    description: 'Dates de début, fin et fuseau horaire',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Dates de l\'\u00e9dition',
     entityType: 'EDITION',
     priority: 1,
     fields: [
-      'year',
       'startDate',
       'endDate',
-      'timeZone'
+      'timeZone',
+      'year'
     ]
   },
   {
     id: 'edition-registration',
-    label: 'Inscriptions',
-    iconName: 'PersonAdd',
-    description: 'Dates d\'ouverture/fermeture et nombre d\'inscrits',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Inscriptions',
     entityType: 'EDITION',
     priority: 2,
     fields: [
@@ -98,9 +118,9 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   },
   {
     id: 'edition-status',
-    label: 'Statut et organisation',
-    iconName: 'Work',
-    description: 'Statut calendrier, client et type',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Statut et organisation',
     entityType: 'EDITION',
     priority: 3,
     fields: [
@@ -111,9 +131,9 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   },
   {
     id: 'edition-bib-withdrawal',
-    label: 'Retrait des dossards',
-    iconName: 'LocalShipping',
-    description: 'Lieu et informations de retrait',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Retrait des dossards',
     entityType: 'EDITION',
     priority: 4,
     fields: [
@@ -129,9 +149,9 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   },
   {
     id: 'edition-commerce',
-    label: 'Commerce',
-    iconName: 'AttachMoney',
-    description: 'Devise, assurance et inclusions',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Commerce',
     entityType: 'EDITION',
     priority: 5,
     fields: [
@@ -144,9 +164,9 @@ export const EDITION_CATEGORIES: FieldCategory[] = [
   },
   {
     id: 'edition-partnerships',
-    label: 'Partenariats et affiliations',
-    iconName: 'Handshake',
-    description: 'Fédération et règlement',
+    label: '', // Pas de titre visible
+    iconName: '',
+    description: 'Partenariats et affiliations',
     entityType: 'EDITION',
     priority: 6,
     fields: [

@@ -19,11 +19,14 @@ import {
 import {
   Groups as GroupsIcon,
   Edit as EditIcon,
-  EditNote as EditNoteIcon
+  EditNote as EditNoteIcon,
+  Event as EventIcon,
+  CalendarToday as EditionIcon
 } from '@mui/icons-material'
 import { useChangesTable, ConsolidatedChange } from '@/hooks/useChangesTable'
 import FieldEditor from './FieldEditor'
 import BlockValidationButton from './BlockValidationButton'
+import { groupChangesByCategory } from '@/constants/fieldCategories'
 
 /**
  * Props du composant GenericChangesTable
@@ -167,10 +170,16 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
     const selectedValue = table.getSelectedValue(change)
     const isMultiple = table.hasMultipleValues(change)
     const fieldDisabled = table.isFieldDisabled(fieldName)
+    const hasNoProposal = sortedOptions.length === 0
 
     return (
       <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-        {isMultiple ? (
+        {hasNoProposal ? (
+          // Aucune proposition - Afficher un texte et le bouton éditer
+          <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic' }}>
+            Aucune valeur proposée
+          </Typography>
+        ) : isMultiple ? (
           <FormControl size="small" sx={{ minWidth: 200, maxWidth: '100%', width: '100%' }}>
             <Select
               value={selectedChanges[fieldName] !== undefined 
@@ -263,7 +272,11 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         <TableCell sx={{ width: '15%', minWidth: 120 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             {table.getFieldIcon(fieldName)}
-            <Typography variant="body2" fontWeight={500} noWrap>
+            <Typography 
+              variant="body2" 
+              fontWeight={selectedValue !== change.currentValue ? 'bold' : 500} 
+              noWrap
+            >
               {fieldName}
             </Typography>
             {isMultiple && (
@@ -303,11 +316,16 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
     )
   }
 
-  // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
   // RENDER
-  // ─────────────────────────────────────────────────────────────
+  // ─────────────────────────────────────────────────────────────────
 
   const displayedChanges = table.filteredChanges
+  
+  // Grouper par catégorie si entityType est défini (pour les séparateurs)
+  const groupedByCategory = entityType && variant === 'categorized'
+    ? groupChangesByCategory(displayedChanges, entityType)
+    : null
   
   // Aucun changement à afficher
   if (displayedChanges.length === 0) return null
@@ -325,8 +343,10 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 })
         }}
       >
-        <Typography variant="h6">
-          {variant === 'base' && <EditIcon sx={{ mr: 1, verticalAlign: 'middle' }} />}
+        <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {variant === 'base' && <EditIcon />}
+          {variant === 'categorized' && entityType === 'EVENT' && <EventIcon />}
+          {variant === 'categorized' && entityType === 'EDITION' && <EditionIcon />}
           {title}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
@@ -359,7 +379,32 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {displayedChanges.map(renderFieldComparison)}
+            {groupedByCategory ? (
+              // Affichage groupé avec séparateurs
+              groupedByCategory.map(({ category, changes: categoryChanges }, categoryIndex) => (
+                <React.Fragment key={category.id}>
+                  {categoryIndex > 0 && (
+                    // Séparateur visuel entre catégories
+                    <TableRow>
+                      <TableCell 
+                        colSpan={isNewEvent ? 3 : 4}
+                        sx={{ 
+                          height: '1px',
+                          padding: 0,
+                          borderBottom: '3px solid',
+                          borderColor: 'divider',
+                          borderTop: 'none'
+                        }}
+                      />
+                    </TableRow>
+                  )}
+                  {categoryChanges.map(renderFieldComparison)}
+                </React.Fragment>
+              ))
+            ) : (
+              // Affichage simple sans séparateurs
+              displayedChanges.map(renderFieldComparison)
+            )}
           </TableBody>
         </Table>
       </TableContainer>

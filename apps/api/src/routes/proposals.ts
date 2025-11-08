@@ -324,15 +324,32 @@ export async function enrichProposal(proposal: any) {
           orderBy: { name: 'asc' }
         })
         
-        enriched.existingRaces = existingRaces.map((race: any) => ({
-          id: race.id,
-          name: race.name,
-          distance: (race.runDistance || 0) + (race.walkDistance || 0) + (race.swimDistance || 0) + (race.bikeDistance || 0),
-          elevation: race.runPositiveElevation,
-          startDate: race.startDate,
-          categoryLevel1: race.categoryLevel1,
-          categoryLevel2: race.categoryLevel2
-        }))
+        // Extraire racesToUpdate de la proposition (si existe)
+        const racesToUpdate = proposal.changes?.racesToUpdate?.new || []
+        const raceUpdatesMap = new Map(
+          racesToUpdate.map((update: any) => [update.raceId, update.updates])
+        )
+        
+        enriched.existingRaces = existingRaces.map((race: any) => {
+          const updates = raceUpdatesMap.get(race.id)
+          
+          return {
+            id: race.id,
+            name: race.name,
+            distance: (race.runDistance || 0) + (race.walkDistance || 0) + (race.swimDistance || 0) + (race.bikeDistance || 0),
+            elevation: race.runPositiveElevation,
+            // Appliquer la mise à jour proposée si elle existe
+            startDate: updates?.startDate?.new || race.startDate,
+            categoryLevel1: race.categoryLevel1,
+            categoryLevel2: race.categoryLevel2,
+            // Garder aussi les valeurs actuelles pour comparaison
+            _current: {
+              startDate: race.startDate
+            },
+            // Indiquer si cette course a une mise à jour proposée
+            _hasUpdate: !!updates
+          }
+        })
       }
 
       return enriched
@@ -795,13 +812,14 @@ router.post('/:id/unapprove', [
       })
     }
 
-    // Remettre la proposition à PENDING
+    // Remettre la proposition à PENDING et réinitialiser approvedBlocks
     await tx.proposal.update({
       where: { id },
       data: {
         status: 'PENDING',
         reviewedAt: null,
-        reviewedBy: null
+        reviewedBy: null,
+        approvedBlocks: {} // Réinitialiser tous les blocs approuvés
       }
     })
   })
@@ -851,7 +869,7 @@ router.get('/:id/approved-blocks', [
     let block = 'edition'
     if (field === 'organizer' || field === 'organizerId') {
       block = 'organizer'
-    } else if (field === 'racesToAdd' || field === 'races' || field.startsWith('race_')) {
+    } else if (field === 'racesToAdd' || field === 'racesToUpdate' || field === 'races' || field.startsWith('race_')) {
       block = 'races'
     }
     

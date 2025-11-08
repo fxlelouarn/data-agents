@@ -83,7 +83,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
 
   // Annuler la validation d'un bloc
   const unvalidateBlock = useCallback(async (blockKey: string) => {
-    const block = blockStatus[blockKey]
+    const block = syncedBlockStatus[blockKey]
     if (!block) return
 
     try {
@@ -101,7 +101,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       console.error(`Error unvalidating block ${blockKey}:`, error)
       throw error
     }
-  }, [blockStatus, unapproveProposalMutation])
+  }, [syncedBlockStatus, unapproveProposalMutation])
 
   // Valider tous les blocs
   const validateAllBlocks = useCallback(async (blocks: Record<string, string[]>) => {

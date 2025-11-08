@@ -1,13 +1,27 @@
 import { Router } from 'express'
 import { param, query, body, validationResult } from 'express-validator'
-import { getDatabaseServiceSync } from '../services/database'
+import { getDatabaseService } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichProposal } from './proposals'
 
 const router = Router()
-const db = getDatabaseServiceSync()
-// Use db.proposalApplication instead of direct instantiation
-const applicationService = db.proposalApplication
+
+// Lazy-initialize services (will be set when first route is accessed)
+let db: any = null
+let applicationService: any = null
+
+// Helper to ensure services are initialized
+const ensureServices = async () => {
+  if (!db) {
+    db = await getDatabaseService()
+    applicationService = db.proposalApplication
+    
+    if (!applicationService) {
+      throw new Error('ProposalApplicationService not initialized. DatabaseManager may not be available.')
+    }
+  }
+  return { db, applicationService }
+}
 
 // Validation middleware
 const validateRequest = (req: any, res: any, next: any) => {
@@ -78,6 +92,7 @@ router.get('/', [
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { status, proposalId, search, limit = 20, offset = 0 } = req.query
 
   // Build where clause
@@ -118,7 +133,7 @@ router.get('/', [
   
   // Enrichir les propositions avec les infos contextuelles
   const enrichedApplications = await Promise.all(
-    applications.map(async (app) => ({
+    applications.map(async (app: any) => ({
       ...app,
       proposal: await enrichProposal(app.proposal)
     }))
@@ -143,6 +158,7 @@ router.get('/:id', [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { id } = req.params
 
   const application = await db.prisma.proposalApplication.findUnique({
@@ -176,6 +192,7 @@ router.post('/', [
   body('scheduledAt').optional().isISO8601(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { proposalId, scheduledAt } = req.body
 
   // Verify proposal exists and is approved
@@ -235,6 +252,7 @@ router.post('/:id/apply', [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { id } = req.params
 
   const application = await db.prisma.proposalApplication.findUnique({
@@ -276,8 +294,21 @@ router.post('/:id/apply', [
       success = true
       logs.push('Successfully applied all changes')
       logs.push(`Applied changes: ${Object.keys(result.appliedChanges).join(', ')}`)
+      
+      // Log des entités créées si disponibles
+      if (result.createdIds) {
+        if (result.createdIds.eventId) {
+          logs.push(`✅ Event créé: ${result.createdIds.eventId}`)
+        }
+        if (result.createdIds.editionId) {
+          logs.push(`✅ Edition créée: ${result.createdIds.editionId}`)
+        }
+        if (result.createdIds.raceIds && result.createdIds.raceIds.length > 0) {
+          logs.push(`✅ ${result.createdIds.raceIds.length} course(s) créée(s): ${result.createdIds.raceIds.join(', ')}`)
+        }
+      }
     } else {
-      errorMessage = result.errors?.map(e => e.message).join('; ') || 'Unknown error'
+      errorMessage = result.errors?.map((e: any) => e.message).join('; ') || 'Unknown error'
       logs.push(`Application failed: ${errorMessage}`)
     }
     
@@ -331,6 +362,7 @@ router.delete('/:id', [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { id } = req.params
 
   const application = await db.prisma.proposalApplication.findUnique({
@@ -357,6 +389,7 @@ router.post('/bulk/delete', [
   body('ids.*').isString(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { ids } = req.body
 
   // Vérifier que toutes les mises à jour existent
@@ -365,7 +398,7 @@ router.post('/bulk/delete', [
     select: { id: true }
   })
 
-  const foundIds = applications.map(app => app.id)
+  const foundIds = applications.map((app: any) => app.id)
   const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
 
   if (notFoundIds.length > 0) {
@@ -390,6 +423,7 @@ router.post('/bulk/apply', [
   body('ids.*').isString(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { ids } = req.body
 
   // Récupérer toutes les mises à jour
@@ -406,7 +440,7 @@ router.post('/bulk/apply', [
     }
   })
 
-  const foundIds = applications.map(app => app.id)
+  const foundIds = applications.map((app: any) => app.id)
   const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
 
   if (notFoundIds.length > 0) {
@@ -414,15 +448,15 @@ router.post('/bulk/apply', [
   }
 
   // Vérifier que toutes les mises à jour sont PENDING
-  const nonPendingApps = applications.filter(app => app.status !== 'PENDING')
+  const nonPendingApps = applications.filter((app: any) => app.status !== 'PENDING')
   if (nonPendingApps.length > 0) {
-    throw createError(400, `Some updates are not pending: ${nonPendingApps.map(a => a.id).join(', ')}`, 'INVALID_STATUS')
+    throw createError(400, `Some updates are not pending: ${nonPendingApps.map((a: any) => a.id).join(', ')}`, 'INVALID_STATUS')
   }
 
   // Appliquer toutes les mises à jour
   const results = {
     successful: [] as string[],
-    failed: [] as { id: string; error: string }[]
+    failed: [] as { id: string; error: string | null }[]
   }
 
   for (const application of applications) {
@@ -444,9 +478,23 @@ router.post('/bulk/apply', [
         success = true
         logs.push('Successfully applied all changes')
         logs.push(`Applied changes: ${Object.keys(result.appliedChanges).join(', ')}`)
+        
+        // Log des entités créées si disponibles
+        if (result.createdIds) {
+          if (result.createdIds.eventId) {
+            logs.push(`✅ Event créé: ${result.createdIds.eventId}`)
+          }
+          if (result.createdIds.editionId) {
+            logs.push(`✅ Edition créée: ${result.createdIds.editionId}`)
+          }
+          if (result.createdIds.raceIds && result.createdIds.raceIds.length > 0) {
+            logs.push(`✅ ${result.createdIds.raceIds.length} course(s) créée(s): ${result.createdIds.raceIds.join(', ')}`)
+          }
+        }
+        
         results.successful.push(application.id)
       } else {
-        errorMessage = result.errors?.map(e => e.message).join('; ') || 'Unknown error'
+        errorMessage = result.errors?.map((e: any) => e.message).join('; ') || 'Unknown error'
         logs.push(`Application failed: ${errorMessage}`)
         results.failed.push({ id: application.id, error: errorMessage })
       }
@@ -497,6 +545,7 @@ router.get('/:id/logs', [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { id } = req.params
 
   const application = await db.prisma.proposalApplication.findUnique({
@@ -521,6 +570,7 @@ router.post('/:id/replay', [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: any, res: any) => {
+  await ensureServices()
   const { id } = req.params
 
   const application = await db.prisma.proposalApplication.findUnique({

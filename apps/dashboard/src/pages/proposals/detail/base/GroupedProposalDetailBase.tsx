@@ -266,69 +266,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     const changes = consolidateChanges(groupProposals, isNewEvent)
     const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
     
-    if (!isEventUpdateDisplay) {
-      // Ajouter timeZone si absent
-      const hasTimezone = changes.some(c => c.field === 'timeZone')
-      if (!hasTimezone && groupProposals.length > 0) {
-        const firstProposal = groupProposals[0]
-        changes.unshift({
-          field: 'timeZone',
-          options: [{
-            proposalId: firstProposal.id,
-            agentName: firstProposal.agent.name,
-            proposedValue: editionTimezone,
-            confidence: 1,
-            createdAt: firstProposal.createdAt
-          }],
-          currentValue: editionTimezone
-        })
-      }
-      
-      // Ajouter calendarStatus si absent
-      const hasCalendarStatus = changes.some(c => c.field === 'calendarStatus')
-      if (!hasCalendarStatus && groupProposals.length > 0) {
-        const firstProposal = groupProposals[0]
-        const currentCalendarStatus = (firstProposal.changes as any)?.calendarStatus?.current || 'TO_BE_CONFIRMED'
-        changes.unshift({
-          field: 'calendarStatus',
-          options: [{
-            proposalId: firstProposal.id,
-            agentName: 'Système',
-            proposedValue: 'CONFIRMED',
-            confidence: 1,
-            createdAt: firstProposal.createdAt
-          }],
-          currentValue: currentCalendarStatus
-        })
-      }
-      
-      // Ajouter endDate si absent et startDate présent
-      const hasEndDate = changes.some(c => c.field === 'endDate')
-      const startDateChange = changes.find(c => c.field === 'startDate')
-      if (!hasEndDate && startDateChange && groupProposals.length > 0) {
-        const firstProposal = groupProposals[0]
-        const proposedStartDate = startDateChange.options[0]?.proposedValue
-        const currentEndDate = (firstProposal.changes as any)?.endDate
-        
-        changes.push({
-          field: 'endDate',
-          options: [{
-            proposalId: firstProposal.id,
-            agentName: firstProposal.agent.name,
-            proposedValue: proposedStartDate,
-            confidence: 1,
-            createdAt: firstProposal.createdAt
-          }],
-          currentValue: currentEndDate || null
-        })
-      }
-    }
-    
-    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE
+    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
     return isEventUpdateDisplay
       ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
       : changes
-  }, [groupProposals, isNewEvent, consolidateChanges, editionTimezone])
+  }, [groupProposals, isNewEvent, consolidateChanges])
   
   // Déterminer si l'édition est annulée
   const isEditionCanceled = useMemo(() => {

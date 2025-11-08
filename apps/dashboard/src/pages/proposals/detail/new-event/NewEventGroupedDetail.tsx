@@ -4,7 +4,8 @@ import { CheckCircle as ApproveIcon, Cancel as RejectIcon } from '@mui/icons-mat
 import GroupedProposalDetailBase from '../base/GroupedProposalDetailBase'
 import CategorizedEventChangesTable from '@/components/proposals/CategorizedEventChangesTable'
 import CategorizedEditionChangesTable from '@/components/proposals/CategorizedEditionChangesTable'
-import RaceChangesSection from '@/components/proposals/RaceChangesSection'
+import RacesChangesTable from '@/components/proposals/edition-update/RacesChangesTable'
+import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
 import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
@@ -48,12 +49,30 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           blockProposals
         } = context
         
+        // Séparer les champs standards des champs spéciaux
+        const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
+        
+        // Ajouter les champs URL éditables même s'ils ne sont pas proposés
+        const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
+        const eventChangesWithUrls = [...consolidatedChanges.filter(c => c.field !== 'organizer')]
+        
+        urlFields.forEach(urlField => {
+          if (!eventChangesWithUrls.some(c => c.field === urlField)) {
+            // Ajouter un champ vide éditable
+            eventChangesWithUrls.push({
+              field: urlField,
+              options: [],
+              currentValue: null
+            })
+          }
+        })
+        
         return (
           <>
             {/* Table des champs Event */}
             <CategorizedEventChangesTable
               title="Informations de l'événement"
-              changes={consolidatedChanges}
+              changes={eventChangesWithUrls}
               isNewEvent={true}
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
@@ -92,26 +111,33 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
+            {/* Section organisateur */}
+            {organizerChange && (
+              <OrganizerSection
+                change={organizerChange}
+                onApprove={() => handleApproveField('organizer')}
+                onFieldModify={handleFieldModify}
+                userModifiedChanges={userModifiedChanges}
+                disabled={isBlockValidated('organizer') || isEventDead}
+                isBlockValidated={isBlockValidated('organizer')}
+                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
+              />
+            )}
+            
             {/* Section des courses */}
-            <RaceChangesSection
-              raceChanges={consolidatedRaceChanges}
-              formatValue={formatValue}
-              timezone={editionTimezone}
-              onRaceApprove={(raceData) => context.handleApproveRace(raceData)}
-              // onApproveAll={allPending ? handleApproveAllRaces : undefined}  // ❌ OBSOLETE
-              // onRejectAll={allPending ? handleRejectAllRaces : undefined}    // ❌ OBSOLETE
-              onFieldModify={handleRaceFieldModify}
-              userModifiedRaceChanges={userModifiedRaceChanges}
+            <RacesChangesTable
+              existingRaces={[]}
+              racesToAdd={groupProposals[0]?.changes?.edition?.new?.races || []}
+              proposalId={groupProposals[0]?.id}
+              proposal={groupProposals[0]}
               disabled={!allPending || isPending || isEventDead}
-              isEditionCanceled={isEditionCanceled || isEventDead}
-              isBlockValidated={isBlockValidated('races')}
-              onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
-              onUnvalidateBlock={() => unvalidateBlock('races')}
-              isBlockPending={isBlockPending}
             />
             
             {/* Sources des dates extraites */}
-            <DateSourcesSection 
+            <DateSourcesSection
               justifications={groupProposals.flatMap(p => p.justification || [])} 
             />
           </>

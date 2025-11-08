@@ -176,7 +176,10 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
             {fields.map((field, index) => (
               <TableRow key={field.key}>
                 <TableCell>
-                  <Typography variant="body2" fontWeight={500}>
+                  <Typography 
+                    variant="body2" 
+                    fontWeight={field.proposedValue !== field.currentValue ? 'bold' : 500}
+                  >
                     {field.label}
                   </Typography>
                 </TableCell>

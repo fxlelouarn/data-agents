@@ -4,7 +4,8 @@ import { CheckCircle as ApproveIcon, Cancel as RejectIcon } from '@mui/icons-mat
 import ProposalDetailBase from '../base/ProposalDetailBase'
 import CategorizedEventChangesTable from '@/components/proposals/CategorizedEventChangesTable'
 import CategorizedEditionChangesTable from '@/components/proposals/CategorizedEditionChangesTable'
-import RaceChangesSection from '@/components/proposals/RaceChangesSection'
+import RacesChangesTable from '@/components/proposals/edition-update/RacesChangesTable'
+import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
 import ProposalJustificationsCard from '@/components/proposals/ProposalJustificationsCard'
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
@@ -36,14 +37,38 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           isPending,
           isEventDead,
           isEditionCanceled,
-          proposal
+          proposal,
+          // Validation par blocs
+          validateBlock,
+          unvalidateBlock,
+          isBlockValidated,
+          isBlockPending,
+          blockProposals
         } = context
+        
+        // Séparer les champs standards des champs spéciaux
+        const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
+        
+        // Ajouter les champs URL éditables même s'ils ne sont pas proposés
+        const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
+        const eventChangesWithUrls = [...consolidatedChanges.filter(c => c.field !== 'organizer')]
+        
+        urlFields.forEach(urlField => {
+          if (!eventChangesWithUrls.some(c => c.field === urlField)) {
+            // Ajouter un champ vide éditable
+            eventChangesWithUrls.push({
+              field: urlField,
+              options: [],
+              currentValue: null
+            })
+          }
+        })
         
         return (
           <>
             <CategorizedEventChangesTable
               title="Informations de l'événement"
-              changes={consolidatedChanges}
+              changes={eventChangesWithUrls}
               isNewEvent={true}
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
@@ -94,18 +119,30 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               ) : undefined}
             />
             
-            <RaceChangesSection
-              raceChanges={consolidatedRaceChanges}
-              formatValue={formatValue}
-              timezone={editionTimezone}
-              onRaceApprove={() => {/* Single proposal - handled by approve all */}}
-              onFieldModify={handleRaceFieldModify}
-              userModifiedRaceChanges={userModifiedRaceChanges}
+            {organizerChange && (
+              <OrganizerSection
+                change={organizerChange}
+                onApprove={() => {/* Single proposal - no field-specific approve */}}
+                onFieldModify={handleFieldModify}
+                userModifiedChanges={userModifiedChanges}
+                disabled={isBlockValidated('organizer') || isEventDead}
+                isBlockValidated={isBlockValidated('organizer')}
+                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
+              />
+            )}
+            
+            <RacesChangesTable
+              existingRaces={[]}
+              racesToAdd={proposal?.changes?.edition?.new?.races || []}
+              proposalId={proposal?.id}
+              proposal={proposal}
               disabled={!allPending || isPending || isEventDead}
-              isEditionCanceled={isEditionCanceled || isEventDead}
             />
             
-            <ProposalJustificationsCard 
+            <ProposalJustificationsCard
               justifications={proposal.justification || []}
               confidence={proposal.confidence}
             />

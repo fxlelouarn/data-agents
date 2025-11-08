@@ -189,65 +189,11 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     const changes = consolidateChanges([proposalData.data], isNewEvent)
     const isEventUpdateDisplay = proposalData.data.type === 'EVENT_UPDATE'
     
-    if (!isEventUpdateDisplay) {
-      // Ajouter timeZone si absent
-      const hasTimezone = changes.some(c => c.field === 'timeZone')
-      if (!hasTimezone) {
-        changes.unshift({
-          field: 'timeZone',
-          options: [{
-            proposalId: proposalData.data.id,
-            agentName: proposalData.data.agent.name,
-            proposedValue: editionTimezone,
-            confidence: 1,
-            createdAt: proposalData.data.createdAt
-          }],
-          currentValue: editionTimezone
-        })
-      }
-      
-      // Ajouter calendarStatus si absent
-      const hasCalendarStatus = changes.some(c => c.field === 'calendarStatus')
-      if (!hasCalendarStatus) {
-        const currentCalendarStatus = (proposalData.data.changes as any)?.calendarStatus?.current || 'TO_BE_CONFIRMED'
-        changes.unshift({
-          field: 'calendarStatus',
-          options: [{
-            proposalId: proposalData.data.id,
-            agentName: 'Système',
-            proposedValue: 'CONFIRMED',
-            confidence: 1,
-            createdAt: proposalData.data.createdAt
-          }],
-          currentValue: currentCalendarStatus
-        })
-      }
-      
-      // Ajouter endDate si absent et startDate présent
-      const hasEndDate = changes.some(c => c.field === 'endDate')
-      const startDateChange = changes.find(c => c.field === 'startDate')
-      if (!hasEndDate && startDateChange) {
-        const proposedStartDate = startDateChange.options[0]?.proposedValue
-        const currentEndDate = (proposalData.data.changes as any)?.endDate
-        
-        changes.push({
-          field: 'endDate',
-          options: [{
-            proposalId: proposalData.data.id,
-            agentName: proposalData.data.agent.name,
-            proposedValue: proposedStartDate,
-            confidence: 1,
-            createdAt: proposalData.data.createdAt
-          }],
-          currentValue: currentEndDate || null
-        })
-      }
-    }
-    
+    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
     return isEventUpdateDisplay
       ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
       : changes
-  }, [proposalData, isNewEvent, consolidateChanges, editionTimezone])
+  }, [proposalData, isNewEvent, consolidateChanges])
   
   const isEditionCanceled = useMemo(() => {
     const calendarStatus = userModifiedChanges['calendarStatus'] || 

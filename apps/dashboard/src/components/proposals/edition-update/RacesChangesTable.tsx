@@ -32,16 +32,22 @@ interface ExistingRace {
   name: string
   distance?: number
   elevation?: number
-  startDate?: string
+  startDate?: string  // Valeur proposée (ou actuelle si pas de mise à jour)
   categoryLevel1?: string
   categoryLevel2?: string
+  _current?: {  // Valeurs actuelles de la base (pour comparaison)
+    startDate?: string
+  }
+  _hasUpdate?: boolean  // Indique si cette course a une mise à jour proposée
 }
 
 interface RaceToAdd {
   name: string
-  distance?: number
+  distance?: number  // Pour compatibilité ancienne structure
+  runDistance?: number  // Miles Republic (en kilomètres)
   startDate?: string
-  elevation?: number
+  elevation?: number  // Pour compatibilité ancienne structure
+  runPositiveElevation?: number  // Miles Republic (en mètres)
   registrationUrl?: string
   categoryLevel1?: string
   categoryLevel2?: string
@@ -65,6 +71,7 @@ type RaceField = {
 
 const RACE_FIELDS: RaceField[] = [
   { key: 'name', label: 'Nom' },
+  { key: 'startDate', label: 'Date', format: (v) => v ? new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-' },
   { key: 'categoryLevel1', label: 'Catégorie 1' },
   { key: 'categoryLevel2', label: 'Catégorie 2' },
   { key: 'distance', label: 'Distance (km)', format: (v) => v ? `${v} km` : '-' },
@@ -177,6 +184,9 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const getRaceCurrentValue = (race: ExistingRace, field: string): any => {
     switch (field) {
       case 'name': return race.name
+      case 'startDate': 
+        // Si _current existe, utiliser la valeur actuelle, sinon la valeur de la course
+        return race._current?.startDate || race.startDate
       case 'categoryLevel1': return race.categoryLevel1
       case 'categoryLevel2': return race.categoryLevel2
       case 'distance': return race.distance
@@ -188,10 +198,11 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const getRaceProposedValue = (race: RaceToAdd, field: string): any => {
     switch (field) {
       case 'name': return race.name
+      case 'startDate': return race.startDate
       case 'categoryLevel1': return race.categoryLevel1
       case 'categoryLevel2': return race.categoryLevel2
-      case 'distance': return race.distance
-      case 'elevation': return race.elevation
+      case 'distance': return race.runDistance ?? race.distance  // Préférer runDistance (Miles Republic)
+      case 'elevation': return race.runPositiveElevation ?? race.elevation  // Préférer runPositiveElevation
       default: return null
     }
   }
@@ -284,6 +295,10 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
               
               return RACE_FIELDS.map((field, fieldIdx) => {
                 const currentValue = getRaceCurrentValue(race, field.key)
+                // Pour la valeur proposée, utiliser directement les propriétés de la course
+                const proposedValue = field.key === 'startDate' 
+                  ? race.startDate  // Valeur proposée (déjà appliquée par le backend)
+                  : currentValue
                 const isFirstRow = fieldIdx === 0
                 
                 return (
@@ -305,7 +320,11 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </TableCell>
                     )}
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        fontWeight={proposedValue !== currentValue ? 'bold' : 500}
+                      >
                         {field.label}
                       </Typography>
                     </TableCell>
@@ -315,7 +334,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      {renderEditableCell('existing', raceIdx, field.key, currentValue, field.format)}
+                      {renderEditableCell('existing', raceIdx, field.key, proposedValue, field.format)}
                     </TableCell>
                     {isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
@@ -363,7 +382,11 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </TableCell>
                     )}
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">
+                      <Typography 
+                        variant="body2" 
+                        color="text.secondary"
+                        fontWeight={500}
+                      >
                         {field.label}
                       </Typography>
                     </TableCell>
