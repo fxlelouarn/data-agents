@@ -859,6 +859,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
           old: currentStartDate, // Valeur actuelle (peut être null)
           new: proposedDate,
           confidence: enhancedConfidence // Utiliser la confiance améliorée
+        },
+        endDate: {
+          old: event.edition.startDate, // Même valeur que startDate actuelle
+          new: proposedDate, // endDate = startDate pour événements d'un jour
+          confidence: enhancedConfidence
+        },
+        calendarStatus: {
+          old: event.edition.calendarStatus,
+          new: 'CONFIRMED',
+          confidence: enhancedConfidence
         }
       }
 
