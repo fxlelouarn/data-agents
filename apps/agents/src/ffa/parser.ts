@@ -10,8 +10,10 @@ import { FFACompetition, FFACompetitionDetails, FFARace } from './types'
 
 /**
  * Parse le listing de compétitions depuis la table HTML FFA
+ * @param html Le HTML de la page de listing
+ * @param referenceDate Date de référence utilisée pour la recherche (pour déduire l'année si absente)
  */
-export function parseCompetitionsList(html: string): FFACompetition[] {
+export function parseCompetitionsList(html: string, referenceDate?: Date): FFACompetition[] {
   const $ = cheerio.load(html)
   const competitions: FFACompetition[] = []
 
@@ -34,7 +36,7 @@ export function parseCompetitionsList(html: string): FFACompetition[] {
       
       // Date
       const dateText = $cells.eq(0).find('a').text().trim()
-      const date = parseFrenchDate(dateText)
+      const date = parseFrenchDate(dateText, referenceDate)
       if (!date) return
 
       // Nom
@@ -49,8 +51,8 @@ export function parseCompetitionsList(html: string): FFACompetition[] {
       const departmentMatch = locationHtml.match(/frmdepartement=(\d+)/)
       const department = departmentMatch ? departmentMatch[1] : ''
 
-      // Ligue (ex: "ARA")
-      const ligueMatch = locationHtml.match(/frmligue=([A-Z]+)/)
+      // Ligue (ex: "ARA", "H-F", "G-E")
+      const ligueMatch = locationHtml.match(/frmligue=([A-Z-]+)/)
       const ligue = ligueMatch ? ligueMatch[1] : ''
 
       // Type
@@ -97,8 +99,39 @@ export function parseCompetitionDetails(
 
   const details: FFACompetitionDetails = {
     competition,
+    startDate: competition.date,  // Initialisation par défaut
+    endDate: competition.date,    // Initialisation par défaut
     races: []
   }
+
+  // Vérifier si c'est un événement multi-jours
+  // Format: "17 au 18 Janvier 2026" ou "17 au 18 janvier"
+  const dateRangeText = $('.body-small.text-dark-grey').first().text().trim()
+  const dateRangeMatch = dateRangeText.match(/(\d{1,2})\s+au\s+(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/)
+  
+  if (dateRangeMatch) {
+    // Événement multi-jours : écraser avec les dates réelles
+    const startDay = parseInt(dateRangeMatch[1], 10)
+    const endDay = parseInt(dateRangeMatch[2], 10)
+    const monthName = dateRangeMatch[3].toLowerCase()
+    const year = dateRangeMatch[4] 
+      ? parseInt(dateRangeMatch[4], 10)
+      : competition.date.getFullYear()
+    
+    // Mapping des mois français
+    const monthsMap: Record<string, number> = {
+      'janvier': 0, 'fevrier': 1, 'février': 1, 'mars': 2, 'avril': 3,
+      'mai': 4, 'juin': 5, 'juillet': 6, 'aout': 7, 'août': 7,
+      'septembre': 8, 'octobre': 9, 'novembre': 10, 'decembre': 11, 'décembre': 11
+    }
+    
+    const month = monthsMap[monthName]
+    if (month !== undefined) {
+      details.startDate = new Date(Date.UTC(year, month, startDay, 0, 0, 0, 0))
+      details.endDate = new Date(Date.UTC(year, month, endDay, 0, 0, 0, 0))
+    }
+  }
+  // Sinon : startDate = endDate = competition.date (déjà initialisé)
 
   // Extraire les informations de l'organisateur
   // Chercher d'abord dans le titre/header de la page pour le nom de l'organisateur
@@ -194,8 +227,9 @@ export function parseRaces(html: string): FFARace[] {
   $clubCards.each((index, element) => {
     const $card = $(element)
     
-    // Titre de la course (contient heure, distance, nom)
-    // Ex: "14:00 - 1 km - Course HS non officielle" ou "09:00 - 22éme toussitrail 21kms - Trail XXS"
+    // Titre de la course
+    // Format 1 (événement 1 jour): "14:00 - 1 km - Course HS non officielle"
+    // Format 2 (événement multi-jours): "17/01 18:30 - Bol d'air de saint-av 9 km by night"
     const raceTitle = $card.find('h3').text().trim()
     if (!raceTitle) {
       console.log(`[PARSER] Card ${index}: titre vide`)
@@ -208,9 +242,20 @@ export function parseRaces(html: string): FFARace[] {
     
     console.log(`[PARSER] Course trouvée: \"${raceTitle}\" | Détails: \"${raceDetails}\"`)
 
-    // Extraire heure de départ depuis le titre
-    const timeMatch = raceTitle.match(/(\d{1,2}):(\d{2})/)
-    const startTime = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : undefined
+    // Extraire date (format: "17/01") pour événements multi-jours
+    const dateMatch = raceTitle.match(/(\d{1,2})\/(\d{2})\s+(\d{1,2}):(\d{2})/)
+    let raceDate: string | undefined
+    let startTime: string | undefined
+    
+    if (dateMatch) {
+      // Format multi-jours: "17/01 18:30"
+      raceDate = `${dateMatch[1]}/${dateMatch[2]}`
+      startTime = `${dateMatch[3]}:${dateMatch[4]}`
+    } else {
+      // Format 1 jour: "14:00"
+      const timeMatch = raceTitle.match(/(\d{1,2}):(\d{2})/)
+      startTime = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : undefined
+    }
 
     // Extraire distance depuis les détails ou le titre
     const distance = parseDistance(raceDetails || raceTitle)
@@ -231,6 +276,7 @@ export function parseRaces(html: string): FFARace[] {
 
     races.push({
       name: cleanEventName(raceTitle),
+      raceDate,
       startTime,
       distance,
       positiveElevation,
@@ -244,8 +290,11 @@ export function parseRaces(html: string): FFARace[] {
 /**
  * Parse une date française "30 Novembre 2025" ou "01 novembre"
  * Retourne une date à minuit UTC
+ * 
+ * @param dateStr La date au format français (ex: "19 Avril 2026" ou "19 Avril")
+ * @param referenceDate Date de référence pour déduire l'année si non fournie (utilise l'année du mois scrapé)
  */
-export function parseFrenchDate(dateStr: string): Date | undefined {
+export function parseFrenchDate(dateStr: string, referenceDate?: Date): Date | undefined {
   try {
     // Mapping des mois français
     const monthsMap: Record<string, number> = {
@@ -260,10 +309,22 @@ export function parseFrenchDate(dateStr: string): Date | undefined {
 
     const day = parseInt(match[1], 10)
     const monthName = match[2].toLowerCase()
-    const year = match[3] ? parseInt(match[3], 10) : new Date().getFullYear()
-
+    
     const month = monthsMap[monthName]
     if (month === undefined) return undefined
+    
+    // Déterminer l'année
+    let year: number
+    if (match[3]) {
+      // Année explicite fournie
+      year = parseInt(match[3], 10)
+    } else if (referenceDate) {
+      // Utiliser l'année du mois scrapé
+      year = referenceDate.getFullYear()
+    } else {
+      // Fallback : année courante
+      year = new Date().getFullYear()
+    }
 
     // Créer la date en UTC à minuit pour éviter les problèmes de timezone
     const date = new Date(Date.UTC(year, month, day, 0, 0, 0, 0))

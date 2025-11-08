@@ -93,6 +93,12 @@ export interface FFACompetitionDetails {
   /** Informations de base */
   competition: FFACompetition
   
+  /** Date de début (égale à endDate pour événements 1 jour) */
+  startDate: Date
+  
+  /** Date de fin (égale à startDate pour événements 1 jour) */
+  endDate: Date
+  
   /** Nom de l'organisateur */
   organizerName?: string
   
@@ -127,6 +133,9 @@ export interface FFACompetitionDetails {
 export interface FFARace {
   /** Nom de l'épreuve */
   name: string
+  
+  /** Date de la course (pour événements multi-jours, format: "17/01") */
+  raceDate?: string
   
   /** Heure de départ (ex: "10:00") */
   startTime?: string
@@ -304,12 +313,20 @@ export function convertFFALigueToRegionCode(ffaLigue: string): string {
  * Convertit un code FFA ligue en nom de région (pour countrySubdivisionNameLevel1)
  */
 export function convertFFALigueToRegionName(ffaLigue: string): string {
-  return FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.name || ffaLigue
+  const result = FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.name || ffaLigue
+  if (!FFA_LIGUE_TO_REGION_CODE[ffaLigue]) {
+    console.warn(`⚠️  Ligue FFA inconnue pour conversion en nom: "${ffaLigue}" (longueur: ${ffaLigue.length})`)
+  }
+  return result
 }
 
 /**
  * Convertit un code FFA ligue en code d'affichage (pour countrySubdivisionDisplayCodeLevel1)
  */
 export function convertFFALigueToDisplayCode(ffaLigue: string): string {
-  return FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.displayCode || ffaLigue
+  const result = FFA_LIGUE_TO_REGION_CODE[ffaLigue]?.displayCode || ffaLigue
+  if (!FFA_LIGUE_TO_REGION_CODE[ffaLigue]) {
+    console.warn(`⚠️  Ligue FFA inconnue pour conversion en display code: "${ffaLigue}" (longueur: ${ffaLigue.length})`)
+  }
+  return result
 }
