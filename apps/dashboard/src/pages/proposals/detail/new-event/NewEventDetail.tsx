@@ -78,6 +78,10 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
+              isBlockValidated={isBlockValidated('event')}
+              onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('event')}
+              isBlockPending={isBlockPending}
             />
             
             <CategorizedEditionChangesTable
@@ -93,30 +97,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
-              actions={allPending ? (
-                <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                  <Button
-                    variant="contained"
-                    color="success"
-                    size="small"
-                    startIcon={<ApproveIcon />}
-                    onClick={handleApproveAll}
-                    disabled={isPending || isEventDead}
-                  >
-                    Tout approuver
-                  </Button>
-                  <Button
-                    variant="outlined"
-                    color="error"
-                    size="small"
-                    startIcon={<RejectIcon />}
-                    onClick={handleRejectAll}
-                    disabled={isPending || isEventDead}
-                  >
-                    Tout rejeter
-                  </Button>
-                </Box>
-              ) : undefined}
+              isBlockValidated={isBlockValidated('edition')}
+              onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('edition')}
+              isBlockPending={isBlockPending}
+              // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
             {organizerChange && (
@@ -140,6 +125,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               proposalId={proposal?.id}
               proposal={proposal}
               disabled={!allPending || isPending || isEventDead}
+              isBlockValidated={isBlockValidated('races')}
+              onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('races')}
+              isBlockPending={isBlockPending}
+              validationDisabled={isEventDead}
             />
             
             <ProposalJustificationsCard

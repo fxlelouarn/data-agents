@@ -273,6 +273,8 @@ export class ProposalDomainService {
     proposal?: any
   ): Promise<ProposalApplicationResult> {
     try {
+      this.logger.info(`\n🔄 Application EDITION_UPDATE pour l'édition ${editionId}`)
+      
       const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
       const numericEditionId = parseInt(editionId)
 
@@ -284,6 +286,7 @@ export class ProposalDomainService {
       let racesChanges: any[] | undefined
       let racesToAdd: any[] | undefined
       let racesToDelete: number[] | undefined
+      let racesToUpdate: any[] | undefined
       let organizerData: any | undefined
       const updateData: Record<string, any> = { calendarStatus: 'CONFIRMED' }
 
@@ -302,6 +305,12 @@ export class ProposalDomainService {
           racesToDelete = value as number[]
           continue
         }
+        
+        // ✅ Extraire racesToUpdate pour propagation de dates (FFA + Google)
+        if (field === 'racesToUpdate') {
+          racesToUpdate = this.extractNewValue(value) as any[]
+          continue
+        }
 
         // Handle organizer (complex object)
         if (field === 'organizer') {
@@ -317,9 +326,14 @@ export class ProposalDomainService {
 
       // Fetch edition to update parent event
       const edition = await milesRepo.findEditionById(numericEditionId)
+      this.logger.info(`📝 Édition trouvée: ${edition?.eventId ? `Event ${edition.eventId}` : 'sans event'}`)
+
+      // Log update data
+      this.logger.info(`📋 Données à mettre à jour:`, JSON.stringify(updateData, null, 2))
 
       // Update edition
       await milesRepo.updateEdition(numericEditionId, updateData)
+      this.logger.info(`✅ Édition ${numericEditionId} mise à jour`)
 
       // Update organizer if provided
       if (organizerData && typeof organizerData === 'object') {
@@ -337,10 +351,12 @@ export class ProposalDomainService {
       // Update parent event
       if (edition?.eventId) {
         await milesRepo.touchEvent(edition.eventId)
+        this.logger.info(`✅ Événement parent ${edition.eventId} mis à jour (toUpdate=true)`)
       }
 
-      // Update races if any
+      // Update races if any (structure: changes.races)
       if (racesChanges && Array.isArray(racesChanges)) {
+        this.logger.info(`🏃 Mise à jour de ${racesChanges.length} course(s) existante(s)`)
         for (const raceChange of racesChanges) {
           const raceId = parseInt(raceChange.raceId)
           if (isNaN(raceId)) {
@@ -350,6 +366,36 @@ export class ProposalDomainService {
 
           const raceUpdateData = this.buildRaceUpdateData(raceChange)
           await milesRepo.updateRace(raceId, raceUpdateData)
+          this.logger.info(`  ✅ Course ${raceId} (${raceChange.raceName || 'sans nom'}) mise à jour`)
+        }
+      }
+      
+      // ✅ Update races from racesToUpdate (structure: changes.racesToUpdate[].updates.field)
+      // Utilisé par FFA Scraper et Google Agent pour propager les dates d'édition
+      if (racesToUpdate && Array.isArray(racesToUpdate)) {
+        this.logger.info(`📅 Propagation des dates vers ${racesToUpdate.length} course(s)`)
+        for (const raceUpdate of racesToUpdate) {
+          const raceId = parseInt(raceUpdate.raceId)
+          if (isNaN(raceId)) {
+            this.logger.warn(`ID de course invalide: ${raceUpdate.raceId}`)
+            continue
+          }
+
+          // Extraire les updates (startDate, etc.)
+          const updates = raceUpdate.updates || {}
+          const raceUpdateData: any = {}
+          
+          for (const [field, value] of Object.entries(updates)) {
+            const extractedValue = this.extractNewValue(value)
+            if (extractedValue !== undefined && extractedValue !== null) {
+              raceUpdateData[field] = extractedValue
+            }
+          }
+          
+          if (Object.keys(raceUpdateData).length > 0) {
+            await milesRepo.updateRace(raceId, raceUpdateData)
+            this.logger.info(`  ✅ Course ${raceId} (${raceUpdate.raceName || 'sans nom'}) mise à jour:`, raceUpdateData)
+          }
         }
       }
       
@@ -362,10 +408,10 @@ export class ProposalDomainService {
         // Filtrer les courses marquées pour suppression
         const racesToAddEffective = racesToAdd.filter((_, index) => !racesToAddFiltered.includes(index))
         
-        this.logger.info(`Ajout de ${racesToAddEffective.length} course(s) à l'édition ${numericEditionId}`)
+        this.logger.info(`➕ Ajout de ${racesToAddEffective.length} course(s) à l'édition ${numericEditionId}`)
         for (let i = 0; i < racesToAdd.length; i++) {
           if (racesToAddFiltered.includes(i)) {
-            this.logger.info(`Course index ${i} filtrée (supprimée par l'utilisateur)`)
+            this.logger.info(`  ⏭️  Course index ${i} filtrée (supprimée par l'utilisateur)`)
             continue
           }
           
@@ -387,7 +433,8 @@ export class ProposalDomainService {
             racePayload.type = finalType
           }
           
-          await milesRepo.createRace(racePayload)
+          const newRace = await milesRepo.createRace(racePayload)
+          this.logger.info(`  ✅ Course créée: ${newRace.id} (${newRace.name}) - ${newRace.runDistance}km`)
         }
       }
       
@@ -398,14 +445,17 @@ export class ProposalDomainService {
         .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
       
       if (existingRaceEdits.length > 0) {
-        this.logger.info(`Mise à jour de ${existingRaceEdits.length} course(s) existante(s)`)
+        this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
         
         // Récupérer les courses existantes enrichies
         const existingRaces = (proposal as any).existingRaces || []
         
         for (const { index, edits } of existingRaceEdits) {
           const race = existingRaces[index]
-          if (!race) continue
+          if (!race) {
+            this.logger.warn(`  ⚠️  Course index ${index} introuvable dans existingRaces`)
+            continue
+          }
           
           const updateData: any = {}
           
@@ -416,17 +466,21 @@ export class ProposalDomainService {
           
           if (Object.keys(updateData).length > 0) {
             await milesRepo.updateRace(race.id, updateData)
+            this.logger.info(`  ✅ Course ${race.id} (${race.name}) mise à jour via edits utilisateur`)
           }
         }
       }
       
       // Delete races if any
       if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
-        this.logger.info(`Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
+        this.logger.info(`🗑️  Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
         for (const raceId of racesToDelete) {
           await milesRepo.deleteRace(raceId)
+          this.logger.info(`  ✅ Course ${raceId} supprimée`)
         }
       }
+
+      this.logger.info(`\n✅ EDITION_UPDATE appliqué avec succès pour l'édition ${numericEditionId}\n`)
 
       return {
         success: true,

@@ -117,7 +117,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   if (raceChanges.length === 0) return null
 
   return (
-    <Card sx={{ mt: 2, ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 }) }}>
+    <Card sx={{ mt: 2, ...(isBlockValidated && { bgcolor: 'action.hover', opacity: 0.7 }) }}>
       <CardContent>
         <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
           <Typography variant="h6">

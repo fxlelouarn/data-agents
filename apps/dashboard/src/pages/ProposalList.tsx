@@ -143,6 +143,7 @@ const ProposalList: React.FC = () => {
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'ALL'>('PENDING')
   const [typeFilter, setTypeFilter] = useState<ProposalType | 'ALL'>('ALL')
+  const [agentFilter, setAgentFilter] = useState<string>('ALL')
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -174,7 +175,7 @@ const ProposalList: React.FC = () => {
   // Reset pagination when filters change
   React.useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }))
-  }, [statusFilter, typeFilter])
+  }, [statusFilter, typeFilter, agentFilter])
   
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
@@ -182,11 +183,23 @@ const ProposalList: React.FC = () => {
   const bulkDeleteMutation = useBulkDeleteProposals()
   const deleteMutation = useDeleteProposal()
 
-  // Filter proposals based on search term
+  // Get unique agent names for filter
+  const uniqueAgents = useMemo(() => {
+    if (!proposalsData?.data) return []
+    const agentNames = [...new Set(proposalsData.data.map(p => p.agent.name))]
+    return agentNames.sort()
+  }, [proposalsData?.data])
+
+  // Filter proposals based on search term and agent
   const filteredProposals = useMemo(() => {
     if (!proposalsData?.data) return []
     
     return proposalsData.data.filter(proposal => {
+      // Filter by agent
+      if (agentFilter !== 'ALL' && proposal.agent.name !== agentFilter) {
+        return false
+      }
+      
       const searchLower = searchTerm.toLowerCase()
       
       // Recherche dans les champs de base
@@ -223,7 +236,7 @@ const ProposalList: React.FC = () => {
       
       return false
     })
-  }, [proposalsData?.data, searchTerm])
+  }, [proposalsData?.data, searchTerm, agentFilter])
 
   // Group proposals by event/edition
   const groupedProposals = useMemo(() => {
@@ -757,8 +770,8 @@ const ProposalList: React.FC = () => {
       {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Grid container spacing={3} alignItems="center">
-            <Grid item xs={12} md={4}>
+          <Grid container spacing={2} alignItems="center">
+            <Grid item xs={12} md={3}>
               <TextField
                 fullWidth
                 label="Rechercher"
@@ -774,7 +787,7 @@ const ProposalList: React.FC = () => {
                 size="small"
               />
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Statut</InputLabel>
                 <Select
@@ -791,7 +804,7 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} md={3}>
+            <Grid item xs={12} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Type</InputLabel>
                 <Select
@@ -808,8 +821,25 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
+            <Grid item xs={12} md={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Agent</InputLabel>
+                <Select
+                  value={agentFilter}
+                  label="Agent"
+                  onChange={(e) => setAgentFilter(e.target.value)}
+                >
+                  <MenuItem value="ALL">Tous les agents</MenuItem>
+                  {uniqueAgents.map((agentName) => (
+                    <MenuItem key={agentName} value={agentName}>
+                      {agentName}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
             {viewMode === 'grouped' && (
-              <Grid item xs={12} md={2}>
+              <Grid item xs={12} md={3}>
                 <FormControl fullWidth size="small">
                   <InputLabel>Tri</InputLabel>
                   <Select
@@ -914,7 +944,21 @@ const ProposalList: React.FC = () => {
                   <Typography variant="h6" sx={{ flexGrow: 1 }}>
                     {getEventTitle(groupKey, proposals)}
                   </Typography>
-                  <Box sx={{ display: 'flex', gap: 1 }}>
+                  <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
+                    {/* Afficher les noms d'agents uniques */}
+                    {[...new Set(proposals.map(p => p.agent.name))].map((agentName) => (
+                      <Chip
+                        key={agentName}
+                        size="small"
+                        label={agentName}
+                        variant="outlined"
+                        sx={{ 
+                          backgroundColor: '#f3f4f6',
+                          borderColor: '#9ca3af',
+                          fontWeight: 500
+                        }}
+                      />
+                    ))}
                     {/* Afficher les types uniques */}
                     {[...new Set(proposals.map(p => p.type))].map((type) => (
                       <Chip

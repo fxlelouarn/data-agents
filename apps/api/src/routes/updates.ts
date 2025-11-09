@@ -284,10 +284,11 @@ router.post('/:id/apply', [
     logs.push('Starting update application...')
     logs.push('Validating proposal changes...')
     
-    // Apply the proposal using ProposalApplicationService
+    // Apply the proposal using ProposalApplicationService with log capturing
     const result = await applicationService.applyProposal(
       application.proposalId,
-      application.proposal.changes as Record<string, any> // Use all changes from the proposal
+      application.proposal.changes as Record<string, any>, // Use all changes from the proposal
+      { capturedLogs: logs } // Pass logs array to capture detailed logs
     )
 
     if (result.success) {

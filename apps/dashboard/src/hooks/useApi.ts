@@ -376,6 +376,27 @@ export const useUnapproveProposal = () => {
   })
 }
 
+export const useUnapproveBlock = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: ({ id, block }: { id: string; block: string }) => proposalsApi.unapproveBlock(id, block),
+    onSuccess: (response, { id, block }) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['proposals', id] })
+      queryClient.invalidateQueries({ queryKey: ['proposals', 'group'] })
+      enqueueSnackbar(response.message || `Bloc "${block}" annulé`, { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || "Erreur lors de l'annulation du bloc",
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useCreateManualProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

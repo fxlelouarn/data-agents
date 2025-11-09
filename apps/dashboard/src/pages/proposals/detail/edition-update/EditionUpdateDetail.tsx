@@ -97,6 +97,11 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 proposalId={proposalId}
                 proposal={proposal}
                 disabled={!allPending || isPending || isEventDead}
+                isBlockValidated={isBlockValidated('races')}
+                onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('races')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             

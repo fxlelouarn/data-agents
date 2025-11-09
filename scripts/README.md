@@ -4,6 +4,38 @@ Ce répertoire contient les scripts utilitaires pour le projet data-agents, part
 
 ## 📁 Contenu
 
+### `test-ffa-url.ts` 🔍
+Script pour tester le parsing d'une URL FFA spécifique.
+
+**Usage de base :**
+```bash
+npm run test:ffa-url <url>
+```
+
+**Exemple :**
+```bash
+npm run test:ffa-url https://www.athle.fr/competitions/802846250846463840409834305840586837
+```
+
+**Résultat :**
+Le script affiche :
+- ✅ Informations de téléchargement (taille HTML)
+- 📅 Dates de début et fin (détection événements multi-jours)
+- 👥 Informations organisateur (nom, email, téléphone, site web)
+- 🏃 Liste des courses avec :
+  - Nom de la course
+  - Date (pour événements multi-jours) et heure de départ
+  - Distance (en mètres et km)
+  - Dénivelé positif (D+)
+  - Type (trail, running, walk, other)
+- 📄 JSON complet de l'objet parsé
+
+**Cas d'usage :**
+- Déboguer le parsing FFA
+- Vérifier l'extraction des dates multi-jours
+- Valider le parsing des informations organisateur
+- Analyser la structure des courses
+
 ### `test-agent.sh` 🧪
 Script principal pour tester les agents avec des raccourcis pratiques.
 

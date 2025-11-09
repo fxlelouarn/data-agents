@@ -27,6 +27,8 @@ import {
   Undo as UndoIcon,
   Edit as EditIcon
 } from '@mui/icons-material'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 import type { ConsolidatedChange } from '@/pages/proposals/detail/base/GroupedProposalDetailBase'
 import BlockValidationButton from '@/components/proposals/BlockValidationButton'
 import { useProposalBlockValidation } from '@/hooks/useProposalBlockValidation'
@@ -173,13 +175,24 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
     rowSpan: number
   }> = []
   
+  // Fonction pour formater une date/heure avec jour de la semaine
+  const formatDateTime = (dateString: string): string => {
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return dateString
+      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+    } catch {
+      return dateString
+    }
+  }
+  
   races.forEach((race, raceIndex) => {
     const raceFields = [
       { label: 'Nom', currentValue: null, proposedValue: race.name, alwaysShow: true },
       { label: 'Catégorie 1', currentValue: null, proposedValue: race.categoryLevel1 || null, alwaysShow: true },
       { label: 'Catégorie 2', currentValue: null, proposedValue: race.categoryLevel2 || null, alwaysShow: true },
       { label: 'Distance (km)', currentValue: null, proposedValue: race.distance, alwaysShow: false },
-      { label: 'Date', currentValue: null, proposedValue: race.startDate ? new Date(race.startDate).toLocaleDateString('fr-FR') : null, alwaysShow: false },
+      { label: 'Date + Heure', currentValue: null, proposedValue: race.startDate ? formatDateTime(race.startDate) : null, alwaysShow: false },
       { label: 'URL inscription', currentValue: null, proposedValue: race.registrationUrl, alwaysShow: false }
     ].filter(f => f.alwaysShow || f.proposedValue) // Toujours afficher Nom, Cat1, Cat2, sinon que si valeur
     

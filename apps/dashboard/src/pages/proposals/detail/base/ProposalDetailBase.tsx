@@ -27,6 +27,7 @@ import {
   useReviveEvent
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
+import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
 
 export interface ConsolidatedChange {
   field: string
@@ -216,33 +217,65 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     
     const blocks: Record<string, string[]> = {}
     
-    // Bloc Edition - tous les champs sauf organizer et racesToAdd
+    // Bloc Event - uniquement les champs appartenant à l'événement
+    if (isNewEvent || proposal.type === 'EVENT_UPDATE') {
+      const hasEventChanges = consolidatedChanges.some(c => 
+        isFieldInBlock(c.field, 'event')
+      )
+      if (hasEventChanges) {
+        blocks['event'] = [proposal.id]
+        console.log('[DEBUG] Bloc Event (single):', [proposal.id])
+      }
+    }
+    
+    // Bloc Edition - uniquement les champs appartenant à l'édition
     const hasEditionChanges = consolidatedChanges.some(c => 
-      !['organizer', 'racesToAdd'].includes(c.field)
+      isFieldInBlock(c.field, 'edition')
     )
     if (hasEditionChanges) {
       blocks['edition'] = [proposal.id]
+      console.log('[DEBUG] Bloc Edition (single):', [proposal.id])
     }
     
     // Bloc Organisateur
-    const hasOrganizerChange = consolidatedChanges.some(c => c.field === 'organizer')
+    const hasOrganizerChange = consolidatedChanges.some(c => 
+      isFieldInBlock(c.field, 'organizer')
+    )
     if (hasOrganizerChange) {
       blocks['organizer'] = [proposal.id]
+      console.log('[DEBUG] Bloc Organizer (single):', [proposal.id])
     }
     
-    // Bloc Courses
-    if (consolidatedRaceChanges.length > 0) {
+    // Bloc Courses (modifications de courses existantes OU courses à ajouter)
+    const hasRaceChanges = consolidatedRaceChanges.length > 0
+    const hasRacesToAdd = consolidatedChanges.some(c => 
+      isFieldInBlock(c.field, 'races')
+    )
+    // Vérifier aussi racesToUpdate (champ de metadata pour les courses proposées par FFA)
+    const hasRacesToUpdate = proposal.changes?.racesToUpdate && 
+                             Array.isArray(proposal.changes.racesToUpdate) && 
+                             proposal.changes.racesToUpdate.length > 0
+    // Vérifier aussi existingRaces (courses enrichies pour l'UI)
+    const hasExistingRaces = proposal.existingRaces && 
+                             Array.isArray(proposal.existingRaces) && 
+                             proposal.existingRaces.length > 0
+    
+    if (hasRaceChanges || hasRacesToAdd || hasRacesToUpdate || hasExistingRaces) {
       blocks['races'] = [proposal.id]
+      console.log('[DEBUG] Bloc Courses (single):', [proposal.id])
     }
     
     return blocks
-  }, [proposal, consolidatedChanges, consolidatedRaceChanges])
+  }, [proposal, consolidatedChanges, consolidatedRaceChanges, isNewEvent])
   
   // Hook de validation par blocs
   const {
     validateBlock,
     unvalidateBlock,
+    validateAllBlocks: validateAllBlocksBase,
+    unvalidateAllBlocks,
     isBlockValidated,
+    hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
     proposals: proposal ? [proposal] : [],
@@ -403,10 +436,13 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
             onPrevious: () => navigateToProposal('prev'),
             onNext: () => navigateToProposal('next')
           }}
+          showValidateAllBlocksButton={allPending && !isEventDead && Object.keys(blockProposals).length > 0}
+          onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
+          showUnvalidateAllBlocksButton={hasValidatedBlocks()}
+          onUnvalidateAllBlocks={unvalidateAllBlocks}
+          isValidateAllBlocksPending={isBlockPending}
           showArchiveButton={false}
-          showUnapproveButton={hasApproved}
-          onUnapprove={handleUnapprove}
-          disabled={updateProposalMutation.isPending || unapproveProposalMutation.isPending}
+          disabled={updateProposalMutation.isPending}
           showBackButton={true}
         />
       )}

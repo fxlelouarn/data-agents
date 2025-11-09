@@ -259,13 +259,13 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
     const isMultiple = table.hasMultipleValues(change)
     const fieldDisabled = table.isFieldDisabled(fieldName)
     const isEditing = table.editingField === fieldName
-
+    
     return (
       <TableRow 
         key={fieldName}
         sx={{
-          backgroundColor: fieldDisabled ? 'action.hover' : 'inherit',
-          opacity: fieldDisabled ? 0.6 : 1
+          backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
+          opacity: isBlockValidated ? 0.6 : 1
         }}
       >
         {/* Colonne: Champ */}
@@ -340,7 +340,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           alignItems: 'center', 
           justifyContent: 'space-between',
           ...(variant === 'categorized' && { borderBottom: 1, borderColor: 'divider' }),
-          ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 })
+          ...(isBlockValidated && { bgcolor: 'action.hover', opacity: 0.7 })
         }}
       >
         <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>

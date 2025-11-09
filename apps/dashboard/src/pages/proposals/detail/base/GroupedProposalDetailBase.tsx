@@ -30,6 +30,7 @@ import {
   useProposalGroup 
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
+import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
 
 export interface ConsolidatedChange {
   field: string
@@ -530,19 +531,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
   }
 
-  const handleUnapproveAll = async () => {
-    try {
-      const approvedProposals = groupProposals.filter(p => p.status === 'APPROVED')
-      for (const proposal of approvedProposals) {
-        await unapproveProposalMutation.mutateAsync(proposal.id)
-      }
-      
-      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
-    } catch (error) {
-      console.error('Error unapproving proposals:', error)
-    }
-  }
-
   const handleKillEvent = async () => {
     try {
       const eventId = firstProposal?.eventId
@@ -586,13 +574,29 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const blockProposals = useMemo(() => {
     const blocks: Record<string, string[]> = {}
     
-    // Bloc Edition
+    // Bloc Event - uniquement les champs appartenant à l'événement
+    if (isNewEvent || groupProposals[0]?.type === 'EVENT_UPDATE') {
+      const eventProposalIds = groupProposals
+        .filter(p => consolidatedChanges.some(c => 
+          isFieldInBlock(c.field, 'event') &&
+          c.options.some(o => o.proposalId === p.id)
+        ))
+        .map(p => p.id)
+      
+      if (eventProposalIds.length > 0) {
+        blocks['event'] = eventProposalIds
+        console.log('[DEBUG] Bloc Event:', eventProposalIds)
+      }
+    }
+    
+    // Bloc Edition - uniquement les champs appartenant à l'édition
     const editionProposalIds = groupProposals
       .filter(p => consolidatedChanges.some(c => 
-        !['organizer', 'racesToAdd'].includes(c.field) &&
+        isFieldInBlock(c.field, 'edition') &&
         c.options.some(o => o.proposalId === p.id)
       ))
       .map(p => p.id)
+    
     if (editionProposalIds.length > 0) {
       blocks['edition'] = editionProposalIds
       console.log('[DEBUG] Bloc Edition:', editionProposalIds)
@@ -601,29 +605,55 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // Bloc Organisateur
     const organizerProposalIds = groupProposals
       .filter(p => consolidatedChanges.some(c => 
-        c.field === 'organizer' &&
+        isFieldInBlock(c.field, 'organizer') &&
         c.options.some(o => o.proposalId === p.id)
       ))
       .map(p => p.id)
+    
     if (organizerProposalIds.length > 0) {
       blocks['organizer'] = organizerProposalIds
+      console.log('[DEBUG] Bloc Organizer:', organizerProposalIds)
     }
 
-    // Bloc Courses
+    // Bloc Courses (modifications de courses existantes OU courses à ajouter)
     const raceProposalIds = groupProposals
-      .filter(p => consolidatedRaceChangesWithCascade.some(rc =>
-        rc.proposalIds.includes(p.id)
-      ))
+      .filter(p => {
+        // Courses modifiées
+        const hasRaceChanges = consolidatedRaceChangesWithCascade.some(rc =>
+          rc.proposalIds.includes(p.id)
+        )
+        // Courses à ajouter via consolidatedChanges
+        const hasRacesToAdd = consolidatedChanges.some(c => 
+          isFieldInBlock(c.field, 'races') &&
+          c.options.some(o => o.proposalId === p.id)
+        )
+        // Vérifier aussi racesToUpdate (champ de metadata pour les courses proposées par FFA)
+        const hasRacesToUpdate = p.changes?.racesToUpdate && 
+                                 Array.isArray(p.changes.racesToUpdate) && 
+                                 p.changes.racesToUpdate.length > 0
+        // Vérifier aussi existingRaces (courses enrichies pour l'UI)
+        const hasExistingRaces = p.existingRaces && 
+                                 Array.isArray(p.existingRaces) && 
+                                 p.existingRaces.length > 0
+        
+        return hasRaceChanges || hasRacesToAdd || hasRacesToUpdate || hasExistingRaces
+      })
       .map(p => p.id)
+    
     if (raceProposalIds.length > 0) {
       blocks['races'] = raceProposalIds
-    }
-
-    // Bloc Événement (si NEW_EVENT ou EVENT_UPDATE)
-    if (isNewEvent || groupProposals[0]?.type === 'EVENT_UPDATE') {
-      blocks['event'] = groupProposals
-        .filter(p => ['NEW_EVENT', 'EVENT_UPDATE'].includes(p.type))
-        .map(p => p.id)
+      console.log('[DEBUG] Bloc Courses:', raceProposalIds, {
+        consolidatedRaceChangesCount: consolidatedRaceChangesWithCascade.length,
+        proposalsWithRacesToUpdate: groupProposals.filter(p => p.changes?.racesToUpdate).map(p => p.id),
+        proposalsWithExistingRaces: groupProposals.filter(p => p.existingRaces?.length > 0).map(p => p.id)
+      })
+    } else {
+      console.log('[DEBUG] Aucun bloc Courses détecté:', {
+        consolidatedRaceChangesCount: consolidatedRaceChangesWithCascade.length,
+        consolidatedChangesFields: consolidatedChanges.map(c => c.field),
+        proposalsWithRacesToUpdate: groupProposals.filter(p => p.changes?.racesToUpdate).map(p => ({ id: p.id, racesToUpdate: p.changes?.racesToUpdate })),
+        proposalsWithExistingRaces: groupProposals.filter(p => p.existingRaces).map(p => ({ id: p.id, existingRacesCount: p.existingRaces?.length }))
+      })
     }
 
     return blocks
@@ -635,7 +665,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     validateBlock,
     unvalidateBlock,
     validateAllBlocks: validateAllBlocksBase,
+    unvalidateAllBlocks,
     isBlockValidated,
+    hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
     proposals: groupProposals,
@@ -715,16 +747,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           }}
           showValidateAllBlocksButton={allPending && !isEventDead && Object.keys(blockProposals).length > 0}
           onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
+          showUnvalidateAllBlocksButton={hasValidatedBlocks()}
+          onUnvalidateAllBlocks={unvalidateAllBlocks}
           isValidateAllBlocksPending={isBlockPending}
-          // showApproveAllButton={allPending && !isEventDead}  // ❌ OBSOLETE - Remplacé par validation par blocs
-          // onApproveAll={handleApproveAll}                      // ❌ OBSOLETE - Remplacé par validation par blocs
           showKillEventButton={allPending && !isEventDead && !isNewEvent && Boolean(eventId)}
           onKillEvent={() => setKillDialogOpen(true)}
           showArchiveButton={allPending}
           onArchive={handleArchive}
-          showUnapproveButton={hasApproved}
-          onUnapprove={handleUnapproveAll}
-          disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending || unapproveProposalMutation.isPending}
+          disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
           showBackButton={true}
         />
       )}

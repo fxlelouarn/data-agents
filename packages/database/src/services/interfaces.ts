@@ -200,6 +200,7 @@ export interface ApplyOptions {
   force?: boolean           // Bypass validation
   dryRun?: boolean         // Simulation
   milesRepublicDatabaseId?: string // ID de la connexion Miles Republic
+  capturedLogs?: string[]  // Tableau pour capturer les logs (pour l'interface utilisateur)
 }
 
 export interface ProposalApplicationResult {

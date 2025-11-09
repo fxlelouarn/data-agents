@@ -468,11 +468,14 @@ export class FFAScraperAgent extends BaseAgent {
               categoryLevel1 = 'RUNNING'
           }
           
+          // Calculer la startDate complète (date + heure + timezone)
+          const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
+          
           racesToAdd.push({
             name: ffaRace.name,
             distance: ffaRace.distance ? ffaRace.distance / 1000 : undefined,
             elevation: ffaRace.positiveElevation,
-            startTime: ffaRace.startTime,
+            startDate: raceStartDate,  // DateTime UTC complet
             categoryLevel1,
             categoryLevel2: undefined, // Sera renseigné manuellement si besoin
             categories: ffaRace.categories,
@@ -848,26 +851,52 @@ export class FFAScraperAgent extends BaseAgent {
    * Convertit l'heure locale (selon la ligue) en UTC
    */
   private calculateRaceStartDate(ffaData: FFACompetitionDetails, race: FFARace): Date {
-    if (race.startTime) {
-      // La date de la compétition est en UTC à minuit
-      const competitionDate = ffaData.competition.date
-      const year = competitionDate.getUTCFullYear()
-      const month = competitionDate.getUTCMonth()
-      const day = competitionDate.getUTCDate()
+    // Déterminer la date de base
+    let baseDate: Date
+    
+    // Si la course a une date spécifique (format "28/02" pour événements multi-jours)
+    if (race.raceDate) {
+      // Parser le format "DD/MM"
+      const [dayStr, monthStr] = race.raceDate.split('/')
+      const raceDay = parseInt(dayStr, 10)
+      const raceMonth = parseInt(monthStr, 10) - 1 // JavaScript months are 0-indexed
       
+      // Déterminer l'année : utiliser startDate de l'événement
+      const year = ffaData.startDate.getUTCFullYear()
+      
+      // Vérifier si c'est un changement d'année (décembre -> janvier)
+      // Si le mois de la course est janvier (0) et que startDate est en décembre,
+      // alors la course est l'année suivante
+      const startMonth = ffaData.startDate.getUTCMonth()
+      const adjustedYear = (raceMonth === 0 && startMonth === 11) ? year + 1 : year
+      
+      baseDate = new Date(Date.UTC(adjustedYear, raceMonth, raceDay, 0, 0, 0, 0))
+      
+      this.logger.debug(`📅 Course avec date spécifique: ${race.raceDate} -> ${baseDate.toISOString().split('T')[0]}`)
+    } else {
+      // Utiliser la date de début de l'événement (startDate)
+      baseDate = ffaData.startDate
+    }
+    
+    const year = baseDate.getUTCFullYear()
+    const month = baseDate.getUTCMonth()
+    const day = baseDate.getUTCDate()
+    
+    // Déterminer l'offset UTC selon la ligue
+    const ligue = ffaData.competition.ligue
+    const offsetHours = this.getTimezoneOffset(ligue, month)
+    
+    if (race.startTime) {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = race.startTime.split(':').map(Number)
       
-      // Déterminer l'offset UTC selon la ligue
-      const ligue = ffaData.competition.ligue
-      const offsetHours = this.getTimezoneOffset(ligue, month)
-      
-      // Créer la date en UTC
+      // Créer la date en UTC (heure locale - offset)
       return new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
     }
     
-    // Sinon, utiliser la date à minuit UTC
-    return ffaData.competition.date
+    // Sinon, minuit heure locale (00:00 local time)
+    // Convertir en UTC : 00:00 - offsetHours
+    return new Date(Date.UTC(year, month, day, 0 - offsetHours, 0, 0, 0))
   }
 
   /**
@@ -875,20 +904,20 @@ export class FFAScraperAgent extends BaseAgent {
    * Convertit l'heure locale (selon la ligue) en UTC
    */
   private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
+    // La date de la compétition est en UTC à minuit
+    const competitionDate = ffaData.competition.date
+    const year = competitionDate.getUTCFullYear()
+    const month = competitionDate.getUTCMonth()
+    const day = competitionDate.getUTCDate()
+    
+    // Déterminer l'offset UTC selon la ligue
+    const ligue = ffaData.competition.ligue
+    const offsetHours = this.getTimezoneOffset(ligue, month)
+    
     // Si on a des courses avec une heure de départ
     if (ffaData.races.length > 0 && ffaData.races[0].startTime) {
-      // La date de la compétition est en UTC à minuit
-      const competitionDate = ffaData.competition.date
-      const year = competitionDate.getUTCFullYear()
-      const month = competitionDate.getUTCMonth()
-      const day = competitionDate.getUTCDate()
-      
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = ffaData.races[0].startTime.split(':').map(Number)
-      
-      // Déterminer l'offset UTC selon la ligue
-      const ligue = ffaData.competition.ligue
-      const offsetHours = this.getTimezoneOffset(ligue, month)
       
       // Créer la date en heure locale
       const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
@@ -900,9 +929,12 @@ export class FFAScraperAgent extends BaseAgent {
       this.logger.info(`🕒 Date calculée avec heure première course: ${localDateStr} ${ligue} (UTC${offsetSign}${offsetHours}) -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name} à ${ffaData.races[0].startTime})`)
       return startDateUTC
     }
-    // Sinon, utiliser la date à minuit UTC
-    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit UTC: ${ffaData.competition.date.toISOString()} (${ffaData.races.length} courses)`)
-    return ffaData.competition.date
+    
+    // Sinon, minuit heure locale (00:00 local time)
+    // Convertir en UTC : 00:00 - offsetHours
+    const midnightLocalUTC = new Date(Date.UTC(year, month, day, 0 - offsetHours, 0, 0, 0))
+    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit heure locale: ${midnightLocalUTC.toISOString()} (${ffaData.races.length} courses)`)
+    return midnightLocalUTC
   }
 
   /**

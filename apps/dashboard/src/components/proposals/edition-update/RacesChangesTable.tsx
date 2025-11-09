@@ -23,8 +23,9 @@ import {
   Check as CheckIcon,
   Close as CloseIcon
 } from '@mui/icons-material'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 import BlockValidationButton from '../BlockValidationButton'
-import { useProposalBlockValidation } from '@/hooks/useProposalBlockValidation'
 import { useUpdateProposal } from '@/hooks/useApi'
 
 interface ExistingRace {
@@ -59,8 +60,11 @@ interface RacesChangesTableProps {
   proposalId?: string
   proposal?: any
   disabled?: boolean
+  isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
   onUnvalidateBlock?: () => Promise<void>
+  isBlockPending?: boolean
+  validationDisabled?: boolean
 }
 
 type RaceField = {
@@ -71,7 +75,20 @@ type RaceField = {
 
 const RACE_FIELDS: RaceField[] = [
   { key: 'name', label: 'Nom' },
-  { key: 'startDate', label: 'Date', format: (v) => v ? new Date(v).toLocaleDateString('fr-FR', { day: '2-digit', month: '2-digit', year: 'numeric' }) : '-' },
+  { 
+    key: 'startDate', 
+    label: 'Date + Heure', 
+    format: (v) => {
+      if (!v) return '-'
+      try {
+        const date = new Date(v)
+        if (isNaN(date.getTime())) return v
+        return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+      } catch {
+        return v
+      }
+    }
+  },
   { key: 'categoryLevel1', label: 'Catégorie 1' },
   { key: 'categoryLevel2', label: 'Catégorie 2' },
   { key: 'distance', label: 'Distance (km)', format: (v) => v ? `${v} km` : '-' },
@@ -84,8 +101,11 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   proposalId,
   proposal,
   disabled = false,
+  isBlockValidated = false,
   onValidateBlock,
-  onUnvalidateBlock
+  onUnvalidateBlock,
+  isBlockPending = false,
+  validationDisabled = false
 }) => {
   // États locaux
   const [racesToDelete, setRacesToDelete] = useState<Set<number>>(new Set())
@@ -95,7 +115,6 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const [raceEdits, setRaceEdits] = useState<Record<string, Record<string, any>>>({})
   
   const updateProposalMutation = useUpdateProposal()
-  const { isValidated, validate, cancel } = useProposalBlockValidation(proposalId, 'races')
   
   // Charger les modifications depuis userModifiedChanges
   useEffect(() => {
@@ -241,7 +260,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     return (
       <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
         <Typography variant="body2">{displayValue || '-'}</Typography>
-        {!disabled && (
+        {!disabled && !isBlockValidated && (
           <IconButton
             size="small"
             onClick={() => startEdit(type, index, field, editedValue)}
@@ -258,28 +277,38 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   
   return (
     <Paper sx={{ mb: 3 }}>
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+      <Box 
+        sx={{ 
+          p: 2, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          borderBottom: 1,
+          borderColor: 'divider',
+          ...(isBlockValidated && { bgcolor: 'action.hover', opacity: 0.7 })
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <AddIcon color="primary" />
           <Typography variant="h6">
             Courses ({totalRaces} total)
           </Typography>
         </Box>
-        {proposalId && (
+        {proposalId && onValidateBlock && onUnvalidateBlock && (
           <BlockValidationButton
             blockName="Courses"
-            isValidated={isValidated}
-            onValidate={validate}
-            onUnvalidate={cancel}
-            disabled={disabled}
-            isPending={false}
+            isValidated={isBlockValidated}
+            onValidate={onValidateBlock}
+            onUnvalidate={onUnvalidateBlock}
+            disabled={validationDisabled}
+            isPending={isBlockPending}
           />
         )}
       </Box>
       
       <TableContainer>
         <Table size="small">
-          <TableHead>
+          <TableHead sx={{ bgcolor: 'background.paper' }}>
             <TableRow>
               <TableCell sx={{ width: '10%' }}>Statut</TableCell>
               <TableCell sx={{ width: '20%' }}>Champ</TableCell>
@@ -305,8 +334,8 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                   <TableRow
                     key={`existing-${race.id}-${field.key}`}
                     sx={{
-                      opacity: isDeleted ? 0.4 : 1,
-                      bgcolor: isDeleted ? 'error.light' : 'inherit'
+                      opacity: isDeleted ? 0.4 : (isBlockValidated ? 0.6 : 1),
+                      backgroundColor: isDeleted ? 'error.light' : (isBlockValidated ? 'action.hover' : 'inherit')
                     }}
                   >
                     {isFirstRow && (
@@ -367,7 +396,8 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                   <TableRow
                     key={`new-${raceIdx}-${field.key}`}
                     sx={{
-                      opacity: isFiltered ? 0.4 : 1,
+                      opacity: isFiltered ? 0.4 : (isBlockValidated ? 0.6 : 1),
+                      backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
                       textDecoration: isFiltered ? 'line-through' : 'none'
                     }}
                   >

@@ -178,6 +178,69 @@ proposals.push({
 - `apps/agents/src/FFAScraperAgent.ts` - Ligne 771 (requête Prisma), lignes 840-841 (création proposition)
 - Tout code créant ou recherchant des propositions avec des IDs de Miles Republic
 
+## Dashboard - Interfaces de propositions
+
+### ⚠️ RÈGLE CRITIQUE - Cohérence entre propositions simples et groupées
+
+**Lors de toute modification des interfaces visuelles de propositions, TOUJOURS vérifier que le changement est appliqué partout :**
+
+#### Structure des composants
+
+```
+apps/dashboard/src/pages/proposals/detail/
+├── base/
+│   ├── ProposalDetailBase.tsx         # Logique propositions SIMPLES
+│   └── GroupedProposalDetailBase.tsx  # Logique propositions GROUPÉES
+├── new-event/
+│   ├── NewEventDetail.tsx             # Vue NEW_EVENT simple
+│   └── NewEventGroupedDetail.tsx      # Vue NEW_EVENT groupée ⚠️
+├── edition-update/
+│   ├── EditionUpdateDetail.tsx        # Vue EDITION_UPDATE simple
+│   └── EditionUpdateGroupedDetail.tsx # Vue EDITION_UPDATE groupée ⚠️
+├── event-update/
+│   ├── EventUpdateDetail.tsx          # Vue EVENT_UPDATE simple
+│   └── EventUpdateGroupedDetail.tsx   # Vue EVENT_UPDATE groupée ⚠️
+└── race-update/
+    ├── RaceUpdateDetail.tsx           # Vue RACE_UPDATE simple
+    └── RaceUpdateGroupedDetail.tsx    # Vue RACE_UPDATE groupée ⚠️
+```
+
+#### Checklist obligatoire
+
+Avant de considérer une modification comme terminée, vérifier **TOUS** les points suivants :
+
+- [ ] ✅ Le changement est appliqué dans `ProposalDetailBase.tsx` ET `GroupedProposalDetailBase.tsx`
+- [ ] ✅ Le changement est appliqué dans TOUTES les vues simples (`*Detail.tsx`)
+- [ ] ✅ Le changement est appliqué dans TOUTES les vues groupées (`*GroupedDetail.tsx`)
+- [ ] ✅ Les props passées aux composants enfants sont identiques (ex: validation par blocs)
+- [ ] ✅ Tests manuels effectués pour au moins :
+  - Une proposition NEW_EVENT groupée
+  - Une proposition EDITION_UPDATE groupée
+  - Une proposition simple de chaque type
+
+#### Exemple de bug typique
+
+**Symptôme** : Un bouton de validation apparaît dans les propositions simples mais pas dans les propositions groupées.
+
+**Cause** : Les props de validation par blocs ont été ajoutées uniquement dans `NewEventDetail.tsx` mais oubliées dans `NewEventGroupedDetail.tsx`.
+
+**Solution** : Toujours vérifier les **2 versions** (simple + groupée) pour chaque type de proposition.
+
+#### Composants partagés à surveiller
+
+Ces composants sont utilisés dans plusieurs vues - toute modification doit être testée partout :
+
+- `CategorizedEventChangesTable` - Infos événement
+- `CategorizedEditionChangesTable` - Infos édition
+- `RacesChangesTable` - Courses
+- `OrganizerSection` - Organisateur
+
+#### Documentation
+
+- `docs/BLOCK-SEPARATION-EVENT-EDITION.md` - Séparation des blocs
+- `docs/BLOCK-SEPARATION-SUMMARY.md` - Résumé modifications récentes
+- `docs/PROPOSAL-UI-COMMON-PITFALLS.md` - Guide des pièges courants et checklist complète
+
 ## Agents
 
 Les agents sont des processus qui :
@@ -268,6 +331,60 @@ const confidence = matchResult.type === 'NO_MATCH'
    - Résultat : Score 0.769 (bonus département +0.15, pénalité temporelle -27%)
 
 ## Changelog
+
+### 2025-11-09 - Fix parsing événements multi-mois (février-mars, décembre-janvier)
+
+**Problème résolu :** Le parser FFA ne détectait pas correctement les événements multi-jours **chevauchant deux mois différents**.
+
+#### Symptômes
+
+Pour l'événement **Trail de Vulcain** (28 février au 1er mars 2026), la page FFA affiche :
+
+```html
+<p class="body-small text-dark-grey">28 au 1 Mars 2026</p>
+```
+
+Le parser extrayait incorrectement :
+- `startDate = 28 mars 2026` ❌ (devrait être 28 février)
+- `endDate = 1 mars 2026` ✅
+
+#### Cause
+
+Le regex existant supposait que `startDay` et `endDay` étaient dans le **même mois** (celui affiché). Mais pour les événements chevauchant 2 mois, le mois affiché est uniquement celui de la **date de fin**.
+
+#### Solution
+
+**Indicateur clé** : `startDay > endDay` signifie que l'événement chevauche 2 mois.
+
+```typescript
+if (startDay > endDay) {
+  // Le mois de début est le mois précédent
+  const startMonth = endMonth === 0 ? 11 : endMonth - 1
+  const startYear = endMonth === 0 ? year - 1 : year
+  
+  details.startDate = new Date(Date.UTC(startYear, startMonth, startDay, 0, 0, 0, 0))
+  details.endDate = new Date(Date.UTC(year, endMonth, endDay, 0, 0, 0, 0))
+}
+```
+
+**Cas gérés** :
+- `"28 au 1 Mars 2026"` → 28 févr. 2026 au 1er mars 2026
+- `"30 au 2 Janvier 2026"` → 30 déc. 2025 au 2 janv. 2026 (changement d'année)
+- `"17 au 18 Janvier 2026"` → 17 janv. 2026 au 18 janv. 2026 (rétrocompatibilité)
+
+#### Fichiers modifiés
+
+1. **`apps/agents/src/ffa/parser.ts`** (lignes 112-145)
+   - Détection `startDay > endDay`
+   - Calcul du mois précédent avec gestion décembre-janvier
+
+2. **`apps/agents/src/ffa/__tests__/parser.multi-day.test.ts`** (lignes 69-99)
+   - Test février-mars
+   - Test décembre-janvier (changement d'année)
+
+#### Ressources
+- `docs/FIX-MULTI-MONTH-EVENTS.md` - Documentation complète
+- `scripts/test-parser-fix.ts` - Script de test manuel
 
 ### 2025-01-07 (partie 7) - Fix algorithme de progression pour liguesPerRun > 1
 
@@ -409,6 +526,51 @@ Chaque proposition NEW_EVENT inclut désormais `matchScore` dans les métadonné
 
 #### Ressources
 - `docs/CONFIDENCE-NEW-EVENT.md` - Documentation complète avec exemples et tests
+
+### 2025-11-08 - Fix affichage date + heure + jour de la semaine pour les courses
+
+**Problème résolu :** Les dates des courses affichaient uniquement la date (ex: "24/11/2025") sans l'heure ni le jour de la semaine dans l'interface du dashboard.
+
+#### Symptômes
+
+Bien que :
+- Le champ `Race.startDate` soit un `DateTime` dans la base
+- Le FFA Scraper calcule et propose correctement la date + heure
+- Les éditions affichent déjà le format complet `lundi 24/11/2025 14:00`
+
+Les courses affichaient : `24/11/2025` ❌
+
+#### Cause
+
+Deux composants utilisaient `toLocaleDateString()` qui n'affiche que la date :
+1. `RacesToAddSection.tsx` (ligne 182) - Section NEW_EVENT
+2. `RacesChangesTable.tsx` (ligne 76) - Section EDITION_UPDATE
+
+#### Solution
+
+Import de `date-fns` et utilisation du format `'EEEE dd/MM/yyyy HH:mm'` pour :
+- `EEEE` : Jour de la semaine en français (lundi, mardi, etc.)
+- `dd/MM/yyyy` : Date complète
+- `HH:mm` : Heure au format 24h
+
+**Exemple de rendu** :
+```
+lundi 24/11/2025 14:00
+samedi 15/03/2025 09:30
+```
+
+#### Fichiers modifiés
+
+1. **`RacesToAddSection.tsx`** : Ajout d'une fonction `formatDateTime()` locale
+2. **`RacesChangesTable.tsx`** : Ajout de `format()` inline dans le formatter du champ `startDate`
+3. Label changé de "Date" vers "Date + Heure" pour clarté
+
+#### Cohérence
+
+Ce format est **identique** à celui utilisé pour les éditions dans `useProposalLogic.ts`, assurant une uniformité d'affichage dans toute l'interface.
+
+#### Ressources
+- `docs/FIX-RACE-DATETIME-DISPLAY.md` - Documentation complète avec exemples
 
 ### 2025-01-05 - Fix ConnectionManager pour multi-schema Prisma
 

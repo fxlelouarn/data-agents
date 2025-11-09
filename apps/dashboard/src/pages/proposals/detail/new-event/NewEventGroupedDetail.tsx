@@ -134,6 +134,11 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               proposalId={groupProposals[0]?.id}
               proposal={groupProposals[0]}
               disabled={!allPending || isPending || isEventDead}
+              isBlockValidated={isBlockValidated('races')}
+              onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+              onUnvalidateBlock={() => unvalidateBlock('races')}
+              isBlockPending={isBlockPending}
+              validationDisabled={isEventDead}
             />
             
             {/* Sources des dates extraites */}

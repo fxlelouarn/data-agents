@@ -65,6 +65,38 @@ describe('Parser FFA - Événements multi-jours', () => {
       expect(details.endDate).toEqual(mockCompetition.date)
       expect(details.startDate).toEqual(details.endDate)
     })
+
+    it('devrait gérer un événement chevauchant 2 mois ("28 au 1 Mars 2026")', () => {
+      const html = `
+        <html>
+          <body>
+            <p class="body-small text-dark-grey">28 au 1 Mars 2026</p>
+          </body>
+        </html>
+      `
+
+      const details = parseCompetitionDetails(html, mockCompetition)
+
+      // 28 février au 1er mars 2026
+      expect(details.startDate).toEqual(new Date('2026-02-28T00:00:00.000Z'))
+      expect(details.endDate).toEqual(new Date('2026-03-01T00:00:00.000Z'))
+    })
+
+    it('devrait gérer un événement chevauchant 2 mois en décembre-janvier', () => {
+      const html = `
+        <html>
+          <body>
+            <p class="body-small text-dark-grey">30 au 2 Janvier 2026</p>
+          </body>
+        </html>
+      `
+
+      const details = parseCompetitionDetails(html, mockCompetition)
+
+      // 30 décembre 2025 au 2 janvier 2026
+      expect(details.startDate).toEqual(new Date('2025-12-30T00:00:00.000Z'))
+      expect(details.endDate).toEqual(new Date('2026-01-02T00:00:00.000Z'))
+    })
   })
 
   describe('Extraction des courses avec date+heure', () => {

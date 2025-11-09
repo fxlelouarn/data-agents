@@ -872,9 +872,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
         }
       }
 
-      // Si il y a des courses, ajouter les informations des courses dans le changes
+      // Si il y a des courses, les mettre à jour avec la date de l'édition
+      // ✅ Utiliser la structure racesToUpdate pour cohérence avec FFA Scraper
       if (event.edition.races && event.edition.races.length > 0) {
-        const raceChanges = []
+        const racesToUpdate = []
         
         for (const race of event.edition.races) {
           // Vérifier si la race a déjà cette date pour éviter les doublons
@@ -883,27 +884,27 @@ export class GoogleSearchDateAgent extends BaseAgent {
             currentRaceStartDate.toDateString() === proposedDate.toDateString()
           
           if (!isRaceDateSame) {
-            // Structurer la proposition avec identifiants + changements old/new
-            const raceChange: any = {
-              // Identifiants (pas de old/new)
+            // ✅ Structure compatible avec applyEditionUpdate : racesToUpdate.updates.field
+            racesToUpdate.push({
               raceId: race.id,
-              raceName: race.name, // Pour aider à identifier/vérifier
-              
-              // Changements avec old/new
-              startDate: {
-                old: currentRaceStartDate, // Valeur actuelle (peut être null)
-                new: proposedDate,
-                confidence: enhancedConfidence * 0.95 // Utiliser confiance améliorée, légèrement réduite pour les courses
+              raceName: race.name,
+              updates: {
+                startDate: {
+                  old: currentRaceStartDate,
+                  new: proposedDate
+                }
               }
-            }
-            
-            raceChanges.push(raceChange)
+            })
           }
         }
         
-        // Ne inclure les races que si au moins une race nécessite un changement
-        if (raceChanges.length > 0) {
-          changes.races = raceChanges
+        // Utiliser racesToUpdate (pas races) pour cohérence avec FFA
+        if (racesToUpdate.length > 0) {
+          changes.racesToUpdate = {
+            old: null,
+            new: racesToUpdate,
+            confidence: enhancedConfidence * 0.95
+          }
         }
       }
 

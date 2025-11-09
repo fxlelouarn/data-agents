@@ -122,6 +122,11 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 proposalId={groupProposals[0]?.id}
                 proposal={groupProposals[0]}
                 disabled={isBlockValidated('races') || isEventDead}
+                isBlockValidated={isBlockValidated('races')}
+                onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+                onUnvalidateBlock={() => unvalidateBlock('races')}
+                isBlockPending={isBlockPending}
+                validationDisabled={isEventDead}
               />
             )}
             

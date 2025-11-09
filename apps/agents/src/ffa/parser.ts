@@ -106,7 +106,16 @@ export function parseCompetitionDetails(
 
   // Vérifier si c'est un événement multi-jours
   // Format: "17 au 18 Janvier 2026" ou "17 au 18 janvier"
-  const dateRangeText = $('.body-small.text-dark-grey').first().text().trim()
+  // Chercher dans tous les éléments .body-small.text-dark-grey
+  let dateRangeText = ''
+  $('.body-small.text-dark-grey').each((_, el) => {
+    const text = $(el).text().trim()
+    if (text.match(/\d{1,2}\s+au\s+\d{1,2}\s+\w+/)) {
+      dateRangeText = text
+      return false // Stop iteration
+    }
+  })
+  
   const dateRangeMatch = dateRangeText.match(/(\d{1,2})\s+au\s+(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/)
   
   if (dateRangeMatch) {
@@ -125,10 +134,22 @@ export function parseCompetitionDetails(
       'septembre': 8, 'octobre': 9, 'novembre': 10, 'decembre': 11, 'décembre': 11
     }
     
-    const month = monthsMap[monthName]
-    if (month !== undefined) {
-      details.startDate = new Date(Date.UTC(year, month, startDay, 0, 0, 0, 0))
-      details.endDate = new Date(Date.UTC(year, month, endDay, 0, 0, 0, 0))
+    const endMonth = monthsMap[monthName]
+    if (endMonth !== undefined) {
+      // Cas spécial: si startDay > endDay, l'événement chevauche 2 mois
+      // Exemple: "28 au 1 Mars" = 28 février au 1er mars
+      if (startDay > endDay) {
+        // Le mois de début est le mois précédent
+        const startMonth = endMonth === 0 ? 11 : endMonth - 1
+        const startYear = endMonth === 0 ? year - 1 : year
+        
+        details.startDate = new Date(Date.UTC(startYear, startMonth, startDay, 0, 0, 0, 0))
+        details.endDate = new Date(Date.UTC(year, endMonth, endDay, 0, 0, 0, 0))
+      } else {
+        // Cas normal: même mois pour début et fin
+        details.startDate = new Date(Date.UTC(year, endMonth, startDay, 0, 0, 0, 0))
+        details.endDate = new Date(Date.UTC(year, endMonth, endDay, 0, 0, 0, 0))
+      }
     }
   }
   // Sinon : startDate = endDate = competition.date (déjà initialisé)
@@ -246,15 +267,30 @@ export function parseRaces(html: string): FFARace[] {
     const dateMatch = raceTitle.match(/(\d{1,2})\/(\d{2})\s+(\d{1,2}):(\d{2})/)
     let raceDate: string | undefined
     let startTime: string | undefined
+    let cleanedName = raceTitle
     
     if (dateMatch) {
       // Format multi-jours: "17/01 18:30"
       raceDate = `${dateMatch[1]}/${dateMatch[2]}`
       startTime = `${dateMatch[3]}:${dateMatch[4]}`
+      // Retirer la date et l'heure du nom
+      cleanedName = raceTitle.replace(/^\d{1,2}\/\d{2}\s+\d{1,2}:\d{2}\s*-?\s*/, '')
     } else {
-      // Format 1 jour: "14:00"
+      // Format 1 jour: "14:00" ou "28/02 " (date sans heure)
       const timeMatch = raceTitle.match(/(\d{1,2}):(\d{2})/)
-      startTime = timeMatch ? `${timeMatch[1]}:${timeMatch[2]}` : undefined
+      if (timeMatch) {
+        startTime = `${timeMatch[1]}:${timeMatch[2]}`
+        // Retirer l'heure du nom
+        cleanedName = raceTitle.replace(/^\d{1,2}:\d{2}\s*-?\s*/, '')
+      }
+      
+      // Vérifier si une date seule est présente (ex: "28/02  - Trailou")
+      const dateOnlyMatch = raceTitle.match(/^(\d{1,2})\/(\d{2})\s+/)
+      if (dateOnlyMatch) {
+        raceDate = `${dateOnlyMatch[1]}/${dateOnlyMatch[2]}`
+        // Retirer la date du nom
+        cleanedName = raceTitle.replace(/^\d{1,2}\/\d{2}\s*-?\s*/, '')
+      }
     }
 
     // Extraire distance depuis les détails ou le titre
@@ -275,7 +311,7 @@ export function parseRaces(html: string): FFARace[] {
     }
 
     races.push({
-      name: cleanEventName(raceTitle),
+      name: cleanEventName(cleanedName),
       raceDate,
       startTime,
       distance,

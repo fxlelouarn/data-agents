@@ -28,6 +28,7 @@
     "lint": "turbo lint",
     "tsc": "turbo tsc",
     "test": "turbo test",
+    "test:ffa-url": "tsx scripts/test-ffa-url.ts",
     "clean": "find packages apps -maxdepth 2 -type d -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null || true",
     "clean:turbo": "turbo clean",
     "db:generate": "npm run prisma:generate:main",

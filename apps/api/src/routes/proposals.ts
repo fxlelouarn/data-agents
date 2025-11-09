@@ -789,8 +789,18 @@ router.post('/:id/unapprove', [
     throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
   }
 
+  // Si la proposition n'est pas approuvée, retourner succès silencieux
+  // (elle peut avoir été déjà annulée par un autre bloc)
   if (proposal.status !== 'APPROVED') {
-    throw createError(400, 'Only approved proposals can be unapproved', 'PROPOSAL_NOT_APPROVED')
+    return res.json({
+      success: true,
+      message: 'Proposal is already not approved',
+      data: {
+        proposalId: id,
+        currentStatus: proposal.status,
+        alreadyUnapproved: true
+      }
+    })
   }
 
   // Vérifier si l'application a déjà été appliquée
@@ -841,6 +851,108 @@ router.post('/:id/unapprove', [
       proposalId: id,
       newStatus: 'PENDING',
       deletedApplications: pendingApplications.length
+    }
+  })
+}))
+
+// POST /api/proposals/:id/unapprove-block - Cancel approval of a specific block
+router.post('/:id/unapprove-block', [
+  param('id').isString().notEmpty(),
+  body('block').isString().notEmpty().withMessage('block must be specified'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { block } = req.body
+
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id },
+    include: {
+      applications: true,
+      agent: true
+    }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  // Vérifier si l'application a déjà été appliquée
+  const appliedApplication = proposal.applications.find(app => app.status === 'APPLIED')
+  if (appliedApplication) {
+    throw createError(400, 'Cannot unapprove a proposal that has already been applied', 'PROPOSAL_ALREADY_APPLIED')
+  }
+
+  const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+  
+  // Si ce bloc n'est pas approuvé, retourner succès silencieux
+  if (!approvedBlocks[block]) {
+    return res.json({
+      success: true,
+      message: `Block "${block}" is already not approved`,
+      data: {
+        proposalId: id,
+        block,
+        currentStatus: proposal.status,
+        approvedBlocks,
+        alreadyUnapproved: true
+      }
+    })
+  }
+
+  // Retirer ce bloc des blocs approuvés
+  delete approvedBlocks[block]
+  
+  // Si plus aucun bloc approuvé, remettre la proposition à PENDING
+  const hasRemainingApprovedBlocks = Object.values(approvedBlocks).some(v => v === true)
+  const newStatus = hasRemainingApprovedBlocks ? 'APPROVED' : 'PENDING'
+  
+  await db.prisma.$transaction(async (tx) => {
+    // Si on repasse à PENDING, supprimer les applications en attente
+    if (newStatus === 'PENDING') {
+      const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+      
+      if (pendingApplications.length > 0) {
+        await tx.proposalApplication.deleteMany({
+          where: {
+            id: { in: pendingApplications.map(app => app.id) }
+          }
+        })
+      }
+    }
+
+    // Mettre à jour la proposition
+    await tx.proposal.update({
+      where: { id },
+      data: {
+        status: newStatus,
+        approvedBlocks,
+        reviewedAt: newStatus === 'PENDING' ? null : proposal.reviewedAt,
+        reviewedBy: newStatus === 'PENDING' ? null : proposal.reviewedBy
+      }
+    })
+  })
+
+  await db.createLog({
+    agentId: proposal.agentId,
+    level: 'INFO',
+    message: `Proposal ${id} - Block "${block}" approval cancelled`,
+    data: { 
+      proposalId: id,
+      block,
+      newStatus,
+      remainingApprovedBlocks: Object.keys(approvedBlocks).filter(k => approvedBlocks[k])
+    }
+  })
+
+  res.json({
+    success: true,
+    message: `Block "${block}" approval cancelled successfully`,
+    data: {
+      proposalId: id,
+      block,
+      newStatus,
+      approvedBlocks,
+      hasRemainingApprovedBlocks
     }
   })
 }))

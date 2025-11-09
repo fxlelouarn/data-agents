@@ -1,5 +1,5 @@
 import { useState, useCallback, useMemo } from 'react'
-import { useUpdateProposal, useUnapproveProposal } from './useApi'
+import { useUpdateProposal, useUnapproveProposal, useUnapproveBlock } from './useApi'
 import { Proposal } from '@/types'
 
 export interface BlockStatus {
@@ -19,6 +19,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
   const [blockStatus, setBlockStatus] = useState<BlockStatus>({})
   const updateProposalMutation = useUpdateProposal()
   const unapproveProposalMutation = useUnapproveProposal()
+  const unapproveBlockMutation = useUnapproveBlock()
   
   // Synchronize blockStatus with actual approvedBlocks from backend
   const syncedBlockStatus = useMemo(() => {
@@ -87,10 +88,29 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     if (!block) return
 
     try {
-      // Annuler l'approbation de toutes les propositions
-      await Promise.all(
-        block.proposalIds.map(id => unapproveProposalMutation.mutateAsync(id))
-      )
+      // Annuler l'approbation seulement des propositions APPROVED
+      const approvedProposalIds = block.proposalIds.filter(id => {
+        const proposal = proposals.find(p => p.id === id)
+        return proposal?.status === 'APPROVED'
+      })
+      
+      if (approvedProposalIds.length > 0) {
+        // Annuler uniquement le bloc spécifique de chaque proposition
+        for (const id of approvedProposalIds) {
+          try {
+            await unapproveBlockMutation.mutateAsync({ id, block: blockKey })
+            console.log(`[useBlockValidation] Bloc "${blockKey}" annulé pour la proposition ${id}`)
+          } catch (error: any) {
+            // Ignorer l'erreur si le bloc n'est plus approuvé
+            if (error?.response?.data?.alreadyUnapproved) {
+              console.log(`[useBlockValidation] Bloc "${blockKey}" déjà annulé pour ${id}, ignoré`)
+              continue
+            }
+            // Propager les autres erreurs
+            throw error
+          }
+        }
+      }
 
       // Retirer le bloc du statut validé
       setBlockStatus(prev => {
@@ -101,18 +121,48 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       console.error(`Error unvalidating block ${blockKey}:`, error)
       throw error
     }
-  }, [syncedBlockStatus, unapproveProposalMutation])
+  }, [syncedBlockStatus, proposals, unapproveBlockMutation])
 
   // Valider tous les blocs
   const validateAllBlocks = useCallback(async (blocks: Record<string, string[]>) => {
+    console.log('[validateAllBlocks] Démarrage validation de tous les blocs:', {
+      blocks,
+      blockKeys: Object.keys(blocks)
+    })
+    
     for (const [blockKey, proposalIds] of Object.entries(blocks)) {
-      await validateBlock(blockKey, proposalIds)
+      console.log(`[validateAllBlocks] Validation du bloc "${blockKey}" avec ${proposalIds.length} proposition(s)...`)
+      try {
+        await validateBlock(blockKey, proposalIds)
+        console.log(`[validateAllBlocks] ✅ Bloc "${blockKey}" validé`)
+      } catch (error) {
+        console.error(`[validateAllBlocks] ❌ Erreur validation bloc "${blockKey}":`, error)
+        // Continuer avec les autres blocs même en cas d'erreur
+      }
     }
+    
+    console.log('[validateAllBlocks] ✅ Validation de tous les blocs terminée')
   }, [validateBlock])
+
+  // Annuler la validation de tous les blocs
+  const unvalidateAllBlocks = useCallback(async () => {
+    const validatedBlocks = Object.keys(syncedBlockStatus).filter(
+      blockKey => syncedBlockStatus[blockKey].isValidated
+    )
+    
+    for (const blockKey of validatedBlocks) {
+      await unvalidateBlock(blockKey)
+    }
+  }, [syncedBlockStatus, unvalidateBlock])
 
   // Vérifier si un bloc est validé (utilise syncedBlockStatus au lieu de blockStatus)
   const isBlockValidated = useCallback((blockKey: string) => {
     return syncedBlockStatus[blockKey]?.isValidated || false
+  }, [syncedBlockStatus])
+
+  // Vérifier si au moins un bloc est validé
+  const hasValidatedBlocks = useCallback(() => {
+    return Object.values(syncedBlockStatus).some(block => block.isValidated)
   }, [syncedBlockStatus])
 
   return {
@@ -120,7 +170,9 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     validateBlock,
     unvalidateBlock,
     validateAllBlocks,
+    unvalidateAllBlocks,
     isBlockValidated,
-    isPending: updateProposalMutation.isPending || unapproveProposalMutation.isPending
+    hasValidatedBlocks,
+    isPending: updateProposalMutation.isPending || unapproveProposalMutation.isPending || unapproveBlockMutation.isPending
   }
 }

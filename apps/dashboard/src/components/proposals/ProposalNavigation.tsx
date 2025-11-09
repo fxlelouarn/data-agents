@@ -6,8 +6,8 @@ import {
 import {
   ChevronLeft as ChevronLeftIcon,
   Archive as ArchiveIcon,
-  Undo as UndoIcon,
   CheckCircle as ApproveAllIcon,
+  Cancel as CancelIcon,
   Delete as KillIcon
 } from '@mui/icons-material'
 
@@ -22,10 +22,6 @@ interface ProposalNavigationProps {
   // Actions
   showArchiveButton?: boolean
   onArchive?: () => void
-  showUnapproveButton?: boolean
-  onUnapprove?: () => void
-  showApproveAllButton?: boolean
-  onApproveAll?: () => void
   showKillEventButton?: boolean
   onKillEvent?: () => void
   disabled?: boolean
@@ -35,6 +31,8 @@ interface ProposalNavigationProps {
   // Validation par blocs
   showValidateAllBlocksButton?: boolean
   onValidateAllBlocks?: () => Promise<void>
+  showUnvalidateAllBlocksButton?: boolean
+  onUnvalidateAllBlocks?: () => Promise<void>
   isValidateAllBlocksPending?: boolean
 }
 
@@ -42,10 +40,6 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   navigation,
   showArchiveButton = false,
   onArchive,
-  showUnapproveButton = false,
-  onUnapprove,
-  showApproveAllButton = false,
-  onApproveAll,
   showKillEventButton = false,
   onKillEvent,
   disabled = false,
@@ -53,6 +47,8 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   onBack,
   showValidateAllBlocksButton = false,
   onValidateAllBlocks,
+  showUnvalidateAllBlocksButton = false,
+  onUnvalidateAllBlocks,
   isValidateAllBlocksPending = false
 }) => {
   const handleBack = () => {
@@ -113,16 +109,16 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
             Tout valider (blocs)
           </Button>
         )}
-        {showApproveAllButton && onApproveAll && (
+        {showUnvalidateAllBlocksButton && onUnvalidateAllBlocks && (
           <Button
-            variant="contained"
-            color="success"
+            variant="outlined"
+            color="warning"
             size="small"
-            startIcon={<ApproveAllIcon />}
-            onClick={onApproveAll}
-            disabled={disabled}
+            startIcon={<CancelIcon />}
+            onClick={onUnvalidateAllBlocks}
+            disabled={disabled || isValidateAllBlocksPending}
           >
-            Tout valider
+            Annuler validation (tous les blocs)
           </Button>
         )}
         {showKillEventButton && onKillEvent && (
@@ -135,18 +131,6 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
             disabled={disabled}
           >
             Tuer l'événement
-          </Button>
-        )}
-        {showUnapproveButton && onUnapprove && (
-          <Button
-            variant="outlined"
-            color="warning"
-            size="small"
-            startIcon={<UndoIcon />}
-            onClick={onUnapprove}
-            disabled={disabled}
-          >
-            Annuler l'approbation
           </Button>
         )}
         {showArchiveButton && onArchive && (

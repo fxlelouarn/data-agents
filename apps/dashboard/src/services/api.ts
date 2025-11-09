@@ -170,6 +170,9 @@ export const proposalsApi = {
 
   unapprove: (id: string): Promise<ApiResponse<{ proposalId: string; newStatus: string; deletedApplications: number }>> =>
     api.post(`/proposals/${id}/unapprove`).then(res => res.data),
+
+  unapproveBlock: (id: string, block: string): Promise<ApiResponse<{ proposalId: string; block: string; newStatus: string; approvedBlocks: Record<string, boolean> }>> =>
+    api.post(`/proposals/${id}/unapprove-block`, { block }).then(res => res.data),
 }
 
 // Runs API

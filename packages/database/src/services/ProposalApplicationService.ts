@@ -56,6 +56,58 @@ export class ProposalApplicationService implements IProposalApplicationService {
     selectedChanges: Record<string, any>, 
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
+    // If capturedLogs is provided, override logger to capture logs
+    if (options.capturedLogs) {
+      const capturedLogger = {
+        info: (msg: string, data?: any) => {
+          let logMsg = msg
+          if (data !== undefined && data !== null && data !== '') {
+            // Si data est un objet, le stringify (mais pas pour l'affichage UI)
+            if (typeof data === 'object') {
+              // Ne pas ajouter le JSON dans l'UI, trop verbeux
+              logMsg = msg
+            } else {
+              logMsg = `${msg} ${data}`
+            }
+          }
+          options.capturedLogs!.push(logMsg)
+          console.log(`[INFO] ${msg}`, data || '')
+        },
+        error: (msg: string, data?: any) => {
+          let logMsg = msg
+          if (data !== undefined && data !== null && data !== '') {
+            if (typeof data === 'object') {
+              logMsg = msg
+            } else {
+              logMsg = `${msg} ${data}`
+            }
+          }
+          options.capturedLogs!.push(`❌ ${logMsg}`)
+          console.error(`[ERROR] ${msg}`, data || '')
+        },
+        warn: (msg: string, data?: any) => {
+          let logMsg = msg
+          if (data !== undefined && data !== null && data !== '') {
+            if (typeof data === 'object') {
+              logMsg = msg
+            } else {
+              logMsg = `${msg} ${data}`
+            }
+          }
+          options.capturedLogs!.push(`⚠️ ${logMsg}`)
+          console.warn(`[WARN] ${msg}`, data || '')
+        },
+        debug: (msg: string, data?: any) => {
+          console.debug(`[DEBUG] ${msg}`, data || '')
+        }
+      }
+      
+      // Create a temporary domain service with captured logger
+      const proposalRepo = new ProposalRepository(this.prisma)
+      const tempDomainService = new ProposalDomainService(proposalRepo, this.dbManager, capturedLogger)
+      return tempDomainService.applyProposal(proposalId, selectedChanges, options)
+    }
+    
     return this.domainService.applyProposal(proposalId, selectedChanges, options)
   }
 

@@ -144,8 +144,18 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   }
   
   return (
-    <Paper sx={{ mb: 3, ...(isBlockValidated && { bgcolor: 'action.disabledBackground', opacity: 0.7 }) }}>
-      <Box sx={{ p: 2, borderBottom: 1, borderColor: 'divider', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+    <Paper sx={{ mb: 3 }}>
+      <Box 
+        sx={{ 
+          p: 2, 
+          display: 'flex', 
+          alignItems: 'center', 
+          justifyContent: 'space-between',
+          borderBottom: 1,
+          borderColor: 'divider',
+          ...(isBlockValidated && { bgcolor: 'action.hover', opacity: 0.7 })
+        }}
+      >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <BusinessIcon color="action" />
           <Typography variant="h6">Organisateur</Typography>
@@ -164,7 +174,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
       
       <TableContainer>
         <Table size="small">
-          <TableHead>
+          <TableHead sx={{ bgcolor: 'background.paper' }}>
             <TableRow>
               <TableCell sx={{ width: '20%', minWidth: 120 }}>Champ</TableCell>
               <TableCell sx={{ width: '35%', minWidth: 150 }}>Valeur actuelle</TableCell>
@@ -174,7 +184,13 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
           </TableHead>
           <TableBody>
             {fields.map((field, index) => (
-              <TableRow key={field.key}>
+              <TableRow 
+                key={field.key}
+                sx={{
+                  backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
+                  opacity: isBlockValidated ? 0.6 : 1
+                }}
+              >
                 <TableCell>
                   <Typography 
                     variant="body2" 
