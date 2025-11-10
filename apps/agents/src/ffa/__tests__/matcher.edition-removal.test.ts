@@ -135,6 +135,32 @@ describe('removeEditionNumber', () => {
   })
 
   describe('Numéros ordinaux (comportement existant)', () => {
+    test('devrait retirer 29 Eme (avec espace)', async () => {
+      const competition = {
+        competition: {
+          name: '29 Eme Corrida De Loches',
+          city: 'Loches',
+          department: '37',
+          date: new Date('2026-04-26')
+        }
+      }
+      
+      const mockDb = createMockDb()
+      const mockLogger = createMockLogger()
+      
+      await matchCompetition(competition as any, mockDb, mockConfig as any, mockLogger)
+      
+      const cleanedLogCall = mockLogger.info.mock.calls.find((call: any[]) => 
+        call[0]?.includes('Cleaned:')
+      )
+      
+      if (cleanedLogCall) {
+        expect(cleanedLogCall[0]).toContain('Corrida De Loches')
+        expect(cleanedLogCall[0]).not.toContain('29')
+        expect(cleanedLogCall[0]).not.toContain('Eme')
+      }
+    })
+
     test('devrait retirer 34ème', async () => {
       const competition = {
         competition: {

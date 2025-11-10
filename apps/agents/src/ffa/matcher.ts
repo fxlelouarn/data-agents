@@ -416,6 +416,7 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
  * Nettoie le nom d'un événement pour le matching en retirant les numéros d'édition
  * Exemples :
  * - "34ème Corrida des Bleuets" -> "Corrida des Bleuets"
+ * - "29 Eme Corrida De Loches" -> "Corrida De Loches" (avec espace)
  * - "Corrida des Bleuets - 34ème édition" -> "Corrida des Bleuets"
  * - "Corrida De Sassenage - 34èMe éDition" -> "Corrida De Sassenage"
  * - "Trail des Loups #3" -> "Trail des Loups"
@@ -425,11 +426,11 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
 function removeEditionNumber(name: string): string {
   return name
     // Supprimer "- Xème édition" / "- Xeme edition" avec le tiret et tout ce qui suit
-    .replace(/\s*[-–—]\s*\d+[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
+    .replace(/\s*[-–—]\s*\d+\s*[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
     // Supprimer juste "Xème édition" à la fin (sans tiret)
-    .replace(/\s+\d+[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
-    // Supprimer "Xème" / "Xè" / "Xeme" partout dans le nom
-    .replace(/\b\d+[eèé]?me?\b/gi, '')
+    .replace(/\s+\d+\s*[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
+    // Supprimer "Xème" / "Xè" / "Xeme" / "X Eme" partout dans le nom
+    .replace(/\b\d+\s*[eèé]?me?\b/gi, '')
     // Supprimer "#X", "No. X", "N° X", "no X" partout dans le nom
     .replace(/\s*[#№]?\s*n[o°]?\.?\s*\d+/gi, '')
     // Supprimer année entre parenthèses ou après tiret (ex: "(2025)", "- 2025")
