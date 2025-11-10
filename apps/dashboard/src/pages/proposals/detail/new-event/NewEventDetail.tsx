@@ -9,6 +9,7 @@ import OrganizerSection from '@/components/proposals/edition-update/OrganizerSec
 import ProposalJustificationsCard from '@/components/proposals/ProposalJustificationsCard'
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
+import { RejectedMatchesCard } from '@/components/proposals/new-event/RejectedMatchesCard'
 
 interface NewEventDetailProps {
   proposalId: string
@@ -147,6 +148,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           userModifiedChanges
         } = context
         
+        // Extraire les matches rejetés depuis les justifications
+        const rejectedMatches = proposal.justification
+          ?.find((j: any) => j.type === 'text')
+          ?.metadata?.rejectedMatches || []
+        
         return (
           <>
             <AgentCard
@@ -156,6 +162,14 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               }}
               createdAt={proposal.createdAt}
             />
+            
+            {/* Afficher la card des matches rejetés */}
+            {rejectedMatches.length > 0 && (
+              <RejectedMatchesCard
+                proposalId={proposal.id}
+                rejectedMatches={rejectedMatches}
+              />
+            )}
             
             {proposal && (
               <EditionContextInfo

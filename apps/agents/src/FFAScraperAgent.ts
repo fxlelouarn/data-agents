@@ -1050,7 +1050,8 @@ export class FFAScraperAgent extends BaseAgent {
             matchScore: matchResult.confidence,  // Score du meilleur match trouvé (0 si aucun)
             source: competition.competition.detailUrl,
             level: competition.competition.level,
-            organizerEmail: competition.organizerEmail
+            organizerEmail: competition.organizerEmail,
+            rejectedMatches: matchResult.rejectedMatches || []  // Top 3 matches rejetés
           }
         }]
       })

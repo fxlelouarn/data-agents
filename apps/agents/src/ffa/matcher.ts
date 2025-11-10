@@ -214,7 +214,7 @@ export async function matchCompetition(
       
       // Pénalité temporelle : Réduire le score si la date est éloignée
       // dateProximity: 1.0 = même date, 0.5 = 45 jours d'écart, 0.0 = 90+ jours
-      const dateMultiplier = 0.7 + (candidate.dateProximity * 0.3) // 70-100% du score selon proximité
+      const dateMultiplier = 0.8 + (candidate.dateProximity * 0.2) // 80-100% du score selon proximité
       
       // Si le nom (ou keywords) correspond très bien (>0.9), tolérer les villes différentes
       // (gérer Saint-Apollinaire vs Dijon, Nevers vs Magny-Cours, etc.)
@@ -260,6 +260,25 @@ export async function matchCompetition(
                       best.combined >= config.similarityThreshold ? 'FUZZY_MATCH' :
                       'NO_MATCH'
 
+    // Préparer les 3 meilleurs matches pour les propositions NEW_EVENT
+    const rejectedMatches = scoredCandidates.slice(0, 3).map(candidate => {
+      const candidateEdition = candidate.event.editions?.find((e: any) => e.year === searchYear)
+      return {
+        eventId: candidate.event.id,
+        eventName: candidate.event.name,
+        eventSlug: candidate.event.slug,
+        eventCity: candidate.event.city,
+        eventDepartment: candidate.event.department,
+        editionId: candidateEdition?.id,
+        editionYear: candidateEdition?.year,
+        matchScore: candidate.combined,
+        nameScore: candidate.nameScore,
+        cityScore: candidate.cityScore,
+        departmentMatch: candidate.departmentMatch,
+        dateProximity: candidate.dateProximity
+      }
+    })
+
     const result: MatchResult = {
       type: matchType,
       event: {
@@ -273,7 +292,8 @@ export async function matchCompetition(
         year: edition.year,
         startDate: edition.startDate
       } : undefined,
-      confidence: best.combined
+      confidence: best.combined,
+      rejectedMatches: rejectedMatches.length > 0 ? rejectedMatches : undefined
     }
 
     logger.info(`  → Result: ${result.type} with "${result.event?.name || 'unknown'}" (confidence: ${result.confidence.toFixed(3)}, edition: ${result.edition ? 'YES' : 'NO'})`);
@@ -533,6 +553,7 @@ export async function findCandidateEvents(
       select: {
         id: true,
         name: true,
+        slug: true,
         city: true,
         countrySubdivisionDisplayCodeLevel2: true,
         editions: {
@@ -575,6 +596,7 @@ export async function findCandidateEvents(
         select: {
           id: true,
           name: true,
+          slug: true,
           city: true,
           countrySubdivisionDisplayCodeLevel2: true,
           editions: {

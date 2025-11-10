@@ -75,13 +75,83 @@ npm run db:studio        # Ouvrir Prisma Studio
 npm run db:seed          # Seed la base de données
 ```
 
+## Stack technique
+
+### Backend
+- **Runtime** : Node.js v22
+- **Framework API** : Express.js
+- **Language** : TypeScript
+- **ORM** : Prisma (avec support multi-schémas)
+- **Base de données** : PostgreSQL
+- **Build tool** : npm workspaces + TypeScript compiler
+
+### Frontend (Dashboard)
+- **Framework** : React 18 avec Vite
+- **UI Library** : Material-UI (MUI) v5
+  - Composants : `Card`, `Button`, `Chip`, `Typography`, `Box`, etc.
+  - Icônes : `@mui/icons-material`
+  - Thème personnalisé avec système de couleurs
+- **Routing** : React Router v6
+- **State Management** : 
+  - React Query (TanStack Query) pour le cache serveur
+  - React hooks pour l'état local
+- **Forms & Validation** : React Hook Form + Yup
+- **Notifications** : notistack (snackbar)
+- **Date manipulation** : date-fns (avec timezone support via date-fns-tz)
+
+### Agents
+- **Runtime** : Node.js v22
+- **Language** : TypeScript
+- **Framework** : Agent-framework custom (`@data-agents/agent-framework`)
+- **Scraping** : Cheerio pour le parsing HTML
+- **Fuzzy matching** : fuse.js pour l'algorithme de matching
+- **HTTP Client** : node-fetch
+
+### Infrastructure
+- **Déploiement** : Render.com
+- **CI/CD** : GitHub Actions (potentiel)
+- **Monitoring** : Logs via Winston/Pino
+
+### Outils de développement
+- **Package manager** : npm (workspaces natifs)
+- **Linting** : ESLint
+- **Formatting** : Prettier
+- **Testing** : Jest + React Testing Library
+
+### ⚠️ IMPORTANT - Conventions UI
+
+**Le projet utilise Material-UI (MUI), PAS Shadcn UI ni lucide-react**
+
+- ❌ Ne pas utiliser : `lucide-react`, `@shadcn/ui`, Tailwind classes
+- ✅ Utiliser : `@mui/material`, `@mui/icons-material`, `sx` props
+
+**Exemple de composant correct** :
+```tsx
+import { Card, CardContent, Typography, Button, Chip } from '@mui/material'
+import { CheckCircle as CheckCircleIcon } from '@mui/icons-material'
+
+function MyComponent() {
+  return (
+    <Card sx={{ mb: 2, p: 2 }}>
+      <CardContent>
+        <Typography variant="h6">Titre</Typography>
+        <Button variant="contained" startIcon={<CheckCircleIcon />}>
+          Action
+        </Button>
+        <Chip label="Badge" color="primary" size="small" />
+      </CardContent>
+    </Card>
+  )
+}
+```
+
 ## Architecture du projet
 
 ```
 data-agents/
 ├── apps/
 │   ├── api/                # API Node.js/Express
-│   ├── dashboard/          # Interface de gestion React
+│   ├── dashboard/          # Interface de gestion React + MUI
 │   └── agents/             # Agents d'extraction de données
 │       ├── src/ffa/        # Agent FFA avec algorithme de matching
 │       │   └── MATCHING.md # Documentation de l'algorithme de matching
@@ -574,16 +644,16 @@ Ajout d'un regex dans `removeEditionNumber()` pour retirer :
 
 **Composantes du score** :
 - **Bonus département** : +15% si même département mais villes différentes
-- **Pénalité temporelle** : ~4% pour 13 jours d'écart (multiplicateur 95.7%)
-  - Formule : `dateMultiplier = 0.7 + (dateProximity * 0.3)`
+- **Pénalité temporelle** : ~3% pour 13 jours d'écart (multiplicateur 97.1%)
+  - Formule : `dateMultiplier = 0.8 + (dateProximity * 0.2)` (assoupli de 70-100% à 80-100%)
   - `dateProximity = 1 - (daysDiff / 90)`
 
 | Écart | dateProximity | Multiplicateur | Pénalité |
 |-------|---------------|----------------|----------|
 | 0 jours | 1.0 | 100% | 0% |
-| 13 jours | 0.856 | 95.7% | -4.3% |
-| 45 jours | 0.5 | 85% | -15% |
-| 90 jours | 0.0 | 70% | -30% |
+| 13 jours | 0.856 | 97.1% | -2.9% |
+| 45 jours | 0.5 | 90% | -10% |
+| 90 jours | 0.0 | 80% | -20% |
 
 #### Fichiers modifiés
 

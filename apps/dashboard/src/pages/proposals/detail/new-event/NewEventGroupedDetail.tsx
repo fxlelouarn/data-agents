@@ -9,6 +9,7 @@ import OrganizerSection from '@/components/proposals/edition-update/OrganizerSec
 import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
+import { RejectedMatchesCard } from '@/components/proposals/new-event/RejectedMatchesCard'
 
 interface NewEventGroupedDetailProps {
   groupKey: string
@@ -158,6 +159,11 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         
         const firstProposal = groupProposals[0]
         
+        // Extraire les matches rejetés depuis les justifications de la première proposition
+        const rejectedMatches = firstProposal?.justification
+          ?.find((j: any) => j.type === 'text')
+          ?.metadata?.rejectedMatches || []
+        
         return (
           <>
             <AgentInfoSection 
@@ -167,6 +173,14 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 status: p.status 
               }))} 
             />
+            
+            {/* Afficher la card des matches rejetés */}
+            {rejectedMatches.length > 0 && (
+              <RejectedMatchesCard
+                proposalId={firstProposal.id}
+                rejectedMatches={rejectedMatches}
+              />
+            )}
             
             {/* Informations contextuelles de l'édition */}
             {firstProposal && (

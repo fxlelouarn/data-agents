@@ -189,6 +189,22 @@ export interface MatchResult {
   
   /** Confiance globale du match */
   confidence: number
+  
+  /** Top 3 matches rejetés (pour propositions NEW_EVENT) */
+  rejectedMatches?: Array<{
+    eventId: number
+    eventName: string
+    eventSlug: string
+    eventCity: string
+    eventDepartment: string
+    editionId?: number
+    editionYear?: string
+    matchScore: number
+    nameScore: number
+    cityScore: number
+    departmentMatch: boolean
+    dateProximity: number
+  }>
 }
 
 // ============================================================================

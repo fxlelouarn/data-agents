@@ -132,7 +132,7 @@ candidate.combined = Math.min(1.0,
 
 **Formule** (ligne 217) :
 ```typescript
-dateMultiplier = 0.7 + (dateProximity * 0.3)
+dateMultiplier = 0.8 + (dateProximity * 0.2)  // Assoupli de 70-100% à 80-100%
 ```
 
 Avec `dateProximity = 1 - (daysDiff / 90)` :
@@ -140,9 +140,9 @@ Avec `dateProximity = 1 - (daysDiff / 90)` :
 | Écart | dateProximity | Multiplicateur | Pénalité |
 |-------|---------------|----------------|----------|
 | 0 jours | 1.0 | 100% | 0% |
-| 13 jours | 0.856 | 95.7% | -4.3% |
-| 45 jours | 0.5 | 85% | -15% |
-| 90 jours | 0.0 | 70% | -30% |
+| 13 jours | 0.856 | 97.1% | -2.9% |
+| 45 jours | 0.5 | 90% | -10% |
+| 90 jours | 0.0 | 80% | -20% |
 
 ### Bonus département
 

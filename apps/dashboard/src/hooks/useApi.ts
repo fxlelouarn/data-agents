@@ -397,6 +397,35 @@ export const useUnapproveBlock = () => {
   })
 }
 
+export const useConvertToEditionUpdate = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (data: {
+      proposalId: string
+      eventId: number
+      editionId: number
+      eventName: string
+      eventSlug: string
+      editionYear: string
+    }) => proposalsApi.convertToEditionUpdate(data.proposalId, data),
+    onSuccess: (response, { eventName }) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      enqueueSnackbar(
+        response.message || `Proposition convertie en EDITION_UPDATE pour ${eventName}`,
+        { variant: 'success' }
+      )
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la conversion de la proposition',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useCreateManualProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

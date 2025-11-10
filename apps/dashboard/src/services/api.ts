@@ -173,6 +173,29 @@ export const proposalsApi = {
 
   unapproveBlock: (id: string, block: string): Promise<ApiResponse<{ proposalId: string; block: string; newStatus: string; approvedBlocks: Record<string, boolean> }>> =>
     api.post(`/proposals/${id}/unapprove-block`, { block }).then(res => res.data),
+
+  convertToEditionUpdate: (
+    id: string, 
+    data: {
+      eventId: number
+      editionId: number
+      eventName: string
+      eventSlug: string
+      editionYear: string
+    }
+  ): Promise<ApiResponse<{
+    originalProposal: { id: string; status: string }
+    newProposal: {
+      id: string
+      type: string
+      status: string
+      eventId: string
+      editionId: string
+      eventName: string
+      editionYear: number
+    }
+  }>> =>
+    api.post(`/proposals/${id}/convert-to-edition-update`, data).then(res => res.data),
 }
 
 // Runs API

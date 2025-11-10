@@ -855,6 +855,154 @@ router.post('/:id/unapprove', [
   })
 }))
 
+// POST /api/proposals/:id/convert-to-edition-update - Convert NEW_EVENT to EDITION_UPDATE
+router.post('/:id/convert-to-edition-update', [
+  param('id').isString().notEmpty(),
+  body('eventId').isInt().withMessage('eventId must be an integer'),
+  body('editionId').isInt().withMessage('editionId must be an integer'),
+  body('eventName').isString().notEmpty().withMessage('eventName is required'),
+  body('eventSlug').isString().notEmpty().withMessage('eventSlug is required'),
+  body('editionYear').isString().notEmpty().withMessage('editionYear is required'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { eventId, editionId, eventName, eventSlug, editionYear } = req.body
+
+  // 1. Récupérer la proposition NEW_EVENT originale
+  const originalProposal = await db.prisma.proposal.findUnique({
+    where: { id },
+    include: { agent: true }
+  })
+
+  if (!originalProposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  if (originalProposal.type !== 'NEW_EVENT') {
+    throw createError(400, 'Can only convert NEW_EVENT proposals', 'INVALID_PROPOSAL_TYPE')
+  }
+
+  if (originalProposal.status !== 'PENDING') {
+    throw createError(400, 'Can only convert PENDING proposals', 'INVALID_PROPOSAL_STATUS')
+  }
+
+  // 2. Transformer les changes de NEW_EVENT vers EDITION_UPDATE
+  const originalChanges = originalProposal.changes as Record<string, any>
+  const editionChanges: Record<string, any> = {}
+
+  // Extraire les champs d'édition depuis les changes
+  if (originalChanges.edition?.new) {
+    const editionData = originalChanges.edition.new
+    const confidence = originalChanges.edition.confidence || 0.9
+
+    // Copier les champs d'édition
+    if (editionData.startDate) {
+      editionChanges.startDate = { new: editionData.startDate, confidence }
+    }
+    if (editionData.endDate) {
+      editionChanges.endDate = { new: editionData.endDate, confidence }
+    }
+    if (editionData.timeZone) {
+      editionChanges.timeZone = { new: editionData.timeZone, confidence }
+    }
+    if (editionData.calendarStatus) {
+      editionChanges.calendarStatus = { new: editionData.calendarStatus, confidence }
+    }
+    if (editionData.year) {
+      editionChanges.year = { new: editionData.year, confidence }
+    }
+
+    // Organisateur
+    if (editionData.organizer) {
+      editionChanges.organizer = { new: editionData.organizer, confidence }
+    }
+
+    // Courses à ajouter
+    if (editionData.races && editionData.races.length > 0) {
+      editionChanges.racesToAdd = { new: editionData.races, confidence }
+    }
+  }
+
+  // 3. Créer la nouvelle proposition EDITION_UPDATE
+  const newProposal = await db.prisma.proposal.create({
+    data: {
+      agentId: originalProposal.agentId,
+      type: 'EDITION_UPDATE',
+      status: 'PENDING',
+      eventId: eventId.toString(),
+      editionId: editionId.toString(),
+      changes: editionChanges,
+      justification: [
+        {
+          type: 'text',
+          content: `Converti depuis la proposition NEW_EVENT ${id} - Événement existant détecté par l'utilisateur: ${eventName}`,
+          metadata: {
+            originalProposalId: id,
+            convertedFrom: 'NEW_EVENT',
+            selectedEventId: eventId,
+            selectedEventName: eventName,
+            selectedEventSlug: eventSlug,
+            selectedEditionId: editionId,
+            selectedEditionYear: editionYear,
+            manualSelection: true,
+            timestamp: new Date().toISOString()
+          }
+        },
+        ...(originalProposal.justification as any[] || [])
+      ],
+      confidence: originalProposal.confidence,
+      eventName,
+      eventCity: originalProposal.eventCity,
+      editionYear: parseInt(editionYear)
+    }
+  })
+
+  // 4. Archiver la proposition originale
+  await db.prisma.proposal.update({
+    where: { id },
+    data: {
+      status: 'ARCHIVED',
+      reviewedAt: new Date()
+    }
+  })
+
+  // 5. Logger l'action
+  await db.createLog({
+    agentId: originalProposal.agentId,
+    level: 'INFO',
+    message: `Proposal ${id} converted from NEW_EVENT to EDITION_UPDATE ${newProposal.id}`,
+    data: {
+      originalProposalId: id,
+      newProposalId: newProposal.id,
+      eventId,
+      editionId,
+      eventName,
+      editionYear,
+      timestamp: new Date().toISOString()
+    }
+  })
+
+  res.status(201).json({
+    success: true,
+    data: {
+      originalProposal: {
+        id: originalProposal.id,
+        status: 'ARCHIVED'
+      },
+      newProposal: {
+        id: newProposal.id,
+        type: newProposal.type,
+        status: newProposal.status,
+        eventId: newProposal.eventId,
+        editionId: newProposal.editionId,
+        eventName: newProposal.eventName,
+        editionYear: newProposal.editionYear
+      }
+    },
+    message: `Proposal converted successfully - New EDITION_UPDATE proposal created for ${eventName}`
+  })
+}))
+
 // POST /api/proposals/:id/unapprove-block - Cancel approval of a specific block
 router.post('/:id/unapprove-block', [
   param('id').isString().notEmpty(),
