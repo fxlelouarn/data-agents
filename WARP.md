@@ -604,6 +604,105 @@ const formatDateTime = (dateString: string): string => {
 
 ## Changelog
 
+### 2025-11-10 (partie 3) - Affichage et sélection des matches rejetés pour NEW_EVENT
+
+**Fonctionnalité ajoutée** : Correction manuelle des faux négatifs de l'algorithme de matching.
+
+#### Problème résolu
+
+L'algorithme de matching FFA peut rejeter un événement existant (score < 0.75) pour diverses raisons :
+- Variations de noms ("Trail des Loups #3" vs "Trail des loups")
+- Différences de dates importantes (13 jours d'écart)
+- Scores juste en-dessous du seuil (0.74 < 0.75)
+
+**Conséquence** : Création d'une proposition NEW_EVENT alors que l'événement existe déjà.
+
+#### Solution
+
+**Interface utilisateur** :
+- Nouvelle card `RejectedMatchesCard` affichant les 3 meilleurs matches rejetés
+- Pour chaque match : scores détaillés, lien vers Miles Republic, bouton "Sélectionner"
+- Confirmation et redirection automatique vers la nouvelle proposition EDITION_UPDATE
+
+**Backend** :
+- Stockage des `rejectedMatches` dans `MatchResult` (matcher.ts)
+- Nouveau endpoint `POST /api/proposals/:id/convert-to-edition-update`
+- Récupération des valeurs actuelles de l'édition existante
+- **Matching automatique des courses par distance** (tolérance 5%)
+
+#### Workflow utilisateur
+
+1. Ouverture proposition NEW_EVENT → Card jaune avec top 3 matches
+2. Clic sur nom de l'événement → Vérification sur Miles Republic
+3. Clic "Sélectionner" → Confirmation → Conversion + Redirection
+4. Nouvelle proposition EDITION_UPDATE avec :
+   - Colonne "Valeur actuelle" remplie
+   - Courses déjà matchées (`racesToAdd` vs `racesToUpdate`)
+
+#### Matching des courses
+
+Lors de la conversion, l'algorithme matche automatiquement les courses FFA avec celles de l'édition existante :
+
+**Algorithme** (identique à FFAScraperAgent) :
+1. **Matching par distance** : Tolérance 5% (ex: 21.1km ↔ 21.097km)
+2. **Fallback sur le nom** : Si distance manquante
+3. **Vérification des différences** : Élévation (±10m), heure de départ (±1h)
+
+**Résultat** :
+- `racesToAdd` : Courses FFA non matchées → Nouvelles courses
+- `racesToUpdate` : Courses matchées avec différences → Mises à jour
+
+#### Exemple concret
+
+**Édition existante** :
+- 10km (09:00)
+- Semi-Marathon 21.1km (10:00, D+ 150m)
+
+**Courses FFA proposées** :
+- 10km (09:30)
+- Semi-Marathon 21.1km (10:00, D+ 200m)
+- 5km (14:00)
+
+**Après conversion** :
+- ✅ 10km → Mise à jour heure (09:00 → 09:30)
+- ✅ Semi-Marathon → Mise à jour élévation (150m → 200m)
+- ➕ 5km → Nouvelle course à ajouter
+
+#### Fichiers modifiés
+
+**Backend** :
+- `apps/agents/src/ffa/matcher.ts` - Ajout `rejectedMatches` dans `MatchResult`
+- `apps/agents/src/ffa/types.ts` - Nouveau type `rejectedMatches`
+- `apps/agents/src/FFAScraperAgent.ts` - Stockage dans justification
+- `apps/api/src/routes/proposals.ts` - Endpoint conversion + matching courses
+
+**Frontend** :
+- `apps/dashboard/src/components/proposals/new-event/RejectedMatchesCard.tsx` (nouveau)
+- `apps/dashboard/src/pages/proposals/detail/new-event/NewEventDetail.tsx`
+- `apps/dashboard/src/pages/proposals/detail/new-event/NewEventGroupedDetail.tsx`
+- `apps/dashboard/src/hooks/useApi.ts` - Hook `useConvertToEditionUpdate()`
+- `apps/dashboard/src/services/api.ts` - API `convertToEditionUpdate()`
+
+**Documentation** :
+- `docs/FEATURE-REJECTED-MATCHES.md` - Documentation complète
+- `WARP.md` - Ajout section Stack technique (Material-UI)
+
+#### Impact
+
+**Avant** :
+- ❌ Faux négatifs → Doublons dans Miles Republic
+- ❌ Travail manuel pour détecter et fusionner les doublons
+- ❌ Perte de données lors de la fusion
+
+**Après** :
+- ✅ Correction manuelle des faux négatifs avant création
+- ✅ Pas de doublons créés
+- ✅ Enrichissement de l'édition existante
+- ✅ Historique de décision utilisateur pour améliorer l'algorithme
+
+#### Ressources
+- `docs/FEATURE-REJECTED-MATCHES.md` - Documentation complète avec exemples et architecture
+
 ### 2025-11-10 (partie 2) - Fix nettoyage numéros d'édition avec symboles (#, No., N°)
 
 **Problème résolu** : L'algorithme de matching FFA ne reconnaissait pas les événements existants quand le nom FFA contenait `#3`, `No. 8`, `N° 5`, etc.
