@@ -15,6 +15,7 @@ import { healthRouter } from './routes/health'
 import { databaseRouter } from './routes/databases'
 import { settingsRouter } from './routes/settings'
 import { eventsRouter } from './routes/events'
+import authRouter from './routes/auth'
 import { AgentScheduler } from './services/scheduler'
 import { errorHandler } from './middleware/error-handler'
 
@@ -47,6 +48,7 @@ app.use(express.urlencoded({ extended: true }))
 
 // Routes
 app.use('/api/health', healthRouter)
+app.use('/api/auth', authRouter)  // Auth routes (login, users)
 app.use('/api/agents', agentRouter)
 app.use('/api/proposals', proposalRouter)
 app.use('/api/runs', runRouter)

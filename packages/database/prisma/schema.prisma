@@ -94,7 +94,8 @@ model Proposal {
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   reviewedAt    DateTime?
-  reviewedBy    String?
+  reviewedBy    String?  // User ID du validateur
+  appliedBy     String?  // User ID de l'exécuteur
   agent         Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
   applications  ProposalApplication[]
 
@@ -130,6 +131,7 @@ model DatabaseConnection {
   username       String?
   password       String?
   connectionUrl  String?
+  prismaSchema   String?      // Chemin relatif vers le schéma Prisma spécifique (ex: apps/agents/prisma/miles-republic.prisma)
   sslMode        String?      @default("prefer")
   timeout        Int?         @default(30000)
   maxConnections Int?         @default(10)
@@ -153,6 +155,28 @@ model Settings {
   updatedAt               DateTime @updatedAt
 
   @@map("settings")
+}
+
+enum UserRole {
+  ADMIN      // Accès complet : agents, propositions, mises à jour, utilisateurs
+  VALIDATOR  // Peut valider/rejeter les propositions
+  EXECUTOR   // Peut exécuter les mises à jour (propositions + mises à jour)
+}
+
+model User {
+  id            String   @id @default(cuid())
+  email         String   @unique
+  passwordHash  String
+  firstName     String
+  lastName      String
+  role          UserRole @default(VALIDATOR)
+  isActive      Boolean  @default(true)
+  lastLoginAt   DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+  createdBy     String?  // ID de l'admin qui a créé l'utilisateur
+
+  @@map("users")
 }
 
 enum AgentType {
