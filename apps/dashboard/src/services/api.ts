@@ -18,6 +18,7 @@ import {
 } from '@/types'
 
 const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+const TOKEN_KEY = 'data-agents-token'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
@@ -29,6 +30,18 @@ const api = axios.create({
 // Helper pour délai avec backoff exponentiel
 const delay = (ms: number) => new Promise(resolve => setTimeout(resolve, ms))
 
+// Request interceptor pour ajouter le token automatiquement
+api.interceptors.request.use(
+  (config) => {
+    const token = localStorage.getItem(TOKEN_KEY)
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`
+    }
+    return config
+  },
+  (error) => Promise.reject(error)
+)
+
 // Response interceptor for error handling with retry logic for 429
 api.interceptors.response.use(
   (response) => response,
@@ -37,6 +50,8 @@ api.interceptors.response.use(
     
     // Handle authentication error
     if (error.response?.status === 401) {
+      // Token expiré ou invalide, nettoyer et rediriger
+      localStorage.removeItem(TOKEN_KEY)
       window.location.href = '/login'
       return Promise.reject(error)
     }
