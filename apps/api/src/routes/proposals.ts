@@ -886,7 +886,37 @@ router.post('/:id/convert-to-edition-update', [
     throw createError(400, 'Can only convert PENDING proposals', 'INVALID_PROPOSAL_STATUS')
   }
 
-  // 2. Transformer les changes de NEW_EVENT vers EDITION_UPDATE
+  // 2. Récupérer l'édition existante depuis Miles Republic
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+  
+  if (!milesRepublicConn) {
+    throw createError(500, 'Miles Republic connection not found', 'DATABASE_CONNECTION_NOT_FOUND')
+  }
+
+  // Lazy load DatabaseManager
+  const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'convert-proposal')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+
+  // Récupérer l'édition avec ses données complètes
+  const existingEdition = await sourceDb.edition.findUnique({
+    where: { id: editionId },
+    include: {
+      organization: true,
+      races: {
+        where: { isArchived: false }
+      }
+    }
+  })
+
+  if (!existingEdition) {
+    throw createError(404, 'Edition not found in Miles Republic', 'EDITION_NOT_FOUND')
+  }
+
+  // 3. Transformer les changes de NEW_EVENT vers EDITION_UPDATE avec old/new
   const originalChanges = originalProposal.changes as Record<string, any>
   const editionChanges: Record<string, any> = {}
 
@@ -895,35 +925,145 @@ router.post('/:id/convert-to-edition-update', [
     const editionData = originalChanges.edition.new
     const confidence = originalChanges.edition.confidence || 0.9
 
-    // Copier les champs d'édition
+    // Copier les champs d'édition avec valeurs actuelles
     if (editionData.startDate) {
-      editionChanges.startDate = { new: editionData.startDate, confidence }
+      editionChanges.startDate = { 
+        old: existingEdition.startDate?.toISOString() || null,
+        new: editionData.startDate, 
+        confidence 
+      }
     }
     if (editionData.endDate) {
-      editionChanges.endDate = { new: editionData.endDate, confidence }
+      editionChanges.endDate = { 
+        old: existingEdition.endDate?.toISOString() || null,
+        new: editionData.endDate, 
+        confidence 
+      }
     }
     if (editionData.timeZone) {
-      editionChanges.timeZone = { new: editionData.timeZone, confidence }
+      editionChanges.timeZone = { 
+        old: existingEdition.timeZone || null,
+        new: editionData.timeZone, 
+        confidence 
+      }
     }
     if (editionData.calendarStatus) {
-      editionChanges.calendarStatus = { new: editionData.calendarStatus, confidence }
+      editionChanges.calendarStatus = { 
+        old: existingEdition.calendarStatus || null,
+        new: editionData.calendarStatus, 
+        confidence 
+      }
     }
     if (editionData.year) {
-      editionChanges.year = { new: editionData.year, confidence }
+      editionChanges.year = { 
+        old: existingEdition.year || null,
+        new: editionData.year, 
+        confidence 
+      }
     }
 
     // Organisateur
     if (editionData.organizer) {
-      editionChanges.organizer = { new: editionData.organizer, confidence }
+      editionChanges.organizer = { 
+        old: existingEdition.organization ? {
+          name: existingEdition.organization.name,
+          email: existingEdition.organization.email,
+          phone: existingEdition.organization.phone,
+          websiteUrl: existingEdition.organization.websiteUrl,
+          facebookUrl: existingEdition.organization.facebookUrl,
+          instagramUrl: existingEdition.organization.instagramUrl
+        } : null,
+        new: editionData.organizer, 
+        confidence 
+      }
     }
 
-    // Courses à ajouter
+    // Courses : Matcher avec l'édition existante (comme dans FFAScraperAgent)
     if (editionData.races && editionData.races.length > 0) {
-      editionChanges.racesToAdd = { new: editionData.races, confidence }
+      const ffaRaces = editionData.races
+      const existingRaces = existingEdition.races || []
+      
+      // Convertir les distances DB (km) en mètres
+      const existingRacesWithMeters = existingRaces.map((r: any) => ({
+        ...r,
+        totalDistanceMeters: ((r.runDistance || 0) + (r.walkDistance || 0) + (r.swimDistance || 0) + (r.bikeDistance || 0)) * 1000
+      }))
+      
+      const racesToAdd: any[] = []
+      const racesToUpdate: any[] = []
+      
+      for (const ffaRace of ffaRaces) {
+        // Matcher par distance (tolérance 5%)
+        const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
+          if (ffaRace.runDistance && ffaRace.runDistance > 0) {
+            const ffaDistanceMeters = ffaRace.runDistance * 1000
+            const tolerance = ffaDistanceMeters * 0.05
+            const distanceDiff = Math.abs(dbRace.totalDistanceMeters - ffaDistanceMeters)
+            return distanceDiff <= tolerance
+          }
+          
+          // Fallback sur le nom
+          const nameMatch = dbRace.name?.toLowerCase().includes(ffaRace.name.toLowerCase()) ||
+                            ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
+          return nameMatch
+        })
+        
+        if (!matchingRace) {
+          // Course à ajouter
+          racesToAdd.push(ffaRace)
+        } else {
+          // Course existante - vérifier les mises à jour
+          const raceUpdates: any = {}
+          
+          // Vérifier l'élévation
+          if (ffaRace.runPositiveElevation && 
+              (!matchingRace.runPositiveElevation || 
+               Math.abs(matchingRace.runPositiveElevation - ffaRace.runPositiveElevation) > 10)) {
+            raceUpdates.runPositiveElevation = {
+              old: matchingRace.runPositiveElevation,
+              new: ffaRace.runPositiveElevation,
+              confidence
+            }
+          }
+          
+          // Vérifier la date/heure de départ
+          if (ffaRace.startDate) {
+            const ffaStartDate = new Date(ffaRace.startDate)
+            const dbStartDate = matchingRace.startDate ? new Date(matchingRace.startDate) : null
+            
+            if (!dbStartDate || Math.abs(ffaStartDate.getTime() - dbStartDate.getTime()) > 3600000) {
+              raceUpdates.startDate = {
+                old: dbStartDate?.toISOString() || null,
+                new: ffaRace.startDate,
+                confidence
+              }
+            }
+          }
+          
+          // Si des mises à jour sont nécessaires, les ajouter
+          if (Object.keys(raceUpdates).length > 0) {
+            racesToUpdate.push({
+              raceId: matchingRace.id,
+              raceName: matchingRace.name,
+              updates: raceUpdates
+            })
+          }
+        }
+      }
+      
+      // Ajouter les courses non matchées
+      if (racesToAdd.length > 0) {
+        editionChanges.racesToAdd = { new: racesToAdd, confidence }
+      }
+      
+      // Ajouter les mises à jour de courses
+      if (racesToUpdate.length > 0) {
+        editionChanges.racesToUpdate = { new: racesToUpdate, confidence }
+      }
     }
   }
 
-  // 3. Créer la nouvelle proposition EDITION_UPDATE
+  // 4. Créer la nouvelle proposition EDITION_UPDATE
   const newProposal = await db.prisma.proposal.create({
     data: {
       agentId: originalProposal.agentId,
@@ -957,7 +1097,7 @@ router.post('/:id/convert-to-edition-update', [
     }
   })
 
-  // 4. Archiver la proposition originale
+  // 5. Archiver la proposition originale
   await db.prisma.proposal.update({
     where: { id },
     data: {
@@ -966,7 +1106,7 @@ router.post('/:id/convert-to-edition-update', [
     }
   })
 
-  // 5. Logger l'action
+  // 6. Logger l'action
   await db.createLog({
     agentId: originalProposal.agentId,
     level: 'INFO',

@@ -212,6 +212,59 @@ describe('removeEditionNumber', () => {
     })
   })
 
+  describe('Parenthèses (ville redondante)', () => {
+    test('devrait retirer (Bourges) à la fin', async () => {
+      const competition = {
+        competition: {
+          name: 'Tour Du Lac Du Val D\'auron (Bourges)',
+          city: 'Bourges',
+          department: '18',
+          date: new Date('2026-04-26')
+        }
+      }
+      
+      const mockDb = createMockDb()
+      const mockLogger = createMockLogger()
+      
+      await matchCompetition(competition as any, mockDb, mockConfig as any, mockLogger)
+      
+      const cleanedLogCall = mockLogger.info.mock.calls.find((call: any[]) => 
+        call[0]?.includes('Cleaned:')
+      )
+      
+      if (cleanedLogCall) {
+        expect(cleanedLogCall[0]).toContain('Tour Du Lac')
+        expect(cleanedLogCall[0]).not.toContain('Bourges')
+        expect(cleanedLogCall[0]).not.toContain('(')
+      }
+    })
+
+    test('devrait retirer (Paris) à la fin', async () => {
+      const competition = {
+        competition: {
+          name: 'Marathon de Paris (Paris)',
+          city: 'Paris',
+          department: '75',
+          date: new Date('2026-04-26')
+        }
+      }
+      
+      const mockDb = createMockDb()
+      const mockLogger = createMockLogger()
+      
+      await matchCompetition(competition as any, mockDb, mockConfig as any, mockLogger)
+      
+      const cleanedLogCall = mockLogger.info.mock.calls.find((call: any[]) => 
+        call[0]?.includes('Cleaned:')
+      )
+      
+      if (cleanedLogCall) {
+        expect(cleanedLogCall[0]).toContain('Marathon de Paris')
+        expect(cleanedLogCall[0]).not.toContain('(')
+      }
+    })
+  })
+
   describe('Années', () => {
     test('devrait retirer (2025)', async () => {
       const competition = {

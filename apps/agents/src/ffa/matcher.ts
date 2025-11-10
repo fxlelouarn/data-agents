@@ -417,6 +417,7 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
  * Exemples :
  * - "34ème Corrida des Bleuets" -> "Corrida des Bleuets"
  * - "29 Eme Corrida De Loches" -> "Corrida De Loches" (avec espace)
+ * - "Tour Du Lac (Bourges)" -> "Tour Du Lac" (ville redondante)
  * - "Corrida des Bleuets - 34ème édition" -> "Corrida des Bleuets"
  * - "Corrida De Sassenage - 34èMe éDition" -> "Corrida De Sassenage"
  * - "Trail des Loups #3" -> "Trail des Loups"
@@ -435,6 +436,8 @@ function removeEditionNumber(name: string): string {
     .replace(/\s*[#№]?\s*n[o°]?\.?\s*\d+/gi, '')
     // Supprimer année entre parenthèses ou après tiret (ex: "(2025)", "- 2025")
     .replace(/\s*[-–—]?\s*\(?\d{4}\)?\s*$/, '')
+    // Supprimer parenthèses à la fin (souvent le nom de la ville, ex: "Trail (Bourges)")
+    .replace(/\s*\([^)]+\)\s*$/g, '')
     // Nettoyer les tirets/mots orphelins à la fin
     .replace(/\s*[-–—]\s*$/, '')
     // Normaliser les espaces multiples créés
