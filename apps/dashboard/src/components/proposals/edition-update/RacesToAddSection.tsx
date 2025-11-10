@@ -29,6 +29,7 @@ import {
 } from '@mui/icons-material'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 import type { ConsolidatedChange } from '@/pages/proposals/detail/base/GroupedProposalDetailBase'
 import BlockValidationButton from '@/components/proposals/BlockValidationButton'
 import { useProposalBlockValidation } from '@/hooks/useProposalBlockValidation'
@@ -66,6 +67,12 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
   const confidence = change.options[0]?.confidence || 0
   const hasConsensus = change.options.length > 1
   const existingRaces: ExistingRace[] = proposal?.existingRaces || []
+  
+  // Récupérer le timezone de l'édition (enrichi par l'API)
+  const editionTimeZone = proposal?.editionTimeZone || 'Europe/Paris'
+  
+  // Log pour debug
+  console.log('[RacesToAddSection] Timezone édition:', editionTimeZone, '| Proposal ID:', proposalId)
   
   // Suivre les courses à supprimer et les courses nouvelles supprimées
   const [racesToDelete, setRacesToDelete] = useState<Set<number>>(new Set())
@@ -175,13 +182,13 @@ const RacesToAddSection: React.FC<RacesToAddSectionProps> = ({ change, onApprove
     rowSpan: number
   }> = []
   
-  // Fonction pour formater une date/heure avec jour de la semaine
+  // Fonction pour formater une date/heure avec jour de la semaine dans le timezone de l'édition
   const formatDateTime = (dateString: string): string => {
     try {
-      const date = new Date(dateString)
-      if (isNaN(date.getTime())) return dateString
-      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
-    } catch {
+      // Utiliser le timezone de l'édition pour l'affichage
+      return formatDateInTimezone(dateString, editionTimeZone, 'EEEE dd/MM/yyyy HH:mm')
+    } catch (error) {
+      console.error('[RacesToAddSection] Erreur formatage date:', error, 'Date:', dateString)
       return dateString
     }
   }

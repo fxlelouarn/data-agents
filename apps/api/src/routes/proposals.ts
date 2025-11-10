@@ -331,7 +331,7 @@ export async function enrichProposal(proposal: any) {
         )
         
         enriched.existingRaces = existingRaces.map((race: any) => {
-          const updates = raceUpdatesMap.get(race.id)
+          const updates = raceUpdatesMap.get(race.id) as any
           
           return {
             id: race.id,

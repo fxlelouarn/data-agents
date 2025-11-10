@@ -32,6 +32,7 @@ import {
 import { matchCompetition, calculateAdjustedConfidence, calculateNewEventConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
 import { hasIdenticalPendingProposal, hasNewInformation, filterNewChanges } from './ffa/deduplication'
+import { fromZonedTime, getTimezoneOffset as getTzOffset } from 'date-fns-tz'
 
 export class FFAScraperAgent extends BaseAgent {
   private sourceDb: any
@@ -708,30 +709,21 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
-   * Détermine l'offset UTC d'une ligue en fonction de sa localisation
-   * Les DOM-TOM ont des timezones différentes de la métropole
+   * Détermine l'offset UTC d'une ligue en fonction de sa localisation ET de la date précise
+   * Utilise date-fns-tz pour gérer correctement les changements d'heure
+   * @deprecated Utilisez getTimezoneOffset avec date-fns-tz à la place
    */
-  private getTimezoneOffset(ligue: string, month: number): number {
-    // Timezones DOM-TOM (pas de DST)
-    const domTomTimezones: Record<string, number> = {
-      'GUA': -4,  // Guadeloupe (America/Guadeloupe)
-      'GUY': -3,  // Guyane (America/Cayenne)
-      'MAR': -4,  // Martinique (America/Martinique)
-      'MAY': 3,   // Mayotte (Indian/Mayotte)
-      'N-C': 11,  // Nouvelle-Calédonie (Pacific/Noumea)
-      'P-F': -10, // Polynésie Française (Pacific/Tahiti)
-      'REU': 4,   // Réunion (Indian/Reunion)
-      'W-F': 12   // Wallis-et-Futuna (Pacific/Wallis)
-    }
+  private getTimezoneOffsetForDate(ligue: string, date: Date): number {
+    const timeZone = this.getTimezoneIANA(ligue)
     
-    // Si c'est un DOM-TOM, retourner son offset fixe (pas de DST)
-    if (ligue in domTomTimezones) {
-      return domTomTimezones[ligue]
-    }
+    // Utiliser date-fns-tz pour obtenir l'offset réel à cette date précise
+    // getTzOffset retourne l'offset en millisecondes
+    const offsetMs = getTzOffset(timeZone, date)
+    const offsetHours = offsetMs / (1000 * 60 * 60)
     
-    // Sinon, c'est la métropole : UTC+1 (hiver) ou UTC+2 (été avec DST)
-    const isDST = month > 2 && month < 10 // Approximation DST (mars à octobre)
-    return isDST ? 2 : 1
+    this.logger.debug(`🕐 Offset timezone pour ${ligue} (${timeZone}) le ${date.toISOString().split('T')[0]}: ${offsetHours}h`)
+    
+    return offsetHours
   }
 
   /**
@@ -848,7 +840,7 @@ export class FFAScraperAgent extends BaseAgent {
 
   /**
    * Calcule la date/heure de départ d'une course spécifique
-   * Convertit l'heure locale (selon la ligue) en UTC
+   * Convertit l'heure locale (selon la ligue) en UTC en utilisant date-fns-tz
    */
   private calculateRaceStartDate(ffaData: FFACompetitionDetails, race: FFARace): Date {
     // Déterminer la date de base
@@ -882,26 +874,37 @@ export class FFAScraperAgent extends BaseAgent {
     const month = baseDate.getUTCMonth()
     const day = baseDate.getUTCDate()
     
-    // Déterminer l'offset UTC selon la ligue
+    // Récupérer le timezone IANA de la ligue
     const ligue = ffaData.competition.ligue
-    const offsetHours = this.getTimezoneOffset(ligue, month)
+    const timeZone = this.getTimezoneIANA(ligue)
     
     if (race.startTime) {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = race.startTime.split(':').map(Number)
       
-      // Créer la date en UTC (heure locale - offset)
-      return new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
+      // Créer une date en heure locale (pas UTC !)
+      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      
+      // Convertir en UTC en tenant compte du DST
+      const utcDate = fromZonedTime(localDateStr, timeZone)
+      
+      this.logger.info(`🕐 Conversion timezone: ${localDateStr} ${timeZone} -> ${utcDate.toISOString()} (course: ${race.name})`)
+      
+      return utcDate
     }
     
     // Sinon, minuit heure locale (00:00 local time)
-    // Convertir en UTC : 00:00 - offsetHours
-    return new Date(Date.UTC(year, month, day, 0 - offsetHours, 0, 0, 0))
+    const localMidnight = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+    const utcDate = fromZonedTime(localMidnight, timeZone)
+    
+    this.logger.info(`🕐 Minuit locale ${localMidnight} ${timeZone} -> ${utcDate.toISOString()}`)
+    
+    return utcDate
   }
 
   /**
    * Calcule la date de début d'une édition en utilisant l'heure de la première course
-   * Convertit l'heure locale (selon la ligue) en UTC
+   * Convertit l'heure locale (selon la ligue) en UTC avec date-fns-tz
    */
   private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
     // La date de la compétition est en UTC à minuit
@@ -910,30 +913,30 @@ export class FFAScraperAgent extends BaseAgent {
     const month = competitionDate.getUTCMonth()
     const day = competitionDate.getUTCDate()
     
-    // Déterminer l'offset UTC selon la ligue
+    // Récupérer le timezone IANA de la ligue
     const ligue = ffaData.competition.ligue
-    const offsetHours = this.getTimezoneOffset(ligue, month)
+    const timeZone = this.getTimezoneIANA(ligue)
     
     // Si on a des courses avec une heure de départ
     if (ffaData.races.length > 0 && ffaData.races[0].startTime) {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = ffaData.races[0].startTime.split(':').map(Number)
       
-      // Créer la date en heure locale
+      // Créer la date en heure locale (pas UTC !)
       const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
       
-      // Convertir en UTC
-      const startDateUTC = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes, 0, 0))
+      // Convertir en UTC en tenant compte du DST
+      const startDateUTC = fromZonedTime(localDateStr, timeZone)
       
-      const offsetSign = offsetHours >= 0 ? '+' : ''
-      this.logger.info(`🕒 Date calculée avec heure première course: ${localDateStr} ${ligue} (UTC${offsetSign}${offsetHours}) -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name} à ${ffaData.races[0].startTime})`)
+      this.logger.info(`🕒 Date édition avec heure première course: ${localDateStr} ${timeZone} -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name})`)
       return startDateUTC
     }
     
     // Sinon, minuit heure locale (00:00 local time)
-    // Convertir en UTC : 00:00 - offsetHours
-    const midnightLocalUTC = new Date(Date.UTC(year, month, day, 0 - offsetHours, 0, 0, 0))
-    this.logger.info(`🕒 Pas d'heure de course, utilisation minuit heure locale: ${midnightLocalUTC.toISOString()} (${ffaData.races.length} courses)`)
+    const localMidnight = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+    const midnightLocalUTC = fromZonedTime(localMidnight, timeZone)
+    
+    this.logger.info(`🕒 Date édition sans heure: minuit locale ${localMidnight} ${timeZone} -> ${midnightLocalUTC.toISOString()} (${ffaData.races.length} courses)`)
     return midnightLocalUTC
   }
 

@@ -398,6 +398,9 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
  * - "34ème Corrida des Bleuets" -> "Corrida des Bleuets"
  * - "Corrida des Bleuets - 34ème édition" -> "Corrida des Bleuets"
  * - "Corrida De Sassenage - 34èMe éDition" -> "Corrida De Sassenage"
+ * - "Trail des Loups #3" -> "Trail des Loups"
+ * - "Marathon No. 8" -> "Marathon"
+ * - "Course N° 5" -> "Course"
  */
 function removeEditionNumber(name: string): string {
   return name
@@ -407,6 +410,8 @@ function removeEditionNumber(name: string): string {
     .replace(/\s+\d+[eèé]?me?\s+[eé]?ditions?\s*$/i, '')
     // Supprimer "Xème" / "Xè" / "Xeme" partout dans le nom
     .replace(/\b\d+[eèé]?me?\b/gi, '')
+    // Supprimer "#X", "No. X", "N° X", "no X" partout dans le nom
+    .replace(/\s*[#№]?\s*n[o°]?\.?\s*\d+/gi, '')
     // Supprimer année entre parenthèses ou après tiret (ex: "(2025)", "- 2025")
     .replace(/\s*[-–—]?\s*\(?\d{4}\)?\s*$/, '')
     // Nettoyer les tirets/mots orphelins à la fin

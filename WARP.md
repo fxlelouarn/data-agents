@@ -99,6 +99,153 @@ Le projet utilise PostgreSQL avec Prisma pour :
 - Gérer les connexions aux bases de données externes
 - Logging et métriques des agents
 
+### ⚠️ IMPORTANT - Vérification des données en base
+
+**JAMAIS utiliser Prisma Studio pour vérifier des données en base de données.**
+
+**Variables d'environnement pour les connexions** :
+- `DATABASE_URL` : Base de données data-agents (propositions, agents, etc.)
+- `MILES_REPUBLIC_DATABASE_URL` : Base de données Miles Republic (Events, Editions, Races)
+
+**Pour vérifier un Event, Edition ou Race dans Miles Republic** :
+- **TOUJOURS** faire des requêtes SQL directement en base de données
+- Utiliser `psql "$MILES_REPUBLIC_DATABASE_URL" -c "..."`
+- Consulter la documentation des schémas : [Miles Republic Schema](https://app.warp.dev/drive/notebook/Next-ke4tc02CYq8nPyEgErILtF)
+
+**Exemples de requêtes SQL Miles Republic** :
+```bash
+# Chercher un événement par nom
+psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT * FROM \"Event\" WHERE name ILIKE '%Trail des Loups%';"
+
+# Chercher une édition spécifique
+psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT * FROM \"Edition\" WHERE \"eventId\" = 13446 AND year = 2025;"
+
+# Chercher les courses d'une édition
+psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT * FROM \"Race\" WHERE \"editionId\" = 40098;"
+
+# Jointure complète
+psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT 
+  e.id as event_id, 
+  e.name as event_name,
+  ed.id as edition_id,
+  ed.year,
+  r.id as race_id,
+  r.name as race_name
+FROM \"Event\" e
+LEFT JOIN \"Edition\" ed ON e.id = ed.\"eventId\"
+LEFT JOIN \"Race\" r ON ed.id = r.\"editionId\"
+WHERE e.name ILIKE '%Trail des Loups%';"
+```
+
+**Raisons** :
+- Prisma Studio est trop lent pour les grandes tables
+- SQL offre plus de flexibilité pour les recherches complexes
+- Évite les erreurs de typage/casse dans Prisma Studio
+- Permet de faire des analyses directement (COUNT, GROUP BY, etc.)
+
+### Schéma data-agents
+
+**Base de données principale** : Stocke les agents, propositions et configurations.
+
+**Tables principales** :
+
+```sql
+-- Agents configurés
+agents (
+  id TEXT PRIMARY KEY (CUID),
+  name TEXT UNIQUE,
+  type TEXT, -- EXTRACTOR, COMPARATOR, etc.
+  isActive BOOLEAN,
+  frequency TEXT,
+  config JSONB
+)
+
+-- Propositions de modifications
+proposals (
+  id TEXT PRIMARY KEY (CUID),
+  agentId TEXT REFERENCES agents(id),
+  type TEXT, -- NEW_EVENT, EVENT_UPDATE, EDITION_UPDATE, RACE_UPDATE
+  status TEXT, -- PENDING, APPROVED, REJECTED, ARCHIVED
+  eventId TEXT, -- ID Miles Republic (converti en string)
+  editionId TEXT, -- ID Miles Republic (converti en string)
+  raceId TEXT,
+  changes JSONB, -- Modifications proposées
+  justification JSONB,
+  confidence FLOAT,
+  userModifiedChanges JSONB, -- Modifications manuelles
+  approvedBlocks JSONB, -- Blocs approuvés séparément
+  eventName TEXT, -- Cache pour affichage
+  eventCity TEXT,
+  editionYear INT,
+  createdAt TIMESTAMP,
+  reviewedAt TIMESTAMP
+)
+
+-- Applications de propositions
+proposal_applications (
+  id TEXT PRIMARY KEY (CUID),
+  proposalId TEXT REFERENCES proposals(id),
+  status TEXT, -- PENDING, APPLIED, FAILED
+  scheduledAt TIMESTAMP,
+  appliedAt TIMESTAMP,
+  errorMessage TEXT,
+  appliedChanges JSONB,
+  rollbackData JSONB
+)
+
+-- État d'avancement des agents
+agent_states (
+  id TEXT PRIMARY KEY (CUID),
+  agentId TEXT REFERENCES agents(id),
+  key TEXT,
+  value JSONB, -- Ex: { currentLigue: 'BFC', currentMonth: '2025-11' }
+  UNIQUE(agentId, key)
+)
+```
+
+**Exemples de requêtes data-agents** :
+
+```bash
+# Trouver une proposition par ID
+psql "$DATABASE_URL" -c "SELECT * FROM proposals WHERE id = 'cmhstf28403tjmu3ref0q3nbz';"
+
+# Propositions NEW_EVENT avec confiance basse
+psql "$DATABASE_URL" -c "SELECT id, \"eventName\", confidence, changes->>'matchScore' as match_score
+FROM proposals
+WHERE type = 'NEW_EVENT' AND confidence < 0.5
+ORDER BY confidence ASC;"
+
+# Voir les métadonnées de matching d'une proposition
+psql "$DATABASE_URL" -c "SELECT 
+  id,
+  \"eventName\",
+  confidence,
+  changes,
+  justification
+FROM proposals
+WHERE id = 'cmhstf28403tjmu3ref0q3nbz';"
+
+# État d'avancement du FFA scraper
+psql "$DATABASE_URL" -c "SELECT 
+  a.name,
+  s.value->>'currentLigue' as ligue,
+  s.value->>'currentMonth' as mois,
+  s.\"updatedAt\"
+FROM agents a
+JOIN agent_states s ON a.id = s.\"agentId\"
+WHERE a.name = 'FFA Scraper' AND s.key = 'progress';"
+
+# Propositions par agent et statut
+psql "$DATABASE_URL" -c "SELECT 
+  a.name as agent,
+  p.status,
+  COUNT(*) as count
+FROM proposals p
+JOIN agents a ON p.\"agentId\" = a.id
+GROUP BY a.name, p.status
+ORDER BY a.name, p.status;"
+```
+
 ### ⚠️ IMPORTANT - Convention de nommage des modèles Prisma
 
 **Problème fréquent :** Accès incorrect aux modèles Prisma dans le code.
@@ -330,7 +477,144 @@ const confidence = matchResult.type === 'NO_MATCH'
    - Base : Montbéliard (dept: 25) - 18/02/2025
    - Résultat : Score 0.769 (bonus département +0.15, pénalité temporelle -27%)
 
+## Gestion des Timezones et DST
+
+### ⚠️ IMPORTANT - Conversion heures locales → UTC
+
+**Problème historique** : Approximation DST incorrecte causait un décalage d'1h pour les événements aux dates de changement d'heure.
+
+**Solution (2025-11-10)** : Utilisation de `date-fns-tz` pour conversion précise.
+
+#### Backend (FFAScraperAgent)
+
+```typescript
+import { fromZonedTime, getTimezoneOffset as getTzOffset } from 'date-fns-tz'
+
+// ❌ AVANT (bugué) - Approximation DST
+const isDST = month > 2 && month < 10
+const offsetHours = isDST ? 2 : 1
+const utcDate = new Date(Date.UTC(year, month, day, hours - offsetHours, minutes))
+
+// ✅ APRÈS (correct) - Conversion avec date-fns-tz
+const localDateStr = `2026-03-29T09:00:00`
+const utcDate = fromZonedTime(localDateStr, 'Europe/Paris')
+// Résultat : 2026-03-29T07:00:00.000Z (UTC+2 DST détecté automatiquement)
+```
+
+**Fonctions modifiées** :
+- `calculateRaceStartDate()` - Conversion heure course locale → UTC
+- `calculateEditionStartDate()` - Conversion heure édition locale → UTC
+- `getTimezoneIANA()` - Mapping ligue FFA → timezone IANA (ex: BFC → Europe/Paris, GUA → America/Guadeloupe)
+
+**Logs ajoutés** :
+```
+🕐 Conversion timezone: 2026-03-29T09:00:00 Europe/Paris -> 2026-03-29T07:00:00.000Z (course: Le tacot)
+```
+
+#### Frontend (RacesToAddSection)
+
+```typescript
+import { formatDateInTimezone } from '@/utils/timezone'
+
+// Récupérer timezone depuis proposition enrichie
+const editionTimeZone = proposal?.editionTimeZone || 'Europe/Paris'
+
+// Formatter avec timezone correct
+const formatDateTime = (dateString: string): string => {
+  return formatDateInTimezone(dateString, editionTimeZone, 'EEEE dd/MM/yyyy HH:mm')
+}
+```
+
+**Impact** :
+- ✅ DST géré automatiquement (dernier dimanche mars/octobre)
+- ✅ Support DOM-TOM (Guadeloupe UTC-4, Réunion UTC+4, etc.)
+- ✅ Affichage cohérent pour tous les utilisateurs
+
+**Documentation complète** : `docs/FIX-TIMEZONE-DST.md`
+
 ## Changelog
+
+### 2025-11-10 (partie 2) - Fix nettoyage numéros d'édition avec symboles (#, No., N°)
+
+**Problème résolu** : L'algorithme de matching FFA ne reconnaissait pas les événements existants quand le nom FFA contenait `#3`, `No. 8`, `N° 5`, etc.
+
+#### Cas réel : Trail des Loups #3
+
+**Événement existant** :
+- ID : 13446
+- Nom : `"Trail des loups"`
+- Ville : Bonnefontaine (39)
+- Édition 2026 : ID 44684, date 13 avril 2026
+
+**Scrape FFA** :
+- Nom : `"Trail Des Loups #3"`
+- Ville : Bonnefontaine (39)
+- Date : 26 avril 2026
+
+**Résultat avant fix** :
+- Match score : **0.565** < 0.75 (seuil) → ❌ NO_MATCH
+- Proposition créée : NEW_EVENT au lieu d'EDITION_UPDATE
+- Cause : Le `#3` dans le nom FFA réduisait le score de fuzzy matching
+
+#### Solution
+
+Ajout d'un regex dans `removeEditionNumber()` pour retirer :
+- `#3`, `#10`, `#125`
+- `No. 8`, `No 8`, `no. 8`, `no 8`
+- `N° 5`, `n° 5`, `N°5`, `n°5`
+
+```typescript
+// Supprimer "#X", "No. X", "N° X", "no X" partout dans le nom
+.replace(/\s*[#№]?\s*n[o°]?\.?\s*\d+/gi, '')
+```
+
+#### Résultats
+
+**Score après fix** : 0.88 > 0.75 → ✅ FUZZY_MATCH détecté !
+
+**Composantes du score** :
+- **Bonus département** : +15% si même département mais villes différentes
+- **Pénalité temporelle** : ~4% pour 13 jours d'écart (multiplicateur 95.7%)
+  - Formule : `dateMultiplier = 0.7 + (dateProximity * 0.3)`
+  - `dateProximity = 1 - (daysDiff / 90)`
+
+| Écart | dateProximity | Multiplicateur | Pénalité |
+|-------|---------------|----------------|----------|
+| 0 jours | 1.0 | 100% | 0% |
+| 13 jours | 0.856 | 95.7% | -4.3% |
+| 45 jours | 0.5 | 85% | -15% |
+| 90 jours | 0.0 | 70% | -30% |
+
+#### Fichiers modifiés
+
+1. **`apps/agents/src/ffa/matcher.ts`** (ligne 414)
+   - Ajout du regex pour retirer les symboles `#`, `No.`, `N°`
+   
+2. **`apps/agents/src/ffa/__tests__/matcher.edition-removal.test.ts`** (nouveau)
+   - Tests complets pour tous les cas (#3, No. 8, N° 5, combinaisons)
+
+#### Ressources
+
+- `docs/FIX-EDITION-NUMBER-SYMBOLS.md` - Documentation complète avec analyse
+- Proposition exemple : `cmhstf28403tjmu3ref0q3nbz`
+
+### 2025-11-10 (partie 1) - Fix gestion timezone et DST
+
+**Problème résolu** : Décalage d'1h entre heures FFA et dashboard pour événements aux dates de changement d'heure.
+
+**Exemple** : Compétition 29 mars 2026 (jour DST) à 09:00 affichée 10:00.
+
+**Cause** : Approximation `month > 2 && month < 10` ne tenait pas compte du jour exact du DST.
+
+**Solution** :
+1. Backend : Utilisation `date-fns-tz` avec `fromZonedTime()` pour conversion locale → UTC
+2. Frontend : Utilisation `formatDateInTimezone()` avec timezone de l'édition
+3. Logs détaillés pour debugging
+
+**Fichiers modifiés** :
+- `apps/agents/src/FFAScraperAgent.ts` - Refonte conversion timezone
+- `apps/dashboard/src/components/proposals/edition-update/RacesToAddSection.tsx` - Affichage avec timezone correct
+- `docs/FIX-TIMEZONE-DST.md` - Documentation complète
 
 ### 2025-11-09 - Fix parsing événements multi-mois (février-mars, décembre-janvier)
 
