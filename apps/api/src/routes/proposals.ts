@@ -2,6 +2,7 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
+import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -527,7 +528,7 @@ router.get('/:id', [
 }))
 
 // PUT /api/proposals/:id - Update proposal (approve, reject, archive)
-router.put('/:id', [
+router.put('/:id', requireAuth, [
   param('id').isString().notEmpty(),
   body('status').optional().isIn(['PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED']),
   body('reviewedBy').optional().isString(),
@@ -540,6 +541,9 @@ router.put('/:id', [
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
   const { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block } = req.body
+  
+  // Récupérer l'utilisateur connecté
+  const userId = req.user!.userId
 
   // Récupérer la proposition actuelle pour gérer les blocs
   const currentProposal = await db.prisma.proposal.findUnique({
@@ -562,16 +566,12 @@ router.put('/:id', [
     // Pour l'instant, on marque comme approuvé dès qu'un bloc est approuvé
     updates.status = status
     updates.reviewedAt = new Date()
-    if (reviewedBy) {
-      updates.reviewedBy = reviewedBy
-    }
+    updates.reviewedBy = reviewedBy || userId  // ✅ Enregistrer qui a validé
   } else if (status) {
     // Approbation/rejet global standard
     updates.status = status
     updates.reviewedAt = new Date()
-    if (reviewedBy) {
-      updates.reviewedBy = reviewedBy
-    }
+    updates.reviewedBy = reviewedBy || userId  // ✅ Enregistrer qui a validé
   }
   
   // Gérer les modifications utilisateur
@@ -694,7 +694,7 @@ router.post('/:id/compare', [
 }))
 
 // POST /api/proposals/:id/apply - Manually apply an approved proposal
-router.post('/:id/apply', [
+router.post('/:id/apply', requireAuth, [
   param('id').isString().notEmpty(),
   body('selectedChanges').isObject().withMessage('selectedChanges must be an object'),
   body('force').optional().isBoolean().withMessage('force must be a boolean'),
@@ -702,6 +702,9 @@ router.post('/:id/apply', [
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
   const { selectedChanges, force = false } = req.body
+  
+  // Récupérer l'utilisateur connecté
+  const userId = req.user!.userId
 
   // Vérifier que la proposition existe et est approuvée
   const proposal = await db.prisma.proposal.findUnique({
@@ -718,6 +721,11 @@ router.post('/:id/apply', [
   }
 
   try {
+    // Enregistrer qui applique la proposition
+    await db.updateProposal(id, {
+      appliedBy: userId  // ✅ Enregistrer qui a appliqué
+    })
+    
     // Appliquer la proposition
     const applicationResult = await db.applyProposal(id, selectedChanges)
 
@@ -771,7 +779,7 @@ router.post('/:id/apply', [
 }))
 
 // POST /api/proposals/:id/unapprove - Cancel an approval and revert to PENDING
-router.post('/:id/unapprove', [
+router.post('/:id/unapprove', requireAuth, [
   param('id').isString().notEmpty(),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
