@@ -12,6 +12,8 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
+  // Handler spécifique pour Edition.startDate (avec logique de propagation aux courses)
+  onEditionStartDateChange?: (fieldName: string, newValue: any) => void
 }
 
 /**
@@ -26,6 +28,7 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
+  onEditionStartDateChange,
   ...props 
 }) => {
   // Fonction pour déterminer si un champ doit être désactivé
@@ -68,9 +71,19 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
     return null
   }
 
+  // Wrapper pour onFieldModify qui intercepte startDate
+  const handleFieldModifyWithStartDateLogic = (fieldName: string, newValue: any, reason?: string) => {
+    if (fieldName === 'startDate' && onEditionStartDateChange) {
+      onEditionStartDateChange(fieldName, newValue)
+    } else if (props.onFieldModify) {
+      props.onFieldModify(fieldName, newValue, reason)
+    }
+  }
+  
   return (
     <CategorizedChangesTable
       {...props}
+      onFieldModify={handleFieldModifyWithStartDateLogic}
       entityType="EDITION"
       isFieldDisabledFn={isFieldDisabledFn}
       renderCustomEditor={renderCustomEditor}

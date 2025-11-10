@@ -47,7 +47,8 @@ export class ConfigLoader {
           isDefault: false,
           isActive: dbConn.isActive,
           description: dbConn.description || undefined,
-          connectionString: dbConn.connectionUrl || undefined
+          connectionString: dbConn.connectionUrl || undefined,
+          prismaSchema: dbConn.prismaSchema || undefined
         }
         
         configs.push(config)

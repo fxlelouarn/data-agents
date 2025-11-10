@@ -27,6 +27,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           userModifiedRaceChanges,
           handleFieldSelect,
           handleFieldModify,
+          handleEditionStartDateChange,
           handleApproveAll,
           handleRejectAll,
           handleRaceFieldModify,
@@ -92,6 +93,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
               onFieldModify={handleFieldModify}
+              onEditionStartDateChange={handleEditionStartDateChange}
               userModifiedChanges={userModifiedChanges}
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}

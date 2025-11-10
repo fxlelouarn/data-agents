@@ -28,6 +28,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           handleFieldSelect,
           handleApproveField,
           handleFieldModify,
+          handleEditionStartDateChange,
           handleApproveAll,
           handleRejectAll,
           handleApproveAllRaces,
@@ -84,6 +85,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onFieldSelect={handleFieldSelect}
                 onFieldApprove={handleApproveField}
                 onFieldModify={handleFieldModify}
+                onEditionStartDateChange={handleEditionStartDateChange}
                 userModifiedChanges={userModifiedChanges}
                 formatValue={formatValue}
                 formatAgentsList={formatAgentsList}

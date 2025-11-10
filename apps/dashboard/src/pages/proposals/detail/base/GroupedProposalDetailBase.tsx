@@ -16,6 +16,8 @@ import {
   Button,
   Typography
 } from '@mui/material'
+import ConfirmDatePropagationModal from '@/components/proposals/modals/ConfirmDatePropagationModal'
+import ConfirmEditionDateUpdateModal from '@/components/proposals/modals/ConfirmEditionDateUpdateModal'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
@@ -79,6 +81,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   isNewEvent: boolean
   getEventTitle: (proposal: any, isNewEvent: boolean) => string
   getEditionYear: (proposal: any) => string | undefined
+  handleEditionStartDateChange: (fieldName: string, newValue: any) => void
   // Actions spécifiques aux courses
   handleApproveRace: (raceData: any) => Promise<void>
   handleApproveAllRaces: () => Promise<void>
@@ -124,6 +127,20 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
   const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
   
+  // États pour les modales de synchronisation de dates
+  const [datePropagationModal, setDatePropagationModal] = useState<{
+    open: boolean
+    newStartDate: string
+  } | null>(null)
+  const [editionDateUpdateModal, setEditionDateUpdateModal] = useState<{
+    open: boolean
+    dateType: 'startDate' | 'endDate'
+    currentEditionDate: string
+    newRaceDate: string
+    raceName: string
+    raceIndex: number
+  } | null>(null)
+  
   // Hooks API
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
   const { data: allProposalsData } = useProposals({}, 100)
@@ -144,10 +161,44 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     consolidateRaceChanges
   } = useProposalLogic()
   
+  // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
+  const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
+    if (fieldName !== 'startDate' || !newValue) {
+      // Pas startDate, appliquer directement
+      setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+      setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+      return
+    }
+    
+    // Compter les courses proposées (supporter plusieurs structures)
+    const firstProposal = groupProposals[0]
+    const changes = firstProposal?.changes
+    const existingRaces = firstProposal?.existingRaces || []
+    const racesToAdd = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
+    const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
+    const racesCount = existingRaces.length + (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
+    
+    if (racesCount > 0) {
+      // Ouvrir la modale pour demander si on propage aux courses
+      setDatePropagationModal({
+        open: true,
+        newStartDate: newValue
+      })
+    } else {
+      // Pas de courses, appliquer directement
+      setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+      setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+    }
+  }
   
   // Handlers
   const handleSelectField = (fieldName: string, selectedValue: any) => {
-    setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+    // Si c'est startDate, déléguer à handleEditionStartDateChange
+    if (fieldName === 'startDate') {
+      handleEditionStartDateChange(fieldName, selectedValue)
+    } else {
+      setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+    }
   }
   
   const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
@@ -163,6 +214,44 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   }
   
   const handleRaceFieldModify = (raceIndex: number, fieldName: string, newValue: any) => {
+    // Si c'est une modification de startDate d'une course, vérifier si elle sort de la plage d'édition
+    if (fieldName === 'startDate' && newValue) {
+      const newRaceDate = new Date(newValue)
+      const currentStartDate = selectedChanges.startDate || consolidatedChanges.find(c => c.field === 'startDate')?.options[0]?.proposedValue
+      const currentEndDate = selectedChanges.endDate || consolidatedChanges.find(c => c.field === 'endDate')?.options[0]?.proposedValue
+      
+      // Récupérer le nom de la course (depuis les groupProposals)
+      const firstProposal = groupProposals[0]
+      const races = firstProposal?.changes?.racesToAdd || firstProposal?.changes?.races || []
+      const raceName = races[raceIndex]?.name || `Course ${raceIndex + 1}`
+      
+      // Si la course est AVANT la startDate de l'édition
+      if (currentStartDate && newRaceDate < new Date(currentStartDate)) {
+        setEditionDateUpdateModal({
+          open: true,
+          dateType: 'startDate',
+          currentEditionDate: currentStartDate,
+          newRaceDate: newValue,
+          raceName,
+          raceIndex
+        })
+        return // Attendre la confirmation avant de sauvegarder
+      }
+      
+      // Si la course est APRÈS la endDate de l'édition
+      if (currentEndDate && newRaceDate > new Date(currentEndDate)) {
+        setEditionDateUpdateModal({
+          open: true,
+          dateType: 'endDate',
+          currentEditionDate: currentEndDate,
+          newRaceDate: newValue,
+          raceName,
+          raceIndex
+        })
+        return // Attendre la confirmation avant de sauvegarder
+      }
+    }
+    
     setUserModifiedRaceChanges(prev => ({
       ...prev,
       [raceIndex]: {
@@ -557,6 +646,88 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       console.error('Error reviving event:', error)
     }
   }
+  
+  // Confirmer la propagation de startDate aux courses
+  const confirmDatePropagation = async () => {
+    if (!datePropagationModal) return
+    
+    const newStartDate = datePropagationModal.newStartDate
+    
+    // Appliquer la nouvelle startDate à l'édition
+    setUserModifiedChanges(prev => ({ ...prev, startDate: newStartDate }))
+    setSelectedChanges(prev => ({ ...prev, startDate: newStartDate }))
+    
+    // Propager à toutes les courses (utiliser la structure raceEdits compatible avec RacesChangesTable)
+    const firstProposal = groupProposals[0]
+    const newRaceEdits: Record<string, Record<string, any>> = {}
+    
+    // Courses existantes (existingRaces)
+    const existingRaces = firstProposal?.existingRaces || []
+    if (Array.isArray(existingRaces)) {
+      existingRaces.forEach((_: any, index: number) => {
+        const key = `existing-${index}`
+        newRaceEdits[key] = {
+          ...(userModifiedChanges.raceEdits?.[key] || {}),
+          startDate: newStartDate
+        }
+      })
+    }
+    
+    // Nouvelles courses (racesToAdd)
+    const changes = firstProposal?.changes
+    const races = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
+    if (Array.isArray(races)) {
+      races.forEach((_: any, index: number) => {
+        const key = `new-${index}`
+        newRaceEdits[key] = {
+          ...(userModifiedChanges.raceEdits?.[key] || {}),
+          startDate: newStartDate
+        }
+      })
+    }
+      
+      // Sauvegarder via updateProposal pour synchroniser avec le backend (seulement si on a des modifications)
+      if (Object.keys(newRaceEdits).length > 0 && firstProposal?.id) {
+        try {
+          await updateProposalMutation.mutateAsync({
+            id: firstProposal.id,
+            userModifiedChanges: {
+              ...userModifiedChanges,
+              raceEdits: {
+                ...userModifiedChanges.raceEdits,
+                ...newRaceEdits
+              }
+            }
+          })
+        } catch (error) {
+          console.error('Error updating race dates:', error)
+        }
+      }
+    
+    setDatePropagationModal(null)
+  }
+  
+  // Confirmer la mise à jour de Edition.startDate/endDate depuis une course
+  const confirmEditionDateUpdate = () => {
+    if (!editionDateUpdateModal) return
+    
+    const { dateType, newRaceDate, raceIndex } = editionDateUpdateModal
+    
+    // Mettre à jour la date de l'édition
+    setUserModifiedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
+    setSelectedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
+    
+    // Appliquer aussi la modification de la course
+    setUserModifiedRaceChanges(prev => ({
+      ...prev,
+      [raceIndex]: {
+        ...prev[raceIndex],
+        startDate: newRaceDate
+      }
+    }))
+    
+    setEditionDateUpdateModal(null)
+  }
 
   // Calculs pour l'interface
   const firstProposal = groupProposals[0]
@@ -687,6 +858,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     userModifiedRaceChanges,
     handleFieldSelect: handleSelectField,
     handleFieldModify,
+    handleEditionStartDateChange,
     handleApproveField,
     handleApproveAll,
     handleRejectAll,
@@ -819,6 +991,53 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           </Button>
         </DialogActions>
       </Dialog>
+      
+      {/* Modale de confirmation pour propager Edition.startDate aux courses */}
+      {datePropagationModal && (
+        <ConfirmDatePropagationModal
+          open={datePropagationModal.open}
+          onClose={() => {
+            // Annuler = appliquer juste à l'édition sans propager
+            setUserModifiedChanges(prev => ({ ...prev, startDate: datePropagationModal.newStartDate }))
+            setSelectedChanges(prev => ({ ...prev, startDate: datePropagationModal.newStartDate }))
+            setDatePropagationModal(null)
+          }}
+          onConfirm={confirmDatePropagation}
+          newStartDate={datePropagationModal.newStartDate}
+          affectedRacesCount={(() => {
+            const firstProposal = groupProposals[0]
+            const changes = firstProposal?.changes
+            const existingRaces = firstProposal?.existingRaces || []
+            const racesToAdd = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
+            const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
+            return existingRaces.length + (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
+          })()}
+        />
+      )}
+      
+      {/* Modale de confirmation pour mettre à jour Edition.startDate/endDate depuis une course */}
+      {editionDateUpdateModal && (
+        <ConfirmEditionDateUpdateModal
+          open={editionDateUpdateModal.open}
+          onClose={() => {
+            // Annuler = appliquer juste la modification de la course
+            const { raceIndex, newRaceDate } = editionDateUpdateModal
+            setUserModifiedRaceChanges(prev => ({
+              ...prev,
+              [raceIndex]: {
+                ...prev[raceIndex],
+                startDate: newRaceDate
+              }
+            }))
+            setEditionDateUpdateModal(null)
+          }}
+          onConfirm={confirmEditionDateUpdate}
+          dateType={editionDateUpdateModal.dateType}
+          currentEditionDate={editionDateUpdateModal.currentEditionDate}
+          newRaceDate={editionDateUpdateModal.newRaceDate}
+          raceName={editionDateUpdateModal.raceName}
+        />
+      )}
     </Box>
   )
 }

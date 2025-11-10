@@ -265,10 +265,11 @@ export class FFAScraperAgent extends BaseAgent {
         new: ffaStartDate,
         confidence
       }
-      // Proposer aussi endDate = startDate (compétition d'un jour par défaut)
+      // Proposer aussi endDate = date de la dernière course
+      const ffaEndDate = this.calculateEditionEndDate(ffaData)
       changes.endDate = {
         old: edition.endDate,
-        new: ffaStartDate,
+        new: ffaEndDate,
         confidence
       }
       justifications.push({
@@ -941,6 +942,25 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
+   * Calcule la date de fin d'une édition en utilisant l'heure de la dernière course
+   * Si la dernière course est le même jour que la première, retourne la date de la dernière course
+   * Sinon, retourne la date de fin de l'événement (endDate du FFACompetitionDetails)
+   * Convertit l'heure locale (selon la ligue) en UTC avec date-fns-tz
+   */
+  private calculateEditionEndDate(ffaData: FFACompetitionDetails): Date {
+    // S'il n'y a pas de courses, retourner startDate
+    if (ffaData.races.length === 0) {
+      return this.calculateEditionStartDate(ffaData)
+    }
+    
+    // Récupérer la dernière course (selon raceDate ou ordre dans le tableau)
+    const lastRace = ffaData.races[ffaData.races.length - 1]
+    
+    // Calculer la date de la dernière course
+    return this.calculateRaceStartDate(ffaData, lastRace)
+  }
+
+  /**
    * Crée les propositions pour une compétition
    */
   private async createProposalsForCompetition(
@@ -1005,7 +1025,7 @@ export class FFAScraperAgent extends BaseAgent {
           edition: {
             new: {
               startDate: this.calculateEditionStartDate(competition),
-              endDate: this.calculateEditionStartDate(competition), // Par défaut, même date (compétition d'un jour)
+              endDate: this.calculateEditionEndDate(competition), // Date de la dernière course
               year: competition.competition.date.getFullYear().toString(),
               timeZone: this.getTimezoneIANA(competition.competition.ligue),
               calendarStatus: 'CONFIRMED',

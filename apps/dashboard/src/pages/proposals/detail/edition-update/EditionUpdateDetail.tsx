@@ -23,6 +23,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
           userModifiedRaceChanges,
           handleFieldSelect,
           handleFieldModify,
+          handleEditionStartDateChange,
           handleRaceFieldModify,
           userModifiedChanges,
           formatValue,
@@ -61,6 +62,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 selectedChanges={selectedChanges}
                 onFieldSelect={handleFieldSelect}
                 onFieldModify={handleFieldModify}
+                onEditionStartDateChange={handleEditionStartDateChange}
                 userModifiedChanges={userModifiedChanges}
                 formatValue={formatValue}
                 formatAgentsList={formatAgentsList}
