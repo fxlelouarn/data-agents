@@ -17,20 +17,26 @@ import {
   useTheme,
   useMediaQuery,
   Tooltip,
+  Avatar,
+  Menu,
+  MenuItem,
+  Button,
 } from '@mui/material'
 import {
   Menu as MenuIcon,
-  Dashboard as DashboardIcon,
   SmartToy as AgentIcon,
   Assignment as ProposalIcon,
   Update as UpdateIcon,
-  Article as LogIcon,
   MonitorHeart as HealthIcon,
   Settings as SettingsIcon,
   ChevronLeft as ChevronLeftIcon,
   ChevronRight as ChevronRightIcon,
+  Person as PersonIcon,
+  Logout as LogoutIcon,
+  People as PeopleIcon,
 } from '@mui/icons-material'
 import { useProposals, useDatabases } from '@/hooks/useApi'
+import { useAuth } from '@/context/AuthContext'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -49,12 +55,14 @@ interface NavItem {
 const Layout: React.FC<LayoutProps> = ({ children }) => {
   const [mobileOpen, setMobileOpen] = useState(false)
   const [collapsed, setCollapsed] = useState(false)
+  const [anchorEl, setAnchorEl] = useState<null | HTMLElement>(null)
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'))
   const location = useLocation()
-
+  
+  const { user, logout, hasRole } = useAuth()
   const { data: proposalsData } = useProposals({ status: 'PENDING' })
-  const { data: databasesData } = useDatabases() // Seulement les bases actives par défaut
+  const { data: databasesData } = useDatabases()
   const pendingProposals = proposalsData?.meta?.total || 0
   const activeDatabases = databasesData?.data?.filter(db => db.isActive) || []
   const hasActiveDatabases = activeDatabases.length > 0
@@ -62,15 +70,37 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
   }
+  
+  const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
+    setAnchorEl(event.currentTarget)
+  }
+  
+  const handleMenuClose = () => {
+    setAnchorEl(null)
+  }
+  
+  const handleLogout = () => {
+    handleMenuClose()
+    logout()
+  }
 
-  const navItems: NavItem[] = [
-    { text: 'Tableau de bord', icon: <DashboardIcon />, path: '/dashboard' },
-    { text: 'Agents', icon: <AgentIcon />, path: '/agents' },
+  // Filtrer les items de navigation selon le rôle
+  const allNavItems: NavItem[] = [
     { text: 'Propositions', icon: <ProposalIcon />, path: '/proposals', badge: pendingProposals },
     { text: 'Mises à jour', icon: <UpdateIcon />, path: '/updates' },
-    { text: 'Logs', icon: <LogIcon />, path: '/logs' },
+    { text: 'Agents', icon: <AgentIcon />, path: '/agents' },
+    { text: 'Utilisateurs', icon: <PeopleIcon />, path: '/users' },
     { text: 'Administration', icon: <SettingsIcon />, path: '/settings' },
   ]
+  
+  const navItems = allNavItems.filter(item => {
+    if (item.path === '/proposals') return hasRole('VALIDATOR', 'EXECUTOR', 'ADMIN')
+    if (item.path === '/updates') return hasRole('EXECUTOR', 'ADMIN')
+    if (item.path === '/agents') return hasRole('ADMIN')
+    if (item.path === '/users') return hasRole('ADMIN')
+    if (item.path === '/settings') return hasRole('ADMIN')
+    return true
+  })
 
   const drawer = (
     <Box sx={{ height: '100%', display: 'flex', flexDirection: 'column' }}>
@@ -87,8 +117,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
       <Divider />
       <List sx={{ flex: 1, px: collapsed ? 0 : 1 }}>
         {navItems.map((item) => {
-          const isActive = location.pathname === item.path || 
-            (item.path !== '/dashboard' && location.pathname.startsWith(item.path))
+          const isActive = location.pathname === item.path || location.pathname.startsWith(item.path)
           const listButton = (
               <ListItemButton
                 component={RouterLink}
@@ -157,20 +186,66 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             <MenuIcon />
           </IconButton>
           <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
-            {navItems.find(item => location.pathname === item.path || (item.path !== '/dashboard' && location.pathname.startsWith(item.path)))?.text || 'Data Agents'}
+            {navItems.find(item => location.pathname === item.path || location.pathname.startsWith(item.path))?.text || 'Data Agents'}
           </Typography>
-          <Box sx={{ display: 'flex', alignItems: 'center' }}>
-            <HealthIcon sx={{ 
-              mr: 0.5, 
-              fontSize: 16, 
-              color: hasActiveDatabases ? theme.palette.success.main : theme.palette.warning.main 
-            }} />
-            <Typography variant="body2" color="text.secondary">
-              {hasActiveDatabases 
-                ? `${activeDatabases.length} base${activeDatabases.length > 1 ? 's' : ''} connectée${activeDatabases.length > 1 ? 's' : ''}` 
-                : 'Aucune base de données connectée'
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center' }}>
+              <HealthIcon sx={{ 
+                mr: 0.5, 
+                fontSize: 16, 
+                color: hasActiveDatabases ? theme.palette.success.main : theme.palette.warning.main 
+              }} />
+              <Typography variant="body2" color="text.secondary">
+                {hasActiveDatabases 
+                  ? `${activeDatabases.length} base${activeDatabases.length > 1 ? 's' : ''} connectée${activeDatabases.length > 1 ? 's' : ''}` 
+                  : 'Aucune base de données connectée'
+                }
+              </Typography>
+            </Box>
+            
+            {/* User menu */}
+            <Button
+              onClick={handleMenuOpen}
+              startIcon={
+                <Avatar sx={{ width: 28, height: 28, bgcolor: theme.palette.primary.main }}>
+                  <PersonIcon sx={{ fontSize: 18 }} />
+                </Avatar>
               }
-            </Typography>
+              color="inherit"
+              sx={{ textTransform: 'none' }}
+            >
+              {user?.firstName} {user?.lastName}
+            </Button>
+            
+            <Menu
+              anchorEl={anchorEl}
+              open={Boolean(anchorEl)}
+              onClose={handleMenuClose}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+            >
+              <MenuItem disabled>
+                <Typography variant="body2" color="text.secondary">
+                  {user?.email}
+                </Typography>
+              </MenuItem>
+              <MenuItem disabled>
+                <Typography variant="body2" color="text.secondary">
+                  Rôle: {user?.role === 'ADMIN' ? 'Administrateur' : user?.role === 'VALIDATOR' ? 'Validateur' : 'Exécuteur'}
+                </Typography>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={handleLogout}>
+                <LogoutIcon sx={{ mr: 1 }} fontSize="small" />
+                Déconnexion
+              </MenuItem>
+            </Menu>
           </Box>
         </Toolbar>
       </AppBar>

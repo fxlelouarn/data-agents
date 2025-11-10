@@ -7,20 +7,22 @@ import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
 import { fr } from 'date-fns/locale'
 
+import { AuthProvider } from '@/context/AuthContext'
+import ProtectedRoute from '@/components/ProtectedRoute'
 import Layout from '@/components/Layout'
+import Login from '@/pages/Login'
 import AgentList from '@/pages/AgentList'
 import AgentCreate from '@/pages/AgentCreate'
 import AgentDetail from '@/pages/AgentDetail'
 import AgentEdit from '@/pages/AgentEdit'
-import AgentLogs from '@/pages/AgentLogs'
 import ProposalList from '@/pages/ProposalList'
 import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher'
 import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDetailDispatcher'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
-import Dashboard from '@/pages/Dashboard'
 import Settings from '@/pages/Settings'
 import TestDynamicForm from '@/pages/TestDynamicForm'
+import Users from '@/pages/Users'
 
 // Create theme similar to Miles Republic style
 const theme = createTheme({
@@ -106,55 +108,155 @@ const queryClient = new QueryClient({
 function App() {
   return (
     <QueryClientProvider client={queryClient}>
-      <ThemeProvider theme={theme}>
-        <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
-          <CssBaseline />
-          <SnackbarProvider
-            maxSnack={3}
-            anchorOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-            autoHideDuration={6000}
-          >
+      <AuthProvider>
+        <ThemeProvider theme={theme}>
+          <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+            <CssBaseline />
+            <SnackbarProvider
+              maxSnack={3}
+              anchorOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
+              autoHideDuration={6000}
+            >
               <Router>
-                <Layout>
-                <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
-                  <Routes>
-                    <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                    <Route path="/dashboard" element={<Dashboard />} />
-                    
-                    {/* Agents routes */}
-                    <Route path="/agents" element={<AgentList />} />
-                    <Route path="/agents/create" element={<AgentCreate />} />
-                    <Route path="/agents/:id" element={<AgentDetail />} />
-                    <Route path="/agents/:id/edit" element={<AgentEdit />} />
-                    <Route path="/agents/:id/logs" element={<AgentLogs />} />
-                    
-                    {/* Proposals routes */}
-                    <Route path="/proposals" element={<ProposalList />} />
-                    <Route path="/proposals/group/:groupKey" element={<GroupedProposalDetailDispatcher />} />
-                    <Route path="/proposals/:id" element={<ProposalDetailDispatcher />} />
-                    
-                    {/* Updates routes */}
-                    <Route path="/updates" element={<UpdateList />} />
-                    <Route path="/updates/:id" element={<UpdateDetail />} />
-                    
-                    {/* Settings route */}
-                    <Route path="/settings" element={<Settings />} />
-                    
-                    {/* Test route */}
-                    <Route path="/test-form" element={<TestDynamicForm />} />
-                    
-                    {/* Catch all - redirect to dashboard */}
-                    <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                  </Routes>
-                </Box>
-              </Layout>
-            </Router>
-          </SnackbarProvider>
-        </LocalizationProvider>
-      </ThemeProvider>
+                <Routes>
+                  {/* Route publique */}
+                  <Route path="/login" element={<Login />} />
+                  
+                  {/* Routes protégées */}
+                  <Route
+                    path="/*"
+                    element={
+                      <ProtectedRoute>
+                        <Layout>
+                          <Box sx={{ flex: 1, display: 'flex', flexDirection: 'column' }}>
+                            <Routes>
+                              <Route path="/" element={<Navigate to="/proposals" replace />} />
+                              
+                              {/* Proposals routes - VALIDATOR, EXECUTOR, ADMIN */}
+                              <Route
+                                path="/proposals"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <ProposalList />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/proposals/group/:groupKey"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <GroupedProposalDetailDispatcher />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/proposals/:id"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <ProposalDetailDispatcher />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Updates routes - EXECUTOR, ADMIN */}
+                              <Route
+                                path="/updates"
+                                element={
+                                  <ProtectedRoute requiredRoles={['EXECUTOR', 'ADMIN']}>
+                                    <UpdateList />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/updates/:id"
+                                element={
+                                  <ProtectedRoute requiredRoles={['EXECUTOR', 'ADMIN']}>
+                                    <UpdateDetail />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Agents routes - ADMIN only */}
+                              <Route
+                                path="/agents"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <AgentList />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/agents/create"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <AgentCreate />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/agents/:id"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <AgentDetail />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/agents/:id/edit"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <AgentEdit />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Settings route - ADMIN only */}
+                              <Route
+                                path="/settings"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <Settings />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Users route - ADMIN only */}
+                              <Route
+                                path="/users"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <Users />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Test route - ADMIN only */}
+                              <Route
+                                path="/test-form"
+                                element={
+                                  <ProtectedRoute requiredRoles={['ADMIN']}>
+                                    <TestDynamicForm />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Catch all - redirect to proposals */}
+                              <Route path="*" element={<Navigate to="/proposals" replace />} />
+                            </Routes>
+                          </Box>
+                        </Layout>
+                      </ProtectedRoute>
+                    }
+                  />
+                </Routes>
+              </Router>
+            </SnackbarProvider>
+          </LocalizationProvider>
+        </ThemeProvider>
+      </AuthProvider>
     </QueryClientProvider>
   )
 }
