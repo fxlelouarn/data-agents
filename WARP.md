@@ -458,6 +458,76 @@ Ces composants sont utilisés dans plusieurs vues - toute modification doit êtr
 - `docs/BLOCK-SEPARATION-SUMMARY.md` - Résumé modifications récentes
 - `docs/PROPOSAL-UI-COMMON-PITFALLS.md` - Guide des pièges courants et checklist complète
 
+### 📋 Refactoring : Gestion de l'état des propositions
+
+**État actuel** (2025-11-12) : ✅ PHASE 2 COMPLÈTE 🎉
+
+#### Contexte
+
+Le projet est en cours de migration vers un système de gestion d'état unifié basé sur le hook `useProposalEditor`, qui remplace l'ancien système dispersé (`selectedChanges`, `userModifiedChanges`, `userModifiedRaceChanges`, etc.).
+
+#### État de la migration
+
+| Composant | Statut | Hook utilisé | Prochaine action |
+|-----------|--------|--------------|------------------|
+| `GroupedProposalDetailBase` | ✅ Migré | `useProposalEditor` (mode groupé) | Nettoyage (PHASE 3) |
+| `ProposalDetailBase` | ✅ Migré | `useProposalEditor` (mode simple) | Nettoyage (PHASE 3) |
+
+#### Architecture cible : Single Source of Truth
+
+**Avant** (ancien système - bugué) :
+```typescript
+// ❌ 4 sources de vérité différentes
+const [selectedChanges, setSelectedChanges] = useState({})
+const [userModifiedChanges, setUserModifiedChanges] = useState({})
+const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState({})
+const { consolidateChanges } = useProposalLogic()
+
+// Problème : Désynchronisation entre ces états
+```
+
+**Après** (nouveau système - PHASE 2) :
+```typescript
+// ✅ Une seule source de vérité
+const {
+  workingProposal,      // Mode simple
+  // OU
+  workingGroup,         // Mode groupé
+  updateField,
+  updateRace,
+  validateBlock,
+  save
+} = useProposalEditor(proposalId, { autosave: true })
+
+// Avantages : Pas de désynchronisation possible
+```
+
+#### Bénéfices obtenus (GroupedProposalDetailBase)
+
+✅ **Plus de perte de modifications** : État consolidé unique  
+✅ **Sauvegarde automatique** : Autosave activé (debounced 2s)  
+✅ **Payload complet** : Toutes les modifications incluses lors de la validation  
+✅ **Code simplifié** : -150 lignes de logique manuelle  
+
+#### Documentation
+
+- **État actuel complet** : `docs/proposal-state-refactor/STATUS-2025-11-12.md`
+- **Plan de migration ProposalDetailBase** : `docs/proposal-state-refactor/PHASE2-PROPOSAL-DETAIL-BASE.md`
+- **Plan global** : `docs/proposal-state-refactor/PLAN-PROPOSAL-STATE-REFACTOR.md`
+- **Archive migrations passées** : `docs/proposal-state-refactor/archive/`
+
+#### Règles lors de modifications
+
+⚠️ **Si vous modifiez `GroupedProposalDetailBase`** :
+- Utiliser `workingGroup` (depuis le hook) au lieu des anciens états
+- Utiliser `updateField()`, `updateRace()` au lieu de `setState` manuels
+- Ne PAS appeler `save()` manuellement après chaque modification (autosave actif)
+
+⚠️ **Si vous modifiez `ProposalDetailBase`** :
+- Système legacy toujours en place (à migrer)
+- Attention à la duplication d'état `selectedChanges` + `userModifiedChanges`
+- Voir le plan de migration pour contribuer à la PHASE 2
+
 ## Agents
 
 Les agents sont des processus qui :
@@ -603,6 +673,297 @@ const formatDateTime = (dateString: string): string => {
 **Documentation complète** : `docs/FIX-TIMEZONE-DST.md`
 
 ## Changelog
+
+### 2025-11-11 (partie 2) - Phase 1.5 : Support des propositions groupées dans useProposalEditor
+
+**Nouveau** : Le hook `useProposalEditor` supporte désormais les propositions groupées nativement.
+
+#### Fonctionnalités ajoutées
+
+**Détection automatique du mode** :
+- `useProposalEditor('cm123')` → Mode simple
+- `useProposalEditor(['cm123', 'cm456', 'cm789'])` → Mode groupé
+
+**Consolidation multi-agents** :
+- `consolidateChangesFromProposals()` : Agrège les changements par champ
+- `consolidateRacesFromProposals()` : Agrège les courses par ID
+- Support de plusieurs agents proposant la même modification
+
+**Nouveaux handlers pour mode groupé** :
+- `selectOption(field, proposalId)` : Sélectionner une option parmi plusieurs agents
+- `validateAllBlocks()` : Valider tous les blocs en une fois
+- `isBlockValidated(blockKey)` : Vérifier si un bloc est validé
+
+**Types exportés** :
+```typescript
+interface WorkingProposalGroup {
+  ids: string[]
+  originalProposals: Proposal[]
+  consolidatedChanges: ConsolidatedChange[]
+  consolidatedRaces: ConsolidatedRaceChange[]
+  userModifiedChanges: Record<string, any>
+  userModifiedRaceChanges: Record<string, any>
+  approvedBlocks: Record<string, boolean>
+  isDirty: boolean
+  lastSaved: Date | null
+}
+
+interface ConsolidatedChange {
+  field: string
+  options: Array<{
+    proposalId: string
+    agentName: string
+    proposedValue: any
+    confidence: number
+    createdAt: string
+  }>
+  currentValue: any
+  selectedValue?: any
+}
+```
+
+#### Comportement
+
+**Sauvegarde groupée** :
+- Le même diff est appliqué à toutes les propositions du groupe
+- Garantit la cohérence entre propositions
+
+**Validation par blocs** :
+- Accepte une liste optionnelle de `proposalIds`
+- Payload construit depuis `consolidatedChanges` + `userModifiedChanges`
+
+#### Impact
+
+**Avant** :
+- ❌ Duplication d'état dans `GroupedProposalDetailBase`
+- ❌ Logique complexe de synchronisation manuelle
+- ❌ Bugs de perte de modifications
+
+**Après** :
+- ✅ Single Source of Truth dans le hook
+- ✅ Consolidation automatique des changements
+- ✅ Sauvegarde et validation massives
+- ✅ Rétrocompatibilité avec mode simple
+
+#### Fichiers modifiés
+
+1. **`apps/dashboard/src/hooks/useProposalEditor.ts`**
+   - Ajout des types `WorkingProposalGroup`, `ConsolidatedChange`, `ConsolidatedRaceChange`
+   - Ajout de `initializeWorkingGroup()`
+   - Ajout de `consolidateChangesFromProposals()`
+   - Ajout de `consolidateRacesFromProposals()`
+   - Modification de `updateField()`, `updateRace()`, `deleteRace()`, `addRace()` pour supporter le mode groupé
+   - Modification de `save()` avec `buildGroupDiff()`
+   - Modification de `validateBlock()` pour accepter `proposalIds[]`
+   - Ajout de `validateAllBlocks()` et `isBlockValidated()`
+   - Retour conditionnel selon le mode (simple vs groupé)
+
+2. **`apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx`**
+   - Import de `useProposalEditor` ajouté
+   - Commentaires TODO pour migration
+
+#### Ressources
+
+- `docs/PHASE1.5-GROUP-SUPPORT-COMPLETE.md` - Documentation complète avec exemples
+- `docs/PLAN-PROPOSAL-STATE-REFACTOR.md` - Plan global
+
+#### Prochaines étapes : Phase 2
+
+Intégrer le hook dans `GroupedProposalDetailBase` pour remplacer les états locaux.
+
+### 2025-11-11 (partie 1) - Fix: Payload complet lors de la validation par blocs
+
+**Problème résolu** : Les valeurs proposées par les agents n'étaient pas incluses dans le payload lors de la validation par blocs.
+
+#### Symptômes
+
+Lorsqu'un utilisateur modifiait manuellement un champ (ex: distance d'une course) puis validait le bloc, seule la modification manuelle était envoyée au backend. Les autres valeurs proposées par l'agent (ex: `startDate`) étaient perdues.
+
+**Résultat observé** :
+```json
+{
+  "races": {
+    "141829": {
+      "distance": "12"  // ✅ Modification manuelle
+      // ❌ startDate manquante (proposée par l'agent)
+    }
+  }
+}
+```
+
+#### Cause
+
+Dans `useBlockValidation.ts`, lors de la validation d'un bloc, seul le paramètre `block` était envoyé au backend, sans les valeurs proposées (`selectedChanges`) ni les modifications manuelles (`userModifiedChanges`).
+
+#### Solution
+
+**1. Ajout de props à `useBlockValidation`** :
+- `selectedChanges` : Valeurs proposées par les agents
+- `userModifiedChanges` : Modifications manuelles
+- `userModifiedRaceChanges` : Modifications spécifiques aux courses
+
+**2. Construction du payload complet** :
+```typescript
+const finalPayload: Record<string, any> = {}
+
+// 1. Ajouter les valeurs proposées (agents)
+Object.entries(selectedChanges).forEach(([field, value]) => {
+  finalPayload[field] = value
+})
+
+// 2. Écraser avec les modifications manuelles
+Object.entries(userModifiedChanges).forEach(([field, value]) => {
+  finalPayload[field] = value
+})
+
+// 3. Ajouter les modifications de courses si bloc "races"
+if (blockKey === 'races') {
+  finalPayload.raceEdits = userModifiedRaceChanges
+}
+```
+
+**3. Passage des props depuis les composants** :
+- `GroupedProposalDetailBase.tsx`
+- `ProposalDetailBase.tsx`
+
+#### Résultat
+
+✅ **Payload complet** :
+```json
+{
+  "races": {
+    "141826": {
+      "startDate": "2025-11-14T23:00:00.000Z"  // ✅ Proposée
+    },
+    "141827": {
+      "startDate": "2025-11-14T23:00:00.000Z"  // ✅ Proposée
+    },
+    "141828": {
+      "startDate": "2025-11-14T23:00:00.000Z"  // ✅ Proposée
+    },
+    "141829": {
+      "distance": "12",                         // ✅ Modifiée
+      "startDate": "2025-11-14T23:00:00.000Z"  // ✅ Proposée
+    }
+  }
+}
+```
+
+#### Fichiers modifiés
+
+1. **`apps/dashboard/src/hooks/useBlockValidation.ts`**
+   - Ajout des props et construction du payload complet
+   - Logs de debugging
+
+2. **`apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx`**
+   - Passage des props à `useBlockValidation`
+
+3. **`apps/dashboard/src/pages/proposals/detail/base/ProposalDetailBase.tsx`**
+   - Passage des props à `useBlockValidation`
+
+#### Ressources
+
+- `docs/FIX-BLOCK-VALIDATION-PAYLOAD.md` - Documentation complète avec tests
+
+### 2025-11-10 (partie 5) - Fix rate limiting HTTP (429 Too Many Requests)
+
+**Problème résolu** : Rate limiting trop strict causant des erreurs 429 lors du chargement de la liste des propositions.
+
+#### Symptômes
+
+```
+GET http://localhost:4001/api/proposals?limit=100&offset=0 429 (Too Many Requests)
+Rate limited. Retrying in 1000ms (attempt 1/3)...
+Rate limited. Retrying in 2000ms (attempt 2/3)...
+```
+
+#### Cause
+
+1. **Rate limiting trop strict** : 100 requêtes / 15 minutes = **6.6 requêtes/minute**
+2. **Requêtes multiples au chargement** :
+   - GET `/api/proposals` (requête principale)
+   - Enrichissement des propositions (connexions Miles Republic)
+   - Retries React Query en cas d'échec
+   - Refetch automatique au focus/montage
+
+**Résultat** : Le simple chargement de la page pouvait déclencher 10-20 requêtes simultanées → 429 immédiat.
+
+#### Solution
+
+**Backend** (`apps/api/src/index.ts`) :
+- Fenêtre plus courte : 1 minute (au lieu de 15)
+- Limite haute : 500 requêtes/minute (au lieu de 100/15min = 6.6/min)
+- Appliquer uniquement sur `/api`, pas sur `/health`
+
+**Frontend** (`apps/dashboard/src/hooks/useApi.ts`) :
+- `staleTime: 60000` (60s au lieu de 30s)
+- `gcTime: 300000` (5 min)
+- `refetchInterval: 120000` (2 min au lieu de 1)
+- `refetchOnWindowFocus: false` (⚠️ était true, causait des bursts)
+- `refetchOnMount: false` (⚠️ était true, causait des bursts)
+- `retry: 1` (au lieu de 3 par défaut)
+
+#### Impact
+
+**Avant** :
+- ❌ Rate limit atteint au chargement de la page
+- ❌ Retry infini → 429 → 429 → 429
+- ❌ Utilisateur bloqué 15 minutes
+
+**Après** :
+- ✅ Rate limit **jamais** atteint en usage normal
+- ✅ Cache intelligent → moins de requêtes réseau
+- ✅ Fenêtre courte → récupération rapide si burst exceptionnel
+- ✅ Expérience fluide
+
+#### Ressources
+- `docs/FIX-RATE-LIMITING.md` - Documentation complète
+
+### 2025-11-10 (partie 4) - Fix application des modifications utilisateur
+
+**Problème résolu** : Les modifications manuelles des courses (startDate, distance, etc.) n'étaient pas appliquées lors de l'approbation des propositions.
+
+#### Symptômes
+
+Lorsqu'un utilisateur :
+1. Éditait la `startDate` d'une édition
+2. Acceptait de propager cette date aux courses
+3. Approuvait la proposition
+
+**Résultat attendu** : La nouvelle date devait être appliquée à l'édition ET aux courses  
+**Résultat observé** : La date de l'édition était modifiée, mais PAS celle des courses ❌
+
+#### Cause
+
+**Frontend** : Les modifications étaient stockées dans deux états séparés (`userModifiedChanges` et `userModifiedRaceChanges`), mais seul le premier était envoyé au backend lors de l'approbation.
+
+**Backend** : Le code lisait bien `userModifiedChanges.raceEdits`, mais n'appliquait pas le champ `startDate` pour les courses (nouvelles et existantes).
+
+#### Solution
+
+**Frontend** :
+- Merger `userModifiedRaceChanges` dans `userModifiedChanges.raceEdits` avant envoi
+- Fichiers : `ProposalDetailBase.tsx`, `GroupedProposalDetailBase.tsx`
+
+**Backend** :
+- Ajouter support de `editedData.startDate` pour les nouvelles courses (ligne 428)
+- Ajouter support de `edits.startDate` pour les courses existantes (ligne 467)
+- Fichier : `proposal-domain.service.ts`
+
+#### Impact
+
+**Avant** :
+- ❌ Propagation de dates non fonctionnelle
+- ❌ Modifications de courses ignorées
+- ❌ Incohérence entre UI et base de données
+
+**Après** :
+- ✅ Propagation de dates complète
+- ✅ Toutes les modifications utilisateur appliquées
+- ✅ Cohérence garantie
+
+#### Ressources
+- `docs/FIX-USER-MODIFICATIONS-APPLICATION.md` - Documentation complète
 
 ### 2025-11-10 (partie 3) - Affichage et sélection des matches rejetés pour NEW_EVENT
 
