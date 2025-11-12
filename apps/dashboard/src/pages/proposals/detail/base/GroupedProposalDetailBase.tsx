@@ -178,14 +178,30 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   } = editorResult
   
   
-  // ✅ PHASE 4: Suppression de selectedChanges, consolidateChanges, consolidateRaceChanges
-  // Ces états/fonctions sont maintenant dans workingGroup (useProposalEditor)
+  // ✅ PHASE 4: Import fonctions d'affichage uniquement
+  // consolidateChanges/consolidateRaceChanges sont désormais dans useProposalEditor
+  // mais on les garde ici temporairement pour compatibilité
   const {
     formatValue,
     formatAgentsList,
     getEventTitle,
     getEditionYear
   } = useProposalLogic()
+  
+  // ⚠️ LEGACY: États locaux conservés pour compatibilité avec le code existant
+  // À migrer vers workingGroup.userModifiedChanges dans une phase future
+  const [selectedChanges, setSelectedChanges] = useState<Record<string, any>>({})
+  
+  // ⚠️ LEGACY: Fonctions de consolidation (seront remplacées par workingGroup)
+  const consolidateChanges = (proposals: any[], isNewEvent: boolean) => {
+    if (!workingGroup) return []
+    return workingGroup.consolidatedChanges
+  }
+  
+  const consolidateRaceChanges = (proposals: any[]) => {
+    if (!workingGroup) return []
+    return workingGroup.consolidatedRaces
+  }
   
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
