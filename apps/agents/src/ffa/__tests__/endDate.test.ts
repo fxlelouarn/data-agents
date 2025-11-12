@@ -68,19 +68,22 @@ describe('calculateEditionEndDate', () => {
     it('devrait retourner l\'heure de la dernière course', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '1',
           name: 'Marathon de Test',
           city: 'Paris',
           ligue: 'IDF',
           department: '75',
           date: new Date('2025-11-24T00:00:00Z'),
+          level: 'Départemental',
+          type: 'Running',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2025-11-24T00:00:00Z'),
         endDate: new Date('2025-11-24T00:00:00Z'),
         races: [
-          { name: '10km', startTime: '09:00', runDistance: 10 },
-          { name: 'Semi-Marathon', startTime: '11:00', runDistance: 21.1 },
-          { name: 'Marathon', startTime: '14:00', runDistance: 42.195 }
+          { name: '10km', startTime: '09:00', distance: 10000, type: 'running' },
+          { name: 'Semi-Marathon', startTime: '11:00', distance: 21100, type: 'running' },
+          { name: 'Marathon', startTime: '14:00', distance: 42195, type: 'running' }
         ]
       }
 
@@ -103,19 +106,22 @@ describe('calculateEditionEndDate', () => {
     it('devrait retourner la date de la dernière course sur le 2ème jour', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '2',
           name: 'Trail de Vulcain',
           city: 'Vulcania',
           ligue: 'ARA',
           department: '63',
           date: new Date('2026-02-28T00:00:00Z'),
+          level: 'Régional',
+          type: 'Trail',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2026-02-28T00:00:00Z'),
         endDate: new Date('2026-03-01T00:00:00Z'),
         races: [
-          { name: '9km by night', raceDate: '28/02', startTime: '18:30', runDistance: 9 },
-          { name: 'Semi-Marathon', raceDate: '01/03', startTime: '09:00', runDistance: 21.1 },
-          { name: 'Marathon', raceDate: '01/03', startTime: '14:00', runDistance: 42.195 }
+          { name: '9km by night', raceDate: '28/02', startTime: '18:30', distance: 9000, type: 'trail' },
+          { name: 'Semi-Marathon', raceDate: '01/03', startTime: '09:00', distance: 21100, type: 'trail' },
+          { name: 'Marathon', raceDate: '01/03', startTime: '14:00', distance: 42195, type: 'trail' }
         ]
       }
 
@@ -136,18 +142,21 @@ describe('calculateEditionEndDate', () => {
     it('devrait gérer les événements chevauchant 2 mois (décembre-janvier)', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '3',
           name: 'Réveillon Trail',
           city: 'Strasbourg',
           ligue: 'G-E',
           department: '67',
           date: new Date('2025-12-31T00:00:00Z'),
+          level: 'Régional',
+          type: 'Trail',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2025-12-31T00:00:00Z'),
         endDate: new Date('2026-01-01T00:00:00Z'),
         races: [
-          { name: '10km', raceDate: '31/12', startTime: '18:00', runDistance: 10 },
-          { name: 'Semi-Marathon', raceDate: '01/01', startTime: '10:00', runDistance: 21.1 }
+          { name: '10km', raceDate: '31/12', startTime: '18:00', distance: 10000, type: 'trail' },
+          { name: 'Semi-Marathon', raceDate: '01/01', startTime: '10:00', distance: 21100, type: 'trail' }
         ]
       }
 
@@ -170,18 +179,21 @@ describe('calculateEditionEndDate', () => {
     it('devrait retourner endDate = startDate (minuit)', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '4',
           name: 'Course sans heure',
           city: 'Lyon',
           ligue: 'ARA',
           department: '69',
           date: new Date('2025-03-15T00:00:00Z'),
+          level: 'Départemental',
+          type: 'Running',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2025-03-15T00:00:00Z'),
         endDate: new Date('2025-03-15T00:00:00Z'),
         races: [
-          { name: '10km', runDistance: 10 },
-          { name: 'Semi-Marathon', runDistance: 21.1 }
+          { name: '10km', distance: 10000, type: 'running' },
+          { name: 'Semi-Marathon', distance: 21100, type: 'running' }
         ]
       }
 
@@ -201,11 +213,14 @@ describe('calculateEditionEndDate', () => {
     it('devrait retourner endDate = startDate', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '5',
           name: 'Événement sans courses',
           city: 'Marseille',
-          ligue: 'P-A',
+          ligue: 'PCA',
           department: '13',
           date: new Date('2025-04-20T00:00:00Z'),
+          level: 'Départemental',
+          type: 'Running',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2025-04-20T00:00:00Z'),
@@ -226,17 +241,20 @@ describe('calculateEditionEndDate', () => {
     it('devrait retourner endDate = startDate (même heure)', () => {
       const ffaData: FFACompetitionDetails = {
         competition: {
+          ffaId: '6',
           name: 'Course unique',
           city: 'Bordeaux',
           ligue: 'N-A',
           department: '33',
           date: new Date('2025-05-10T00:00:00Z'),
+          level: 'Régional',
+          type: 'Running',
           detailUrl: 'https://example.com'
         },
         startDate: new Date('2025-05-10T00:00:00Z'),
         endDate: new Date('2025-05-10T00:00:00Z'),
         races: [
-          { name: 'Marathon', startTime: '09:00', runDistance: 42.195 }
+          { name: 'Marathon', startTime: '09:00', distance: 42195, type: 'running' }
         ]
       }
 

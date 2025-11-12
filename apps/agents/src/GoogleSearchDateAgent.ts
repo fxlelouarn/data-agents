@@ -874,6 +874,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
       // Si il y a des courses, les mettre à jour avec la date de l'édition
       // ✅ Utiliser la structure racesToUpdate pour cohérence avec FFA Scraper
+      // ✅ Par défaut, utiliser la date proposée (celle avec la confiance la plus élevée)
       if (event.edition.races && event.edition.races.length > 0) {
         const racesToUpdate = []
         
@@ -885,13 +886,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
           
           if (!isRaceDateSame) {
             // ✅ Structure compatible avec applyEditionUpdate : racesToUpdate.updates.field
+            // La date proposée est celle avec la confiance la plus élevée (primaryDate)
+            // qui est aussi la date sélectionnée par défaut pour l'édition dans le frontend
             racesToUpdate.push({
               raceId: race.id,
               raceName: race.name,
               updates: {
                 startDate: {
                   old: currentRaceStartDate,
-                  new: proposedDate
+                  new: proposedDate, // Date avec confiance max = date de l'édition sélectionnée
+                  confidence: enhancedConfidence // Même confiance que l'édition
                 }
               }
             })

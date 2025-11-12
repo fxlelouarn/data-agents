@@ -8,6 +8,7 @@
 
 import { AgentLogger } from '../types'
 import { DatabaseConfig } from '../database-manager'
+import type { DatabaseConnection } from '@data-agents/database'
 
 /**
  * Charge les configurations de bases de données depuis Prisma
@@ -34,21 +35,23 @@ export class ConfigLoader {
       })
 
       for (const dbConn of dbConnections) {
+        // Cast to any to access prismaSchema field (TypeScript inference issue with dynamic import)
+        const conn = dbConn as any
         const config: DatabaseConfig = {
-          id: dbConn.id,
-          name: dbConn.name,
-          type: this.mapDatabaseType(dbConn.type),
-          host: dbConn.host || 'localhost',
-          port: dbConn.port || 5432,
-          database: dbConn.database || '',
-          username: dbConn.username || '',
-          password: dbConn.password || '',
-          ssl: dbConn.sslMode !== 'disable',
+          id: conn.id,
+          name: conn.name,
+          type: this.mapDatabaseType(conn.type),
+          host: conn.host || 'localhost',
+          port: conn.port || 5432,
+          database: conn.database || '',
+          username: conn.username || '',
+          password: conn.password || '',
+          ssl: conn.sslMode !== 'disable',
           isDefault: false,
-          isActive: dbConn.isActive,
-          description: dbConn.description || undefined,
-          connectionString: dbConn.connectionUrl || undefined,
-          prismaSchema: dbConn.prismaSchema || undefined
+          isActive: conn.isActive,
+          description: conn.description || undefined,
+          connectionString: conn.connectionUrl || undefined,
+          prismaSchema: conn.prismaSchema || undefined
         }
         
         configs.push(config)
