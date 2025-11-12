@@ -244,12 +244,19 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       ...raceChange,
       fields: Object.entries(raceChange.fields).reduce((acc, [fieldName, fieldData]) => {
         if (fieldName === 'startDate') {
+          // ⚠️ Vérifier que fieldData.options[0] existe avant de l'utiliser
+          const firstOption = fieldData.options?.[0]
+          if (!firstOption) {
+            // Si pas d'option, retourner fieldData tel quel
+            return { ...acc, [fieldName]: fieldData }
+          }
+          
           return {
             ...acc,
             [fieldName]: {
               ...fieldData,
               options: [{
-                ...fieldData.options[0],
+                ...firstOption,
                 proposedValue: editionStartDate
               }]
             }
