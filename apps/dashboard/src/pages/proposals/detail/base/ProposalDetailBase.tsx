@@ -20,6 +20,7 @@ import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
+import { useProposalEditor, ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
 import { 
   useProposal,
   useProposals, 
@@ -43,26 +44,19 @@ export interface ConsolidatedChange {
   currentValue: any
 }
 
-export interface RaceChange {
-  raceIndex: number
-  raceName: string
-  proposalIds: string[]
-  fields: Record<string, any>
-}
-
 export interface ProposalContext {
   proposal: Proposal
   consolidatedChanges: ConsolidatedChange[]
-  consolidatedRaceChanges: RaceChange[]
+  consolidatedRaceChanges: ConsolidatedRaceChange[]
   selectedChanges: Record<string, any>
   userModifiedChanges: Record<string, any>
-  userModifiedRaceChanges: Record<number, Record<string, any>>
+  userModifiedRaceChanges: Record<string, Record<string, any>>
   handleFieldSelect: (fieldName: string, value: any) => void
   handleFieldModify: (fieldName: string, newValue: any, reason?: string) => void
   handleEditionStartDateChange: (fieldName: string, newValue: any) => void
   handleApproveAll: () => Promise<void>
   handleRejectAll: () => Promise<void>
-  handleRaceFieldModify: (raceIndex: number, fieldName: string, newValue: any) => void
+  handleRaceFieldModify: (raceId: string, fieldName: string, newValue: any) => void
   handleKillEvent: () => Promise<void>
   handleReviveEvent: () => Promise<void>
   formatValue: (value: any, isSimple?: boolean, timezone?: string) => React.ReactNode
@@ -104,8 +98,31 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
 }) => {
   const navigate = useNavigate()
   const [killDialogOpen, setKillDialogOpen] = useState(false)
+  
+  // 🚀 Migration vers useProposalEditor (PHASE 2)
+  const editorResult = useProposalEditor(proposalId, { autosave: true })
+  
+  // Type narrowing pour mode simple
+  if ('workingGroup' in editorResult) {
+    throw new Error('useProposalEditor doit retourner un mode simple pour ProposalDetailBase')
+  }
+  
+  const {
+    workingProposal,
+    isLoading: isEditorLoading,
+    updateField: updateFieldEditor,
+    updateRace: updateRaceEditor,
+    deleteRace: deleteRaceEditor,
+    addRace: addRaceEditor,
+    validateBlock: validateBlockEditor,
+    unvalidateBlock: unvalidateBlockEditor,
+    save: saveEditor
+  } = editorResult
+  
+  // ⚠️ COMPATIBILITÉ TEMPORAIRE : États manuels (PHASE 3 : supprimer)
+  // Nécessaires pour les composants enfants qui n'ont pas encore été migrés
   const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
-  const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
+  const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<string, Record<string, any>>>({})
   
   // États pour les modales de synchronisation de dates
   const [datePropagationModal, setDatePropagationModal] = useState<{
@@ -144,6 +161,10 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
     if (fieldName !== 'startDate' || !newValue) {
       // Pas startDate, appliquer directement
+      // ✅ Utiliser le hook
+      updateFieldEditor(fieldName, newValue)
+      
+      // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
       setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
       setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
       return
@@ -164,6 +185,10 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
       })
     } else {
       // Pas de courses, appliquer directement
+      // ✅ Utiliser le hook
+      updateFieldEditor(fieldName, newValue)
+      
+      // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
       setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
       setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
     }
@@ -180,27 +205,30 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   }
   
   const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
+    // ✅ Utiliser le hook
+    updateFieldEditor(fieldName, newValue)
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     setUserModifiedChanges(prev => ({
       ...prev,
       [fieldName]: newValue
     }))
-    
     setSelectedChanges(prev => ({
       ...prev,
       [fieldName]: newValue
     }))
   }
   
-  const handleRaceFieldModify = (raceIndex: number, fieldName: string, newValue: any) => {
+  const handleRaceFieldModify = (raceId: string, fieldName: string, newValue: any) => {
     // Si c'est une modification de startDate d'une course, vérifier si elle sort de la plage d'édition
     if (fieldName === 'startDate' && newValue) {
       const newRaceDate = new Date(newValue)
       const currentStartDate = selectedChanges.startDate || consolidatedChanges.find(c => c.field === 'startDate')?.options[0]?.proposedValue
       const currentEndDate = selectedChanges.endDate || consolidatedChanges.find(c => c.field === 'endDate')?.options[0]?.proposedValue
       
-      // Récupérer le nom de la course
-      const races = proposalData?.data?.changes?.racesToAdd || proposalData?.data?.changes?.races || []
-      const raceName = races[raceIndex]?.name || `Course ${raceIndex + 1}`
+      // Récupérer le nom de la course depuis consolidatedRaceChanges
+      const raceChange = consolidatedRaceChanges.find(r => r.raceId === raceId)
+      const raceName = raceChange?.raceName || 'Course'
       
       // Si la course est AVANT la startDate de l'édition
       if (currentStartDate && newRaceDate < new Date(currentStartDate)) {
@@ -210,7 +238,7 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
           currentEditionDate: currentStartDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex
+          raceIndex: 0  // Non utilisé pour les nouvelles courses consolidées
         })
         return // Attendre la confirmation avant de sauvegarder
       }
@@ -223,16 +251,22 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
           currentEditionDate: currentEndDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex
+          raceIndex: 0  // Non utilisé pour les nouvelles courses consolidées
         })
         return // Attendre la confirmation avant de sauvegarder
       }
     }
     
+    // ✅ Utiliser le hook au lieu de setUserModifiedRaceChanges
+    updateRaceEditor(raceId, fieldName, newValue)
+    // ❌ Ne PAS appeler saveEditor() ici (race condition React)
+    // La sauvegarde est faite lors de validateBlock()
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     setUserModifiedRaceChanges(prev => ({
       ...prev,
-      [raceIndex]: {
-        ...prev[raceIndex],
+      [raceId]: {
+        ...prev[raceId],
         [fieldName]: newValue
       }
     }))
@@ -271,18 +305,41 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     return 'Europe/Paris'
   }, [proposalData, selectedChanges.timeZone])
   
-  // Consolider les changements
+  // Définir proposal avant de l'utiliser
+  const proposal = proposalData?.data
+  
+  // ✅ Consolider les changements depuis workingProposal
   const consolidatedChanges = useMemo(() => {
-    if (!proposalData?.data) return []
+    if (workingProposal && proposal) {
+      // Mode hook: utiliser workingProposal.changes directement
+      const isEventUpdateDisplay = proposal.type === 'EVENT_UPDATE'
+      
+      const changes = Object.entries(workingProposal.changes).map(([field, value]) => ({
+        field,
+        options: [{
+          proposalId: proposal.id,
+          agentName: (proposal as any).agentName || (proposal as any).agent?.name || 'Agent',
+          proposedValue: value,
+          confidence: (proposal as any).confidence || 0,
+          createdAt: proposal.createdAt as any
+        }],
+        currentValue: (proposal.changes as any)?.[field]?.current
+      }))
+      
+      // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
+      return isEventUpdateDisplay
+        ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
+        : changes
+    }
     
+    // Fallback (compatibilité)
+    if (!proposalData?.data) return []
     const changes = consolidateChanges([proposalData.data], isNewEvent)
     const isEventUpdateDisplay = proposalData.data.type === 'EVENT_UPDATE'
-    
-    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
     return isEventUpdateDisplay
       ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
       : changes
-  }, [proposalData, isNewEvent, consolidateChanges])
+  }, [workingProposal, proposal, proposalData, isNewEvent, consolidateChanges])
   
   const isEditionCanceled = useMemo(() => {
     const calendarStatus = userModifiedChanges['calendarStatus'] || 
@@ -291,13 +348,33 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     return calendarStatus === 'CANCELED'
   }, [selectedChanges, userModifiedChanges, consolidatedChanges])
   
-  const consolidatedRaceChanges = useMemo(() => {
+  // ✅ Consolider les courses depuis workingProposal
+  const consolidatedRaceChanges: ConsolidatedRaceChange[] = useMemo(() => {
+    if (workingProposal && proposal) {
+      // Mode hook: utiliser workingProposal.races directement
+      return Object.entries(workingProposal.races).map(([raceId, raceData]) => ({
+        raceId,
+        raceName: (raceData as any).name || 'Course',
+        proposalIds: [proposal.id],
+        originalFields: {}, // Pour les propositions simples, pas de valeur originale
+        fields: raceData,
+        userModifications: undefined
+      }))
+    }
+    
+    // Fallback (compatibilité): adapter RaceChange[] → ConsolidatedRaceChange[]
     if (!proposalData?.data) return []
-    return consolidateRaceChanges([proposalData.data])
-  }, [proposalData, consolidateRaceChanges])
-  
-  // Définir proposal avant de l'utiliser
-  const proposal = proposalData?.data
+    const races = consolidateRaceChanges([proposalData.data])
+    // Adapter le format RaceChange vers ConsolidatedRaceChange
+    return races.map(race => ({
+      raceId: race.raceId,
+      raceName: race.raceName,
+      proposalIds: race.proposalIds,
+      originalFields: {}, // Pas de valeur originale dans le legacy format
+      fields: race.fields,
+      userModifications: undefined
+    }))
+  }, [workingProposal, proposal, proposalData, consolidateRaceChanges])
   
   // Identifier les propositions par bloc (pour propositions individuelles)
   const blockProposals = useMemo(() => {
@@ -312,7 +389,6 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
       )
       if (hasEventChanges) {
         blocks['event'] = [proposal.id]
-        console.log('[DEBUG] Bloc Event (single):', [proposal.id])
       }
     }
     
@@ -322,7 +398,6 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     )
     if (hasEditionChanges) {
       blocks['edition'] = [proposal.id]
-      console.log('[DEBUG] Bloc Edition (single):', [proposal.id])
     }
     
     // Bloc Organisateur
@@ -331,7 +406,6 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     )
     if (hasOrganizerChange) {
       blocks['organizer'] = [proposal.id]
-      console.log('[DEBUG] Bloc Organizer (single):', [proposal.id])
     }
     
     // Bloc Courses (modifications de courses existantes OU courses à ajouter)
@@ -350,25 +424,68 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     
     if (hasRaceChanges || hasRacesToAdd || hasRacesToUpdate || hasExistingRaces) {
       blocks['races'] = [proposal.id]
-      console.log('[DEBUG] Bloc Courses (single):', [proposal.id])
     }
     
     return blocks
   }, [proposal, consolidatedChanges, consolidatedRaceChanges, isNewEvent])
   
-  // Hook de validation par blocs
+  // ✅ Extraire les valeurs proposées depuis workingProposal
+  const proposedValues = useMemo(() => {
+    if (workingProposal) {
+      // Mode hook: utiliser workingProposal.changes directement
+      const values: Record<string, any> = {}
+      Object.entries(workingProposal.changes).forEach(([field, value]) => {
+        if (value !== undefined) {
+          values[field] = value
+        }
+      })
+      return values
+    }
+    
+    // Fallback (compatibilité)
+    return selectedChanges
+  }, [workingProposal, selectedChanges])
+  
+  // ✅ Hook de validation par blocs
   const {
-    validateBlock,
-    unvalidateBlock,
+    validateBlock: validateBlockBase,
+    unvalidateBlock: unvalidateBlockBase,
     validateAllBlocks: validateAllBlocksBase,
     unvalidateAllBlocks,
     isBlockValidated,
     hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
-    proposals: proposal ? [proposal] : [],
-    blockProposals
+    proposals: workingProposal?.originalProposal ? [workingProposal.originalProposal] : (proposal ? [proposal] : []),
+    blockProposals,
+    // ✅ Passer les données depuis workingProposal
+    selectedChanges: proposedValues,
+    userModifiedChanges: workingProposal ? {} : userModifiedChanges, // Vide en mode hook (déjà mergé dans changes)
+    userModifiedRaceChanges: workingProposal ? {} : userModifiedRaceChanges // Vide en mode hook (déjà dans races)
   })
+  
+  // Wrapper pour logger les validations de blocs
+  const validateBlock = async (blockKey: string, proposalIds: string[]) => {
+    console.log(`✅ [ProposalDetailBase] AVANT validation bloc "${blockKey}"`, {
+      approvedBlocks: proposal?.approvedBlocks || {},
+      userModifiedChanges
+    })
+    await validateBlockBase(blockKey, proposalIds)
+    console.log(`✅ [ProposalDetailBase] APRÈS validation bloc "${blockKey}" (attendre rechargement...)`, {
+      blockKey
+    })
+  }
+  
+  const unvalidateBlock = async (blockKey: string) => {
+    console.log(`❌ [ProposalDetailBase] AVANT annulation bloc "${blockKey}"`, {
+      approvedBlocks: proposal?.approvedBlocks || {},
+      userModifiedChanges
+    })
+    await unvalidateBlockBase(blockKey)
+    console.log(`❌ [ProposalDetailBase] APRÈS annulation bloc "${blockKey}" (attendre rechargement...)`, {
+      blockKey
+    })
+  }
   
   // Auto-sélection des meilleures valeurs au chargement
   React.useEffect(() => {
@@ -395,12 +512,22 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
         }
       })
       
+      // Merger les modifications d'édition et de courses
+      const allUserModifications = {
+        ...userModifiedChanges
+      }
+      
+      // Ajouter les modifications de courses si présentes
+      if (Object.keys(userModifiedRaceChanges).length > 0) {
+        allUserModifications.raceEdits = userModifiedRaceChanges
+      }
+      
       await updateProposalMutation.mutateAsync({
         id: proposalData!.data!.id,
         status: 'APPROVED',
         reviewedBy: 'Utilisateur',
         appliedChanges: changesToApprove,
-        userModifiedChanges: Object.keys(userModifiedChanges).length > 0 ? userModifiedChanges : undefined,
+        userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
         modificationReason: 'Modifications manuelles appliquées',
         modifiedBy: 'Utilisateur'
       })
@@ -462,10 +589,22 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     
     const newStartDate = datePropagationModal.newStartDate
     
-    // Appliquer la nouvelle startDate à l'édition
+    // ✅ Appliquer la nouvelle startDate à l'édition via le hook
+    updateFieldEditor('startDate', newStartDate)
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     setUserModifiedChanges(prev => ({ ...prev, startDate: newStartDate }))
     setSelectedChanges(prev => ({ ...prev, startDate: newStartDate }))
     
+    // ✅ Propager aux courses via le hook
+    if (workingProposal) {
+      const raceIds = Object.keys(workingProposal.races)
+      raceIds.forEach(raceId => {
+        updateRaceEditor(raceId, 'startDate', newStartDate)
+      })
+    }
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     // Propager à toutes les courses (utiliser la structure raceEdits compatible avec RacesChangesTable)
     const newRaceEdits: Record<string, Record<string, any>> = {}
     
@@ -521,11 +660,18 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     
     const { dateType, newRaceDate, raceIndex } = editionDateUpdateModal
     
-    // Mettre à jour la date de l'édition
+    // ✅ Mettre à jour la date de l'édition via le hook
+    updateFieldEditor(dateType, newRaceDate)
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     setUserModifiedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
     setSelectedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
     
-    // Appliquer aussi la modification de la course
+    // ✅ Appliquer aussi la modification de la course via le hook
+    // Note: raceIndex devrait être le raceId, pas l'index (bug existant à fixer)
+    updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
+    
+    // ⚠️ Compatibilité temporaire (PHASE 3 : supprimer)
     setUserModifiedRaceChanges(prev => ({
       ...prev,
       [raceIndex]: {
@@ -544,14 +690,18 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   const allPending = proposal?.status === 'PENDING'
   const hasApproved = proposal?.status === 'APPROVED'
   
-  // Context pour le render
+  // ✅ Context pour le render
   const context: ProposalContext = {
-    proposal: proposal!,
+    proposal: workingProposal?.originalProposal || proposal!,
     consolidatedChanges,
     consolidatedRaceChanges,
-    selectedChanges,
-    userModifiedChanges,
-    userModifiedRaceChanges,
+    
+    // ✅ États depuis workingProposal (ou fallback)
+    selectedChanges: workingProposal ? {} : selectedChanges, // Vidé en mode hook (déjà dans consolidatedChanges)
+    userModifiedChanges: workingProposal ? {} : userModifiedChanges, // Vidé en mode hook (déjà mergé dans changes)
+    userModifiedRaceChanges: workingProposal ? {} : userModifiedRaceChanges, // Vidé en mode hook (déjà dans races)
+    
+    // Handlers (déjà adaptés)
     handleFieldSelect: handleSelectField,
     handleFieldModify,
     handleEditionStartDateChange,
@@ -560,11 +710,15 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     handleRaceFieldModify,
     handleKillEvent,
     handleReviveEvent,
+    
+    // Utilitaires (inchangés)
     formatValue,
     formatAgentsList,
     getEventTitle,
     getEditionYear,
-    isLoading,
+    
+    // États UI
+    isLoading: isLoading || isEditorLoading,
     isPending: updateProposalMutation.isPending,
     isEventDead,
     editionTimezone,
@@ -574,6 +728,7 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     killDialogOpen,
     setKillDialogOpen,
     isEditionCanceled,
+    
     // Validation par blocs
     validateBlock,
     unvalidateBlock,
@@ -582,7 +737,7 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     blockProposals
   }
   
-  if (isLoading) return <LinearProgress />
+  if (isLoading || isEditorLoading) return <LinearProgress />
   
   if (!proposal) {
     return (
