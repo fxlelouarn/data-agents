@@ -39,6 +39,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           isPending,
           isEventDead,
           isEditionCanceled,
+          isReadOnly, // ⚠️ PHASE 3: Flag lecture seule
           proposal,
           // Validation par blocs
           validateBlock,
@@ -48,12 +49,21 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           blockProposals
         } = context
         
-        // Séparer les champs standards des champs spéciaux
+        // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
+        
+        // Champs Event (bloqués par EDITION_FIELDS et organizer)
+        const editionFields = ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate']
+        const eventChanges = consolidatedChanges.filter(c => 
+          !editionFields.includes(c.field) && c.field !== 'organizer'
+        )
+        
+        // Champs Edition uniquement
+        const editionChanges = consolidatedChanges.filter(c => editionFields.includes(c.field))
         
         // Ajouter les champs URL éditables même s'ils ne sont pas proposés
         const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
-        const eventChangesWithUrls = [...consolidatedChanges.filter(c => c.field !== 'organizer')]
+        const eventChangesWithUrls = [...eventChanges]
         
         urlFields.forEach(urlField => {
           if (!eventChangesWithUrls.some(c => c.field === urlField)) {
@@ -79,16 +89,16 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={isReadOnly || !allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('event')}
-              onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
-              onUnvalidateBlock={() => unvalidateBlock('event')}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('event', blockProposals['event'] || [])}
+              onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
             />
             
             <CategorizedEditionChangesTable
               title="Informations de l'édition"
-              changes={consolidatedChanges}
+              changes={editionChanges}
               isNewEvent={true}
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
@@ -98,11 +108,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={isReadOnly || !allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
               isBlockValidated={isBlockValidated('edition')}
-              onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
-              onUnvalidateBlock={() => unvalidateBlock('edition')}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition', blockProposals['edition'] || [])}
+              onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
@@ -113,26 +123,25 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 onApprove={() => {/* Single proposal - no field-specific approve */}}
                 onFieldModify={handleFieldModify}
                 userModifiedChanges={userModifiedChanges}
-                disabled={isBlockValidated('organizer') || isEventDead}
+                disabled={isReadOnly || isBlockValidated('organizer') || isEventDead}
                 isBlockValidated={isBlockValidated('organizer')}
-                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
-                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
-                validationDisabled={isEventDead}
+                validationDisabled={isReadOnly || isEventDead}
               />
             )}
             
             <RacesChangesTable
-              existingRaces={[]}
-              racesToAdd={proposal?.changes?.edition?.new?.races || []}
-              proposalId={proposal?.id}
-              proposal={proposal}
-              disabled={!allPending || isPending || isEventDead}
+              consolidatedRaces={consolidatedRaceChanges}
+              userModifiedRaceChanges={userModifiedRaceChanges}
+              onRaceFieldModify={handleRaceFieldModify}
+              disabled={isReadOnly || !allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('races')}
-              onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
-              onUnvalidateBlock={() => unvalidateBlock('races')}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('races', blockProposals['races'] || [])}
+              onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
-              validationDisabled={isEventDead}
+              validationDisabled={isReadOnly || isEventDead}
             />
             
             <ProposalJustificationsCard

@@ -30,6 +30,7 @@ const EventUpdateDetail: React.FC<EventUpdateDetailProps> = ({ proposalId }) => 
           allPending,
           isPending,
           isEventDead,
+          isReadOnly, // ⚠️ PHASE 3: Flag lecture seule
           setKillDialogOpen,
           handleReviveEvent,
           proposal,
@@ -51,7 +52,7 @@ const EventUpdateDetail: React.FC<EventUpdateDetailProps> = ({ proposalId }) => 
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={isReadOnly || !allPending || isPending || isEventDead}
               actions={allPending ? (
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button

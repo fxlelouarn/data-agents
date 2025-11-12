@@ -117,12 +117,11 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
             )}
             
             {/* Section courses à ajouter */}
-            {((racesToAddChange && racesToAddChange.options[0]?.proposedValue?.length > 0) || (groupProposals[0]?.existingRaces && groupProposals[0].existingRaces.length > 0)) && (
+            {hasRaceChanges && (
               <RacesChangesTable
-                existingRaces={groupProposals[0]?.existingRaces || []}
-                racesToAdd={racesToAddChange?.options[0]?.proposedValue || []}
-                proposalId={groupProposals[0]?.id}
-                proposal={groupProposals[0]}
+                consolidatedRaces={consolidatedRaceChanges}
+                userModifiedRaceChanges={userModifiedRaceChanges}
+                onRaceFieldModify={handleRaceFieldModify}
                 disabled={isBlockValidated('races') || isEventDead}
                 isBlockValidated={isBlockValidated('races')}
                 onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}

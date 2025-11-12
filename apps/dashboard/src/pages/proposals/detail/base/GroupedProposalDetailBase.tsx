@@ -21,6 +21,7 @@ import ConfirmEditionDateUpdateModal from '@/components/proposals/modals/Confirm
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
+import { useProposalEditor, ConsolidatedRaceChange, isGroupReturn } from '@/hooks/useProposalEditor'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
 import { 
   useProposals, 
@@ -46,13 +47,6 @@ export interface ConsolidatedChange {
   currentValue: any
 }
 
-export interface RaceChange {
-  raceIndex: number
-  raceName: string
-  proposalIds: string[]
-  fields: Record<string, any>
-}
-
 export interface ProposalContext {
   proposal: Proposal
   selectedChanges: Record<string, any>
@@ -72,7 +66,7 @@ export interface ProposalContext {
 export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'> {
   groupProposals: Proposal[]
   consolidatedChanges: ConsolidatedChange[]
-  consolidatedRaceChanges: RaceChange[]
+  consolidatedRaceChanges: ConsolidatedRaceChange[]
   averageConfidence: number
   allPending: boolean
   hasApproved: boolean
@@ -86,8 +80,8 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   handleApproveRace: (raceData: any) => Promise<void>
   handleApproveAllRaces: () => Promise<void>
   handleRejectAllRaces: () => Promise<void>
-  handleRaceFieldModify: (raceIndex: number, fieldName: string, newValue: any) => void
-  userModifiedRaceChanges: Record<number, Record<string, any>>
+  handleRaceFieldModify: (raceId: string, fieldName: string, newValue: any) => void
+  userModifiedRaceChanges: Record<string, Record<string, any>>
   // Actions événement mort
   handleKillEvent: () => Promise<void>
   handleReviveEvent: () => Promise<void>
@@ -124,8 +118,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [killDialogOpen, setKillDialogOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
-  const [userModifiedChanges, setUserModifiedChanges] = useState<Record<string, any>>({})
-  const [userModifiedRaceChanges, setUserModifiedRaceChanges] = useState<Record<number, Record<string, any>>>({})
+  
+  // ✅ PHASE 2 STEP 6: Suppression des anciens états locaux (remplacés par workingGroup)
   
   // États pour les modales de synchronisation de dates
   const [datePropagationModal, setDatePropagationModal] = useState<{
@@ -141,7 +135,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     raceIndex: number
   } | null>(null)
   
-  // Hooks API
+  // Hooks API (DOIT être déclaré AVANT proposalIds qui l'utilise)
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
   const { data: allProposalsData } = useProposals({}, 100)
   const updateProposalMutation = useUpdateProposal()
@@ -149,6 +143,40 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const unapproveProposalMutation = useUnapproveProposal()
   const killEventMutation = useKillEvent()
   const reviveEventMutation = useReviveEvent()
+  
+  // 🚀 PHASE 2: Initialisation du hook useProposalEditor pour le mode groupé
+  const proposalIds = useMemo(() => {
+    if (!groupProposalsData?.data || !groupKey) return []
+    const proposals = groupProposalsData.data.sort((a, b) => {
+      const confidenceA = a.confidence || 0
+      const confidenceB = b.confidence || 0
+      return confidenceB - confidenceA
+    })
+    return proposals.map(p => p.id)
+  }, [groupProposalsData?.data, groupKey])
+  
+  const editorResult = useProposalEditor(proposalIds, { autosave: true })
+  
+  // Type narrowing pour mode groupé
+  if (!isGroupReturn(editorResult)) {
+    throw new Error('useProposalEditor doit retourner un mode groupé pour GroupedProposalDetailBase')
+  }
+  
+  const {
+    workingGroup,
+    isLoading: isEditorLoading,
+    updateField: updateFieldEditor,
+    selectOption,
+    updateRace: updateRaceEditor,
+    deleteRace: deleteRaceEditor,
+    addRace: addRaceEditor,
+    validateBlock: validateBlockEditor,
+    validateAllBlocks: validateAllBlocksEditor,
+    isBlockValidated: isBlockValidatedEditor,
+    save: saveEditor,
+    isDirty: isEditorDirty
+  } = editorResult
+  
   
   const {
     selectedChanges,
@@ -165,12 +193,12 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
     if (fieldName !== 'startDate' || !newValue) {
       // Pas startDate, appliquer directement
-      setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+      updateFieldEditor(fieldName, newValue)
       setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
       return
     }
     
-    // Compter les courses proposées (supporter plusieurs structures)
+    // Compter les courses proposées
     const firstProposal = groupProposals[0]
     const changes = firstProposal?.changes
     const existingRaces = firstProposal?.existingRaces || []
@@ -186,7 +214,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       })
     } else {
       // Pas de courses, appliquer directement
-      setUserModifiedChanges(prev => ({ ...prev, [fieldName]: newValue }))
+      updateFieldEditor(fieldName, newValue)
       setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
     }
   }
@@ -196,34 +224,37 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // Si c'est startDate, déléguer à handleEditionStartDateChange
     if (fieldName === 'startDate') {
       handleEditionStartDateChange(fieldName, selectedValue)
-    } else {
-      setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+      return
     }
+    
+    // Utiliser le hook pour mettre à jour
+    updateFieldEditor(fieldName, selectedValue)
+    
+    // Garder selectedChanges pour compatibilité
+    setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
   }
   
   const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
-    setUserModifiedChanges(prev => ({
-      ...prev,
-      [fieldName]: newValue
-    }))
+    // Utiliser le hook pour mettre à jour
+    updateFieldEditor(fieldName, newValue)
     
+    // Garder selectedChanges pour compatibilité
     setSelectedChanges(prev => ({
       ...prev,
       [fieldName]: newValue
     }))
   }
   
-  const handleRaceFieldModify = (raceIndex: number, fieldName: string, newValue: any) => {
+  const handleRaceFieldModify = (raceId: string, fieldName: string, newValue: any) => {
     // Si c'est une modification de startDate d'une course, vérifier si elle sort de la plage d'édition
     if (fieldName === 'startDate' && newValue) {
       const newRaceDate = new Date(newValue)
       const currentStartDate = selectedChanges.startDate || consolidatedChanges.find(c => c.field === 'startDate')?.options[0]?.proposedValue
       const currentEndDate = selectedChanges.endDate || consolidatedChanges.find(c => c.field === 'endDate')?.options[0]?.proposedValue
       
-      // Récupérer le nom de la course (depuis les groupProposals)
-      const firstProposal = groupProposals[0]
-      const races = firstProposal?.changes?.racesToAdd || firstProposal?.changes?.races || []
-      const raceName = races[raceIndex]?.name || `Course ${raceIndex + 1}`
+      // Récupérer le nom de la course depuis consolidatedRaceChanges
+      const raceChange = consolidatedRaceChangesWithCascade.find(r => r.raceId === raceId)
+      const raceName = raceChange?.raceName || 'Course'
       
       // Si la course est AVANT la startDate de l'édition
       if (currentStartDate && newRaceDate < new Date(currentStartDate)) {
@@ -233,9 +264,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentStartDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex
+          raceIndex: 0
         })
-        return // Attendre la confirmation avant de sauvegarder
+        return
       }
       
       // Si la course est APRÈS la endDate de l'édition
@@ -246,19 +277,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentEndDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex
+          raceIndex: 0
         })
-        return // Attendre la confirmation avant de sauvegarder
+        return
       }
     }
     
-    setUserModifiedRaceChanges(prev => ({
-      ...prev,
-      [raceIndex]: {
-        ...prev[raceIndex],
-        [fieldName]: newValue
-      }
-    }))
+    // Utiliser le hook pour mettre à jour (sauvegarde lors de la validation du bloc)
+    updateRaceEditor(raceId, fieldName, newValue)
+    // ❌ Ne PAS appeler saveEditor() ici : race condition React
+    // Le state n'est pas encore mis à jour quand saveEditor() est appelé
+    // Les modifications seront sauvegardées lors de validateBlock() qui appelle save()
   }
   
   const handleApproveField = async (fieldName: string) => {
@@ -364,13 +393,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   
   // Déterminer si l'édition est annulée
   const isEditionCanceled = useMemo(() => {
-    const calendarStatus = userModifiedChanges['calendarStatus'] || 
+    const calendarStatus = workingGroup?.userModifiedChanges?.['calendarStatus'] || 
                           selectedChanges['calendarStatus'] || 
                           consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
     return calendarStatus === 'CANCELED'
-  }, [selectedChanges, userModifiedChanges, consolidatedChanges])
+  }, [selectedChanges, workingGroup, consolidatedChanges])
   
-  const consolidatedRaceChanges = useMemo(() => 
+  const consolidatedRaceChanges = useMemo(() =>
     consolidateRaceChanges(groupProposals),
     [groupProposals, consolidateRaceChanges]
   )
@@ -405,57 +434,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   // Ref pour éviter les boucles infinies
   const lastComputedDatesRef = useRef<{startDate?: string, endDate?: string}>({})
   
-  // Ajuster automatiquement startDate et endDate si des courses sont modifiées
-  useEffect(() => {
-    const hasManualStartDate = userModifiedChanges['startDate'] !== undefined
-    const hasManualEndDate = userModifiedChanges['endDate'] !== undefined
-    
-    if (hasManualStartDate && hasManualEndDate) {
-      return
-    }
-    
-    const raceStartDates: Date[] = []
-    
-    consolidatedRaceChangesWithCascade.forEach(raceChange => {
-      const startDateField = raceChange.fields['startDate']
-      if (startDateField) {
-        const modifiedDate = userModifiedRaceChanges[raceChange.raceIndex]?.['startDate']
-        const dateValue = modifiedDate || startDateField.options[0]?.proposedValue
-        if (dateValue) {
-          raceStartDates.push(new Date(dateValue))
-        }
-      }
-    })
-    
-    if (raceStartDates.length > 0) {
-      const minRaceDate = new Date(Math.min(...raceStartDates.map(d => d.getTime())))
-      const maxRaceDate = new Date(Math.max(...raceStartDates.map(d => d.getTime())))
-      
-      const updates: Record<string, string> = {}
-      
-      if (!hasManualStartDate) {
-        const newStartDate = minRaceDate.toISOString()
-        if (newStartDate !== lastComputedDatesRef.current.startDate) {
-          updates.startDate = newStartDate
-        }
-      }
-      
-      if (!hasManualEndDate) {
-        const newEndDate = maxRaceDate.toISOString()
-        if (newEndDate !== lastComputedDatesRef.current.endDate) {
-          updates.endDate = newEndDate
-        }
-      }
-      
-      if (Object.keys(updates).length > 0) {
-        lastComputedDatesRef.current = { ...lastComputedDatesRef.current, ...updates }
-        setSelectedChanges(prev => ({
-          ...prev,
-          ...updates
-        }))
-      }
-    }
-  }, [consolidatedRaceChangesWithCascade, userModifiedRaceChanges, userModifiedChanges])
 
   // Auto-sélection des meilleures valeurs au chargement
   useEffect(() => {
@@ -490,7 +468,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               id: proposal.id,
               status: 'APPROVED',
               reviewedBy: 'Utilisateur',
-              appliedChanges: { [`races[${raceData.raceIndex}]`]: raceInProposal }
+              appliedChanges: { [`races[${raceData.raceId}]`]: raceInProposal }
             })
           }
         }
@@ -520,7 +498,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
                 id: proposal.id,
                 status: 'APPROVED',
                 reviewedBy: 'Utilisateur',
-                appliedChanges: { [`races[${raceChange.raceIndex}]`]: raceInProposal }
+                appliedChanges: { [`races[${raceChange.raceId}]`]: raceInProposal }
               })
             }
           }
@@ -555,6 +533,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
 
   const handleApproveAll = async () => {
     try {
+      // Merger les modifications d'édition et de courses
+      const allUserModifications = {
+        ...(workingGroup?.userModifiedChanges || {})
+      }
+      
+      // Ajouter les modifications de courses si présentes
+      const raceChanges = workingGroup?.userModifiedRaceChanges || {}
+      if (Object.keys(raceChanges).length > 0) {
+        allUserModifications.raceEdits = raceChanges
+      }
+      
       for (const change of consolidatedChanges) {
         const fieldName = change.field
         const selectedValue = selectedChanges[fieldName]
@@ -571,7 +560,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               status: 'APPROVED',
               reviewedBy: 'Utilisateur',
               appliedChanges: { [fieldName]: selectedValue },
-              userModifiedChanges: Object.keys(userModifiedChanges).length > 0 ? userModifiedChanges : undefined,
+              userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
               modificationReason: 'Modifications manuelles appliquées',
               modifiedBy: 'Utilisateur'
             })
@@ -653,13 +642,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     const newStartDate = datePropagationModal.newStartDate
     
-    // Appliquer la nouvelle startDate à l'édition
-    setUserModifiedChanges(prev => ({ ...prev, startDate: newStartDate }))
+    // Appliquer la nouvelle startDate à l'édition via le hook
+    updateFieldEditor('startDate', newStartDate)
     setSelectedChanges(prev => ({ ...prev, startDate: newStartDate }))
     
     // Propager à toutes les courses (utiliser la structure raceEdits compatible avec RacesChangesTable)
     const firstProposal = groupProposals[0]
     const newRaceEdits: Record<string, Record<string, any>> = {}
+    const existingRaceEdits = workingGroup?.userModifiedChanges?.raceEdits || {}
     
     // Courses existantes (existingRaces)
     const existingRaces = firstProposal?.existingRaces || []
@@ -667,7 +657,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       existingRaces.forEach((_: any, index: number) => {
         const key = `existing-${index}`
         newRaceEdits[key] = {
-          ...(userModifiedChanges.raceEdits?.[key] || {}),
+          ...(existingRaceEdits[key] || {}),
           startDate: newStartDate
         }
       })
@@ -680,7 +670,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       races.forEach((_: any, index: number) => {
         const key = `new-${index}`
         newRaceEdits[key] = {
-          ...(userModifiedChanges.raceEdits?.[key] || {}),
+          ...(existingRaceEdits[key] || {}),
           startDate: newStartDate
         }
       })
@@ -692,9 +682,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           await updateProposalMutation.mutateAsync({
             id: firstProposal.id,
             userModifiedChanges: {
-              ...userModifiedChanges,
+              ...(workingGroup?.userModifiedChanges || {}),
               raceEdits: {
-                ...userModifiedChanges.raceEdits,
+                ...(workingGroup?.userModifiedChanges?.raceEdits || {}),
                 ...newRaceEdits
               }
             }
@@ -713,18 +703,12 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     const { dateType, newRaceDate, raceIndex } = editionDateUpdateModal
     
-    // Mettre à jour la date de l'édition
-    setUserModifiedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
+    // Mettre à jour la date de l'édition via le hook
+    updateFieldEditor(dateType, newRaceDate)
     setSelectedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
     
-    // Appliquer aussi la modification de la course
-    setUserModifiedRaceChanges(prev => ({
-      ...prev,
-      [raceIndex]: {
-        ...prev[raceIndex],
-        startDate: newRaceDate
-      }
-    }))
+    // Appliquer aussi la modification de la course via le hook
+    updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
     
     setEditionDateUpdateModal(null)
   }
@@ -742,13 +726,19 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const allPending = groupProposals.every(p => p.status === 'PENDING')
   
   // Identifier les propositions par bloc
+  // ✅ Phase 2 Étape 3 : Utiliser workingGroup si disponible
   const blockProposals = useMemo(() => {
     const blocks: Record<string, string[]> = {}
     
+    // Utiliser les données consolidées du hook si disponibles, sinon fallback
+    const changes = workingGroup?.consolidatedChanges || consolidatedChanges
+    const raceChanges = workingGroup?.consolidatedRaces || consolidatedRaceChangesWithCascade
+    const proposals = workingGroup?.originalProposals || groupProposals
+    
     // Bloc Event - uniquement les champs appartenant à l'événement
-    if (isNewEvent || groupProposals[0]?.type === 'EVENT_UPDATE') {
-      const eventProposalIds = groupProposals
-        .filter(p => consolidatedChanges.some(c => 
+    if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE') {
+      const eventProposalIds = proposals
+        .filter(p => changes.some(c => 
           isFieldInBlock(c.field, 'event') &&
           c.options.some(o => o.proposalId === p.id)
         ))
@@ -756,13 +746,12 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       
       if (eventProposalIds.length > 0) {
         blocks['event'] = eventProposalIds
-        console.log('[DEBUG] Bloc Event:', eventProposalIds)
       }
     }
     
     // Bloc Edition - uniquement les champs appartenant à l'édition
-    const editionProposalIds = groupProposals
-      .filter(p => consolidatedChanges.some(c => 
+    const editionProposalIds = proposals
+      .filter(p => changes.some(c => 
         isFieldInBlock(c.field, 'edition') &&
         c.options.some(o => o.proposalId === p.id)
       ))
@@ -770,12 +759,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     if (editionProposalIds.length > 0) {
       blocks['edition'] = editionProposalIds
-      console.log('[DEBUG] Bloc Edition:', editionProposalIds)
     }
 
     // Bloc Organisateur
-    const organizerProposalIds = groupProposals
-      .filter(p => consolidatedChanges.some(c => 
+    const organizerProposalIds = proposals
+      .filter(p => changes.some(c => 
         isFieldInBlock(c.field, 'organizer') &&
         c.options.some(o => o.proposalId === p.id)
       ))
@@ -783,18 +771,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     if (organizerProposalIds.length > 0) {
       blocks['organizer'] = organizerProposalIds
-      console.log('[DEBUG] Bloc Organizer:', organizerProposalIds)
     }
 
     // Bloc Courses (modifications de courses existantes OU courses à ajouter)
-    const raceProposalIds = groupProposals
+    const raceProposalIds = proposals
       .filter(p => {
         // Courses modifiées
-        const hasRaceChanges = consolidatedRaceChangesWithCascade.some(rc =>
+        const hasRaceChanges = raceChanges.some(rc =>
           rc.proposalIds.includes(p.id)
         )
         // Courses à ajouter via consolidatedChanges
-        const hasRacesToAdd = consolidatedChanges.some(c => 
+        const hasRacesToAdd = changes.some(c => 
           isFieldInBlock(c.field, 'races') &&
           c.options.some(o => o.proposalId === p.id)
         )
@@ -813,51 +800,78 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     if (raceProposalIds.length > 0) {
       blocks['races'] = raceProposalIds
-      console.log('[DEBUG] Bloc Courses:', raceProposalIds, {
-        consolidatedRaceChangesCount: consolidatedRaceChangesWithCascade.length,
-        proposalsWithRacesToUpdate: groupProposals.filter(p => p.changes?.racesToUpdate).map(p => p.id),
-        proposalsWithExistingRaces: groupProposals.filter(p => p.existingRaces?.length > 0).map(p => p.id)
-      })
-    } else {
-      console.log('[DEBUG] Aucun bloc Courses détecté:', {
-        consolidatedRaceChangesCount: consolidatedRaceChangesWithCascade.length,
-        consolidatedChangesFields: consolidatedChanges.map(c => c.field),
-        proposalsWithRacesToUpdate: groupProposals.filter(p => p.changes?.racesToUpdate).map(p => ({ id: p.id, racesToUpdate: p.changes?.racesToUpdate })),
-        proposalsWithExistingRaces: groupProposals.filter(p => p.existingRaces).map(p => ({ id: p.id, existingRacesCount: p.existingRaces?.length }))
-      })
     }
 
     return blocks
-  }, [groupProposals, consolidatedChanges, consolidatedRaceChangesWithCascade, isNewEvent])
+  }, [groupProposals, consolidatedChanges, consolidatedRaceChangesWithCascade, isNewEvent, workingGroup])
   
   // Hook de validation par blocs (APRÈS blockProposals pour éviter la dépendance circulaire)
+  // ✅ Phase 2 Étape 3 : Utiliser workingGroup si disponible
+  
+  // Extraire les valeurs proposées depuis consolidatedChanges pour le payload
+  const proposedValues = useMemo(() => {
+    if (!workingGroup) return selectedChanges
+    
+    const values: Record<string, any> = {}
+    workingGroup.consolidatedChanges.forEach(change => {
+      // Prendre la selectedValue si elle existe, sinon la première option
+      const value = change.selectedValue !== undefined 
+        ? change.selectedValue 
+        : change.options[0]?.proposedValue
+      
+      if (value !== undefined) {
+        values[change.field] = value
+      }
+    })
+    return values
+  }, [workingGroup, selectedChanges])
+  
   const {
     blockStatus,
-    validateBlock,
-    unvalidateBlock,
+    validateBlock: validateBlockBase,
+    unvalidateBlock: unvalidateBlockBase,
     validateAllBlocks: validateAllBlocksBase,
     unvalidateAllBlocks,
     isBlockValidated,
     hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
-    proposals: groupProposals,
-    blockProposals
+    proposals: workingGroup?.originalProposals || groupProposals,
+    blockProposals,
+    // Passer les valeurs proposées + modifiées pour construire le payload complet
+    selectedChanges: proposedValues, // ✅ Valeurs proposées ou sélectionnées
+    userModifiedChanges: workingGroup?.userModifiedChanges || {},
+    userModifiedRaceChanges: workingGroup?.userModifiedRaceChanges || {}
   })
+  
+  // Wrapper pour logger les validations de blocs
+  const validateBlock = async (blockKey: string, proposalIds: string[]) => {
+    await validateBlockBase(blockKey, proposalIds)
+  }
+  
+  const unvalidateBlock = async (blockKey: string) => {
+    await unvalidateBlockBase(blockKey)
+  }
   
   const hasApproved = groupProposals.some(p => p.status === 'APPROVED')
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
 
   // Context pour le render
+  // ✅ Phase 2 Step 6 : Utiliser workingGroup exclusivement
   const context: GroupedProposalContext = {
-    groupProposals,
-    consolidatedChanges,
-    consolidatedRaceChanges: consolidatedRaceChangesWithCascade,
-    selectedChanges,
-    userModifiedChanges,
-    userModifiedRaceChanges,
+    // Données consolidées depuis le hook (ou fallback)
+    groupProposals: workingGroup?.originalProposals || groupProposals,
+    consolidatedChanges: workingGroup?.consolidatedChanges || consolidatedChanges,
+    consolidatedRaceChanges: workingGroup?.consolidatedRaces || consolidatedRaceChangesWithCascade,
+    
+    // États de modifications utilisateur depuis le hook
+    selectedChanges: workingGroup ? {} : selectedChanges, // ✅ Plus besoin en mode hook, les valeurs sont dans consolidatedChanges[i].selectedValue
+    userModifiedChanges: workingGroup?.userModifiedChanges || {},
+    userModifiedRaceChanges: workingGroup?.userModifiedRaceChanges || {},
+    
+    // Handlers (priorité au hook si disponible)
     handleFieldSelect: handleSelectField,
-    handleFieldModify,
+    handleFieldModify, // ✅ Déjà adapté à l'Étape 2 pour utiliser updateFieldEditor
     handleEditionStartDateChange,
     handleApproveField,
     handleApproveAll,
@@ -865,13 +879,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     handleApproveRace,
     handleApproveAllRaces,
     handleRejectAllRaces,
-    handleRaceFieldModify,
+    handleRaceFieldModify, // ✅ Déjà adapté à l'Étape 2 pour utiliser updateRaceEditor
     handleKillEvent,
     handleReviveEvent,
+    
+    // Utilitaires (inchangés)
     formatValue,
     formatAgentsList,
     getEventTitle,
     getEditionYear,
+    
+    // États UI (inchangés)
     isLoading,
     isPending: updateProposalMutation.isPending || bulkArchiveMutation.isPending,
     isEventDead,
@@ -884,6 +902,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     killDialogOpen,
     setKillDialogOpen,
     isEditionCanceled,
+    isReadOnly: false, // ✅ PHASE 3: Édition activée dans la vue groupée
+    
     // Validation par blocs
     validateBlock,
     unvalidateBlock,
@@ -997,8 +1017,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         <ConfirmDatePropagationModal
           open={datePropagationModal.open}
           onClose={() => {
-            // Annuler = appliquer juste à l'édition sans propager
-            setUserModifiedChanges(prev => ({ ...prev, startDate: datePropagationModal.newStartDate }))
+            // Annuler = appliquer juste à l'édition sans propager via le hook
+            updateFieldEditor('startDate', datePropagationModal.newStartDate)
             setSelectedChanges(prev => ({ ...prev, startDate: datePropagationModal.newStartDate }))
             setDatePropagationModal(null)
           }}
@@ -1020,15 +1040,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         <ConfirmEditionDateUpdateModal
           open={editionDateUpdateModal.open}
           onClose={() => {
-            // Annuler = appliquer juste la modification de la course
+            // Annuler = appliquer juste la modification de la course via le hook
             const { raceIndex, newRaceDate } = editionDateUpdateModal
-            setUserModifiedRaceChanges(prev => ({
-              ...prev,
-              [raceIndex]: {
-                ...prev[raceIndex],
-                startDate: newRaceDate
-              }
-            }))
+            updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
             setEditionDateUpdateModal(null)
           }}
           onConfirm={confirmEditionDateUpdate}

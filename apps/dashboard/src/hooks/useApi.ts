@@ -214,9 +214,12 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   return useQuery({
     queryKey: ['proposals', filters, limit, offset],
     queryFn: () => proposalsApi.getAll(filters, limit, offset),
-    staleTime: 30000, // 30 secondes
-    refetchInterval: 60000, // Auto-refresh toutes les 60 secondes (au lieu de 30)
-    refetchOnWindowFocus: true, // Garder le refetch au focus
+    staleTime: 60000, // 60 secondes (au lieu de 30)
+    gcTime: 300000, // 5 minutes (garde le cache plus longtemps)
+    refetchInterval: 120000, // Auto-refresh toutes les 2 minutes (au lieu de 1)
+    refetchOnWindowFocus: false, // Désactiver pour éviter les refetch excessifs
+    refetchOnMount: false, // Utiliser le cache si disponible au montage
+    retry: 1, // Réessayer qu'une seule fois en cas d'échec
   })
 }
 
@@ -233,9 +236,12 @@ export const useProposalGroup = (groupKey: string) => {
     queryKey: ['proposals', 'group', groupKey],
     queryFn: () => proposalsApi.getByGroup(groupKey),
     enabled: !!groupKey,
-    staleTime: 30000, // 30 secondes
-    refetchInterval: 60000, // Auto-refresh toutes les 60 secondes
-    refetchOnWindowFocus: true,
+    staleTime: 60000, // 60 secondes
+    gcTime: 300000, // 5 minutes
+    refetchInterval: 120000, // Auto-refresh toutes les 2 minutes
+    refetchOnWindowFocus: false, // Désactiver
+    refetchOnMount: false, // Utiliser le cache
+    retry: 1,
   })
 }
 

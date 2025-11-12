@@ -17,6 +17,7 @@ import AgentDetail from '@/pages/AgentDetail'
 import AgentEdit from '@/pages/AgentEdit'
 import ProposalList from '@/pages/ProposalList'
 import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher'
+import ProposalEditRedirect from '@/pages/proposals/ProposalEditRedirect'
 import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDetailDispatcher'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
@@ -149,6 +150,15 @@ function App() {
                                 element={
                                   <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
                                     <GroupedProposalDetailDispatcher />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              {/* ✅ PHASE 3: Route de redirection pour forcer l'édition via la vue groupée */}
+                              <Route
+                                path="/proposals/:proposalId/edit"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <ProposalEditRedirect />
                                   </ProtectedRoute>
                                 }
                               />

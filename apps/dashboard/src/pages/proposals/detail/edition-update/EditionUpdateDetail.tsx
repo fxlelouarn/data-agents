@@ -16,6 +16,12 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
     <ProposalDetailBase
       proposalId={proposalId}
       renderMainContent={(context) => {
+        // Afficher l'état de validation actuel
+        console.log('📄 [EditionUpdateDetail] État de validation actuel:', {
+          approvedBlocks: context.proposal.approvedBlocks,
+          userModifiedChanges: context.userModifiedChanges,
+          status: context.proposal.status
+        })
         const {
           consolidatedChanges,
           consolidatedRaceChanges,
@@ -33,6 +39,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
           isPending,
           isEventDead,
           isEditionCanceled,
+          isReadOnly, // ⚠️ PHASE 3: Flag lecture seule
           proposal,
           // Validation par blocs
           validateBlock,
@@ -67,13 +74,13 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 formatValue={formatValue}
                 formatAgentsList={formatAgentsList}
                 timezone={editionTimezone}
-                disabled={isBlockValidated('edition') || isEventDead}
+                disabled={isReadOnly || isBlockValidated('edition') || isEventDead}
                 isEditionCanceled={isEditionCanceled || isEventDead}
                 isBlockValidated={isBlockValidated('edition')}
-                onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
-                onUnvalidateBlock={() => unvalidateBlock('edition')}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition', blockProposals['edition'] || [])}
+                onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
-                validationDisabled={isEventDead}
+                validationDisabled={isReadOnly || isEventDead}
               />
             )}
             
@@ -83,27 +90,26 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onApprove={() => {/* Single proposal - no field-specific approve */}}
                 onFieldModify={handleFieldModify}
                 userModifiedChanges={userModifiedChanges}
-                disabled={isBlockValidated('organizer') || isEventDead}
+                disabled={isReadOnly || isBlockValidated('organizer') || isEventDead}
                 isBlockValidated={isBlockValidated('organizer')}
-                onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
-                onUnvalidateBlock={() => unvalidateBlock('organizer')}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
-                validationDisabled={isEventDead}
+                validationDisabled={isReadOnly || isEventDead}
               />
             )}
             
-            {((racesToAddChange && racesToAddChange.options[0]?.proposedValue?.length > 0) || (proposal?.existingRaces && proposal.existingRaces.length > 0)) && (
+            {hasRaceChanges && (
               <RacesChangesTable
-                existingRaces={proposal?.existingRaces || []}
-                racesToAdd={racesToAddChange?.options[0]?.proposedValue || []}
-                proposalId={proposalId}
-                proposal={proposal}
-                disabled={!allPending || isPending || isEventDead}
+                consolidatedRaces={consolidatedRaceChanges}
+                userModifiedRaceChanges={userModifiedRaceChanges}
+                onRaceFieldModify={handleRaceFieldModify}
+                disabled={isReadOnly || !allPending || isPending || isEventDead}
                 isBlockValidated={isBlockValidated('races')}
-                onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
-                onUnvalidateBlock={() => unvalidateBlock('races')}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('races', blockProposals['races'] || [])}
+                onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
-                validationDisabled={isEventDead}
+                validationDisabled={isReadOnly || isEventDead}
               />
             )}
             

@@ -8,7 +8,8 @@ import {
   Archive as ArchiveIcon,
   CheckCircle as ApproveAllIcon,
   Cancel as CancelIcon,
-  Delete as KillIcon
+  Delete as KillIcon,
+  Edit as EditIcon
 } from '@mui/icons-material'
 
 interface ProposalNavigationProps {
@@ -20,6 +21,8 @@ interface ProposalNavigationProps {
     onNext: () => void
   }
   // Actions
+  showEditButton?: boolean
+  onEdit?: () => void
   showArchiveButton?: boolean
   onArchive?: () => void
   showKillEventButton?: boolean
@@ -38,6 +41,8 @@ interface ProposalNavigationProps {
 
 const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   navigation,
+  showEditButton = false,
+  onEdit,
   showArchiveButton = false,
   onArchive,
   showKillEventButton = false,
@@ -97,6 +102,18 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
       </Box>
       
       <Box sx={{ display: 'flex', gap: 1 }}>
+        {showEditButton && onEdit && (
+          <Button
+            variant="contained"
+            color="primary"
+            size="small"
+            startIcon={<EditIcon />}
+            onClick={onEdit}
+            disabled={disabled}
+          >
+            Éditer cette proposition
+          </Button>
+        )}
         {showValidateAllBlocksButton && onValidateAllBlocks && (
           <Button
             variant="contained"

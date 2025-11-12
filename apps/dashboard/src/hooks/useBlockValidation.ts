@@ -12,10 +12,20 @@ export interface BlockStatus {
 interface UseBlockValidationProps {
   proposals?: Proposal[]
   blockProposals?: Record<string, string[]>
+  // Nouvelles props pour les valeurs sélectionnées et modifiées
+  selectedChanges?: Record<string, any>
+  userModifiedChanges?: Record<string, any>
+  userModifiedRaceChanges?: Record<string, Record<string, any>> // ✅ Les raceId sont des strings
 }
 
 export const useBlockValidation = (props?: UseBlockValidationProps) => {
-  const { proposals = [], blockProposals = {} } = props || {}
+  const { 
+    proposals = [], 
+    blockProposals = {},
+    selectedChanges = {},
+    userModifiedChanges = {},
+    userModifiedRaceChanges = {}
+  } = props || {}
   const [blockStatus, setBlockStatus] = useState<BlockStatus>({})
   const updateProposalMutation = useUpdateProposal()
   const unapproveProposalMutation = useUnapproveProposal()
@@ -39,15 +49,6 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         isValidated: allProposalsApproved && proposalIds.length > 0,
         proposalIds
       }
-      
-      console.log(`[useBlockValidation] Block "${blockKey}":`, {
-        isValidated: allProposalsApproved && proposalIds.length > 0,
-        proposalIds,
-        approvedBlocksPerProposal: proposalIds.map(id => {
-          const p = proposals.find(pr => pr.id === id)
-          return { id, approvedBlocks: p?.approvedBlocks }
-        })
-      })
     }
     
     return status
@@ -56,16 +57,40 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
   // Valider un bloc (approuver toutes ses propositions)
   const validateBlock = useCallback(async (blockKey: string, proposalIds: string[]) => {
     try {
-      // Approuver toutes les propositions du bloc avec le paramètre block
+      // Approuver toutes les propositions du bloc
       await Promise.all(
-        proposalIds.map(id => 
-          updateProposalMutation.mutateAsync({
+        proposalIds.map(id => {
+          const proposal = proposals.find(p => p.id === id)
+          if (!proposal) {
+            console.warn(`Proposition ${id} introuvable`)
+            return Promise.resolve()
+          }
+          
+          // ✅ Construire le payload avec UNIQUEMENT les modifications utilisateur
+          // Le backend mergera automatiquement avec proposal.changes
+          const payload: Record<string, any> = { ...userModifiedChanges }
+          
+          // Ajouter les modifications de courses si bloc "races"
+          if (blockKey === 'races' && userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
+            payload.raceEdits = userModifiedRaceChanges
+          }
+          
+          console.log(`✅ [useBlockValidation] Bloc "${blockKey}" - Envoi modifications uniquement:`, {
+            blockKey,
+            proposalId: id,
+            userModifiedChanges,
+            userModifiedRaceChanges: blockKey === 'races' ? userModifiedRaceChanges : undefined,
+            payload
+          })
+          
+          return updateProposalMutation.mutateAsync({
             id,
             status: 'APPROVED',
             reviewedBy: 'Utilisateur',
-            block: blockKey // Spécifier le bloc pour approbation partielle
+            block: blockKey,
+            userModifiedChanges: payload // ✅ Modifications utilisateur seulement
           })
-        )
+        })
       )
 
       // Marquer le bloc comme validé
@@ -99,11 +124,9 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         for (const id of approvedProposalIds) {
           try {
             await unapproveBlockMutation.mutateAsync({ id, block: blockKey })
-            console.log(`[useBlockValidation] Bloc "${blockKey}" annulé pour la proposition ${id}`)
           } catch (error: any) {
             // Ignorer l'erreur si le bloc n'est plus approuvé
             if (error?.response?.data?.alreadyUnapproved) {
-              console.log(`[useBlockValidation] Bloc "${blockKey}" déjà annulé pour ${id}, ignoré`)
               continue
             }
             // Propager les autres erreurs
@@ -125,23 +148,14 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
 
   // Valider tous les blocs
   const validateAllBlocks = useCallback(async (blocks: Record<string, string[]>) => {
-    console.log('[validateAllBlocks] Démarrage validation de tous les blocs:', {
-      blocks,
-      blockKeys: Object.keys(blocks)
-    })
-    
     for (const [blockKey, proposalIds] of Object.entries(blocks)) {
-      console.log(`[validateAllBlocks] Validation du bloc "${blockKey}" avec ${proposalIds.length} proposition(s)...`)
       try {
         await validateBlock(blockKey, proposalIds)
-        console.log(`[validateAllBlocks] ✅ Bloc "${blockKey}" validé`)
       } catch (error) {
-        console.error(`[validateAllBlocks] ❌ Erreur validation bloc "${blockKey}":`, error)
+        console.error(`Erreur validation bloc "${blockKey}":`, error)
         // Continuer avec les autres blocs même en cas d'erreur
       }
     }
-    
-    console.log('[validateAllBlocks] ✅ Validation de tous les blocs terminée')
   }, [validateBlock])
 
   // Annuler la validation de tous les blocs

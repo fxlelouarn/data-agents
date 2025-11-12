@@ -211,6 +211,26 @@ export const proposalsApi = {
     }
   }>> =>
     api.post(`/proposals/${id}/convert-to-edition-update`, data).then(res => res.data),
+
+  // Édition de propositions (pour useProposalEditor)
+  updateUserModifications: (
+    id: string,
+    modifications: Record<string, any>
+  ): Promise<ApiResponse<Proposal>> =>
+    api.put(`/proposals/${id}`, { userModifiedChanges: modifications }).then(res => res.data),
+
+  validateBlock: (
+    id: string,
+    blockKey: string,
+    payload: Record<string, any>
+  ): Promise<ApiResponse<Proposal>> =>
+    api.post(`/proposals/${id}/validate-block`, { block: blockKey, payload }).then(res => res.data),
+
+  unvalidateBlock: (
+    id: string,
+    blockKey: string
+  ): Promise<ApiResponse<Proposal>> =>
+    api.post(`/proposals/${id}/unvalidate-block`, { block: blockKey }).then(res => res.data),
 }
 
 // Runs API

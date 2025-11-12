@@ -674,6 +674,52 @@ const formatDateTime = (dateString: string): string => {
 
 ## Changelog
 
+### 2025-11-12 - Phase 3 : ProposalDetailBase en lecture seule ✅
+
+**Résumé** : `ProposalDetailBase` a été converti en **vue lecture seule**. Toute édition doit maintenant passer par `GroupedProposalDetailBase` (même pour une seule proposition).
+
+#### Modifications
+
+**Fichier** : `apps/dashboard/src/pages/proposals/detail/base/ProposalDetailBase.tsx`
+
+**Suppressions (~200 lignes)** :
+- ❌ `useProposalEditor` (hook d'édition)
+- ❌ États d'édition : `selectedChanges`, `userModifiedChanges`, `userModifiedRaceChanges`
+- ❌ Modales de dates : `datePropagationModal`, `editionDateUpdateModal`
+- ❌ Handlers d'édition : `handleFieldModify`, `handleRaceFieldModify`
+
+**Ajouts (~30 lignes)** :
+- ✅ Bouton "✏️ Éditer cette proposition" (redirige vers vue groupée)
+- ✅ Context simplifié (lecture seule)
+- ✅ Validation par blocs désactivée
+
+**Nouveau composant** : `apps/dashboard/src/pages/proposals/ProposalEditRedirect.tsx`
+- Redirige `/proposals/:id/edit` vers `/proposals/group/:id`
+
+**Route ajoutée** : `apps/dashboard/src/App.tsx`
+- Route `/proposals/:proposalId/edit`
+
+#### Résultats
+
+**Gain net** : **-137 lignes de code** (~-25% du fichier)
+
+**Surfaces de bugs réduites** :
+- Avant : 8 surfaces (4 types × 2 vues éditables)
+- Après : 4 surfaces (4 types × 1 vue éditable)
+- **-50% de bugs potentiels**
+
+**Workflow utilisateur** :
+- Vue simple → Affichage lecture seule
+- Bouton "Éditer" → Redirection vers vue groupée (1 proposition)
+- Vue groupée → Édition complète + autosave
+
+#### Ressources
+- `docs/proposal-state-refactor/PHASE3-COMPLETE-2025-11-12.md` - Documentation complète
+- `docs/proposal-state-refactor/PHASE3-READ-ONLY-SIMPLE-VIEW.md` - Plan détaillé
+- `docs/proposal-state-refactor/PLAN-PROPOSAL-STATE-REFACTOR.md` - Plan global
+
+---
+
 ### 2025-11-11 (partie 2) - Phase 1.5 : Support des propositions groupées dans useProposalEditor
 
 **Nouveau** : Le hook `useProposalEditor` supporte désormais les propositions groupées nativement.

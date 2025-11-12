@@ -51,12 +51,21 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           blockProposals
         } = context
         
-        // Séparer les champs standards des champs spéciaux
+        // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
+        
+        // Champs Event (bloqués par EDITION_FIELDS et organizer)
+        const editionFields = ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate']
+        const eventChanges = consolidatedChanges.filter(c => 
+          !editionFields.includes(c.field) && c.field !== 'organizer'
+        )
+        
+        // Champs Edition uniquement
+        const editionChanges = consolidatedChanges.filter(c => editionFields.includes(c.field))
         
         // Ajouter les champs URL éditables même s'ils ne sont pas proposés
         const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
-        const eventChangesWithUrls = [...consolidatedChanges.filter(c => c.field !== 'organizer')]
+        const eventChangesWithUrls = [...eventChanges]
         
         urlFields.forEach(urlField => {
           if (!eventChangesWithUrls.some(c => c.field === urlField)) {
@@ -94,7 +103,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
             {/* Table des champs Edition */}
             <CategorizedEditionChangesTable
               title="Informations de l'édition"
-              changes={consolidatedChanges}
+              changes={editionChanges}
               isNewEvent={true}
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
@@ -132,10 +141,9 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
             
             {/* Section des courses */}
             <RacesChangesTable
-              existingRaces={[]}
-              racesToAdd={groupProposals[0]?.changes?.edition?.new?.races || []}
-              proposalId={groupProposals[0]?.id}
-              proposal={groupProposals[0]}
+              consolidatedRaces={consolidatedRaceChanges}
+              userModifiedRaceChanges={userModifiedRaceChanges}
+              onRaceFieldModify={handleRaceFieldModify}
               disabled={!allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('races')}
               onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
@@ -190,9 +198,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 currentCalendarStatus={
                   userModifiedChanges['calendarStatus'] || 
                   selectedChanges['calendarStatus'] || 
-                  (typeof firstProposal.changes.calendarStatus === 'string' 
-                    ? firstProposal.changes.calendarStatus 
-                    : (firstProposal.changes.calendarStatus as any)?.current || (firstProposal.changes.calendarStatus as any)?.proposed)
+                  undefined
                 }
                 currentEditionYear={getEditionYear(firstProposal) ? parseInt(getEditionYear(firstProposal)!) : undefined}
                 previousEditionYear={(firstProposal as any).previousEditionYear}

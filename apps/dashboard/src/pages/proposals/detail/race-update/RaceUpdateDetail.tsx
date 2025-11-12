@@ -24,6 +24,7 @@ const RaceUpdateDetail: React.FC<RaceUpdateDetailProps> = ({ proposalId }) => {
           isPending,
           isEventDead,
           isEditionCanceled,
+          isReadOnly, // ⚠️ PHASE 3: Flag lecture seule
           proposal
         } = context
         
@@ -36,7 +37,7 @@ const RaceUpdateDetail: React.FC<RaceUpdateDetailProps> = ({ proposalId }) => {
               onRaceApprove={() => {/* Single proposal - handled by approve all */}}
               onFieldModify={handleRaceFieldModify}
               userModifiedRaceChanges={userModifiedRaceChanges}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={isReadOnly || !allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
             />
             
