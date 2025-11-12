@@ -32,13 +32,15 @@ app.use(cors({
   credentials: true
 }))
 
-// Rate limiting
+// Rate limiting (assouplies pour le développement)
 const limiter = rateLimit({
-  windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 100, // limit each IP to 100 requests per windowMs
-  message: 'Too many requests from this IP, please try again later.'
+  windowMs: 1 * 60 * 1000, // 1 minute (plus court mais plus permissif)
+  max: 500, // 500 requêtes par minute (au lieu de 100/15min = 6.6/min)
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in `RateLimit-*` headers
+  legacyHeaders: false, // Disable `X-RateLimit-*` headers
 })
-app.use(limiter)
+app.use('/api', limiter) // Appliquer uniquement sur /api, pas sur /health
 
 // General middleware
 app.use(compression())

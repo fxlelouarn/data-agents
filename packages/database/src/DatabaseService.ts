@@ -171,6 +171,7 @@ export class DatabaseService {
     status?: string
     reviewedAt?: Date
     reviewedBy?: string
+    appliedBy?: string
   }) {
     return this.proposalService.updateProposal(id, data)
   }

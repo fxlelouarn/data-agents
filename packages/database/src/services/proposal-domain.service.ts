@@ -418,13 +418,14 @@ export class ProposalDomainService {
           const raceData = racesToAdd[i]
           const editedData = raceEdits[`new-${i}`] || {}
           
+          // Appliquer les modifications utilisateur, sinon les valeurs proposées
           const racePayload: any = {
             editionId: numericEditionId,
             eventId: edition?.eventId,
             name: editedData.name || raceData.name,
             runDistance: editedData.distance ? parseFloat(editedData.distance) : raceData.distance,
             runPositiveElevation: editedData.elevation ? parseFloat(editedData.elevation) : raceData.elevation,
-            startDate: raceData.startDate ? new Date(raceData.startDate) : null
+            startDate: editedData.startDate ? new Date(editedData.startDate) : (raceData.startDate ? new Date(raceData.startDate) : null)
           }
           
           // Type est déprécié dans le schéma mais peut être utilisé
@@ -463,10 +464,11 @@ export class ProposalDomainService {
           if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
           if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
           if (edits.type) updateData.type = edits.type
+          if (edits.startDate) updateData.startDate = new Date(edits.startDate)
           
           if (Object.keys(updateData).length > 0) {
             await milesRepo.updateRace(race.id, updateData)
-            this.logger.info(`  ✅ Course ${race.id} (${race.name}) mise à jour via edits utilisateur`)
+            this.logger.info(`  ✅ Course ${race.id} (${race.name}) mise à jour via edits utilisateur:`, updateData)
           }
         }
       }

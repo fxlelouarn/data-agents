@@ -71,6 +71,7 @@ export class ProposalService implements IProposalService {
     status?: string
     reviewedAt?: Date
     reviewedBy?: string
+    appliedBy?: string
     userModifiedChanges?: any
     modificationReason?: string
     modifiedBy?: string

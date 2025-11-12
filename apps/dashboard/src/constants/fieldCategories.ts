@@ -371,6 +371,13 @@ export function groupChangesByCategory<T extends { field: string }>(
     
     // Ne retourner que les catégories qui ont des changements
     if (categoryChanges.length > 0) {
+      // Trier les changements selon l'ordre défini dans category.fields
+      categoryChanges.sort((a, b) => {
+        const indexA = category.fields.indexOf(a.field)
+        const indexB = category.fields.indexOf(b.field)
+        return indexA - indexB
+      })
+      
       grouped.push({ category, changes: categoryChanges })
     }
   }

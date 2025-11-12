@@ -49,7 +49,7 @@ export class AuthService {
    * Génère un JWT token
    */
   generateToken(payload: JWTPayload): string {
-    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN })
+    return jwt.sign(payload, JWT_SECRET, { expiresIn: JWT_EXPIRES_IN } as jwt.SignOptions) as string
   }
 
   /**
@@ -202,7 +202,12 @@ export class AuthService {
   }) {
     return this.client.user.update({
       where: { id: userId },
-      data,
+      data: {
+        firstName: data.firstName,
+        lastName: data.lastName,
+        role: data.role as any,
+        isActive: data.isActive
+      },
       select: {
         id: true,
         email: true,

@@ -3,6 +3,7 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { formatDateInTimezone } from '@/utils/timezone'
 import { getCategoriesForEntityType } from '@/constants/fieldCategories'
+import { getBlockForField } from '@/utils/blockFieldMapping'
 
 export interface ChangeOption {
   proposalId: string
@@ -26,7 +27,7 @@ export interface RaceChangeField {
 
 export interface RaceChange {
   raceName: string
-  raceIndex: number
+  raceId: string  // ✅ Changed from raceIndex: number
   fields: Record<string, RaceChangeField>
   proposalIds: string[]
 }
@@ -381,7 +382,7 @@ export const useProposalLogic = () => {
             if (!raceChangesByRace[raceKey]) {
               raceChangesByRace[raceKey] = {
                 raceName: raceKey,
-                raceIndex,
+                raceId: `new-${raceIndex}`,  // ✅ Generate raceId for new races
                 fields: {},
                 informationalData: {}, // Stocker les champs informationnels
                 proposalIds: new Set()
@@ -541,6 +542,7 @@ export const useProposalLogic = () => {
     return undefined
   }
 
+  
   return {
     selectedChanges,
     setSelectedChanges,

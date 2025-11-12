@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react'
+import React, { useState } from 'react'
 import {
   Box,
   Paper,
@@ -21,44 +21,18 @@ import {
   Undo as UndoIcon,
   Edit as EditIcon,
   Check as CheckIcon,
-  Close as CloseIcon
+  Close as CloseIcon,
+  EditNote as EditNoteIcon
 } from '@mui/icons-material'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import BlockValidationButton from '../BlockValidationButton'
-import { useUpdateProposal } from '@/hooks/useApi'
-
-interface ExistingRace {
-  id: number
-  name: string
-  distance?: number
-  elevation?: number
-  startDate?: string  // Valeur proposée (ou actuelle si pas de mise à jour)
-  categoryLevel1?: string
-  categoryLevel2?: string
-  _current?: {  // Valeurs actuelles de la base (pour comparaison)
-    startDate?: string
-  }
-  _hasUpdate?: boolean  // Indique si cette course a une mise à jour proposée
-}
-
-interface RaceToAdd {
-  name: string
-  distance?: number  // Pour compatibilité ancienne structure
-  runDistance?: number  // Miles Republic (en kilomètres)
-  startDate?: string
-  elevation?: number  // Pour compatibilité ancienne structure
-  runPositiveElevation?: number  // Miles Republic (en mètres)
-  registrationUrl?: string
-  categoryLevel1?: string
-  categoryLevel2?: string
-}
+import { ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
 
 interface RacesChangesTableProps {
-  existingRaces: ExistingRace[]
-  racesToAdd: RaceToAdd[]
-  proposalId?: string
-  proposal?: any
+  consolidatedRaces: ConsolidatedRaceChange[]  // ✅ Depuis workingGroup
+  userModifiedRaceChanges: Record<string, any> // ✅ Depuis workingGroup  
+  onRaceFieldModify: (raceId: string, field: string, value: any) => void
   disabled?: boolean
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
@@ -96,10 +70,9 @@ const RACE_FIELDS: RaceField[] = [
 ]
 
 const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
-  existingRaces,
-  racesToAdd,
-  proposalId,
-  proposal,
+  consolidatedRaces,
+  userModifiedRaceChanges,
+  onRaceFieldModify,
   disabled = false,
   isBlockValidated = false,
   onValidateBlock,
@@ -107,69 +80,12 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   isBlockPending = false,
   validationDisabled = false
 }) => {
-  // États locaux
-  const [racesToDelete, setRacesToDelete] = useState<Set<number>>(new Set())
-  const [racesToAddFiltered, setRacesToAddFiltered] = useState<Set<number>>(new Set())
-  const [editingRace, setEditingRace] = useState<{ type: 'existing' | 'new', index: number, field: string } | null>(null)
+  // États locaux uniquement pour l'édition en cours
+  const [editingRace, setEditingRace] = useState<{ raceId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
-  const [raceEdits, setRaceEdits] = useState<Record<string, Record<string, any>>>({})
   
-  const updateProposalMutation = useUpdateProposal()
-  
-  // Charger les modifications depuis userModifiedChanges
-  useEffect(() => {
-    if (proposal?.userModifiedChanges?.racesToDelete) {
-      setRacesToDelete(new Set(proposal.userModifiedChanges.racesToDelete))
-    }
-    if (proposal?.userModifiedChanges?.racesToAddFiltered) {
-      setRacesToAddFiltered(new Set(proposal.userModifiedChanges.racesToAddFiltered))
-    }
-    if (proposal?.userModifiedChanges?.raceEdits) {
-      setRaceEdits(proposal.userModifiedChanges.raceEdits)
-    }
-  }, [proposal?.userModifiedChanges])
-  
-  // Synchroniser avec le backend
-  const syncWithBackend = async (updates: any) => {
-    if (!proposalId) return
-    
-    try {
-      await updateProposalMutation.mutateAsync({
-        id: proposalId,
-        userModifiedChanges: {
-          ...proposal?.userModifiedChanges,
-          ...updates
-        }
-      })
-    } catch (error) {
-      console.error('Erreur lors de la synchronisation:', error)
-    }
-  }
-  
-  const handleToggleDelete = (raceId: number, isNew: boolean, index: number) => {
-    if (isNew) {
-      const newFiltered = new Set(racesToAddFiltered)
-      if (newFiltered.has(index)) {
-        newFiltered.delete(index)
-      } else {
-        newFiltered.add(index)
-      }
-      setRacesToAddFiltered(newFiltered)
-      syncWithBackend({ racesToAddFiltered: Array.from(newFiltered) })
-    } else {
-      const newDeleted = new Set(racesToDelete)
-      if (newDeleted.has(raceId)) {
-        newDeleted.delete(raceId)
-      } else {
-        newDeleted.add(raceId)
-      }
-      setRacesToDelete(newDeleted)
-      syncWithBackend({ racesToDelete: Array.from(newDeleted) })
-    }
-  }
-  
-  const startEdit = (type: 'existing' | 'new', index: number, field: string, currentValue: any) => {
-    setEditingRace({ type, index, field })
+  const startEdit = (raceId: string, field: string, currentValue: any) => {
+    setEditingRace({ raceId, field })
     setEditValue(currentValue || '')
   }
   
@@ -181,61 +97,47 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   const saveEdit = () => {
     if (!editingRace) return
     
-    const key = `${editingRace.type}-${editingRace.index}`
-    const newEdits = {
-      ...raceEdits,
-      [key]: {
-        ...raceEdits[key],
-        [editingRace.field]: editValue
-      }
-    }
-    
-    setRaceEdits(newEdits)
-    syncWithBackend({ raceEdits: newEdits })
+    // Appeler directement le handler depuis le context
+    onRaceFieldModify(editingRace.raceId, editingRace.field, editValue)
     setEditingRace(null)
   }
   
-  const getEditedValue = (type: 'existing' | 'new', index: number, field: string, originalValue: any) => {
-    const key = `${type}-${index}`
-    return raceEdits[key]?.[field] ?? originalValue
+  // Récupérer la valeur affichée d'un champ de course
+  // Priorité: 1) Modification utilisateur, 2) Valeur proposée consolidée
+  const getDisplayValue = (race: ConsolidatedRaceChange, field: string): any => {
+    const userEdits = userModifiedRaceChanges[race.raceId] || {}
+    if (field in userEdits) {
+      return userEdits[field]
+    }
+    
+    // ✅ race.fields[field] peut être un ConsolidatedChange ou une valeur primitive
+    const fieldValue = race.fields[field]
+    
+    // Si c'est un ConsolidatedChange, extraire la première option
+    if (fieldValue && typeof fieldValue === 'object' && 'options' in fieldValue && Array.isArray(fieldValue.options)) {
+      return fieldValue.options[0]?.proposedValue
+    }
+    
+    // Sinon, retourner la valeur directement
+    return fieldValue
   }
   
-  const getRaceCurrentValue = (race: ExistingRace, field: string): any => {
-    switch (field) {
-      case 'name': return race.name
-      case 'startDate': 
-        // Si _current existe, utiliser la valeur actuelle, sinon la valeur de la course
-        return race._current?.startDate || race.startDate
-      case 'categoryLevel1': return race.categoryLevel1
-      case 'categoryLevel2': return race.categoryLevel2
-      case 'distance': return race.distance
-      case 'elevation': return race.elevation
-      default: return null
-    }
-  }
   
-  const getRaceProposedValue = (race: RaceToAdd, field: string): any => {
-    switch (field) {
-      case 'name': return race.name
-      case 'startDate': return race.startDate
-      case 'categoryLevel1': return race.categoryLevel1
-      case 'categoryLevel2': return race.categoryLevel2
-      case 'distance': return race.runDistance ?? race.distance  // Préférer runDistance (Miles Republic)
-      case 'elevation': return race.runPositiveElevation ?? race.elevation  // Préférer runPositiveElevation
-      default: return null
-    }
+  // ✅ Vérifier si un champ a été modifié par l'utilisateur
+  const isFieldModified = (raceId: string, field: string): boolean => {
+    const userEdits = userModifiedRaceChanges[raceId] || {}
+    return field in userEdits
   }
   
   const renderEditableCell = (
-    type: 'existing' | 'new',
-    index: number,
+    raceId: string,
     field: string,
     value: any,
+    isModified: boolean, // ✅ Badge Modifié
     format?: (v: any) => string
   ) => {
-    const isEditing = editingRace?.type === type && editingRace?.index === index && editingRace?.field === field
-    const editedValue = getEditedValue(type, index, field, value)
-    const displayValue = format ? format(editedValue) : editedValue
+    const isEditing = editingRace?.raceId === raceId && editingRace?.field === field
+    const displayValue = format ? format(value) : value
     
     if (isEditing) {
       return (
@@ -260,10 +162,19 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     return (
       <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
         <Typography variant="body2">{displayValue || '-'}</Typography>
+        {isModified && (
+          <Chip
+            icon={<EditNoteIcon />}
+            label="Modifié"
+            size="small"
+            color="warning"
+            variant="outlined"
+          />
+        )}
         {!disabled && !isBlockValidated && (
           <IconButton
             size="small"
-            onClick={() => startEdit(type, index, field, editedValue)}
+            onClick={() => startEdit(raceId, field, value)}
             sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
           >
             <EditIcon fontSize="small" />
@@ -273,7 +184,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     )
   }
   
-  const totalRaces = existingRaces.length + racesToAdd.length - racesToDelete.size - racesToAddFiltered.size
+  const totalRaces = consolidatedRaces.length
   
   return (
     <Paper sx={{ mb: 3 }}>
@@ -294,7 +205,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
             Courses ({totalRaces} total)
           </Typography>
         </Box>
-        {proposalId && onValidateBlock && onUnvalidateBlock && (
+        {onValidateBlock && onUnvalidateBlock && (
           <BlockValidationButton
             blockName="Courses"
             isValidated={isBlockValidated}
@@ -318,95 +229,31 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
             </TableRow>
           </TableHead>
           <TableBody>
-            {/* Courses existantes */}
-            {existingRaces.map((race, raceIdx) => {
-              const isDeleted = racesToDelete.has(race.id)
-              
+            {/* Courses consolidées depuis workingGroup */}
+            {consolidatedRaces.map((race) => {
               return RACE_FIELDS.map((field, fieldIdx) => {
-                const currentValue = getRaceCurrentValue(race, field.key)
-                // Pour la valeur proposée, utiliser directement les propriétés de la course
-                const proposedValue = field.key === 'startDate' 
-                  ? race.startDate  // Valeur proposée (déjà appliquée par le backend)
-                  : currentValue
+                const displayValue = getDisplayValue(race, field.key)
                 const isFirstRow = fieldIdx === 0
+                const isNewRace = race.raceId.startsWith('new-')
+                const isModified = isFieldModified(race.raceId, field.key) // ✅ Badge Modifié
+                
+                // ✅ Valeur actuelle = originalFields (vraie valeur de la base)
+                const currentValue = isNewRace ? '-' : race.originalFields[field.key]
                 
                 return (
                   <TableRow
-                    key={`existing-${race.id}-${field.key}`}
+                    key={`${race.raceId}-${field.key}`}
                     sx={{
-                      opacity: isDeleted ? 0.4 : (isBlockValidated ? 0.6 : 1),
-                      backgroundColor: isDeleted ? 'error.light' : (isBlockValidated ? 'action.hover' : 'inherit')
+                      opacity: isBlockValidated ? 0.6 : 1,
+                      backgroundColor: isBlockValidated ? 'action.hover' : 'inherit'
                     }}
                   >
                     {isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
                         <Chip
-                          label={isDeleted ? "À supprimer" : "Existante"}
+                          label={isNewRace ? "Nouvelle" : "Existante"}
                           size="small"
-                          color={isDeleted ? "error" : "default"}
-                          variant="outlined"
-                        />
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      <Typography 
-                        variant="body2" 
-                        color="text.secondary"
-                        fontWeight={proposedValue !== currentValue ? 'bold' : 500}
-                      >
-                        {field.label}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {field.format ? field.format(currentValue) : currentValue || '-'}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      {renderEditableCell('existing', raceIdx, field.key, proposedValue, field.format)}
-                    </TableCell>
-                    {isFirstRow && (
-                      <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
-                        <Tooltip title={isDeleted ? "Annuler la suppression" : "Supprimer"}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleToggleDelete(race.id, false, raceIdx)}
-                            color={isDeleted ? "default" : "error"}
-                            disabled={disabled}
-                          >
-                            {isDeleted ? <UndoIcon /> : <DeleteIcon />}
-                          </IconButton>
-                        </Tooltip>
-                      </TableCell>
-                    )}
-                  </TableRow>
-                )
-              })
-            })}
-            
-            {/* Courses à ajouter */}
-            {racesToAdd.map((race, raceIdx) => {
-              const isFiltered = racesToAddFiltered.has(raceIdx)
-              
-              return RACE_FIELDS.map((field, fieldIdx) => {
-                const proposedValue = getRaceProposedValue(race, field.key)
-                const isFirstRow = fieldIdx === 0
-                
-                return (
-                  <TableRow
-                    key={`new-${raceIdx}-${field.key}`}
-                    sx={{
-                      opacity: isFiltered ? 0.4 : (isBlockValidated ? 0.6 : 1),
-                      backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
-                      textDecoration: isFiltered ? 'line-through' : 'none'
-                    }}
-                  >
-                    {isFirstRow && (
-                      <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
-                        <Chip
-                          label={isFiltered ? "Supprimée" : "Nouvelle"}
-                          size="small"
-                          color={isFiltered ? "default" : "success"}
+                          color={isNewRace ? "success" : "default"}
                           variant="outlined"
                         />
                       </TableCell>
@@ -421,22 +268,25 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </Typography>
                     </TableCell>
                     <TableCell>
-                      <Typography variant="body2" color="text.secondary">-</Typography>
+                      <Typography variant="body2" color="text.secondary">
+                        {field.format ? field.format(currentValue) : currentValue || '-'}
+                      </Typography>
                     </TableCell>
                     <TableCell>
-                      {renderEditableCell('new', raceIdx, field.key, proposedValue, field.format)}
+                      {renderEditableCell(race.raceId, field.key, displayValue, isModified, field.format)}
                     </TableCell>
                     {isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
-                        <Tooltip title={isFiltered ? "Restaurer" : "Supprimer"}>
-                          <IconButton
-                            size="small"
-                            onClick={() => handleToggleDelete(0, true, raceIdx)}
-                            color={isFiltered ? "default" : "error"}
-                            disabled={disabled}
-                          >
-                            {isFiltered ? <UndoIcon /> : <DeleteIcon />}
-                          </IconButton>
+                        <Tooltip title="Action">
+                          <span>
+                            <IconButton
+                              size="small"
+                              disabled={true}
+                              sx={{ opacity: 0.3 }}
+                            >
+                              <DeleteIcon fontSize="small" />
+                            </IconButton>
+                          </span>
                         </Tooltip>
                       </TableCell>
                     )}

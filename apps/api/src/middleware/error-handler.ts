@@ -3,6 +3,7 @@ import { Request, Response, NextFunction } from 'express'
 export interface ApiError extends Error {
   status?: number
   code?: string
+  data?: any
 }
 
 export const errorHandler = (
@@ -22,6 +23,7 @@ export const errorHandler = (
     error: {
       code,
       message,
+      ...(error.data && { data: error.data }),
       ...(process.env.NODE_ENV === 'development' && { stack: error.stack })
     }
   })
@@ -33,9 +35,10 @@ export const asyncHandler = (fn: Function) => {
   }
 }
 
-export const createError = (status: number, message: string, code?: string): ApiError => {
+export const createError = (status: number, message: string, code?: string, data?: any): ApiError => {
   const error = new Error(message) as ApiError
   error.status = status
   error.code = code
+  error.data = data
   return error
 }
