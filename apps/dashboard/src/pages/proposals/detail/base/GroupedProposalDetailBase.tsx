@@ -178,15 +178,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   } = editorResult
   
   
+  // ✅ PHASE 4: Suppression de selectedChanges, consolidateChanges, consolidateRaceChanges
+  // Ces états/fonctions sont maintenant dans workingGroup (useProposalEditor)
   const {
-    selectedChanges,
-    setSelectedChanges,
     formatValue,
     formatAgentsList,
     getEventTitle,
-    getEditionYear,
-    consolidateChanges,
-    consolidateRaceChanges
+    getEditionYear
   } = useProposalLogic()
   
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)

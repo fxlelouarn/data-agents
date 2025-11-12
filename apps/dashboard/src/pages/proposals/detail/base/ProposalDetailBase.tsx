@@ -18,7 +18,7 @@ import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
-import { ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
+import { useProposalEditor, ConsolidatedRaceChange, isGroupReturn } from '@/hooks/useProposalEditor'
 import { 
   useProposal,
   useProposals, 
@@ -112,10 +112,12 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     formatValue,
     formatAgentsList,
     getEventTitle,
-    getEditionYear,
-    consolidateChanges,
-    consolidateRaceChanges
+    getEditionYear
   } = useProposalLogic()
+  
+  // Utiliser useProposalEditor pour la consolidation (lecture seule)
+  const editorResult = useProposalEditor(proposalId, { autosave: false })
+  const workingProposal = !isGroupReturn(editorResult) ? editorResult.workingProposal : null
   
   // Navigation
   const isNewEvent = Boolean(proposalData?.data?.type === 'NEW_EVENT')
@@ -149,35 +151,66 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     return 'Europe/Paris'
   }, [proposalData])
   
-  // Consolider les changements (lecture seule - pas d'édition)
+  // Consolider les changements (lecture seule - utilise useProposalEditor)
   const consolidatedChanges = useMemo(() => {
-    if (!proposalData?.data) return []
-    const changes = consolidateChanges([proposalData.data], isNewEvent)
-    const isEventUpdateDisplay = proposalData.data.type === 'EVENT_UPDATE'
+    if (!workingProposal) return []
+    
+    // Extraire les changements consolidés depuis workingProposal
+    const changes: ConsolidatedChange[] = Object.entries(workingProposal.changes).map(([field, value]) => ({
+      field,
+      options: [{
+        proposalId: workingProposal.id,
+        agentName: workingProposal.originalProposal.agent?.name || 'Agent',
+        proposedValue: value,
+        confidence: workingProposal.originalProposal.confidence || 0,
+        createdAt: workingProposal.originalProposal.createdAt
+      }],
+      currentValue: undefined // Pas de currentValue en mode simple
+    }))
+    
+    const isEventUpdateDisplay = proposalData?.data?.type === 'EVENT_UPDATE'
     return isEventUpdateDisplay
       ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
       : changes
-  }, [proposalData, isNewEvent, consolidateChanges])
+  }, [workingProposal, proposalData])
   
   const isEditionCanceled = useMemo(() => {
     const calendarStatus = consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
     return calendarStatus === 'CANCELED'
   }, [consolidatedChanges])
   
-  // Consolider les courses (lecture seule - pas d'édition)
+  // Consolider les courses (lecture seule - utilise useProposalEditor)
   const consolidatedRaceChanges: ConsolidatedRaceChange[] = useMemo(() => {
-    if (!proposalData?.data) return []
-    const races = consolidateRaceChanges([proposalData.data])
-    // Adapter le format RaceChange vers ConsolidatedRaceChange
-    return races.map(race => ({
-      raceId: race.raceId,
-      raceName: race.raceName,
-      proposalIds: race.proposalIds,
-      originalFields: {}, // Pas de valeur originale dans le format simple
-      fields: race.fields,
+    if (!workingProposal) return []
+    
+    // Extraire les courses consolidées depuis workingProposal
+    return Object.entries(workingProposal.races).map(([raceId, raceData]) => ({
+      raceId,
+      raceName: (raceData as any).name || 'Course',
+      proposalIds: [workingProposal.id],
+      originalFields: {}, // Pas de valeur originale en mode simple
+      fields: {
+        // Convertir les champs de course en format ConsolidatedChange
+        ...(Object.fromEntries(
+          Object.entries(raceData).map(([field, value]) => [
+            field,
+            {
+              field,
+              options: [{
+                proposalId: workingProposal.id,
+                agentName: workingProposal.originalProposal.agent?.name || 'Agent',
+                proposedValue: value,
+                confidence: workingProposal.originalProposal.confidence || 0,
+                createdAt: workingProposal.originalProposal.createdAt
+              }],
+              currentValue: undefined
+            }
+          ])
+        ))
+      },
       userModifications: undefined
     }))
-  }, [proposalData, consolidateRaceChanges])
+  }, [workingProposal])
   
   // Identifier les propositions par bloc (pour propositions individuelles)
   const blockProposals = useMemo(() => {

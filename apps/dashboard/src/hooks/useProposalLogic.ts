@@ -33,19 +33,11 @@ export interface RaceChange {
 }
 
 export const useProposalLogic = () => {
-  const [selectedChanges, setSelectedChanges] = useState<Record<string, any>>({})
-
-  // Champs à ignorer car non modifiables
-  const nonModifiableFields = ['priceType', 'raceId', 'raceName']
-  // Champs informationnels uniquement (non modifiables, affichés séparément)
-  const informationalFields = ['raceId', 'raceName']
-  
-  // Champs d'événement (pour EVENT_UPDATE)
-  const eventFields = [
-    'status', 'name', 'city', 'country', 'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
-    'fullAddress', 'latitude', 'longitude', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
-    'coverImage', 'description', 'isPrivate', 'isFeatured', 'isRecommended', 'slug'
-  ]
+  // ⚠️ PHASE 4: Nettoyage du code mort
+  // - consolidateChanges() → déplacé dans useProposalEditor
+  // - consolidateRaceChanges() → déplacé dans useProposalEditor
+  // - handleApproveField() → plus utilisé
+  // - selectedChanges/setSelectedChanges → plus utilisé
 
   // Fonction pour formatter une valeur selon son type
   const formatValue = (value: any, isSimple: boolean = false, timezone?: string): React.ReactNode => {
@@ -184,290 +176,10 @@ export const useProposalLogic = () => {
     return undefined
   }
 
-  // Consolider les changements par champ (excluant les races)
-  const consolidateChanges = (groupProposals: any[], isNewEvent: boolean): ConsolidatedChange[] => {
-    if (groupProposals.length === 0) return []
-
-    const changesByField: Record<string, any> = {}
-    const isEventUpdate = groupProposals[0]?.type === 'EVENT_UPDATE'
-    const isEditionUpdate = groupProposals[0]?.type === 'EDITION_UPDATE'
-
-    groupProposals.forEach(proposal => {
-      Object.entries(proposal.changes).forEach(([field, value]) => {
-        // Ignorer les champs non modifiables et les races (traitées séparément)
-        if (nonModifiableFields.includes(field) || field === 'races') return
-        
-        // Pour NEW_EVENT, décomposer le champ 'edition' en champs individuels
-        if (field === 'edition' && typeof value === 'object' && value !== null) {
-          // La structure est {new: {...}, confidence: 0.36}
-          const editionConfidence = (value as any).confidence || proposal.confidence || 0
-          const editionData = (value as any).new || value
-          
-          // Extraire les champs de l'édition (sauf 'races' qui est traité séparément)
-          Object.entries(editionData).forEach(([editionField, editionValue]) => {
-            if (editionField === 'races' || editionField === 'confidence') return
-            
-            if (!changesByField[editionField]) {
-              changesByField[editionField] = {
-                field: editionField,
-                options: [],
-                currentValue: null
-              }
-            }
-            
-            // Utiliser la structure {new: value, confidence: number}
-            const proposedValue = typeof editionValue === 'object' && editionValue !== null && 'new' in editionValue
-              ? (editionValue as any).new
-              : editionValue
-            
-            const confidence = typeof editionValue === 'object' && editionValue !== null && 'confidence' in editionValue
-              ? (editionValue as any).confidence
-              : editionConfidence
-            
-            changesByField[editionField].options.push({
-              proposalId: proposal.id,
-              agentName: proposal.agent.name,
-              proposedValue,
-              confidence,
-              createdAt: proposal.createdAt
-            })
-          })
-          
-          return // Ne pas traiter 'edition' comme un champ normal
-        }
-        
-        // Pour EVENT_UPDATE, ne garder que les champs d'événement
-        if (isEventUpdate && !eventFields.includes(field)) return
-        
-        // Pour EDITION_UPDATE, ne garder que les champs qui ne sont PAS des champs d'événement
-        if (isEditionUpdate && eventFields.includes(field)) return
-        
-        if (!changesByField[field]) {
-          changesByField[field] = {
-            field,
-            options: [],
-            currentValue: null
-          }
-        }
-
-        // Extraire la valeur actuelle et proposée
-        let currentValue, proposedValue, confidence
-        if (typeof value === 'object' && value !== null) {
-          if ('proposed' in value && 'current' in value) {
-            currentValue = value.current ?? null
-            proposedValue = value.proposed
-            confidence = (value as any).confidence || proposal.confidence || 0
-          } else if ('new' in value && 'old' in value) {
-            currentValue = value.old ?? null
-            proposedValue = value.new
-            confidence = (value as any).confidence || proposal.confidence || 0
-          } else if ('new' in value && 'confidence' in value && Object.keys(value).length === 2) {
-            // Structure du GoogleSearchDateAgent: {new: valeur, confidence: nombre}
-            currentValue = null // Pas de valeur actuelle pour cette structure
-            proposedValue = value.new
-            confidence = value.confidence
-          } else {
-            currentValue = null
-            proposedValue = value
-            confidence = proposal.confidence
-          }
-        } else {
-          currentValue = null
-          proposedValue = value
-          confidence = proposal.confidence
-        }
-
-        // Assigner la valeur actuelle seulement si elle n'a pas déjà été définie
-        // et éviter d'écraser avec une autre valeur null
-        if (changesByField[field].currentValue === null && currentValue !== null) {
-          changesByField[field].currentValue = currentValue
-        }
-
-        changesByField[field].options.push({
-          proposalId: proposal.id,
-          agentName: proposal.agent.name,
-          proposedValue,
-          confidence: confidence || proposal.confidence,
-          createdAt: proposal.createdAt
-        })
-      })
-    })
-
-    // Ne plus filtrer les champs - afficher tous les champs proposés par le backend
-    // même s'ils n'ont pas changé (ex: timeZone, calendarStatus, endDate)
-    const filteredChanges = Object.values(changesByField)
-    
-    // Trier les options de chaque champ par confiance décroissante
-    filteredChanges.forEach((change: any) => {
-      change.options.sort((a: ChangeOption, b: ChangeOption) => {
-        // Trier par confiance décroissante
-        return (b.confidence || 0) - (a.confidence || 0)
-      })
-    })
-
-    // Trier les champs selon l'ordre défini dans fieldCategories
-    // Pour NEW_EVENT et EDITION_UPDATE, les champs doivent suivre l'ordre de leur catégorie
-    if (isNewEvent || isEditionUpdate) {
-      const categories = isEventUpdate 
-        ? getCategoriesForEntityType('EVENT')
-        : getCategoriesForEntityType('EDITION')
-      const fieldOrder = categories.flatMap(cat => cat.fields)
-      
-      filteredChanges.sort((a: any, b: any) => {
-        const indexA = fieldOrder.indexOf(a.field)
-        const indexB = fieldOrder.indexOf(b.field)
-        
-        // Si les deux champs sont dans fieldOrder, trier selon cet ordre
-        if (indexA !== -1 && indexB !== -1) {
-          return indexA - indexB
-        }
-        
-        // Si seulement A est dans fieldOrder, il vient avant
-        if (indexA !== -1) return -1
-        
-        // Si seulement B est dans fieldOrder, il vient avant
-        if (indexB !== -1) return 1
-        
-        // Sinon, garder l'ordre actuel
-        return 0
-      })
-    } else if (isEventUpdate) {
-      // EVENT_UPDATE : trier selon les catégories EVENT
-      const eventCategories = getCategoriesForEntityType('EVENT')
-      const fieldOrder = eventCategories.flatMap(cat => cat.fields)
-      
-      filteredChanges.sort((a: any, b: any) => {
-        const indexA = fieldOrder.indexOf(a.field)
-        const indexB = fieldOrder.indexOf(b.field)
-        
-        if (indexA !== -1 && indexB !== -1) {
-          return indexA - indexB
-        }
-        if (indexA !== -1) return -1
-        if (indexB !== -1) return 1
-        return 0
-      })
-    }
-
-    return filteredChanges
-  }
-
-  // Consolider les changements de races par course
-  const consolidateRaceChanges = (groupProposals: any[]): RaceChange[] => {
-    if (groupProposals.length === 0) return []
-
-    const raceChangesByRace: Record<string, any> = {}
-
-    groupProposals.forEach(proposal => {
-      // Pour NEW_EVENT, les races peuvent être dans proposal.changes.edition.new.races
-      let racesData = proposal.changes.races
-      
-      if (!racesData && proposal.changes.edition) {
-        const editionData = proposal.changes.edition
-        const editionNew = (editionData as any).new || editionData
-        racesData = editionNew.races
-      }
-      
-      if (racesData && Array.isArray(racesData)) {
-        racesData.forEach((race: any, raceIndex: number) => {
-          if (typeof race === 'object' && race !== null) {
-            // Extraire le nom de la course (gérer les structures {old, new} ou {proposed, current})
-            let raceName = race.raceName || race.name
-            if (typeof raceName === 'object' && raceName !== null) {
-              raceName = raceName.new || raceName.proposed || raceName.current || raceName.old
-            }
-            // Utiliser le nom de la course ou l'index comme clé
-            const raceKey = raceName || `Course ${raceIndex + 1}`
-            
-            if (!raceChangesByRace[raceKey]) {
-              raceChangesByRace[raceKey] = {
-                raceName: raceKey,
-                raceId: `new-${raceIndex}`,  // ✅ Generate raceId for new races
-                fields: {},
-                informationalData: {}, // Stocker les champs informationnels
-                proposalIds: new Set()
-              }
-            }
-            
-            raceChangesByRace[raceKey].proposalIds.add(proposal.id)
-            
-            // Ajouter chaque champ de la course
-            Object.entries(race).forEach(([raceField, raceValue]) => {
-              // Traiter les champs informationnels séparément
-              if (informationalFields.includes(raceField)) {
-                if (!raceChangesByRace[raceKey].informationalData[raceField]) {
-                  raceChangesByRace[raceKey].informationalData[raceField] = raceValue
-                }
-                return
-              }
-              
-              if (nonModifiableFields.includes(raceField)) return
-              
-              if (!raceChangesByRace[raceKey].fields[raceField]) {
-                raceChangesByRace[raceKey].fields[raceField] = {
-                  field: raceField,
-                  options: [],
-                  currentValue: null
-                }
-              }
-              
-              // Extraire la valeur courante et proposée
-              let currentValue, proposedValue, confidence
-              if (typeof raceValue === 'object' && raceValue !== null) {
-                if ('proposed' in raceValue && 'current' in raceValue) {
-                  currentValue = raceValue.current || null
-                  proposedValue = raceValue.proposed
-                  confidence = (raceValue as any).confidence || proposal.confidence || 0
-                } else if ('new' in raceValue && 'old' in raceValue) {
-                  currentValue = raceValue.old || null
-                  proposedValue = raceValue.new
-                  confidence = (raceValue as any).confidence || proposal.confidence || 0
-                } else {
-                  currentValue = null
-                  proposedValue = raceValue
-                  confidence = proposal.confidence
-                }
-              } else {
-                currentValue = null
-                proposedValue = raceValue
-                confidence = proposal.confidence
-              }
-              
-              if (raceChangesByRace[raceKey].fields[raceField].currentValue === null) {
-                raceChangesByRace[raceKey].fields[raceField].currentValue = currentValue
-              }
-              
-              raceChangesByRace[raceKey].fields[raceField].options.push({
-                proposalId: proposal.id,
-                agentName: proposal.agent.name,
-                proposedValue,
-                confidence: confidence || proposal.confidence,
-                createdAt: proposal.createdAt
-              })
-            })
-          }
-        })
-      }
-    })
-
-    // Convertir les Sets en arrays et trier les options par confiance
-    Object.values(raceChangesByRace).forEach((race: any) => {
-      race.proposalIds = Array.from(race.proposalIds)
-      
-      // Trier les options de chaque champ par confiance décroissante
-      Object.values(race.fields).forEach((field: any) => {
-        field.options.sort((a: ChangeOption, b: ChangeOption) => {
-          return (b.confidence || 0) - (a.confidence || 0)
-        })
-      })
-    })
-
-    return Object.values(raceChangesByRace)
-  }
-
-  const handleApproveField = (fieldName: string, value: any) => {
-    setSelectedChanges(prev => ({ ...prev, [fieldName]: value }))
-  }
+  // ⚠️ PHASE 4: consolidateChanges() et consolidateRaceChanges() SUPPRIMÉS
+  // Ces fonctions sont maintenant dans useProposalEditor :
+  // - consolidateChangesFromProposals()
+  // - consolidateRacesFromProposals()
 
   // Fonction pour formater l'affichage des agents (condensé)
   const formatAgentsList = (agents: Array<{ agentName: string, confidence: number }>) => {
@@ -544,18 +256,12 @@ export const useProposalLogic = () => {
 
   
   return {
-    selectedChanges,
-    setSelectedChanges,
+    // ✅ Fonctions d'affichage (conservées)
     formatValue,
     formatDateTime,
     getTypeLabel,
     getEventTitle,
-    consolidateChanges,
-    consolidateRaceChanges,
-    handleApproveField,
-    formatAgentsList,
     getEditionYear,
-    nonModifiableFields,
-    informationalFields
+    formatAgentsList
   }
 }
