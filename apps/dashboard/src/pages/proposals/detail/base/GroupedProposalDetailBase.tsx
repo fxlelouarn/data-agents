@@ -192,6 +192,20 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   // À migrer vers workingGroup.userModifiedChanges dans une phase future
   const [selectedChanges, setSelectedChanges] = useState<Record<string, any>>({})
   
+  // Navigation
+  const isNewEvent = Boolean(groupKey?.startsWith('new-event-'))
+  
+  // Récupérer les propositions du groupe
+  const groupProposals = useMemo(() => {
+    if (!groupProposalsData?.data || !groupKey) return []
+    
+    return groupProposalsData.data.sort((a, b) => {
+      const confidenceA = a.confidence || 0
+      const confidenceB = b.confidence || 0
+      return confidenceB - confidenceA
+    })
+  }, [groupProposalsData?.data, groupKey])
+  
   // ⚠️ LEGACY: Fonctions de consolidation (seront remplacées par workingGroup)
   const consolidateChanges = (proposals: any[], isNewEvent: boolean) => {
     if (!workingGroup) return []
@@ -202,6 +216,49 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     if (!workingGroup) return []
     return workingGroup.consolidatedRaces
   }
+  
+  // Consolider les changements (DOIT être avant les handlers qui l'utilisent)
+  const consolidatedChanges = useMemo(() => {
+    const changes = consolidateChanges(groupProposals, isNewEvent)
+    const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
+    
+    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
+    return isEventUpdateDisplay
+      ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
+      : changes
+  }, [groupProposals, isNewEvent, consolidateChanges])
+  
+  const consolidatedRaceChanges = useMemo(() =>
+    consolidateRaceChanges(groupProposals),
+    [groupProposals, consolidateRaceChanges]
+  )
+  
+  // Cascade startDate changes to races
+  const consolidatedRaceChangesWithCascade = useMemo(() => {
+    const startDateChange = consolidatedChanges.find(c => c.field === 'startDate')
+    const editionStartDate = selectedChanges['startDate'] || startDateChange?.options[0]?.proposedValue
+    
+    if (!editionStartDate) return consolidatedRaceChanges
+    
+    return consolidatedRaceChanges.map(raceChange => ({
+      ...raceChange,
+      fields: Object.entries(raceChange.fields).reduce((acc, [fieldName, fieldData]) => {
+        if (fieldName === 'startDate') {
+          return {
+            ...acc,
+            [fieldName]: {
+              ...fieldData,
+              options: [{
+                ...fieldData.options[0],
+                proposedValue: editionStartDate
+              }]
+            }
+          }
+        }
+        return { ...acc, [fieldName]: fieldData }
+      }, {})
+    }))
+  }, [consolidatedRaceChanges, consolidatedChanges, selectedChanges])
   
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
@@ -336,9 +393,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
   }
 
-  // Navigation
-  const isNewEvent = Boolean(groupKey?.startsWith('new-event-'))
-  
+  // Navigation groupes
   const allGroupKeys = useMemo(() => {
     if (!allProposalsData?.data) return []
     const keys = new Set<string>()
@@ -362,17 +417,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       navigate(`/proposals/group/${allGroupKeys[newIndex]}`)
     }
   }
-
-  // Récupérer les propositions du groupe
-  const groupProposals = useMemo(() => {
-    if (!groupProposalsData?.data || !groupKey) return []
-    
-    return groupProposalsData.data.sort((a, b) => {
-      const confidenceA = a.confidence || 0
-      const confidenceB = b.confidence || 0
-      return confidenceB - confidenceA
-    })
-  }, [groupProposalsData?.data, groupKey])
   
   // Extraire la timezone de l'édition
   const editionTimezone = useMemo(() => {
@@ -393,17 +437,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
     return 'Europe/Paris'
   }, [groupProposals, selectedChanges.timeZone])
-
-  // Consolider les changements
-  const consolidatedChanges = useMemo(() => {
-    const changes = consolidateChanges(groupProposals, isNewEvent)
-    const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
-    
-    // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
-    return isEventUpdateDisplay
-      ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
-      : changes
-  }, [groupProposals, isNewEvent, consolidateChanges])
   
   // Déterminer si l'édition est annulée
   const isEditionCanceled = useMemo(() => {
@@ -412,38 +445,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
                           consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
     return calendarStatus === 'CANCELED'
   }, [selectedChanges, workingGroup, consolidatedChanges])
-  
-  const consolidatedRaceChanges = useMemo(() =>
-    consolidateRaceChanges(groupProposals),
-    [groupProposals, consolidateRaceChanges]
-  )
-  
-  // Cascade startDate changes to races
-  const consolidatedRaceChangesWithCascade = useMemo(() => {
-    const startDateChange = consolidatedChanges.find(c => c.field === 'startDate')
-    const editionStartDate = selectedChanges['startDate'] || startDateChange?.options[0]?.proposedValue
-    
-    if (!editionStartDate) return consolidatedRaceChanges
-    
-    return consolidatedRaceChanges.map(raceChange => ({
-      ...raceChange,
-      fields: Object.entries(raceChange.fields).reduce((acc, [fieldName, fieldData]) => {
-        if (fieldName === 'startDate') {
-          return {
-            ...acc,
-            [fieldName]: {
-              ...fieldData,
-              options: [{
-                ...fieldData.options[0],
-                proposedValue: editionStartDate
-              }]
-            }
-          }
-        }
-        return { ...acc, [fieldName]: fieldData }
-      }, {})
-    }))
-  }, [consolidatedRaceChanges, consolidatedChanges, selectedChanges])
   
   // Ref pour éviter les boucles infinies
   const lastComputedDatesRef = useRef<{startDate?: string, endDate?: string}>({})
