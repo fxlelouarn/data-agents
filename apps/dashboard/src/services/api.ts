@@ -156,6 +156,7 @@ export const proposalsApi = {
       modificationReason?: string;
       modifiedBy?: string;
       block?: string;
+      killEvent?: boolean;
     }
   ): Promise<ApiResponse<Proposal>> =>
     api.put(`/proposals/${id}`, data).then(res => res.data),

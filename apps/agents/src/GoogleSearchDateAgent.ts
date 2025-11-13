@@ -36,10 +36,21 @@ interface NextProdEvent {
     year: string
     calendarStatus: string
     startDate: Date | null
+    endDate?: Date | null                    // ✅ AJOUT
+    timeZone?: string                        // ✅ AJOUT
+    registrationClosingDate?: Date | null    // ✅ AJOUT
     races?: Array<{
       id: string
       name: string
       startDate: Date | null
+      runDistance?: number                   // ✅ Distance course à pied (km)
+      bikeDistance?: number                  // ✅ Distance vélo (km)
+      walkDistance?: number                  // ✅ Distance marche (km)
+      swimDistance?: number                  // ✅ Distance natation (km)
+      runPositiveElevation?: number          // ✅ Dénivelé positif
+      categoryLevel1?: string                // ✅ Catégorie principale
+      categoryLevel2?: string                // ✅ Sous-catégorie
+      timeZone?: string                      // ✅ Timezone de la course
     }>
   }
   historicalEditions?: Array<{
@@ -337,7 +348,15 @@ export class GoogleSearchDateAgent extends BaseAgent {
                   select: {
                     id: true,
                     name: true,
-                    startDate: true
+                    startDate: true,
+                    runDistance: true,           // ✅ Distance course à pied (km)
+                    bikeDistance: true,          // ✅ Distance vélo (km)
+                    walkDistance: true,          // ✅ Distance marche (km)
+                    swimDistance: true,          // ✅ Distance natation (km)
+                    runPositiveElevation: true,  // ✅ Dénivelé positif
+                    categoryLevel1: true,        // ✅ Catégorie principale
+                    categoryLevel2: true,        // ✅ Sous-catégorie
+                    timeZone: true               // ✅ Timezone de la course
                   }
                 }
               },
@@ -417,7 +436,15 @@ export class GoogleSearchDateAgent extends BaseAgent {
             races: currentEdition.races?.map((race: any) => ({
               id: race.id.toString(),
               name: race.name,
-              startDate: race.startDate ? new Date(race.startDate) : null
+              startDate: race.startDate ? new Date(race.startDate) : null,
+              runDistance: race.runDistance,                     // ✅ Distance course à pied
+              bikeDistance: race.bikeDistance,                   // ✅ Distance vélo
+              walkDistance: race.walkDistance,                   // ✅ Distance marche
+              swimDistance: race.swimDistance,                   // ✅ Distance natation
+              runPositiveElevation: race.runPositiveElevation,   // ✅ Dénivelé
+              categoryLevel1: race.categoryLevel1,               // ✅ Catégorie
+              categoryLevel2: race.categoryLevel2,               // ✅ Sous-catégorie
+              timeZone: race.timeZone                            // ✅ Timezone
             })) || []
           } : undefined,
           historicalEditions // Ajouter l'historique pour l'analyse de confiance
@@ -821,6 +848,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
         type: 'text' as const,
         content: `Date proposée: ${primaryDate.date.toLocaleDateString('fr-FR')} (${datesGroup.length} source(s))`,
         metadata: {
+          source: primaryDate.source, // ✅ URL de la première source pour affichage du bouton
           extractedDate: primaryDate.date.toISOString(),
           confidence: enhancedConfidence,
           baseConfidence: avgConfidence, // Confiance originale pour référence
@@ -897,6 +925,19 @@ export class GoogleSearchDateAgent extends BaseAgent {
                   new: proposedDate, // Date avec confiance max = date de l'édition sélectionnée
                   confidence: enhancedConfidence // Même confiance que l'édition
                 }
+              },
+              // ✅ Ajouter toutes les données actuelles de la course (comme FFA Scraper)
+              currentData: {
+                name: race.name,
+                startDate: currentRaceStartDate,
+                runDistance: race.runDistance,
+                bikeDistance: race.bikeDistance,
+                walkDistance: race.walkDistance,
+                swimDistance: race.swimDistance,
+                runPositiveElevation: race.runPositiveElevation,
+                categoryLevel1: race.categoryLevel1,
+                categoryLevel2: race.categoryLevel2,
+                timeZone: race.timeZone
               }
             })
           }

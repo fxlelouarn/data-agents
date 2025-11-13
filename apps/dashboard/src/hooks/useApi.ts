@@ -214,11 +214,11 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   return useQuery({
     queryKey: ['proposals', filters, limit, offset],
     queryFn: () => proposalsApi.getAll(filters, limit, offset),
-    staleTime: 60000, // 60 secondes (au lieu de 30)
+    staleTime: 30000, // 30 secondes - réduit pour capter les nouvelles propositions plus vite
     gcTime: 300000, // 5 minutes (garde le cache plus longtemps)
     refetchInterval: 120000, // Auto-refresh toutes les 2 minutes (au lieu de 1)
     refetchOnWindowFocus: false, // Désactiver pour éviter les refetch excessifs
-    refetchOnMount: false, // Utiliser le cache si disponible au montage
+    refetchOnMount: true, // ✅ Toujours refetch au montage pour capter les nouvelles propositions
     retry: 1, // Réessayer qu'une seule fois en cas d'échec
   })
 }
@@ -258,7 +258,8 @@ export const useUpdateProposal = () => {
       userModifiedChanges,
       modificationReason,
       modifiedBy,
-      block
+      block,
+      killEvent
     }: { 
       id: string
       status?: string
@@ -268,7 +269,8 @@ export const useUpdateProposal = () => {
       modificationReason?: string
       modifiedBy?: string
       block?: string
-    }) => proposalsApi.update(id, { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block }),
+      killEvent?: boolean
+    }) => proposalsApi.update(id, { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block, killEvent }),
     onSuccess: (response, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['proposals'] })
       queryClient.invalidateQueries({ queryKey: ['proposals', id] })

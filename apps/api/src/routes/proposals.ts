@@ -190,7 +190,8 @@ export async function enrichProposal(proposal: any) {
         select: { 
           name: true,
           city: true,
-          status: true 
+          status: true,
+          slug: true
         }
       })
 
@@ -199,7 +200,8 @@ export async function enrichProposal(proposal: any) {
           ...proposal,
           eventName: event.name,
           eventCity: event.city,
-          eventStatus: event.status
+          eventStatus: event.status,
+          eventSlug: event.slug
         }
       }
     } catch (error) {
@@ -261,13 +263,14 @@ export async function enrichProposal(proposal: any) {
 
       if (!numericEventId) return proposal
 
-      // Récupérer les infos de l'événement (nom, ville, statut)
+      // Récupérer les infos de l'événement (nom, ville, statut, slug)
       const event = await connection.event.findUnique({
         where: { id: numericEventId },
         select: { 
           name: true,
           city: true,
-          status: true 
+          status: true,
+          slug: true
         }
       })
       
@@ -277,6 +280,7 @@ export async function enrichProposal(proposal: any) {
         eventName: event?.name,
         eventCity: event?.city,
         eventStatus: event?.status,
+        eventSlug: event?.slug,
         editionYear: editionYear
       }
 
@@ -1053,6 +1057,12 @@ router.post('/:id/convert-to-edition-update', [
             racesToUpdate.push({
               raceId: matchingRace.id,
               raceName: matchingRace.name,
+              // ✅ Inclure tous les champs FFA pour affichage dans l'interface
+              runDistance: ffaRace.runDistance,
+              runPositiveElevation: ffaRace.runPositiveElevation,
+              categoryLevel1: ffaRace.categoryLevel1,
+              categoryLevel2: ffaRace.categoryLevel2,
+              startDate: ffaRace.startDate,
               updates: raceUpdates
             })
           }

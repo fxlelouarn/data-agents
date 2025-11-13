@@ -538,13 +538,22 @@ export class FFAScraperAgent extends BaseAgent {
             }
           }
 
-          if (Object.keys(raceUpdates).length > 0) {
-            racesToUpdate.push({
-              raceId: matchingRace.id,
-              raceName: matchingRace.name,
-              updates: raceUpdates
-            })
-          }
+          // Toujours inclure la course, même sans changements, pour affichage complet
+          racesToUpdate.push({
+            raceId: matchingRace.id,
+            raceName: matchingRace.name,
+            updates: raceUpdates,
+            // ✅ Ajouter toutes les données actuelles de la course
+            currentData: {
+              name: matchingRace.name,
+              startDate: matchingRace.startDate,
+              runDistance: matchingRace.runDistance,
+              runPositiveElevation: matchingRace.runPositiveElevation,
+              categoryLevel1: matchingRace.categoryLevel1,
+              categoryLevel2: matchingRace.categoryLevel2,
+              timeZone: matchingRace.timeZone
+            }
+          })
         }
       }
 
@@ -606,6 +615,16 @@ export class FFAScraperAgent extends BaseAgent {
                   old: race.startDate,
                   new: ffaStartDate
                 }
+              },
+              // ✅ Ajouter les données actuelles pour affichage complet
+              currentData: {
+                name: race.name,
+                startDate: race.startDate,
+                runDistance: race.runDistance,
+                runPositiveElevation: race.runPositiveElevation,
+                categoryLevel1: race.categoryLevel1,
+                categoryLevel2: race.categoryLevel2,
+                timeZone: race.timeZone
               }
             })
           }
