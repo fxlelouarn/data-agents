@@ -3,7 +3,7 @@ import { useUpdateProposal, useUnapproveProposal } from './useApi'
 
 /**
  * Hook simplifié pour la validation d'un bloc individuel
- * Utilisé dans les composants qui gèrent un seul bloc (RaceUpdateGroupedDetail, RacesToAddSection)
+ * Utilisé dans les composants qui gèrent un seul bloc
  */
 export const useProposalBlockValidation = (
   proposalId: string | undefined,

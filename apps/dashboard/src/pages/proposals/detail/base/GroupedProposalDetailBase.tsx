@@ -28,8 +28,6 @@ import {
   useUpdateProposal, 
   useBulkArchiveProposals, 
   useUnapproveProposal, 
-  useKillEvent, 
-  useReviveEvent, 
   useProposalGroup 
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
@@ -81,6 +79,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   handleApproveAllRaces: () => Promise<void>
   handleRejectAllRaces: () => Promise<void>
   handleRaceFieldModify: (raceId: string, fieldName: string, newValue: any) => void
+  handleDeleteRace: (raceId: string) => void
   userModifiedRaceChanges: Record<string, Record<string, any>>
   // Actions événement mort
   handleKillEvent: () => Promise<void>
@@ -118,6 +117,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const [archiveDialogOpen, setArchiveDialogOpen] = useState(false)
   const [killDialogOpen, setKillDialogOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
+  const [isKilledLocally, setIsKilledLocally] = useState(false)
   
   // ✅ PHASE 2 STEP 6: Suppression des anciens états locaux (remplacés par workingGroup)
   
@@ -141,8 +141,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const updateProposalMutation = useUpdateProposal()
   const bulkArchiveMutation = useBulkArchiveProposals()
   const unapproveProposalMutation = useUnapproveProposal()
-  const killEventMutation = useKillEvent()
-  const reviveEventMutation = useReviveEvent()
   
   // 🚀 PHASE 2: Initialisation du hook useProposalEditor pour le mode groupé
   const proposalIds = useMemo(() => {
@@ -178,19 +176,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   } = editorResult
   
   
-  // ✅ PHASE 4: Import fonctions d'affichage uniquement
-  // consolidateChanges/consolidateRaceChanges sont désormais dans useProposalEditor
-  // mais on les garde ici temporairement pour compatibilité
+  // ✅ Phase 4: Import fonctions d'affichage uniquement
   const {
     formatValue,
     formatAgentsList,
     getEventTitle,
     getEditionYear
   } = useProposalLogic()
-  
-  // ⚠️ LEGACY: États locaux conservés pour compatibilité avec le code existant
-  // À migrer vers workingGroup.userModifiedChanges dans une phase future
-  const [selectedChanges, setSelectedChanges] = useState<Record<string, any>>({})
   
   // Navigation
   const isNewEvent = Boolean(groupKey?.startsWith('new-event-'))
@@ -206,73 +198,85 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     })
   }, [groupProposalsData?.data, groupKey])
   
-  // ⚠️ LEGACY: Fonctions de consolidation (seront remplacées par workingGroup)
-  const consolidateChanges = (proposals: any[], isNewEvent: boolean) => {
-    if (!workingGroup) return []
-    return workingGroup.consolidatedChanges
-  }
-  
-  const consolidateRaceChanges = (proposals: any[]) => {
-    if (!workingGroup) return []
-    return workingGroup.consolidatedRaces
-  }
-  
-  // Consolider les changements (DOIT être avant les handlers qui l'utilisent)
+  // ✅ Phase 4: Consolider les changements depuis workingGroup
   const consolidatedChanges = useMemo(() => {
-    const changes = consolidateChanges(groupProposals, isNewEvent)
-    const isEventUpdateDisplay = groupProposals.length > 0 && groupProposals[0]?.type === 'EVENT_UPDATE'
+    if (!workingGroup) return []
+    
+    const isEventUpdateDisplay = workingGroup.originalProposals[0]?.type === 'EVENT_UPDATE'
     
     // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
     return isEventUpdateDisplay
-      ? changes.filter(c => c.field !== 'calendarStatus' && c.field !== 'timeZone')
-      : changes
-  }, [groupProposals, isNewEvent, consolidateChanges])
+      ? workingGroup.consolidatedChanges.filter(c => 
+          c.field !== 'calendarStatus' && c.field !== 'timeZone'
+        )
+      : workingGroup.consolidatedChanges
+  }, [workingGroup])
   
-  const consolidatedRaceChanges = useMemo(() =>
-    consolidateRaceChanges(groupProposals),
-    [groupProposals, consolidateRaceChanges]
-  )
+  const consolidatedRaceChanges = useMemo(() => {
+    return workingGroup?.consolidatedRaces || []
+  }, [workingGroup])
   
-  // Cascade startDate changes to races
+  // ✅ Phase 4: Cascade startDate changes to races depuis workingGroup
   const consolidatedRaceChangesWithCascade = useMemo(() => {
-    const startDateChange = consolidatedChanges.find(c => c.field === 'startDate')
-    const editionStartDate = selectedChanges['startDate'] || startDateChange?.options[0]?.proposedValue
+    if (!workingGroup) return []
     
-    if (!editionStartDate) return consolidatedRaceChanges
+    // Récupérer startDate depuis workingGroup
+    const startDateChange = workingGroup.consolidatedChanges.find(c => c.field === 'startDate')
+    const editionStartDate = startDateChange?.selectedValue || startDateChange?.options[0]?.proposedValue
     
-    return consolidatedRaceChanges.map(raceChange => ({
+    if (!editionStartDate) return workingGroup.consolidatedRaces
+    
+    // Propager startDate aux courses
+    return workingGroup.consolidatedRaces.map(raceChange => ({
       ...raceChange,
       fields: Object.entries(raceChange.fields).reduce((acc, [fieldName, fieldData]) => {
-        if (fieldName === 'startDate') {
-          // ⚠️ Vérifier que fieldData.options[0] existe avant de l'utiliser
-          const firstOption = fieldData.options?.[0]
-          if (!firstOption) {
-            // Si pas d'option, retourner fieldData tel quel
-            return { ...acc, [fieldName]: fieldData }
+        if (fieldName === 'startDate' && fieldData !== undefined) {
+          // ✅ Gérer 3 formats possibles:
+          // 1. ConsolidatedChange: { options: [...], currentValue: ... }
+          if (fieldData && typeof fieldData === 'object' && 'options' in fieldData && Array.isArray(fieldData.options)) {
+            const firstOption = fieldData.options[0]
+            if (!firstOption) {
+              return { ...acc, [fieldName]: fieldData }
+            }
+            return {
+              ...acc,
+              [fieldName]: {
+                ...fieldData,
+                options: [{
+                  ...firstOption,
+                  proposedValue: editionStartDate
+                }]
+              }
+            }
           }
           
+          // 2. Format agent: { old: ..., new: ..., confidence: ... }
+          if (fieldData && typeof fieldData === 'object' && 'new' in fieldData) {
+            return {
+              ...acc,
+              [fieldName]: {
+                ...fieldData,
+                new: editionStartDate
+              }
+            }
+          }
+          
+          // 3. Valeur primitive - remplacer directement
           return {
             ...acc,
-            [fieldName]: {
-              ...fieldData,
-              options: [{
-                ...firstOption,
-                proposedValue: editionStartDate
-              }]
-            }
+            [fieldName]: editionStartDate
           }
         }
         return { ...acc, [fieldName]: fieldData }
       }, {})
     }))
-  }, [consolidatedRaceChanges, consolidatedChanges, selectedChanges])
+  }, [workingGroup])
   
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
     if (fieldName !== 'startDate' || !newValue) {
       // Pas startDate, appliquer directement
       updateFieldEditor(fieldName, newValue)
-      setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
       return
     }
     
@@ -293,42 +297,42 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     } else {
       // Pas de courses, appliquer directement
       updateFieldEditor(fieldName, newValue)
-      setSelectedChanges(prev => ({ ...prev, [fieldName]: newValue }))
     }
   }
   
-  // Handlers
-  const handleSelectField = (fieldName: string, selectedValue: any) => {
+  // ✅ Phase 4: Handlers simplifiés (plus de selectedChanges)
+  const handleSelectField = (fieldName: string, selectedValue: any, proposalId?: string) => {
     // Si c'est startDate, déléguer à handleEditionStartDateChange
     if (fieldName === 'startDate') {
       handleEditionStartDateChange(fieldName, selectedValue)
       return
     }
     
-    // Utiliser le hook pour mettre à jour
-    updateFieldEditor(fieldName, selectedValue)
-    
-    // Garder selectedChanges pour compatibilité
-    setSelectedChanges(prev => ({ ...prev, [fieldName]: selectedValue }))
+    // Si proposalId fourni, utiliser selectOption (sélectionner parmi options)
+    if (proposalId) {
+      selectOption(fieldName, proposalId)
+    } else {
+      // Sinon, mettre à jour directement (modification manuelle)
+      updateFieldEditor(fieldName, selectedValue)
+    }
   }
   
   const handleFieldModify = (fieldName: string, newValue: any, reason?: string) => {
     // Utiliser le hook pour mettre à jour
     updateFieldEditor(fieldName, newValue)
-    
-    // Garder selectedChanges pour compatibilité
-    setSelectedChanges(prev => ({
-      ...prev,
-      [fieldName]: newValue
-    }))
+    // Plus besoin de setSelectedChanges, workingGroup.userModifiedChanges est mis à jour
   }
   
   const handleRaceFieldModify = (raceId: string, fieldName: string, newValue: any) => {
     // Si c'est une modification de startDate d'une course, vérifier si elle sort de la plage d'édition
     if (fieldName === 'startDate' && newValue) {
       const newRaceDate = new Date(newValue)
-      const currentStartDate = selectedChanges.startDate || consolidatedChanges.find(c => c.field === 'startDate')?.options[0]?.proposedValue
-      const currentEndDate = selectedChanges.endDate || consolidatedChanges.find(c => c.field === 'endDate')?.options[0]?.proposedValue
+      
+      // ✅ Phase 4: Récupérer les dates depuis workingGroup
+      const startDateChange = workingGroup?.consolidatedChanges.find(c => c.field === 'startDate')
+      const endDateChange = workingGroup?.consolidatedChanges.find(c => c.field === 'endDate')
+      const currentStartDate = startDateChange?.selectedValue || startDateChange?.options[0]?.proposedValue
+      const currentEndDate = endDateChange?.selectedValue || endDateChange?.options[0]?.proposedValue
       
       // Récupérer le nom de la course depuis consolidatedRaceChanges
       const raceChange = consolidatedRaceChangesWithCascade.find(r => r.raceId === raceId)
@@ -369,11 +373,15 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   }
   
   const handleApproveField = async (fieldName: string) => {
-    const selectedValue = selectedChanges[fieldName]
-    if (selectedValue === undefined) return
-    
     const change = consolidatedChanges.find(c => c.field === fieldName)
     if (!change) return
+    
+    // ✅ Phase 4: Récupérer la valeur depuis consolidatedChanges.selectedValue
+    const selectedValue = change.selectedValue !== undefined 
+      ? change.selectedValue 
+      : change.options[0]?.proposedValue
+    
+    if (selectedValue === undefined) return
     
     try {
       for (const option of change.options) {
@@ -425,52 +433,46 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
   }
   
-  // Extraire la timezone de l'édition
+  // ✅ Phase 4: Extraire la timezone de l'édition depuis workingGroup
   const editionTimezone = useMemo(() => {
-    if (selectedChanges.timeZone) {
-      return selectedChanges.timeZone
+    if (!workingGroup) return 'Europe/Paris'
+    
+    // Chercher timeZone dans userModifiedChanges (priorité)
+    if (workingGroup.userModifiedChanges?.timeZone) {
+      return workingGroup.userModifiedChanges.timeZone
     }
     
-    if (groupProposals.length === 0) return 'Europe/Paris'
-    const firstProposal = groupProposals[0]
-    if (!firstProposal?.changes) return 'Europe/Paris'
-    const changes = firstProposal.changes as any
-    
-    if (changes.timeZone) {
-      if (typeof changes.timeZone === 'string') return changes.timeZone
-      if (typeof changes.timeZone === 'object' && 'proposed' in changes.timeZone) return changes.timeZone.proposed
-      if (typeof changes.timeZone === 'object' && 'new' in changes.timeZone) return changes.timeZone.new
-      if (typeof changes.timeZone === 'object' && 'current' in changes.timeZone) return changes.timeZone.current
+    // Sinon chercher dans consolidatedChanges
+    const timeZoneChange = workingGroup.consolidatedChanges.find(c => c.field === 'timeZone')
+    if (timeZoneChange?.selectedValue) {
+      return timeZoneChange.selectedValue
     }
-    return 'Europe/Paris'
-  }, [groupProposals, selectedChanges.timeZone])
+    if (timeZoneChange?.options[0]?.proposedValue) {
+      return timeZoneChange.options[0].proposedValue
+    }
+    
+    return 'Europe/Paris' // Fallback
+  }, [workingGroup])
   
-  // Déterminer si l'édition est annulée
+  // ✅ Phase 4: Déterminer si l'édition est annulée depuis workingGroup
   const isEditionCanceled = useMemo(() => {
-    const calendarStatus = workingGroup?.userModifiedChanges?.['calendarStatus'] || 
-                          selectedChanges['calendarStatus'] || 
-                          consolidatedChanges.find(c => c.field === 'calendarStatus')?.options[0]?.proposedValue
+    if (!workingGroup) return false
+    
+    // Chercher calendarStatus dans userModifiedChanges (priorité)
+    if (workingGroup.userModifiedChanges?.calendarStatus) {
+      return workingGroup.userModifiedChanges.calendarStatus === 'CANCELED'
+    }
+    
+    // Sinon chercher dans consolidatedChanges
+    const calendarStatusChange = workingGroup.consolidatedChanges.find(c => c.field === 'calendarStatus')
+    const calendarStatus = calendarStatusChange?.selectedValue || calendarStatusChange?.options[0]?.proposedValue
     return calendarStatus === 'CANCELED'
-  }, [selectedChanges, workingGroup, consolidatedChanges])
+  }, [workingGroup])
   
   // Ref pour éviter les boucles infinies
   const lastComputedDatesRef = useRef<{startDate?: string, endDate?: string}>({})
   
-
-  // Auto-sélection des meilleures valeurs au chargement
-  useEffect(() => {
-    const newSelections: Record<string, any> = {}
-    
-    consolidatedChanges.forEach(change => {
-      if (!selectedChanges[change.field] && change.options.length > 0) {
-        newSelections[change.field] = change.options[0].proposedValue
-      }
-    })
-    
-    if (Object.keys(newSelections).length > 0) {
-      setSelectedChanges(prev => ({ ...prev, ...newSelections }))
-    }
-  }, [consolidatedChanges, selectedChanges, setSelectedChanges])
+  // ✅ Phase 4: Plus besoin d'auto-sélection, géré par le hook useProposalEditor
 
   // Actions principales
   const handleApproveRace = async (raceData: any) => {
@@ -555,7 +557,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
 
   const handleApproveAll = async () => {
     try {
-      // Merger les modifications d'édition et de courses
+      // ✅ Phase 4: Merger les modifications d'édition et de courses depuis workingGroup
       const allUserModifications = {
         ...(workingGroup?.userModifiedChanges || {})
       }
@@ -568,7 +570,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       
       for (const change of consolidatedChanges) {
         const fieldName = change.field
-        const selectedValue = selectedChanges[fieldName]
+        // ✅ Récupérer la valeur depuis consolidatedChanges.selectedValue
+        const selectedValue = change.selectedValue !== undefined 
+          ? change.selectedValue 
+          : change.options[0]?.proposedValue
         
         if (selectedValue === undefined) continue
         
@@ -638,7 +643,29 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         console.error('No eventId found')
         return
       }
-      await killEventMutation.mutateAsync(eventId)
+      
+      // 1. Rejeter toutes les propositions du groupe et marquer killEvent = true
+      // L'événement sera tué lors de l'application d'une de ces propositions
+      await Promise.all(
+        groupProposals.map(proposal =>
+          updateProposalMutation.mutateAsync({
+            id: proposal.id,
+            status: 'REJECTED',
+            reviewedBy: 'Utilisateur',
+            modificationReason: 'Événement tué',
+            killEvent: true // ✅ Marquer pour kill lors de l'application
+          })
+        )
+      )
+      
+      // 2. Marquer localement comme tué IMMÉDIATEMENT pour désactiver les blocs
+      setIsKilledLocally(true)
+      
+      // 3. Rafraîchir le cache pour mettre à jour l'UI
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      await queryClient.invalidateQueries({ queryKey: ['proposal-groups'] })
+      await queryClient.refetchQueries({ queryKey: ['proposal-groups', groupKey] })
+      
       setKillDialogOpen(false)
     } catch (error) {
       console.error('Error killing event:', error)
@@ -652,13 +679,35 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         console.error('No eventId found')
         return
       }
-      await reviveEventMutation.mutateAsync(eventId)
+      
+      // 1. Remettre toutes les propositions rejetées au statut PENDING et retirer killEvent
+      await Promise.all(
+        groupProposals
+          .filter(p => p.status === 'REJECTED')
+          .map(proposal =>
+            updateProposalMutation.mutateAsync({
+              id: proposal.id,
+              status: 'PENDING',
+              reviewedBy: undefined,
+              modificationReason: 'Événement ressuscité',
+              killEvent: false // ✅ Retirer le marqueur de kill
+            })
+          )
+      )
+      
+      // 2. Retirer le marqueur local
+      setIsKilledLocally(false)
+      
+      // 3. Rafraîchir le cache pour mettre à jour l'UI
+      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      await queryClient.invalidateQueries({ queryKey: ['proposal-groups'] })
+      await queryClient.refetchQueries({ queryKey: ['proposal-groups', groupKey] })
     } catch (error) {
       console.error('Error reviving event:', error)
     }
   }
   
-  // Confirmer la propagation de startDate aux courses
+  // ✅ Phase 4: Confirmer la propagation de startDate aux courses
   const confirmDatePropagation = async () => {
     if (!datePropagationModal) return
     
@@ -666,7 +715,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     // Appliquer la nouvelle startDate à l'édition via le hook
     updateFieldEditor('startDate', newStartDate)
-    setSelectedChanges(prev => ({ ...prev, startDate: newStartDate }))
     
     // Propager à toutes les courses (utiliser la structure raceEdits compatible avec RacesChangesTable)
     const firstProposal = groupProposals[0]
@@ -719,7 +767,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     setDatePropagationModal(null)
   }
   
-  // Confirmer la mise à jour de Edition.startDate/endDate depuis une course
+  // ✅ Phase 4: Confirmer la mise à jour de Edition.startDate/endDate depuis une course
   const confirmEditionDateUpdate = () => {
     if (!editionDateUpdateModal) return
     
@@ -727,7 +775,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     // Mettre à jour la date de l'édition via le hook
     updateFieldEditor(dateType, newRaceDate)
-    setSelectedChanges(prev => ({ ...prev, [dateType]: newRaceDate }))
     
     // Appliquer aussi la modification de la course via le hook
     updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
@@ -739,7 +786,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const firstProposal = groupProposals[0]
   const eventId = firstProposal?.eventId
   const eventStatus = firstProposal?.eventStatus
-  const isEventDead = eventStatus === 'DEAD'
+  // ✅ Événement mort si Event.status = DEAD OU si au moins une proposition est marquée killEvent OU si tué localement
+  const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
+  const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
 
   const proposalsWithValidConfidence = groupProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
   const averageConfidence = proposalsWithValidConfidence.length > 0
@@ -828,26 +877,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   }, [groupProposals, consolidatedChanges, consolidatedRaceChangesWithCascade, isNewEvent, workingGroup])
   
   // Hook de validation par blocs (APRÈS blockProposals pour éviter la dépendance circulaire)
-  // ✅ Phase 2 Étape 3 : Utiliser workingGroup si disponible
-  
-  // Extraire les valeurs proposées depuis consolidatedChanges pour le payload
-  const proposedValues = useMemo(() => {
-    if (!workingGroup) return selectedChanges
-    
-    const values: Record<string, any> = {}
-    workingGroup.consolidatedChanges.forEach(change => {
-      // Prendre la selectedValue si elle existe, sinon la première option
-      const value = change.selectedValue !== undefined 
-        ? change.selectedValue 
-        : change.options[0]?.proposedValue
-      
-      if (value !== undefined) {
-        values[change.field] = value
-      }
-    })
-    return values
-  }, [workingGroup, selectedChanges])
-  
+  // ✅ Phase 4: Hook de validation par blocs utilise directement workingGroup
   const {
     blockStatus,
     validateBlock: validateBlockBase,
@@ -860,8 +890,20 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   } = useBlockValidation({
     proposals: workingGroup?.originalProposals || groupProposals,
     blockProposals,
-    // Passer les valeurs proposées + modifiées pour construire le payload complet
-    selectedChanges: proposedValues, // ✅ Valeurs proposées ou sélectionnées
+    // ✅ Phase 4: Construire selectedChanges depuis workingGroup.consolidatedChanges
+    selectedChanges: (() => {
+      if (!workingGroup) return {}
+      const values: Record<string, any> = {}
+      workingGroup.consolidatedChanges.forEach(change => {
+        const value = change.selectedValue !== undefined 
+          ? change.selectedValue 
+          : change.options[0]?.proposedValue
+        if (value !== undefined) {
+          values[change.field] = value
+        }
+      })
+      return values
+    })(),
     userModifiedChanges: workingGroup?.userModifiedChanges || {},
     userModifiedRaceChanges: workingGroup?.userModifiedRaceChanges || {}
   })
@@ -879,15 +921,15 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
 
   // Context pour le render
-  // ✅ Phase 2 Step 6 : Utiliser workingGroup exclusivement
+  // ✅ Phase 4 : Single Source of Truth totale avec workingGroup
   const context: GroupedProposalContext = {
-    // Données consolidées depuis le hook (ou fallback)
+    // Données consolidées depuis le hook
     groupProposals: workingGroup?.originalProposals || groupProposals,
-    consolidatedChanges: workingGroup?.consolidatedChanges || consolidatedChanges,
-    consolidatedRaceChanges: workingGroup?.consolidatedRaces || consolidatedRaceChangesWithCascade,
+    consolidatedChanges: consolidatedChanges, // Déjà depuis workingGroup après nettoyage
+    consolidatedRaceChanges: consolidatedRaceChangesWithCascade, // Déjà depuis workingGroup après nettoyage
     
     // États de modifications utilisateur depuis le hook
-    selectedChanges: workingGroup ? {} : selectedChanges, // ✅ Plus besoin en mode hook, les valeurs sont dans consolidatedChanges[i].selectedValue
+    selectedChanges: {}, // ✅ Obsolète, garder pour compatibilité interface mais vide
     userModifiedChanges: workingGroup?.userModifiedChanges || {},
     userModifiedRaceChanges: workingGroup?.userModifiedRaceChanges || {},
     
@@ -902,6 +944,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     handleApproveAllRaces,
     handleRejectAllRaces,
     handleRaceFieldModify, // ✅ Déjà adapté à l'Étape 2 pour utiliser updateRaceEditor
+    handleDeleteRace: deleteRaceEditor, // ✅ Suppression de course via le hook
     handleKillEvent,
     handleReviveEvent,
     
@@ -924,7 +967,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     killDialogOpen,
     setKillDialogOpen,
     isEditionCanceled,
-    isReadOnly: false, // ✅ PHASE 3: Édition activée dans la vue groupée
     
     // Validation par blocs
     validateBlock,
@@ -966,6 +1008,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           isValidateAllBlocksPending={isBlockPending}
           showKillEventButton={allPending && !isEventDead && !isNewEvent && Boolean(eventId)}
           onKillEvent={() => setKillDialogOpen(true)}
+          showReviveEventButton={isEventDead && !isNewEvent && Boolean(eventId)}
+          onReviveEvent={handleReviveEvent}
           showArchiveButton={allPending}
           onArchive={handleArchive}
           disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
@@ -1015,9 +1059,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             Êtes-vous sûr de vouloir tuer cet événement ? Cette action :
           </Typography>
           <Typography component="ul" sx={{ mt: 2, pl: 2 }}>
-            <li>Marque l'événement comme DEAD dans la base de données</li>
-            <li>Rend tous les tableaux non éditables</li>
-            <li>Empêche toute approbation de proposition</li>
+            <li>Rejette automatiquement toutes les propositions de ce groupe</li>
+            <li>Marque ces propositions pour tuer l'événement lors de leur application</li>
+            <li>Désactive tous les blocs (non éditables)</li>
+            <li>L'événement sera marqué DEAD dans Miles Republic lors de l'application</li>
             <li>Peut être annulée avec le bouton "Ressusciter l'événement"</li>
           </Typography>
         </DialogContent>
@@ -1027,9 +1072,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             onClick={handleKillEvent}
             color="error"
             variant="contained"
-            disabled={killEventMutation.isPending}
+            disabled={updateProposalMutation.isPending}
           >
-            Tuer l'événement
+            {updateProposalMutation.isPending ? 'En cours...' : 'Tuer l\'événement'}
           </Button>
         </DialogActions>
       </Dialog>
@@ -1039,9 +1084,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         <ConfirmDatePropagationModal
           open={datePropagationModal.open}
           onClose={() => {
-            // Annuler = appliquer juste à l'édition sans propager via le hook
+            // ✅ Phase 4: Annuler = appliquer juste à l'édition sans propager via le hook
             updateFieldEditor('startDate', datePropagationModal.newStartDate)
-            setSelectedChanges(prev => ({ ...prev, startDate: datePropagationModal.newStartDate }))
             setDatePropagationModal(null)
           }}
           onConfirm={confirmDatePropagation}

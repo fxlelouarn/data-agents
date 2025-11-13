@@ -429,18 +429,69 @@ export function useProposalEditor(
   }
 
   /**
+   * Extraire les données originales des courses depuis currentData (FFA Scraper v2)
+   */
+  const extractRacesOriginalData = (proposal: Proposal): Record<string, RaceData> => {
+    const races: Record<string, RaceData> = {}
+    
+    // ✅ NOUVEAU: Chercher racesToUpdate.new[].currentData
+    const changes = proposal.changes
+    if (changes.racesToUpdate && typeof changes.racesToUpdate === 'object') {
+      const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
+      if (Array.isArray(racesToUpdateObj)) {
+        racesToUpdateObj.forEach((raceUpdate: any) => {
+          const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `update-${Math.random()}`
+          
+          // ✅ Utiliser currentData si disponible (FFA Scraper enrichi + Google Agent)
+          if (raceUpdate.currentData && typeof raceUpdate.currentData === 'object') {
+            races[raceId] = {
+              id: raceId,
+              name: raceUpdate.currentData.name || raceUpdate.raceName || 'Course',
+              startDate: raceUpdate.currentData.startDate,
+              runDistance: raceUpdate.currentData.runDistance,
+              bikeDistance: raceUpdate.currentData.bikeDistance,       // ✅ AJOUT
+              walkDistance: raceUpdate.currentData.walkDistance,       // ✅ AJOUT
+              swimDistance: raceUpdate.currentData.swimDistance,       // ✅ AJOUT
+              runPositiveElevation: raceUpdate.currentData.runPositiveElevation,
+              categoryLevel1: raceUpdate.currentData.categoryLevel1,
+              categoryLevel2: raceUpdate.currentData.categoryLevel2,
+              timeZone: raceUpdate.currentData.timeZone
+            }
+          } else {
+            // Fallback: extraire les valeurs "old" depuis updates
+            const oldData: any = { id: raceId, name: raceUpdate.raceName || 'Course' }
+            if (raceUpdate.updates && typeof raceUpdate.updates === 'object') {
+              Object.entries(raceUpdate.updates).forEach(([field, value]: [string, any]) => {
+                oldData[field] = extractOldValue(value)
+              })
+            }
+            races[raceId] = oldData
+          }
+        })
+      }
+    }
+    
+    // Fallback: utiliser extractRaces avec extractOld=true pour les autres structures
+    if (Object.keys(races).length === 0) {
+      return extractRaces(proposal.changes, proposal, true)
+    }
+    
+    return races
+  }
+  
+  /**
    * Consolider les courses de plusieurs propositions
    */
   const consolidateRacesFromProposals = (proposals: Proposal[]): ConsolidatedRaceChange[] => {
     const raceMap = new Map<string, ConsolidatedRaceChange>()
 
     proposals.forEach(p => {
-      // ✅ Extraire les valeurs ORIGINALES (sans userModifiedChanges)
-      const originalRaces = extractRaces(p.changes, p)
+      // ✅ Extraire les valeurs ORIGINALES depuis currentData ou old values
+      const originalRaces = extractRacesOriginalData(p) // ✅ NOUVEAU
       
       // Extraire les valeurs PROPOSÉES (avec userModifiedChanges)
       const merged = mergeChanges(p.changes, p.userModifiedChanges || {})
-      const races = extractRaces(merged, p)
+      const races = extractRaces(merged, p, false) // false = extractNew
       
       Object.entries(races).forEach(([raceId, raceData]) => {
         if (!raceMap.has(raceId)) {
@@ -448,13 +499,13 @@ export function useProposalEditor(
             raceId,
             raceName: (raceData as any).name || 'Course',
             proposalIds: [],
-            originalFields: originalRaces[raceId] || {}, // ✅ Valeurs originales
+            originalFields: originalRaces[raceId] || {}, // ✅ Depuis currentData
             fields: {}
           })
         }
         const entry = raceMap.get(raceId)!
         entry.proposalIds.push(p.id)
-        // Fusion simple des champs proposés
+        // Fusion simple des champs proposés (UNIQUEMENT ceux dans updates)
         entry.fields = { ...entry.fields, ...raceData }
       })
     })
@@ -486,12 +537,32 @@ export function useProposalEditor(
   }
   
   /**
+   * Extraire la valeur "old" d'un changement (pour originalFields)
+   * Gère les formats: { old: value }, { current: value }, ou valeur directe
+   */
+  const extractOldValue = (value: any): any => {
+    if (value === null || value === undefined) return value
+    
+    if (typeof value === 'object') {
+      // Format agent: { old: ..., new: ..., confidence: ... }
+      if ('old' in value) return value.old
+      
+      // Format alternatif: { current: ... }
+      if ('current' in value) return value.current
+    }
+    
+    return value
+  }
+  
+  /**
    * Extraire et normaliser les courses
    * Convertit les structures race_0, race_1... en { raceId: RaceData }
+   * @param extractOld - Si true, extrait les valeurs "old" des updates au lieu de "new"
    */
   const extractRaces = (
     changes: Record<string, any>,
-    proposal: Proposal
+    proposal: Proposal,
+    extractOld: boolean = false
   ): Record<string, RaceData> => {
     const races: Record<string, RaceData> = {}
     
@@ -545,18 +616,21 @@ export function useProposalEditor(
       if (Array.isArray(racesToUpdateObj)) {
         racesToUpdateObj.forEach((raceUpdate: any) => {
           const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `update-${Math.random()}`
-          // Construire la course avec les updates appliqués
+          // ✅ NOUVEAU: Ne mettre dans raceData QUE les champs qui ont des updates
+          // Les autres champs (currentData) seront dans originalFields
           const raceData: any = { 
             id: raceId,
             name: raceUpdate.raceName || 'Course'
           }
-          // Appliquer les updates (extraire les valeurs 'new')
+          
+          // ✅ Appliquer UNIQUEMENT les updates (champs qui changent)
           if (raceUpdate.updates && typeof raceUpdate.updates === 'object') {
             Object.entries(raceUpdate.updates).forEach(([field, value]: [string, any]) => {
-              raceData[field] = extractNewValue(value)
+              raceData[field] = extractOld ? extractOldValue(value) : extractNewValue(value)
             })
           }
-          races[raceId] = normalizeRace(raceData, raceId)
+          
+          races[raceId] = normalizeRace(raceData, raceId, extractOld)
         })
       }
     }
@@ -566,7 +640,8 @@ export function useProposalEditor(
       if (key.startsWith('race_')) {
         const index = key.replace('race_', '')
         const raceId = `legacy-${index}`
-        races[raceId] = normalizeRace(extractNewValue(value), raceId)
+        // normalizeRace va extraire la valeur new/old, donc on passe la valeur brute
+        races[raceId] = normalizeRace(value, raceId, extractOld)
       }
     })
     
@@ -588,17 +663,18 @@ export function useProposalEditor(
   
   /**
    * Normaliser une course en RaceData
+   * @param extractOld - Si true, extrait les valeurs "old" au lieu de "new"
    */
-  const normalizeRace = (race: any, raceId: string): RaceData => {
+  const normalizeRace = (race: any, raceId: string, extractOld: boolean = false): RaceData => {
     if (!race || typeof race !== 'object') {
       return { id: raceId, name: 'Course sans nom' }
     }
     
-    // ✅ Extraire TOUTES les valeurs new/proposed pour éviter les objets ConsolidatedChange
+    // ✅ Extraire TOUTES les valeurs new/old selon le paramètre
     const normalized: any = { id: raceId }
     
     Object.entries(race).forEach(([key, value]) => {
-      normalized[key] = extractNewValue(value)
+      normalized[key] = extractOld ? extractOldValue(value) : extractNewValue(value)
     })
     
     // S'assurer qu'il y a un nom
@@ -610,9 +686,11 @@ export function useProposalEditor(
       id: raceId,
       name: normalized.name || normalized.raceName || 'Course sans nom',
       distance: normalized.distance || normalized.runDistance,
+      runDistance: normalized.runDistance || normalized.distance, // ✅ Préserver runDistance
       startDate: normalized.startDate,
       price: normalized.price,
-      elevation: normalized.elevation,
+      elevation: normalized.elevation || normalized.runPositiveElevation,
+      runPositiveElevation: normalized.runPositiveElevation || normalized.elevation, // ✅ Préserver runPositiveElevation
       ...normalized
     }
   }
@@ -762,16 +840,42 @@ export function useProposalEditor(
   }, [autosave, scheduleAutosave])
   
   /**
-   * Supprimer une course
+   * Supprimer une course (soft delete avec toggle)
+   * Marque la course comme _deleted ou annule le marquage
    */
   const deleteRace = useCallback((raceId: string) => {
     if (isGroupMode) {
       setWorkingGroup(prev => {
         if (!prev) return prev
         const next = { ...prev }
-        const changes = { ...next.userModifiedRaceChanges }
-        delete changes[raceId]
-        next.userModifiedRaceChanges = changes
+        
+        // Toggle du marqueur _deleted
+        const current = next.userModifiedRaceChanges[raceId] || {}
+        const isCurrentlyDeleted = current._deleted === true
+        
+        if (isCurrentlyDeleted) {
+          // Annuler la suppression : retirer le marqueur
+          const { _deleted, ...rest } = current
+          if (Object.keys(rest).length === 0) {
+            // Plus aucune modification, supprimer l'entrée complète
+            const changes = { ...next.userModifiedRaceChanges }
+            delete changes[raceId]
+            next.userModifiedRaceChanges = changes
+          } else {
+            // Garder les autres modifications
+            next.userModifiedRaceChanges = {
+              ...next.userModifiedRaceChanges,
+              [raceId]: rest
+            }
+          }
+        } else {
+          // Marquer comme supprimée
+          next.userModifiedRaceChanges = {
+            ...next.userModifiedRaceChanges,
+            [raceId]: { ...current, _deleted: true }
+          }
+        }
+        
         next.isDirty = true
         return next
       })
@@ -779,14 +883,41 @@ export function useProposalEditor(
       setWorkingProposal(prev => {
         if (!prev) return prev
         
-        // ✅ Aligné sur mode groupé : supprimer de userModifiedRaceChanges
-        const changes = { ...prev.userModifiedRaceChanges }
-        delete changes[raceId]
+        // Toggle du marqueur _deleted
+        const current = prev.userModifiedRaceChanges[raceId] || {}
+        const isCurrentlyDeleted = current._deleted === true
         
-        return {
-          ...prev,
-          userModifiedRaceChanges: changes,
-          isDirty: true
+        if (isCurrentlyDeleted) {
+          // Annuler la suppression
+          const { _deleted, ...rest } = current
+          if (Object.keys(rest).length === 0) {
+            const changes = { ...prev.userModifiedRaceChanges }
+            delete changes[raceId]
+            return {
+              ...prev,
+              userModifiedRaceChanges: changes,
+              isDirty: true
+            }
+          } else {
+            return {
+              ...prev,
+              userModifiedRaceChanges: {
+                ...prev.userModifiedRaceChanges,
+                [raceId]: rest
+              },
+              isDirty: true
+            }
+          }
+        } else {
+          // Marquer comme supprimée
+          return {
+            ...prev,
+            userModifiedRaceChanges: {
+              ...prev.userModifiedRaceChanges,
+              [raceId]: { ...current, _deleted: true }
+            },
+            isDirty: true
+          }
         }
       })
     }
@@ -847,9 +978,32 @@ export function useProposalEditor(
     // 1. Modifications utilisateur uniquement (champs édités manuellement)
     Object.assign(diff, working.userModifiedChanges)
 
-    // 2. Modifs de courses
+    // 2. Construire raceEdits et racesToDelete depuis userModifiedRaceChanges
     if (working.userModifiedRaceChanges && Object.keys(working.userModifiedRaceChanges).length > 0) {
-      diff.raceEdits = working.userModifiedRaceChanges
+      const raceEdits: Record<string, any> = {}
+      const racesToDelete: number[] = []
+      
+      Object.entries(working.userModifiedRaceChanges).forEach(([raceId, changes]) => {
+        if (changes._deleted) {
+          // Course marquée pour suppression
+          const numericId = parseInt(raceId)
+          if (!isNaN(numericId)) {
+            // ID numérique = course existante à supprimer
+            racesToDelete.push(numericId)
+          }
+          // Si c'est new-X, on l'ignore simplement (pas créée)
+        } else {
+          // Course avec modifications (pas supprimée)
+          raceEdits[raceId] = changes
+        }
+      })
+      
+      if (Object.keys(raceEdits).length > 0) {
+        diff.raceEdits = raceEdits
+      }
+      if (racesToDelete.length > 0) {
+        diff.racesToDelete = racesToDelete
+      }
     }
 
     return diff
@@ -865,9 +1019,32 @@ export function useProposalEditor(
     // 1. Modifications utilisateur uniquement (champs édités manuellement)
     Object.assign(diff, working.userModifiedChanges)
     
-    // 2. Modifs de courses
+    // 2. Construire raceEdits et racesToDelete depuis userModifiedRaceChanges
     if (working.userModifiedRaceChanges && Object.keys(working.userModifiedRaceChanges).length > 0) {
-      diff.raceEdits = working.userModifiedRaceChanges
+      const raceEdits: Record<string, any> = {}
+      const racesToDelete: number[] = []
+      
+      Object.entries(working.userModifiedRaceChanges).forEach(([raceId, changes]) => {
+        if (changes._deleted) {
+          // Course marquée pour suppression
+          const numericId = parseInt(raceId)
+          if (!isNaN(numericId)) {
+            // ID numérique = course existante à supprimer
+            racesToDelete.push(numericId)
+          }
+          // Si c'est new-X, on l'ignore simplement (pas créée)
+        } else {
+          // Course avec modifications (pas supprimée)
+          raceEdits[raceId] = changes
+        }
+      })
+      
+      if (Object.keys(raceEdits).length > 0) {
+        diff.raceEdits = raceEdits
+      }
+      if (racesToDelete.length > 0) {
+        diff.racesToDelete = racesToDelete
+      }
     }
     
     return diff
