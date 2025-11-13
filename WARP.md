@@ -519,14 +519,16 @@ const {
 #### Règles lors de modifications
 
 ⚠️ **Si vous modifiez `GroupedProposalDetailBase`** :
-- Utiliser `workingGroup` (depuis le hook) au lieu des anciens états
-- Utiliser `updateField()`, `updateRace()` au lieu de `setState` manuels
-- Ne PAS appeler `save()` manuellement après chaque modification (autosave actif)
+- ✅ **Single Source of Truth** : `workingGroup` est l'unique source de vérité
+- ✅ Utiliser `updateField()`, `updateRace()` au lieu de `setState` manuels
+- ✅ Ne PAS appeler `save()` manuellement après chaque modification (autosave actif)
+- ✅ Lire les valeurs depuis `workingGroup.consolidatedChanges[i].selectedValue`
+- ✅ Plus aucun état local redondant (`selectedChanges` supprimé)
 
 ⚠️ **Si vous modifiez `ProposalDetailBase`** :
-- Système legacy toujours en place (à migrer)
-- Attention à la duplication d'état `selectedChanges` + `userModifiedChanges`
-- Voir le plan de migration pour contribuer à la PHASE 2
+- ✅ **Vue lecture seule uniquement** (édition désactivée)
+- ✅ Pour éditer, rediriger vers `GroupedProposalDetailBase`
+- ✅ Utiliser le bouton "✏️ Éditer cette proposition"
 
 ## Agents
 
@@ -674,7 +676,91 @@ const formatDateTime = (dateString: string): string => {
 
 ## Changelog
 
-### 2025-11-12 - Phase 3 : ProposalDetailBase en lecture seule ✅
+### 2025-11-12 (partie 3) - Suppression des composants RACE_UPDATE ✅
+
+**Résumé** : Nettoyage du code mort - suppression des composants `RaceUpdateDetail` et `RaceUpdateGroupedDetail` qui n'ont jamais été utilisés.
+
+#### Analyse
+
+**Type `RACE_UPDATE` non utilisé** :
+- ❌ Aucun agent ne crée de propositions `RACE_UPDATE`
+- ❌ Aucune proposition `RACE_UPDATE` en base de données
+- ✅ Type défini dans l'enum Prisma mais jamais instancié
+
+**Conclusion** : Dead code pouvant être supprimé sans impact.
+
+#### Modifications
+
+**Fichiers supprimés** :
+- ❌ `apps/dashboard/src/pages/proposals/detail/race-update/RaceUpdateDetail.tsx`
+- ❌ `apps/dashboard/src/pages/proposals/detail/race-update/RaceUpdateGroupedDetail.tsx`
+
+**Dispatchers nettoyés** :
+- `ProposalDetailDispatcher.tsx` : Import supprimé, message d'erreur si type rencontré
+- `GroupedProposalDetailDispatcher.tsx` : Import supprimé, message d'erreur si type rencontré
+
+#### Résultats
+
+- ✅ **-2 fichiers** React inutilisés
+- ✅ **-2 imports** dans les dispatchers
+- ✅ TypeScript compile sans erreurs
+- ✅ Moins de confusion pour les développeurs
+
+#### Ressources
+- `docs/proposal-state-refactor/CLEANUP-RACE-UPDATE-COMPONENTS.md` - Documentation complète
+
+---
+
+### 2025-11-12 (partie 2) - Phase 4 : Nettoyage complet de GroupedProposalDetailBase ✅
+
+**Résumé** : Suppression de tout le code legacy de consolidation manuelle. **Single Source of Truth totale** atteinte avec `workingGroup`.
+
+#### Métriques
+
+| Métrique | Avant | Après | Gain |
+|----------|-------|-------|------|
+| **Lignes de code** | 1082 | **1057** | **-25 lignes** (-2.3%) |
+| **États locaux** | 1 (`selectedChanges`) | **0** | **-100%** |
+| **Fonctions consolidation** | 2 | **0** | **-100%** |
+| **useEffect inutiles** | 1 | **0** | **-100%** |
+| **Mémos redondants** | 2 | **0** | **-100%** |
+
+#### Suppressions
+
+1. **État local `selectedChanges`** : Remplacé par lecture directe depuis `workingGroup.consolidatedChanges[i].selectedValue`
+2. **Fonctions `consolidateChanges()` / `consolidateRaceChanges()`** : Redondantes avec le hook
+3. **`useEffect` auto-sélection** : Géré automatiquement par `useProposalEditor`
+4. **Mémo `proposedValues`** : Construit inline dans `useBlockValidation`
+5. **Propriété `isReadOnly`** : N'existe pas dans l'interface
+
+#### Simplifications
+
+- ✅ Mémos `consolidatedChanges` / `consolidatedRaceChanges` lisent directement `workingGroup`
+- ✅ `handleSelectField` supporte `selectOption()` (Phase 1.5)
+- ✅ `handleFieldModify` / `handleRaceFieldModify` utilisent uniquement le hook
+- ✅ `editionTimezone` / `isEditionCanceled` extraits depuis `workingGroup`
+- ✅ `handleApproveField` / `handleApproveAll` lisent `consolidatedChanges[i].selectedValue`
+- ✅ Construction inline de `selectedChanges` pour `useBlockValidation`
+
+#### Résultats
+
+**Avant Phase 4** :
+- ❌ Duplication de responsabilités (hook + composant)
+- ❌ `selectedChanges` synchronisé manuellement
+- ❌ Risque de désynchronisation
+
+**Après Phase 4** :
+- ✅ **Single Source of Truth totale** : `workingGroup`
+- ✅ Aucune logique de consolidation manuelle
+- ✅ Code simplifié et maintenable
+
+#### Ressources
+- `docs/proposal-state-refactor/PHASE4-COMPLETE-2025-11-12.md` - Documentation complète
+- `docs/proposal-state-refactor/PHASE4-CLEANUP-GROUPED-VIEW.md` - Plan détaillé
+
+---
+
+### 2025-11-12 (partie 1) - Phase 3 : ProposalDetailBase en lecture seule ✅
 
 **Résumé** : `ProposalDetailBase` a été converti en **vue lecture seule**. Toute édition doit maintenant passer par `GroupedProposalDetailBase` (même pour une seule proposition).
 
