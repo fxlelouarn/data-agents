@@ -5,7 +5,6 @@ import { useProposalGroup } from '@/hooks/useApi'
 import EditionUpdateGroupedDetail from './detail/edition-update/EditionUpdateGroupedDetail'
 import EventUpdateGroupedDetail from './detail/event-update/EventUpdateGroupedDetail'
 import NewEventGroupedDetail from './detail/new-event/NewEventGroupedDetail'
-import RaceUpdateGroupedDetail from './detail/race-update/RaceUpdateGroupedDetail'
 
 const GroupedProposalDetailDispatcher: React.FC = () => {
   const { groupKey } = useParams<{ groupKey: string }>()
@@ -38,7 +37,15 @@ const GroupedProposalDetailDispatcher: React.FC = () => {
       return <NewEventGroupedDetail groupKey={groupKey!} />
     
     case 'RACE_UPDATE':
-      return <RaceUpdateGroupedDetail groupKey={groupKey!} />
+      return (
+        <Card>
+          <CardContent>
+            <Alert severity="error">
+              Type RACE_UPDATE non supporté. Ce type n'est plus utilisé.
+            </Alert>
+          </CardContent>
+        </Card>
+      )
     
     default:
       return (

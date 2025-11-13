@@ -5,7 +5,6 @@ import { useProposal } from '@/hooks/useApi'
 import EditionUpdateDetail from './detail/edition-update/EditionUpdateDetail'
 import EventUpdateDetail from './detail/event-update/EventUpdateDetail'
 import NewEventDetail from './detail/new-event/NewEventDetail'
-import RaceUpdateDetail from './detail/race-update/RaceUpdateDetail'
 
 const ProposalDetailDispatcher: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -38,7 +37,15 @@ const ProposalDetailDispatcher: React.FC = () => {
       return <NewEventDetail proposalId={id!} />
     
     case 'RACE_UPDATE':
-      return <RaceUpdateDetail proposalId={id!} />
+      return (
+        <Card>
+          <CardContent>
+            <Alert severity="error">
+              Type RACE_UPDATE non supporté. Ce type n'est plus utilisé.
+            </Alert>
+          </CardContent>
+        </Card>
+      )
     
     default:
       return (
