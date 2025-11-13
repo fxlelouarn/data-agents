@@ -16,6 +16,10 @@
     "test": {
       "dependsOn": ["build"]
     },
+    "tsc": {
+      "dependsOn": ["^tsc"],
+      "cache": false
+    },
     "clean": {
       "cache": false
     }

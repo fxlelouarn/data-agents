@@ -6,6 +6,7 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx watch src/index.ts",
+    "tsc": "tsc --noEmit",
     "prisma:generate": "prisma generate --schema=prisma/miles-republic.prisma",
     "prisma:update-schema": "cp /Users/fx/dev/milesrepublic/packages/db/prisma/schema.prisma prisma/miles-republic.prisma && npm run prisma:generate"
   },
