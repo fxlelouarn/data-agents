@@ -618,6 +618,26 @@ export class GoogleSearchDateAgent extends BaseAgent {
   }
 
   /**
+   * Compare deux dates dans une timezone donnée (ignore l'heure)
+   */
+  private isSameDateInTimezone(date1: Date | null, date2: Date, timezone: string): boolean {
+    if (!date1) return false
+    
+    // Formatter les deux dates dans la timezone donnée (format ISO YYYY-MM-DD)
+    const formatter = new Intl.DateTimeFormat('en-CA', { 
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    
+    const date1Str = formatter.format(date1) // "2025-02-01"
+    const date2Str = formatter.format(date2) // "2025-02-01"
+    
+    return date1Str === date2Str
+  }
+
+  /**
    * Vérifie si une date correspond à un jour férié français connu
    */
   private isPublicHoliday(date: Date): boolean {
@@ -871,13 +891,19 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // Vérifier si la date proposée est différente de la date actuelle de l'édition
       const currentStartDate = event.edition.startDate
       const proposedDate = primaryDate.date
+      const editionTimezone = event.edition.timeZone || 'Europe/Paris'
       
       // Ne créer une proposition que si la date est réellement différente
-      const isSameDate = currentStartDate && 
-        currentStartDate.toDateString() === proposedDate.toDateString()
+      // Comparer dans la timezone de l'édition pour gérer correctement les DOM-TOM
+      const isSameDate = this.isSameDateInTimezone(
+        currentStartDate,
+        proposedDate,
+        editionTimezone
+      )
       
       if (isSameDate) {
         // Date identique à l'existant, pas de proposition à créer
+        this.logger.debug(`⏭️  Date identique ignorée (${editionTimezone}): ${proposedDate.toLocaleDateString('fr-FR')} (événement: ${event.name})`)
         continue
       }
       
@@ -908,9 +934,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
         
         for (const race of event.edition.races) {
           // Vérifier si la race a déjà cette date pour éviter les doublons
+          // Utiliser la timezone de la course si disponible, sinon celle de l'édition
           const currentRaceStartDate = race.startDate
-          const isRaceDateSame = currentRaceStartDate && 
-            currentRaceStartDate.toDateString() === proposedDate.toDateString()
+          const raceTimezone = race.timeZone || editionTimezone
+          const isRaceDateSame = this.isSameDateInTimezone(
+            currentRaceStartDate,
+            proposedDate,
+            raceTimezone
+          )
           
           if (!isRaceDateSame) {
             // ✅ Structure compatible avec applyEditionUpdate : racesToUpdate.updates.field
