@@ -519,10 +519,10 @@ export class FFAScraperAgent extends BaseAgent {
                   new: raceStartDate
                 }
               } else {
-                // CAS 1b: DB avec heure -> Comparer si diff > 30 min
+                // CAS 1b: DB avec heure -> Proposer si différence
                 const timeDiff = Math.abs(raceStartDate.getTime() - matchingRace.startDate.getTime())
                 
-                if (timeDiff > 1800000) { // 30 min en ms
+                if (timeDiff > 0) {
                   this.logger.info(`⏰ Différence horaire détectée: ${matchingRace.name}`, {
                     dbDate: matchingRace.startDate.toISOString(),
                     ffaDate: raceStartDate.toISOString(),

@@ -19,7 +19,7 @@ L'agent FFA Scraper ne gérait pas correctement tous les cas de comparaison de d
 | # | FFA | DB | Action |
 |---|-----|-----|--------|
 | **1a** | Date **avec** heure | Date à **minuit local** | ✅ **Proposition** (ajouter heure précise) |
-| **1b** | Date **avec** heure | Date **avec heure** | ✅ Proposition si diff > 30 min |
+| **1b** | Date **avec** heure | Date **avec heure** | ✅ Proposition si différence |
 | **1c** | Date **avec** heure | **null** | ✅ **Proposition** (ajouter date+heure) |
 | **2a** | Date **sans** heure | Date à **minuit local** + **même date** | ❌ **Pas de proposition** |
 | **2b** | Date **sans** heure | Date à **minuit local** + **date différente** | ✅ **Proposition** (changer date) |
@@ -83,9 +83,9 @@ if (ffaRace.startTime) {
       // CAS 1a : DB à minuit -> Toujours proposer
       raceUpdates.startDate = { old: ..., new: ... }
     } else {
-      // CAS 1b : DB avec heure -> Comparer si diff > 30 min
+      // CAS 1b : DB avec heure -> Proposer si différence
       const timeDiff = Math.abs(...)
-      if (timeDiff > 1800000) {
+      if (timeDiff > 0) {
         raceUpdates.startDate = { old: ..., new: ... }
       }
     }
@@ -205,7 +205,7 @@ else {
 
 1. ✅ Compétition métropole avec heures FFA + DB à minuit → Proposition
 2. ✅ Compétition Guadeloupe sans heures FFA + DB à minuit + date identique → Pas de proposition
-3. ✅ Compétition avec heures FFA + DB avec heures différentes → Proposition si diff > 30 min
+3. ✅ Compétition avec heures FFA + DB avec heures différentes → Proposition (toute différence)
 4. ✅ Compétition sans heures FFA + DB avec heures précises → Pas de proposition
 
 ## Fichiers modifiés
