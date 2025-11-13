@@ -498,37 +498,110 @@ export class FFAScraperAgent extends BaseAgent {
           }
           
           // Vérifier la date/heure de départ de la course
-          // Calculer la startDate complète pour cette course FFA (date + heure)
+          const expectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
+          const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
+          
+          // CAS 1: FFA donne une heure
           if (ffaRace.startTime) {
-            const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
-            
             // Comparer avec la startDate existante de la course (si elle existe)
             if (matchingRace.startDate) {
-              const timeDiff = Math.abs(raceStartDate.getTime() - matchingRace.startDate.getTime())
+              // CAS 1a: DB à minuit local -> Toujours proposer l'heure précise
+              const dbTimeZone = matchingRace.timeZone || expectedTimeZone
+              const isDbMidnight = this.isMidnightInTimezone(matchingRace.startDate, dbTimeZone)
               
-              // Si diff > 30 minutes, proposer une mise à jour
-              if (timeDiff > 1800000) { // 30 min en ms
+              if (isDbMidnight) {
+                this.logger.info(`🕓 Course à minuit détectée, ajout heure précise: ${matchingRace.name}`, {
+                  dbDate: matchingRace.startDate.toISOString(),
+                  ffaDate: raceStartDate.toISOString()
+                })
                 raceUpdates.startDate = {
                   old: matchingRace.startDate,
                   new: raceStartDate
                 }
-                // Aussi mettre à jour le timeZone si nécessaire
-                const expectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
-                if (matchingRace.timeZone !== expectedTimeZone) {
-                  raceUpdates.timeZone = {
-                    old: matchingRace.timeZone,
-                    new: expectedTimeZone
+              } else {
+                // CAS 1b: DB avec heure -> Comparer si diff > 30 min
+                const timeDiff = Math.abs(raceStartDate.getTime() - matchingRace.startDate.getTime())
+                
+                if (timeDiff > 1800000) { // 30 min en ms
+                  this.logger.info(`⏰ Différence horaire détectée: ${matchingRace.name}`, {
+                    dbDate: matchingRace.startDate.toISOString(),
+                    ffaDate: raceStartDate.toISOString(),
+                    diffMinutes: Math.round(timeDiff / 60000)
+                  })
+                  raceUpdates.startDate = {
+                    old: matchingRace.startDate,
+                    new: raceStartDate
                   }
                 }
               }
+              
+              // Mettre à jour le timeZone si nécessaire
+              if (matchingRace.timeZone !== expectedTimeZone && Object.keys(raceUpdates).length > 0) {
+                raceUpdates.timeZone = {
+                  old: matchingRace.timeZone,
+                  new: expectedTimeZone
+                }
+              }
             } else {
-              // Pas de startDate existante, proposer d'ajouter
+              // CAS 1c: Pas de startDate existante, proposer d'ajouter
+              this.logger.info(`➕ Ajout date+heure manquante: ${matchingRace.name}`, {
+                ffaDate: raceStartDate.toISOString()
+              })
               raceUpdates.startDate = {
                 old: null,
                 new: raceStartDate
               }
               // Aussi ajouter le timeZone si manquant
-              const expectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
+              if (!matchingRace.timeZone || matchingRace.timeZone !== expectedTimeZone) {
+                raceUpdates.timeZone = {
+                  old: matchingRace.timeZone,
+                  new: expectedTimeZone
+                }
+              }
+            }
+          } else {
+            // CAS 2: FFA ne donne PAS d'heure (seulement une date)
+            if (matchingRace.startDate) {
+              const dbTimeZone = matchingRace.timeZone || expectedTimeZone
+              const isDbMidnight = this.isMidnightInTimezone(matchingRace.startDate, dbTimeZone)
+              
+              if (isDbMidnight) {
+                // CAS 2a: DB à minuit -> Comparer les dates uniquement
+                const isSameDate = this.isSameDateInTimezone(
+                  matchingRace.startDate,
+                  raceStartDate,
+                  dbTimeZone
+                )
+                
+                if (!isSameDate) {
+                  // Date différente, proposer mise à jour
+                  this.logger.info(`📅 Date changée (sans heure): ${matchingRace.name}`, {
+                    dbDate: matchingRace.startDate.toISOString(),
+                    ffaDate: raceStartDate.toISOString()
+                  })
+                  raceUpdates.startDate = {
+                    old: matchingRace.startDate,
+                    new: raceStartDate
+                  }
+                } else {
+                  // Date identique -> Pas de proposition (Option A)
+                  this.logger.debug(`⏭️  Date identique sans heure FFA: ${matchingRace.name}`)
+                }
+              } else {
+                // CAS 2b: DB avec heure précise -> Ne pas écraser (Option A)
+                this.logger.debug(`🔒 Conservation heure existante: ${matchingRace.name}`, {
+                  reason: 'FFA ne fournit pas d\'heure, DB a une heure précise'
+                })
+              }
+            } else {
+              // CAS 2c: Pas de startDate existante, ajouter date sans heure (minuit)
+              this.logger.info(`➕ Ajout date sans heure: ${matchingRace.name}`, {
+                ffaDate: raceStartDate.toISOString()
+              })
+              raceUpdates.startDate = {
+                old: null,
+                new: raceStartDate
+              }
               if (!matchingRace.timeZone || matchingRace.timeZone !== expectedTimeZone) {
                 raceUpdates.timeZone = {
                   old: matchingRace.timeZone,
@@ -701,6 +774,36 @@ export class FFAScraperAgent extends BaseAgent {
     }
 
     return { changes, justifications }
+  }
+
+  /**
+   * Vérifie si une date UTC correspond à minuit (00:00:00) dans une timezone donnée
+   */
+  private isMidnightInTimezone(date: Date, timezone: string): boolean {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+      timeZone: timezone,
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+      hour12: false
+    })
+    
+    const timeStr = formatter.format(date)
+    return timeStr === '00:00:00'
+  }
+
+  /**
+   * Compare deux dates dans une timezone donnée (ignore l'heure)
+   */
+  private isSameDateInTimezone(date1: Date, date2: Date, timezone: string): boolean {
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+      timeZone: timezone,
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit'
+    })
+    
+    return formatter.format(date1) === formatter.format(date2)
   }
 
   /**
