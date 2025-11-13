@@ -9,7 +9,9 @@ import {
 import {
   Info as InfoIcon,
   EventAvailable as CalendarIcon,
-  History as HistoryIcon
+  History as HistoryIcon,
+  Launch as LaunchIcon,
+  Event as EventIcon
 } from '@mui/icons-material'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -20,6 +22,8 @@ interface EditionContextInfoProps {
   previousCalendarStatus?: string
   previousEditionStartDate?: string
   currentEditionYear?: number     // Gardé pour compatibilité mais non affiché
+  eventName?: string              // Nom de l'événement
+  eventSlug?: string              // Slug pour construire le lien Miles Republic
 }
 
 const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
@@ -27,7 +31,9 @@ const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
   previousEditionYear,
   previousCalendarStatus,
   previousEditionStartDate,
-  currentEditionYear
+  currentEditionYear,
+  eventName,
+  eventSlug
 }) => {
   const getCalendarStatusLabel = (status?: string): string => {
     if (!status) return 'Non défini'
@@ -84,12 +90,45 @@ const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
   const formattedDate = formatPreviousEditionDate()
   
   return (
-    <Card sx={{ mt: 3 }}>
+    <Card sx={{ mb: 2 }}>
       <CardContent>
         <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <InfoIcon color="primary" />
           Informations contextuelles
         </Typography>
+        
+        {eventName && eventSlug && (
+          <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>
+            <EventIcon sx={{ fontSize: '1rem', color: 'text.secondary', mt: 0.25 }} />
+            <Box sx={{ minWidth: 0, flex: 1 }}>
+              <Typography variant="caption" color="text.secondary">
+                Événement
+              </Typography>
+              <Box sx={{ mt: 0.5 }}>
+                <Typography
+                  component="a"
+                  href={`https://fr.milesrepublic.com/event/${eventSlug}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  sx={{
+                    color: 'primary.main',
+                    textDecoration: 'none',
+                    display: 'inline-flex',
+                    alignItems: 'center',
+                    gap: 0.5,
+                    fontSize: '0.875rem',
+                    '&:hover': {
+                      textDecoration: 'underline'
+                    }
+                  }}
+                >
+                  {eventName}
+                  <LaunchIcon sx={{ fontSize: '1rem' }} />
+                </Typography>
+              </Box>
+            </Box>
+          </Box>
+        )}
         
         {previousCalendarStatus && previousEditionYear && (
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 1 }}>

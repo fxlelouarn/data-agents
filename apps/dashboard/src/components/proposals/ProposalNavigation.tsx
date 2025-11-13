@@ -9,7 +9,8 @@ import {
   CheckCircle as ApproveAllIcon,
   Cancel as CancelIcon,
   Delete as KillIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  RestartAlt as ReviveIcon
 } from '@mui/icons-material'
 
 interface ProposalNavigationProps {
@@ -27,6 +28,8 @@ interface ProposalNavigationProps {
   onArchive?: () => void
   showKillEventButton?: boolean
   onKillEvent?: () => void
+  showReviveEventButton?: boolean
+  onReviveEvent?: () => void
   disabled?: boolean
   // Bouton retour
   showBackButton?: boolean
@@ -47,6 +50,8 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   onArchive,
   showKillEventButton = false,
   onKillEvent,
+  showReviveEventButton = false,
+  onReviveEvent,
   disabled = false,
   showBackButton = true,
   onBack,
@@ -148,6 +153,18 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
             disabled={disabled}
           >
             Tuer l'événement
+          </Button>
+        )}
+        {showReviveEventButton && onReviveEvent && (
+          <Button
+            variant="outlined"
+            color="success"
+            size="small"
+            startIcon={<ReviveIcon />}
+            onClick={onReviveEvent}
+            disabled={disabled}
+          >
+            Ressusciter l'événement
           </Button>
         )}
         {showArchiveButton && onArchive && (

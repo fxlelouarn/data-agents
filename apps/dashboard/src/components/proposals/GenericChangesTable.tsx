@@ -61,6 +61,10 @@ export interface GenericChangesTableProps {
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
+  // Affichage colonnes
+  showCurrentValue?: boolean
+  showConfidence?: boolean
+  showActions?: boolean
 }
 
 /**
@@ -112,7 +116,10 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
   onValidateBlock,
   onUnvalidateBlock,
   isBlockPending = false,
-  validationDisabled = false
+  validationDisabled = false,
+  showCurrentValue = true,
+  showConfidence = true,
+  showActions = true
 }) => {
   // ─────────────────────────────────────────────────────────────
   // HOOK - Toute la logique est externalisée
@@ -235,7 +242,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           />
         )}
         
-        {onFieldModify && !fieldDisabled && (
+        {showActions && onFieldModify && !fieldDisabled && (
           <Tooltip title="Modifier manuellement">
             <IconButton
               size="small"
@@ -287,8 +294,8 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           </Box>
         </TableCell>
         
-        {/* Colonne: Valeur actuelle (si pas nouveau) */}
-        {!isNewEvent && (
+        {/* Colonne: Valeur actuelle (si pas nouveau ET si showCurrentValue) */}
+        {!isNewEvent && showCurrentValue && (
           <TableCell sx={{ width: '20%', minWidth: 120 }}>
             {change.currentValue ? formatValue(change.currentValue, false, timezone) : (
               <Typography color="textSecondary">-</Typography>
@@ -297,21 +304,28 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         )}
         
         {/* Colonne: Valeur proposée */}
-        <TableCell sx={{ width: isNewEvent ? '50%' : '45%', minWidth: 200 }}>
+        <TableCell sx={{ 
+          width: !showConfidence 
+            ? (isNewEvent || !showCurrentValue ? '70%' : '65%') 
+            : (isNewEvent || !showCurrentValue ? '50%' : '45%'), 
+          minWidth: 200 
+        }}>
           {isEditing ? renderEditMode(fieldName, selectedValue) : renderReadMode(change)}
         </TableCell>
         
         {/* Colonne: Confiance */}
-        <TableCell sx={{ width: isNewEvent ? '20%' : '15%', minWidth: 100 }}>
-          <Typography 
-            variant="body2" 
-            color={table.getSortedOptions(change).find(opt => 
-              JSON.stringify(opt.value) === JSON.stringify(selectedValue)
-            )?.hasConsensus ? 'success.main' : 'text.primary'}
-          >
-            {confidenceDisplay}
-          </Typography>
-        </TableCell>
+        {showConfidence && (
+          <TableCell sx={{ width: (isNewEvent || !showCurrentValue) ? '20%' : '15%', minWidth: 100 }}>
+            <Typography 
+              variant="body2" 
+              color={table.getSortedOptions(change).find(opt => 
+                JSON.stringify(opt.value) === JSON.stringify(selectedValue)
+              )?.hasConsensus ? 'success.main' : 'text.primary'}
+            >
+              {confidenceDisplay}
+            </Typography>
+          </TableCell>
+        )}
       </TableRow>
     )
   }
@@ -373,9 +387,14 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: '15%', minWidth: 120 }}>Champ</TableCell>
-              {!isNewEvent && <TableCell sx={{ width: '20%', minWidth: 120 }}>Valeur actuelle</TableCell>}
-              <TableCell sx={{ width: isNewEvent ? '50%' : '45%', minWidth: 200 }}>Valeur proposée</TableCell>
-              <TableCell sx={{ width: isNewEvent ? '20%' : '15%', minWidth: 100 }}>Confiance</TableCell>
+              {!isNewEvent && showCurrentValue && <TableCell sx={{ width: '20%', minWidth: 120 }}>Valeur actuelle</TableCell>}
+              <TableCell sx={{ 
+                width: !showConfidence 
+                  ? (isNewEvent || !showCurrentValue ? '70%' : '65%') 
+                  : (isNewEvent || !showCurrentValue ? '50%' : '45%'), 
+                minWidth: 200 
+              }}>Valeur proposée</TableCell>
+              {showConfidence && <TableCell sx={{ width: (isNewEvent || !showCurrentValue) ? '20%' : '15%', minWidth: 100 }}>Confiance</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -387,7 +406,11 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
                     // Séparateur visuel entre catégories
                     <TableRow>
                       <TableCell 
-                        colSpan={isNewEvent ? 3 : 4}
+                        colSpan={
+                          !showConfidence 
+                            ? ((isNewEvent || !showCurrentValue) ? 2 : 3)
+                            : ((isNewEvent || !showCurrentValue) ? 3 : 4)
+                        }
                         sx={{ 
                           height: '1px',
                           padding: 0,

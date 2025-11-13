@@ -183,12 +183,27 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   const consolidatedRaceChanges: ConsolidatedRaceChange[] = useMemo(() => {
     if (!workingProposal) return []
     
+    // ✅ Extraire originalFields depuis currentData (ajouté dans FFA Scraper + Google Agent)
+    const racesCurrentData: Record<string, any> = {}
+    const proposalChanges = workingProposal.originalProposal.changes as any
+    
+    if (proposalChanges.racesToUpdate && typeof proposalChanges.racesToUpdate === 'object') {
+      const racesToUpdateValue = proposalChanges.racesToUpdate.new || proposalChanges.racesToUpdate
+      if (Array.isArray(racesToUpdateValue)) {
+        racesToUpdateValue.forEach((raceUpdate: any) => {
+          if (raceUpdate.currentData && raceUpdate.raceId) {
+            racesCurrentData[raceUpdate.raceId.toString()] = raceUpdate.currentData
+          }
+        })
+      }
+    }
+    
     // Extraire les courses consolidées depuis workingProposal
     return Object.entries(workingProposal.races).map(([raceId, raceData]) => ({
       raceId,
       raceName: (raceData as any).name || 'Course',
       proposalIds: [workingProposal.id],
-      originalFields: {}, // Pas de valeur originale en mode simple
+      originalFields: racesCurrentData[raceId] || {}, // ✅ Depuis currentData
       fields: {
         // Convertir les champs de course en format ConsolidatedChange
         ...(Object.fromEntries(

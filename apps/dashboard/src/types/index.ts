@@ -171,9 +171,17 @@ export interface RaceData {
   editionId?: string
   name: string
   distance?: number
+  runDistance?: number           // ✅ Distance course à pied (km)
+  bikeDistance?: number          // ✅ Distance vélo (km)
+  walkDistance?: number          // ✅ Distance marche (km)
+  swimDistance?: number          // ✅ Distance natation (km)
   startDate?: string
   price?: number
   elevation?: number
+  runPositiveElevation?: number  // ✅ Dénivelé positif
+  categoryLevel1?: string        // ✅ Catégorie principale
+  categoryLevel2?: string        // ✅ Sous-catégorie
+  timeZone?: string              // ✅ Timezone
 }
 
 // Form types

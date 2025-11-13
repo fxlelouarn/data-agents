@@ -94,6 +94,9 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               onValidateBlock={isReadOnly ? undefined : () => validateBlock('event', blockProposals['event'] || [])}
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
+              showCurrentValue={false}
+              showConfidence={false}
+              showActions={false}
             />
             
             <CategorizedEditionChangesTable
@@ -114,6 +117,9 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition', blockProposals['edition'] || [])}
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
+              showCurrentValue={false}
+              showConfidence={false}
+              showActions={false}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
@@ -129,6 +135,9 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
+                showCurrentValue={false}
+                showConfidence={false}
+                showActions={false}
               />
             )}
             
@@ -142,6 +151,9 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
               validationDisabled={isReadOnly || isEventDead}
+              showCurrentValue={false}
+              showActions={false}
+              showDeleteAction={false}
             />
             
             <ProposalJustificationsCard
@@ -166,22 +178,6 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
         
         return (
           <>
-            <AgentCard
-              agent={{
-                name: proposal.agent.name,
-                type: proposal.agent.type
-              }}
-              createdAt={proposal.createdAt}
-            />
-            
-            {/* Afficher la card des matches rejetés */}
-            {rejectedMatches.length > 0 && (
-              <RejectedMatchesCard
-                proposalId={proposal.id}
-                rejectedMatches={rejectedMatches}
-              />
-            )}
-            
             {proposal && (
               <EditionContextInfo
                 currentCalendarStatus={
@@ -195,6 +191,24 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 previousEditionYear={(proposal as any).previousEditionYear}
                 previousCalendarStatus={(proposal as any).previousEditionCalendarStatus}
                 previousEditionStartDate={(proposal as any).previousEditionStartDate}
+                eventName={(proposal as any).eventName}
+                eventSlug={(proposal as any).eventSlug}
+              />
+            )}
+            
+            <AgentCard
+              agent={{
+                name: proposal.agent.name,
+                type: proposal.agent.type
+              }}
+              createdAt={proposal.createdAt}
+            />
+            
+            {/* Afficher la card des matches rejetés */}
+            {rejectedMatches.length > 0 && (
+              <RejectedMatchesCard
+                proposalId={proposal.id}
+                rejectedMatches={rejectedMatches}
               />
             )}
           </>

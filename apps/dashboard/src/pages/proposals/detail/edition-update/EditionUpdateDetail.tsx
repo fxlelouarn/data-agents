@@ -81,6 +81,9 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
+                showCurrentValue={false}
+                showConfidence={false}
+                showActions={false}
               />
             )}
             
@@ -96,6 +99,9 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
+                showCurrentValue={false}
+                showConfidence={false}
+                showActions={false}
               />
             )}
             
@@ -110,6 +116,9 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
+                showCurrentValue={false}
+                showActions={false}
+                showDeleteAction={false}
               />
             )}
             
@@ -130,14 +139,6 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
         
         return (
           <>
-            <AgentCard
-              agent={{
-                name: proposal.agent.name,
-                type: proposal.agent.type
-              }}
-              createdAt={proposal.createdAt}
-            />
-            
             {proposal && (
               <EditionContextInfo
                 currentCalendarStatus={
@@ -151,8 +152,18 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 previousEditionYear={(proposal as any).previousEditionYear}
                 previousCalendarStatus={(proposal as any).previousEditionCalendarStatus}
                 previousEditionStartDate={(proposal as any).previousEditionStartDate}
+                eventName={(proposal as any).eventName}
+                eventSlug={(proposal as any).eventSlug}
               />
             )}
+            
+            <AgentCard
+              agent={{
+                name: proposal.agent.name,
+                type: proposal.agent.type
+              }}
+              createdAt={proposal.createdAt}
+            />
           </>
         )
       }}

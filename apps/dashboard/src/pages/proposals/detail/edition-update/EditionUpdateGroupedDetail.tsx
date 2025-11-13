@@ -34,6 +34,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           handleApproveAllRaces,
           handleRejectAllRaces,
           handleRaceFieldModify,
+          handleDeleteRace,
           handleReviveEvent,
           handleKillEvent,
           userModifiedChanges,
@@ -122,6 +123,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 consolidatedRaces={consolidatedRaceChanges}
                 userModifiedRaceChanges={userModifiedRaceChanges}
                 onRaceFieldModify={handleRaceFieldModify}
+                onDeleteRace={handleDeleteRace}
                 disabled={isBlockValidated('races') || isEventDead}
                 isBlockValidated={isBlockValidated('races')}
                 onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
@@ -152,14 +154,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
         
         return (
           <>
-            <AgentInfoSection 
-              proposals={groupProposals.map(p => ({ 
-                ...p, 
-                confidence: p.confidence || 0, 
-                status: p.status 
-              }))} 
-            />
-            
             {/* Informations contextuelles de l'édition */}
             {firstProposal && (
               <EditionContextInfo
@@ -174,8 +168,18 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 previousEditionYear={(firstProposal as any).previousEditionYear}
                 previousCalendarStatus={(firstProposal as any).previousEditionCalendarStatus}
                 previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
+                eventName={(firstProposal as any).eventName}
+                eventSlug={(firstProposal as any).eventSlug}
               />
             )}
+            
+            <AgentInfoSection 
+              proposals={groupProposals.map(p => ({ 
+                ...p, 
+                confidence: p.confidence || 0, 
+                status: p.status 
+              }))} 
+            />
           </>
         )
       }}

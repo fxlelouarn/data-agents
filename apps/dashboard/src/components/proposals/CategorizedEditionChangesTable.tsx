@@ -14,6 +14,10 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
   // Handler spécifique pour Edition.startDate (avec logique de propagation aux courses)
   onEditionStartDateChange?: (fieldName: string, newValue: any) => void
+  // Affichage colonnes
+  showCurrentValue?: boolean
+  showConfidence?: boolean
+  showActions?: boolean
 }
 
 /**
@@ -29,6 +33,9 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   isBlockPending = false,
   validationDisabled = false,
   onEditionStartDateChange,
+  showCurrentValue = true,
+  showConfidence = true,
+  showActions = true,
   ...props 
 }) => {
   // Fonction pour déterminer si un champ doit être désactivé
@@ -92,6 +99,9 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}
+      showCurrentValue={showCurrentValue}
+      showConfidence={showConfidence}
+      showActions={showActions}
     />
   )
 }

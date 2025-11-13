@@ -34,6 +34,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           handleApproveAllRaces,
           handleRejectAllRaces,
           handleRaceFieldModify,
+          handleDeleteRace,
           userModifiedChanges,
           formatValue,
           formatAgentsList,
@@ -144,6 +145,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               consolidatedRaces={consolidatedRaceChanges}
               userModifiedRaceChanges={userModifiedRaceChanges}
               onRaceFieldModify={handleRaceFieldModify}
+              onDeleteRace={handleDeleteRace}
               disabled={!allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('races')}
               onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
@@ -176,6 +178,23 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         
         return (
           <>
+            {/* Informations contextuelles de l'édition */}
+            {firstProposal && (
+              <EditionContextInfo
+                currentCalendarStatus={
+                  userModifiedChanges['calendarStatus'] || 
+                  selectedChanges['calendarStatus'] || 
+                  undefined
+                }
+                currentEditionYear={getEditionYear(firstProposal) ? parseInt(getEditionYear(firstProposal)!) : undefined}
+                previousEditionYear={(firstProposal as any).previousEditionYear}
+                previousCalendarStatus={(firstProposal as any).previousEditionCalendarStatus}
+                previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
+                eventName={(firstProposal as any).eventName}
+                eventSlug={(firstProposal as any).eventSlug}
+              />
+            )}
+            
             <AgentInfoSection 
               proposals={groupProposals.map(p => ({ 
                 ...p, 
@@ -189,21 +208,6 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               <RejectedMatchesCard
                 proposalId={firstProposal.id}
                 rejectedMatches={rejectedMatches}
-              />
-            )}
-            
-            {/* Informations contextuelles de l'édition */}
-            {firstProposal && (
-              <EditionContextInfo
-                currentCalendarStatus={
-                  userModifiedChanges['calendarStatus'] || 
-                  selectedChanges['calendarStatus'] || 
-                  undefined
-                }
-                currentEditionYear={getEditionYear(firstProposal) ? parseInt(getEditionYear(firstProposal)!) : undefined}
-                previousEditionYear={(firstProposal as any).previousEditionYear}
-                previousCalendarStatus={(firstProposal as any).previousEditionCalendarStatus}
-                previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
               />
             )}
           </>

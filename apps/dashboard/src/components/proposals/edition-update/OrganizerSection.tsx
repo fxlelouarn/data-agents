@@ -37,6 +37,10 @@ interface OrganizerSectionProps {
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
+  // Affichage colonnes
+  showCurrentValue?: boolean
+  showConfidence?: boolean
+  showActions?: boolean
 }
 
 interface OrganizerField {
@@ -56,7 +60,10 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   onValidateBlock,
   onUnvalidateBlock,
   isBlockPending = false,
-  validationDisabled = false
+  validationDisabled = false,
+  showCurrentValue = true,
+  showConfidence = true,
+  showActions = true
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   
@@ -177,9 +184,14 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
           <TableHead sx={{ bgcolor: 'background.paper' }}>
             <TableRow>
               <TableCell sx={{ width: '20%', minWidth: 120 }}>Champ</TableCell>
-              <TableCell sx={{ width: '35%', minWidth: 150 }}>Valeur actuelle</TableCell>
-              <TableCell sx={{ width: '35%', minWidth: 150 }}>Valeur proposée</TableCell>
-              <TableCell sx={{ width: '10%', minWidth: 80 }}>Confiance</TableCell>
+              {showCurrentValue && <TableCell sx={{ width: '35%', minWidth: 150 }}>Valeur actuelle</TableCell>}
+              <TableCell sx={{ 
+                width: showConfidence 
+                  ? (showCurrentValue ? '35%' : '60%') 
+                  : (showCurrentValue ? '70%' : '80%'), 
+                minWidth: 150 
+              }}>Valeur proposée</TableCell>
+              {showConfidence && <TableCell sx={{ width: '10%', minWidth: 80 }}>Confiance</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
@@ -199,9 +211,11 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                     {field.label}
                   </Typography>
                 </TableCell>
-                <TableCell>
-                  {formatFieldValue(field.currentValue, field.key, field.key)}
-                </TableCell>
+                {showCurrentValue && (
+                  <TableCell>
+                    {formatFieldValue(field.currentValue, field.key, field.key)}
+                  </TableCell>
+                )}
                 <TableCell>
                   {editingField === field.key ? (
                     <FieldEditor
@@ -214,7 +228,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                   ) : (
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', width: '100%' }}>
                       {formatFieldValue(getFieldValue(field.key), field.key, field.key)}
-                      {onFieldModify && !disabled && !isBlockValidated && (
+                      {showActions && onFieldModify && !disabled && !isBlockValidated && (
                         <Tooltip title="Modifier manuellement">
                           <IconButton
                             size="small"
@@ -227,11 +241,13 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                     </Box>
                   )}
                 </TableCell>
-                <TableCell>
-                  <Typography variant="body2" color={hasConsensus ? 'success.main' : 'text.primary'}>
-                    {Math.round(confidence * 100)}%{hasConsensus ? ` (${change.options.length} agents)` : ''}
-                  </Typography>
-                </TableCell>
+                {showConfidence && (
+                  <TableCell>
+                    <Typography variant="body2" color={hasConsensus ? 'success.main' : 'text.primary'}>
+                      {Math.round(confidence * 100)}%{hasConsensus ? ` (${change.options.length} agents)` : ''}
+                    </Typography>
+                  </TableCell>
+                )}
               </TableRow>
             ))}
           </TableBody>
