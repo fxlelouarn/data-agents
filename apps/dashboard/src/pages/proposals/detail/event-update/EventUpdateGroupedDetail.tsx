@@ -124,7 +124,8 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
       }}
       renderSidebar={(context) => {
         const { 
-          groupProposals,
+          groupProposals, // ✅ PENDING uniquement
+          allGroupProposals, // ✅ Toutes les propositions (PENDING + historiques)
           allPending,
           handleFieldModify
         } = context
@@ -133,8 +134,9 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
         
         return (
           <>
+            {/* ✅ AgentInfoSection gère la séparation PENDING vs historique en interne */}
             <AgentInfoSection 
-              proposals={groupProposals.map(p => ({ 
+              proposals={allGroupProposals.map(p => ({ 
                 ...p, 
                 confidence: p.confidence || 0, 
                 status: p.status 

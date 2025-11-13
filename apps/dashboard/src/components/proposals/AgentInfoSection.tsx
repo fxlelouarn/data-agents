@@ -53,6 +53,10 @@ interface AgentInfoSectionProps {
 }
 
 const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
+  // ✅ Séparer les propositions PENDING des propositions déjà traitées
+  const pendingProposals = proposals.filter(p => p.status === 'PENDING')
+  const historicalProposals = proposals.filter(p => p.status !== 'PENDING')
+  
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString)
@@ -119,92 +123,126 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
     return null
   }
 
-  return (
-    <Card sx={{ mb: 2 }}>
-      <CardContent>
-        <Typography variant="h6" gutterBottom>
-          <InfoIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
-          Propositions
+  const renderProposal = (proposal: Proposal, index: number, isPending: boolean) => (
+    <Box 
+      key={proposal.id} 
+      sx={{ 
+        mb: 1.5, 
+        p: 1.5, 
+        bgcolor: isPending ? 'grey.50' : 'background.paper',
+        borderRadius: 1,
+        border: isPending ? 'none' : 1,
+        borderColor: 'divider'
+      }}
+    >
+      {/* Nom de l'événement et année de l'édition */}
+      {(proposal.eventName || proposal.editionYear) && (
+        <Box sx={{ mb: 1, pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
+          {proposal.eventName && (
+            <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
+              {proposal.eventName}
+              {proposal.eventCity && ` - ${proposal.eventCity}`}
+            </Typography>
+          )}
+          {proposal.editionYear && (
+            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
+              Édition : {proposal.editionYear}
+            </Typography>
+          )}
+        </Box>
+      )}
+      
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+          {getStatusIcon(proposal.status)}
+          <Typography variant="subtitle2">
+            Proposition {index + 1}
+          </Typography>
+        </Box>
+        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+          {`${Math.round((proposal.confidence || 0) * 100)}%`}
         </Typography>
-        
-        {proposals.map((proposal, index) => (
-          <Box key={proposal.id} sx={{ mb: 1.5, p: 1.5, bgcolor: 'grey.50', borderRadius: 1 }}>
-            {/* Nom de l'événement et année de l'édition */}
-            {(proposal.eventName || proposal.editionYear) && (
-              <Box sx={{ mb: 1, pb: 1, borderBottom: '1px solid', borderColor: 'divider' }}>
-                {proposal.eventName && (
-                  <Typography variant="body2" sx={{ fontWeight: 600, mb: 0.5 }}>
-                    {proposal.eventName}
-                    {proposal.eventCity && ` - ${proposal.eventCity}`}
-                  </Typography>
-                )}
-                {proposal.editionYear && (
-                  <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary' }}>
-                    Édition : {proposal.editionYear}
-                  </Typography>
-                )}
-              </Box>
-            )}
-            
-            <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
-              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                {getStatusIcon(proposal.status)}
-                <Typography variant="subtitle2">
-                  Proposition {index + 1}
-                </Typography>
-              </Box>
-              <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-                {`${Math.round((proposal.confidence || 0) * 100)}%`}
-              </Typography>
-            </Box>
-            
-            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5, ml: 3 }}>
-              Statut : {getStatusLabel(proposal.status)}
-            </Typography>
-            
-            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
-              <PersonIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
-              {proposal.agent.name}
-              {proposal.agent.type && (
-                <Typography component="span" variant="caption" sx={{ ml: 1, px: 0.5, py: 0.25, bgcolor: 'primary.light', borderRadius: 0.5, color: 'primary.contrastText', fontSize: '0.65rem' }}>
-                  {proposal.agent.type}
-                </Typography>
-              )}
-            </Typography>
-            
-            <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1 }}>
-              <ScheduleIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
-              {formatDate(proposal.createdAt)}
-            </Typography>
+      </Box>
+      
+      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5, ml: 3 }}>
+        Statut : {getStatusLabel(proposal.status)}
+      </Typography>
+      
+      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
+        <PersonIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
+        {proposal.agent.name}
+        {proposal.agent.type && (
+          <Typography component="span" variant="caption" sx={{ ml: 1, px: 0.5, py: 0.25, bgcolor: 'primary.light', borderRadius: 0.5, color: 'primary.contrastText', fontSize: '0.65rem' }}>
+            {proposal.agent.type}
+          </Typography>
+        )}
+      </Typography>
+      
+      <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1 }}>
+        <ScheduleIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
+        {formatDate(proposal.createdAt)}
+      </Typography>
 
-            <Box sx={{ display: 'flex', gap: 1 }}>
-              <Button
-                size="small"
-                variant="outlined"
-                component={Link}
-                to={`/proposals/${proposal.id}`}
-                sx={{ flex: 1 }}
-              >
-                Voir détails
-              </Button>
-              
-              {getSourceUrl(proposal) && (
-                <Button
-                  size="small"
-                  variant="outlined"
-                  color="primary"
-                  startIcon={<OpenInNewIcon sx={{ fontSize: '1rem' }} />}
-                  onClick={() => window.open(getSourceUrl(proposal)!, '_blank', 'noopener,noreferrer')}
-                  sx={{ flex: 1 }}
-                >
-                  Voir source
-                </Button>
-              )}
-            </Box>
-          </Box>
-        ))}
-      </CardContent>
-    </Card>
+      <Box sx={{ display: 'flex', gap: 1 }}>
+        <Button
+          size="small"
+          variant="outlined"
+          component={Link}
+          to={`/proposals/${proposal.id}`}
+          sx={{ flex: 1 }}
+        >
+          Voir détails
+        </Button>
+        
+        {getSourceUrl(proposal) && (
+          <Button
+            size="small"
+            variant="outlined"
+            color="primary"
+            startIcon={<OpenInNewIcon sx={{ fontSize: '1rem' }} />}
+            onClick={() => window.open(getSourceUrl(proposal)!, '_blank', 'noopener,noreferrer')}
+            sx={{ flex: 1 }}
+          >
+            Voir source
+          </Button>
+        )}
+      </Box>
+    </Box>
+  )
+  
+  return (
+    <>
+      {/* ✅ Section Propositions PENDING */}
+      {pendingProposals.length > 0 && (
+        <Card sx={{ mb: 2 }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom>
+              <InfoIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              Propositions en attente
+            </Typography>
+            
+            {pendingProposals.map((proposal, index) => renderProposal(proposal, index, true))}
+          </CardContent>
+        </Card>
+      )}
+      
+      {/* ✅ Section Historique (propositions déjà traitées) */}
+      {historicalProposals.length > 0 && (
+        <Card sx={{ mb: 2, bgcolor: 'grey.50', border: 1, borderColor: 'divider' }}>
+          <CardContent>
+            <Typography variant="h6" gutterBottom sx={{ color: 'text.secondary' }}>
+              <ArchiveIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+              Historique
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic', fontSize: '0.8rem' }}>
+              Ces propositions ont déjà été traitées et n'influencent pas la proposition actuelle.
+            </Typography>
+            
+            {historicalProposals.map((proposal, index) => renderProposal(proposal, index, false))}
+          </CardContent>
+        </Card>
+      )}
+    </>
   )
 }
 

@@ -142,7 +142,8 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
       }}
       renderSidebar={(context) => {
         const { 
-          groupProposals, 
+          groupProposals, // ✅ PENDING uniquement
+          allGroupProposals, // ✅ Toutes les propositions (PENDING + historiques)
           getEditionYear, 
           selectedChanges, 
           userModifiedChanges,
@@ -173,8 +174,9 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
               />
             )}
             
+            {/* ✅ AgentInfoSection gère la séparation PENDING vs historique en interne */}
             <AgentInfoSection 
-              proposals={groupProposals.map(p => ({ 
+              proposals={allGroupProposals.map(p => ({ 
                 ...p, 
                 confidence: p.confidence || 0, 
                 status: p.status 

@@ -33,10 +33,11 @@ export interface WorkingProposal {
  * Utilisé pour les vues groupées où plusieurs agents proposent des modifications
  */
 export interface WorkingProposalGroup {
-  ids: string[] // IDs des propositions du groupe
-  originalProposals: Proposal[] // Propositions backend (immuables)
+  ids: string[] // IDs de toutes les propositions (PENDING + historiques)
+  originalProposals: Proposal[] // ✅ Propositions PENDING uniquement (éditables)
+  historicalProposals: Proposal[] // ✅ Propositions déjà traitées (APPROVED/REJECTED/ARCHIVED)
   
-  // État consolidé de toutes les propositions
+  // État consolidé de toutes les propositions PENDING
   consolidatedChanges: ConsolidatedChange[]
   consolidatedRaces: ConsolidatedRaceChange[]
   
@@ -44,7 +45,7 @@ export interface WorkingProposalGroup {
   userModifiedChanges: Record<string, any>
   userModifiedRaceChanges: Record<string, any>
   
-  // Blocs validés (agrégés de toutes les propositions)
+  // Blocs validés (agrégés de toutes les propositions PENDING)
   approvedBlocks: Record<string, boolean>
   
   // Métadonnées
@@ -245,26 +246,29 @@ export function useProposalEditor(
   
   /**
    * Construire l'état groupé initial à partir de plusieurs propositions
+   * ✅ Filtre PENDING vs historiques pour éviter pollution de l'état
    */
   const initializeWorkingGroup = (proposals: Proposal[]): WorkingProposalGroup => {
-    const ids = proposals.map(p => p.id)
+    // ✅ Séparer les propositions PENDING des propositions déjà traitées
+    const pendingProposals = proposals.filter(p => p.status === 'PENDING')
+    const historicalProposals = proposals.filter(p => p.status !== 'PENDING')
+    
+    const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation
 
-    // Consolidation des champs
-    const consolidatedChanges = consolidateChangesFromProposals(proposals)
+    // ✅ Consolidation UNIQUEMENT des propositions PENDING
+    const consolidatedChanges = consolidateChangesFromProposals(pendingProposals)
+    const consolidatedRaces = consolidateRacesFromProposals(pendingProposals)
 
-    // Consolidation des courses
-    const consolidatedRaces = consolidateRacesFromProposals(proposals)
-
-    // Agrégation des blocs approuvés (true si approuvé dans TOUTES les propositions)
+    // ✅ Blocs approuvés UNIQUEMENT des propositions PENDING
     const approvedBlocks: Record<string, boolean> = {}
     const allBlockKeys = new Set<string>()
-    proposals.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
+    pendingProposals.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
     allBlockKeys.forEach(blockKey => {
-      approvedBlocks[blockKey] = proposals.every(p => p.approvedBlocks?.[blockKey])
+      approvedBlocks[blockKey] = pendingProposals.every(p => p.approvedBlocks?.[blockKey])
     })
 
-    // Extraire userModifiedChanges depuis la première proposition (identique pour toutes)
-    const firstProposal = proposals[0]
+    // Extraire userModifiedChanges depuis la première proposition PENDING (identique pour toutes)
+    const firstProposal = pendingProposals[0]
     const userModifiedRaceChanges = firstProposal?.userModifiedChanges?.raceEdits || {}
     
     // Extraire les autres modifications utilisateur (hors raceEdits)
@@ -279,14 +283,17 @@ export function useProposalEditor(
 
     return {
       ids,
-      originalProposals: proposals,
+      originalProposals: pendingProposals, // ✅ Seules les PENDING pour l'édition
+      historicalProposals, // ✅ Propositions déjà traitées (historique)
       consolidatedChanges,
       consolidatedRaces,
       userModifiedChanges, // ✅ Préserver les modifs édition sauvegardées
       userModifiedRaceChanges, // ✅ Préserver les modifs de courses sauvegardées
       approvedBlocks,
       isDirty: false,
-      lastSaved: new Date(Math.max(...proposals.map(p => new Date(p.updatedAt).getTime())))
+      lastSaved: pendingProposals.length > 0 
+        ? new Date(Math.max(...pendingProposals.map(p => new Date(p.updatedAt).getTime())))
+        : null // Pas de PENDING = pas de lastSaved
     }
   }
 

@@ -62,7 +62,8 @@ export interface ProposalContext {
 }
 
 export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'> {
-  groupProposals: Proposal[]
+  groupProposals: Proposal[] // ✅ Propositions PENDING uniquement (éditables)
+  allGroupProposals: Proposal[] // ✅ Toutes les propositions (PENDING + historiques)
   consolidatedChanges: ConsolidatedChange[]
   consolidatedRaceChanges: ConsolidatedRaceChange[]
   averageConfidence: number
@@ -790,10 +791,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
   const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
 
-  const proposalsWithValidConfidence = groupProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
+  // ✅ Utiliser les propositions PENDING uniquement pour les calculs de statut
+  const pendingProposals = workingGroup?.originalProposals || groupProposals.filter(p => p.status === 'PENDING')
+  
+  const proposalsWithValidConfidence = pendingProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
   const averageConfidence = proposalsWithValidConfidence.length > 0
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
+  // ✅ hasPending = vrai s'il y a AU MOINS UNE proposition PENDING (même avec historique)
+  // Utilisé pour afficher le chip "En attente" et activer les boutons d'édition
+  const hasPending = groupProposals.some(p => p.status === 'PENDING')
+  // ✅ allPending = vrai si TOUTES les propositions sont PENDING (pour compatibilité)
   const allPending = groupProposals.every(p => p.status === 'PENDING')
   
   // Identifier les propositions par bloc
@@ -924,7 +932,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   // ✅ Phase 4 : Single Source of Truth totale avec workingGroup
   const context: GroupedProposalContext = {
     // Données consolidées depuis le hook
-    groupProposals: workingGroup?.originalProposals || groupProposals,
+    groupProposals: workingGroup?.originalProposals || groupProposals, // ✅ PENDING uniquement
+    allGroupProposals: groupProposals, // ✅ Toutes les propositions (PENDING + historiques)
     consolidatedChanges: consolidatedChanges, // Déjà depuis workingGroup après nettoyage
     consolidatedRaceChanges: consolidatedRaceChangesWithCascade, // Déjà depuis workingGroup après nettoyage
     
@@ -959,7 +968,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     isPending: updateProposalMutation.isPending || bulkArchiveMutation.isPending,
     isEventDead,
     averageConfidence,
-    allPending,
+    allPending: hasPending, // ✅ Utiliser hasPending pour les boutons d'édition
     hasApproved,
     allApproved,
     editionTimezone,
@@ -1001,16 +1010,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             onPrevious: () => navigateToGroup('prev'),
             onNext: () => navigateToGroup('next')
           }}
-          showValidateAllBlocksButton={allPending && !isEventDead && Object.keys(blockProposals).length > 0}
+          showValidateAllBlocksButton={hasPending && !isEventDead && Object.keys(blockProposals).length > 0}
           onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
           showUnvalidateAllBlocksButton={hasValidatedBlocks()}
           onUnvalidateAllBlocks={unvalidateAllBlocks}
           isValidateAllBlocksPending={isBlockPending}
-          showKillEventButton={allPending && !isEventDead && !isNewEvent && Boolean(eventId)}
+          showKillEventButton={hasPending && !isEventDead && !isNewEvent && Boolean(eventId)}
           onKillEvent={() => setKillDialogOpen(true)}
           showReviveEventButton={isEventDead && !isNewEvent && Boolean(eventId)}
           onReviveEvent={handleReviveEvent}
-          showArchiveButton={allPending}
+          showArchiveButton={hasPending}
           onArchive={handleArchive}
           disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
           showBackButton={true}
@@ -1028,8 +1037,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             show: groupProposals.length > 1
           },
           {
-            label: allPending ? 'En attente' : 'Traité',
-            color: allPending ? 'warning' : 'default'
+            label: hasPending ? 'En attente' : 'Traité',
+            color: hasPending ? 'warning' : 'default'
           },
           {
             label: `${Math.round((averageConfidence || 0) * 100)}% confiance`,
