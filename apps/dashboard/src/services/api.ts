@@ -125,8 +125,18 @@ export const agentsApi = {
 
 // Proposals API
 export const proposalsApi = {
-  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0): Promise<PaginatedResponse<Proposal>> =>
-    api.get('/proposals', { params: { ...filters, limit, offset } }).then(res => res.data),
+  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0): Promise<PaginatedResponse<Proposal>> => {
+    const start = Date.now()
+    console.log(`[📋 PROPOSALS] Frontend: Initiating GET /api/proposals (limit=${limit}, offset=${offset})`)
+    return api.get('/proposals', { params: { ...filters, limit, offset } }).then(res => {
+      const duration = Date.now() - start
+      console.log(`[📋 PROPOSALS] Frontend: GET /api/proposals completed in ${duration}ms, received ${res.data.data?.length} proposals`)
+      if (duration > 2000) {
+        console.warn(`⚠️  SLOW API CALL: proposals took ${duration}ms (> 2s)`)
+      }
+      return res.data
+    })
+  },
 
   getById: (id: string): Promise<ApiResponse<Proposal & { relatedProposals: Proposal[] }>> =>
     api.get(`/proposals/${id}`).then(res => res.data),

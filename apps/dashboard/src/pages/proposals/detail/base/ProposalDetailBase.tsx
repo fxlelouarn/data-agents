@@ -315,38 +315,46 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   }
   
   const handleUnapprove = async () => {
-    try {
-      await unapproveProposalMutation.mutateAsync(proposalData!.data!.id)
-    } catch (error) {
-      console.error('Error unapproving proposal:', error)
-    }
+    return new Promise<void>((resolve, reject) => {
+      unapproveProposalMutation.mutate(proposalData!.data!.id, {
+        onSuccess: () => resolve(),
+        onError: (error) => {
+          console.error('Error unapproving proposal:', error)
+          reject(error)
+        }
+      })
+    })
   }
   
   const handleKillEvent = async () => {
-    try {
-      const eventId = proposalData?.data?.eventId
-      if (!eventId) {
-        console.error('No eventId found')
-        return
-      }
-      await killEventMutation.mutateAsync(eventId)
-      setKillDialogOpen(false)
-    } catch (error) {
-      console.error('Error killing event:', error)
+    const eventId = proposalData?.data?.eventId
+    if (!eventId) {
+      console.error('No eventId found')
+      return
     }
+    
+    killEventMutation.mutate(eventId, {
+      onSuccess: () => {
+        setKillDialogOpen(false)
+      },
+      onError: (error) => {
+        console.error('Error killing event:', error)
+      }
+    })
   }
   
   const handleReviveEvent = async () => {
-    try {
-      const eventId = proposalData?.data?.eventId
-      if (!eventId) {
-        console.error('No eventId found')
-        return
-      }
-      await reviveEventMutation.mutateAsync(eventId)
-    } catch (error) {
-      console.error('Error reviving event:', error)
+    const eventId = proposalData?.data?.eventId
+    if (!eventId) {
+      console.error('No eventId found')
+      return
     }
+    
+    reviveEventMutation.mutate(eventId, {
+      onError: (error) => {
+        console.error('Error reviving event:', error)
+      }
+    })
   }
   
   // Handler pour éditer la proposition (PHASE 3)

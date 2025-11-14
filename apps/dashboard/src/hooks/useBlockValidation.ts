@@ -82,23 +82,27 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         changes
       })
       
-      // ✅ UN SEUL APPEL API pour tout le groupe
-      await updateProposalMutation.mutateAsync({
+      // ✅ UN SEUL APPEL API pour tout le groupe (non-bloquant pour UX réactive)
+      updateProposalMutation.mutate({
         proposalIds,    // 📦 Passer tous les IDs
         block: blockKey,
         changes         // 📦 Payload consolidé
-      })
-
-      // Marquer le bloc comme validé
-      setBlockStatus(prev => ({
-        ...prev,
-        [blockKey]: {
-          isValidated: true,
-          proposalIds
+      }, {
+        onSuccess: () => {
+          // Marquer le bloc comme validé après succès API
+          setBlockStatus(prev => ({
+            ...prev,
+            [blockKey]: {
+              isValidated: true,
+              proposalIds
+            }
+          }))
+          console.log(`✅ [useBlockValidation] Bloc "${blockKey}" validé pour ${proposalIds.length} propositions`)
+        },
+        onError: (error) => {
+          console.error(`❌ [useBlockValidation] Erreur validation bloc "${blockKey}":`, error)
         }
-      }))
-      
-      console.log(`✅ [useBlockValidation] Bloc "${blockKey}" validé pour ${proposalIds.length} propositions`)
+      })
     } catch (error) {
       console.error(`Error validating block ${blockKey}:`, error)
       throw error
@@ -118,19 +122,23 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       })
       
       if (approvedProposalIds.length > 0) {
-        // Annuler uniquement le bloc spécifique de chaque proposition
-        for (const id of approvedProposalIds) {
-          try {
-            await unapproveBlockMutation.mutateAsync({ id, block: blockKey })
-          } catch (error: any) {
-            // Ignorer l'erreur si le bloc n'est plus approuvé
-            if (error?.response?.data?.alreadyUnapproved) {
-              continue
-            }
-            // Propager les autres erreurs
-            throw error
-          }
-        }
+        // Annuler uniquement le bloc spécifique de chaque proposition (en parallèle, non-bloquant)
+        const promises = approvedProposalIds.map(id => 
+          new Promise<void>((resolve, reject) => {
+            unapproveBlockMutation.mutate({ id, block: blockKey }, {
+              onSuccess: () => resolve(),
+              onError: (error: any) => {
+                // Ignorer l'erreur si le bloc n'est plus approuvé
+                if (error?.response?.data?.alreadyUnapproved) {
+                  resolve()
+                } else {
+                  reject(error)
+                }
+              }
+            })
+          })
+        )
+        await Promise.all(promises)
       }
 
       // Retirer le bloc du statut validé

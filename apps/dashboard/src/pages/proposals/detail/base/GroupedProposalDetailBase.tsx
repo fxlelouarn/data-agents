@@ -386,25 +386,36 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     if (selectedValue === undefined) return
     
     try {
-      for (const option of change.options) {
+      // ⚡ Optimisation: Mutations en parallèle, non-bloquantes
+      const promises = change.options.map(option => {
         const optionValueStr = JSON.stringify(option.proposedValue)
         const selectedValueStr = JSON.stringify(selectedValue)
         
-        if (optionValueStr === selectedValueStr) {
-          await updateProposalMutation.mutateAsync({
-            id: option.proposalId,
-            status: 'APPROVED',
-            reviewedBy: 'Utilisateur',
-            appliedChanges: { [fieldName]: selectedValue }
-          })
-        } else {
-          await updateProposalMutation.mutateAsync({
-            id: option.proposalId,
-            status: 'REJECTED',
-            reviewedBy: 'Utilisateur'
-          })
-        }
-      }
+        return new Promise<void>((resolve, reject) => {
+          if (optionValueStr === selectedValueStr) {
+            updateProposalMutation.mutate({
+              id: option.proposalId,
+              status: 'APPROVED',
+              reviewedBy: 'Utilisateur',
+              appliedChanges: { [fieldName]: selectedValue }
+            }, {
+              onSuccess: () => resolve(),
+              onError: reject
+            })
+          } else {
+            updateProposalMutation.mutate({
+              id: option.proposalId,
+              status: 'REJECTED',
+              reviewedBy: 'Utilisateur'
+            }, {
+              onSuccess: () => resolve(),
+              onError: reject
+            })
+          }
+        })
+      })
+      
+      await Promise.all(promises)
     } catch (error) {
       console.error('Error approving/rejecting field:', error)
     }
@@ -570,6 +581,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         allUserModifications.raceEdits = raceChanges
       }
       
+      // ⚡ Optimisation: Collecter toutes les mutations, puis exécuter en parallèle
+      const mutations: Promise<void>[] = []
+      
       for (const change of consolidatedChanges) {
         const fieldName = change.field
         // ✅ Récupérer la valeur depuis consolidatedChanges.selectedValue
@@ -583,26 +597,36 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           const optionValueStr = JSON.stringify(option.proposedValue)
           const selectedValueStr = JSON.stringify(selectedValue)
           
-          if (optionValueStr === selectedValueStr) {
-            await updateProposalMutation.mutateAsync({
-              id: option.proposalId,
-              status: 'APPROVED',
-              reviewedBy: 'Utilisateur',
-              appliedChanges: { [fieldName]: selectedValue },
-              userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
-              modificationReason: 'Modifications manuelles appliquées',
-              modifiedBy: 'Utilisateur'
-            })
-          } else {
-            await updateProposalMutation.mutateAsync({
-              id: option.proposalId,
-              status: 'REJECTED',
-              reviewedBy: 'Utilisateur'
-            })
-          }
+          mutations.push(new Promise<void>((resolve, reject) => {
+            if (optionValueStr === selectedValueStr) {
+              updateProposalMutation.mutate({
+                id: option.proposalId,
+                status: 'APPROVED',
+                reviewedBy: 'Utilisateur',
+                appliedChanges: { [fieldName]: selectedValue },
+                userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
+                modificationReason: 'Modifications manuelles appliquées',
+                modifiedBy: 'Utilisateur'
+              }, {
+                onSuccess: () => resolve(),
+                onError: reject
+              })
+            } else {
+              updateProposalMutation.mutate({
+                id: option.proposalId,
+                status: 'REJECTED',
+                reviewedBy: 'Utilisateur'
+              }, {
+                onSuccess: () => resolve(),
+                onError: reject
+              })
+            }
+          }))
         }
       }
       
+      // Attendre toutes les mutations en parallèle
+      await Promise.all(mutations)
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error approving proposals:', error)
@@ -611,14 +635,21 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
 
   const handleRejectAll = async () => {
     try {
-      for (const proposal of groupProposals) {
-        await updateProposalMutation.mutateAsync({
-          id: proposal.id,
-          status: 'REJECTED',
-          reviewedBy: 'Utilisateur'
+      // ⚡ Optimisation: Mutations en parallèle
+      const promises = groupProposals.map(proposal => 
+        new Promise<void>((resolve, reject) => {
+          updateProposalMutation.mutate({
+            id: proposal.id,
+            status: 'REJECTED',
+            reviewedBy: 'Utilisateur'
+          }, {
+            onSuccess: () => resolve(),
+            onError: reject
+          })
         })
-      }
+      )
       
+      await Promise.all(promises)
       await queryClient.invalidateQueries({ queryKey: ['proposals'] })
     } catch (error) {
       console.error('Error rejecting proposals:', error)
@@ -648,17 +679,22 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       
       // 1. Rejeter toutes les propositions du groupe et marquer killEvent = true
       // L'événement sera tué lors de l'application d'une de ces propositions
-      await Promise.all(
-        groupProposals.map(proposal =>
-          updateProposalMutation.mutateAsync({
+      // ⚡ Optimisation: Mutations en parallèle, non-bloquantes
+      const promises = groupProposals.map(proposal => 
+        new Promise<void>((resolve, reject) => {
+          updateProposalMutation.mutate({
             id: proposal.id,
             status: 'REJECTED',
             reviewedBy: 'Utilisateur',
             modificationReason: 'Événement tué',
             killEvent: true // ✅ Marquer pour kill lors de l'application
+          }, {
+            onSuccess: () => resolve(),
+            onError: reject
           })
-        )
+        })
       )
+      await Promise.all(promises)
       
       // 2. Marquer localement comme tué IMMÉDIATEMENT pour désactiver les blocs
       setIsKilledLocally(true)
@@ -683,19 +719,24 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       }
       
       // 1. Remettre toutes les propositions rejetées au statut PENDING et retirer killEvent
-      await Promise.all(
-        groupProposals
-          .filter(p => p.status === 'REJECTED')
-          .map(proposal =>
-            updateProposalMutation.mutateAsync({
+      // ⚡ Optimisation: Mutations en parallèle, non-bloquantes
+      const promises = groupProposals
+        .filter(p => p.status === 'REJECTED')
+        .map(proposal => 
+          new Promise<void>((resolve, reject) => {
+            updateProposalMutation.mutate({
               id: proposal.id,
               status: 'PENDING',
               reviewedBy: undefined,
               modificationReason: 'Événement ressuscité',
               killEvent: false // ✅ Retirer le marqueur de kill
+            }, {
+              onSuccess: () => resolve(),
+              onError: reject
             })
-          )
-      )
+          })
+        )
+      await Promise.all(promises)
       
       // 2. Retirer le marqueur local
       setIsKilledLocally(false)
@@ -749,21 +790,22 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
       
       // Sauvegarder via updateProposal pour synchroniser avec le backend (seulement si on a des modifications)
+      // ⚡ Optimisation: Mutation non-bloquante
       if (Object.keys(newRaceEdits).length > 0 && firstProposal?.id) {
-        try {
-          await updateProposalMutation.mutateAsync({
-            id: firstProposal.id,
-            userModifiedChanges: {
-              ...(workingGroup?.userModifiedChanges || {}),
-              raceEdits: {
-                ...(workingGroup?.userModifiedChanges?.raceEdits || {}),
-                ...newRaceEdits
-              }
+        updateProposalMutation.mutate({
+          id: firstProposal.id,
+          userModifiedChanges: {
+            ...(workingGroup?.userModifiedChanges || {}),
+            raceEdits: {
+              ...(workingGroup?.userModifiedChanges?.raceEdits || {}),
+              ...newRaceEdits
             }
-          })
-        } catch (error) {
-          console.error('Error updating race dates:', error)
-        }
+          }
+        }, {
+          onError: (error) => {
+            console.error('Error updating race dates:', error)
+          }
+        })
       }
     
     setDatePropagationModal(null)

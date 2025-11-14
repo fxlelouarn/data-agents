@@ -42,6 +42,42 @@ const limiter = rateLimit({
 })
 app.use('/api', limiter) // Appliquer uniquement sur /api, pas sur /health
 
+// ⏱️ Request timing middleware - measure total request time
+app.use((req, res, next) => {
+  const start = Date.now()
+  const originalSend = res.send
+  
+  // Override res.send to log timing
+  res.send = function(data) {
+    const duration = Date.now() - start
+    console.log(`[TIMING] ${req.method} ${req.path} - completed in ${duration}ms (status: ${res.statusCode})`)
+    
+    if (duration > 1000) {
+      console.warn(`⚠️  SLOW REQUEST: ${req.method} ${req.path} took ${duration}ms (> 1s)`)
+    }
+    
+    return originalSend.call(this, data)
+  }
+  
+  next()
+})
+
+// ⏱️ Request timing middleware - measure total request time
+app.use((req, res, next) => {
+  const start = Date.now()
+  const originalSend = res.send
+  
+  res.send = function(data) {
+    const duration = Date.now() - start
+    console.log(`[TIMING] ${req.method} ${req.path} - completed in ${duration}ms (status: ${res.statusCode})`)
+    if (duration > 1000) {
+      console.warn(`⚠️  SLOW REQUEST: ${req.method} ${req.path} took ${duration}ms (> 1s)`)
+    }
+    return originalSend.call(this, data)
+  }
+  next()
+})
+
 // General middleware
 app.use(compression())
 app.use(morgan('combined'))

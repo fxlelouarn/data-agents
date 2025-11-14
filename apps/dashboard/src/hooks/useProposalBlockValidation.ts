@@ -17,31 +17,40 @@ export const useProposalBlockValidation = (
   const validate = useCallback(async () => {
     if (!proposalId) return
 
-    try {
-      await updateProposalMutation.mutateAsync({
+    return new Promise<void>((resolve, reject) => {
+      updateProposalMutation.mutate({
         id: proposalId,
         status: 'APPROVED',
         reviewedBy: 'Utilisateur'
+      }, {
+        onSuccess: () => {
+          setIsValidated(true)
+          resolve()
+        },
+        onError: (error) => {
+          console.error(`Error validating block ${blockKey}:`, error)
+          reject(error)
+        }
       })
-
-      setIsValidated(true)
-    } catch (error) {
-      console.error(`Error validating block ${blockKey}:`, error)
-      throw error
-    }
+    })
   }, [proposalId, blockKey, updateProposalMutation])
 
   // Annuler la validation
   const cancel = useCallback(async () => {
     if (!proposalId) return
 
-    try {
-      await unapproveProposalMutation.mutateAsync(proposalId)
-      setIsValidated(false)
-    } catch (error) {
-      console.error(`Error canceling validation for block ${blockKey}:`, error)
-      throw error
-    }
+    return new Promise<void>((resolve, reject) => {
+      unapproveProposalMutation.mutate(proposalId, {
+        onSuccess: () => {
+          setIsValidated(false)
+          resolve()
+        },
+        onError: (error) => {
+          console.error(`Error canceling validation for block ${blockKey}:`, error)
+          reject(error)
+        }
+      })
+    })
   }, [proposalId, blockKey, unapproveProposalMutation])
 
   return {

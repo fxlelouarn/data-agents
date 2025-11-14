@@ -214,11 +214,11 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   return useQuery({
     queryKey: ['proposals', filters, limit, offset],
     queryFn: () => proposalsApi.getAll(filters, limit, offset),
-    staleTime: 30000, // 30 secondes - réduit pour capter les nouvelles propositions plus vite
+    staleTime: 60000, // ⏱️ 60s - éviter refetch inutiles au rafraîchissement
     gcTime: 300000, // 5 minutes (garde le cache plus longtemps)
-    refetchInterval: 120000, // Auto-refresh toutes les 2 minutes (au lieu de 1)
+    refetchInterval: 120000, // Auto-refresh toutes les 2 minutes
     refetchOnWindowFocus: false, // Désactiver pour éviter les refetch excessifs
-    refetchOnMount: true, // ✅ Toujours refetch au montage pour capter les nouvelles propositions
+    refetchOnMount: false, // ✅ Utiliser le cache si frais (< 60s)
     retry: 1, // Réessayer qu'une seule fois en cas d'échec
   })
 }

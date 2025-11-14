@@ -172,20 +172,29 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
 
     logger.info(`Utilisation du schéma Prisma personnalisé: ${config.prismaSchema}`)
 
-    // Générer le client Prisma si nécessaire
-    const envVars = `DATABASE_URL="${connectionUrl}"`
-    const generateCmd = `${envVars} npx prisma generate --schema="${schemaPath}" --generator=client`
+    // ✅ Vérifier si le client existe déjà avant de re-générer
+    const clientExists = fs.existsSync(path.join(projectRoot, 'apps', 'node_modules', '.prisma', 'client-miles', 'index.js')) ||
+                         fs.existsSync(path.join(projectRoot, 'node_modules', '.prisma', 'client-miles', 'index.js'))
 
-    try {
-      execSync(generateCmd, {
-        cwd: projectRoot,
-        stdio: 'pipe',
-        env: { ...process.env, DATABASE_URL: connectionUrl }
-      })
-    } catch (genError: any) {
-      if (!genError.message.includes('already up to date')) {
-        logger.warn(`Génération Prisma (warning ignoré): ${genError.message}`)
+    if (!clientExists) {
+      // Générer le client Prisma UNIQUEMENT s'il n'existe pas
+      logger.debug('Client Prisma non trouvé, génération en cours...')
+      const envVars = `DATABASE_URL="${connectionUrl}"`
+      const generateCmd = `${envVars} npx prisma generate --schema="${schemaPath}" --generator=client`
+
+      try {
+        execSync(generateCmd, {
+          cwd: projectRoot,
+          stdio: 'pipe',
+          env: { ...process.env, DATABASE_URL: connectionUrl }
+        })
+      } catch (genError: any) {
+        if (!genError.message.includes('already up to date')) {
+          logger.warn(`Génération Prisma (warning ignoré): ${genError.message}`)
+        }
       }
+    } else {
+      logger.debug('Client Prisma déjà généré, utilisation directe')
     }
 
     // Charger le client généré
@@ -221,7 +230,8 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
     for (const tryPath of possiblePaths) {
       try {
         if (fs.existsSync(path.join(tryPath, 'index.js'))) {
-          const clientModule = await import(tryPath)
+          // Use require instead of dynamic import for reliability
+          const clientModule = require(tryPath)
           logger.info(`Client Prisma chargé depuis: ${tryPath}`)
           return clientModule.PrismaClient
         }
@@ -238,12 +248,30 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
   private async createDefaultMilesConnection(connectionUrl: string, logger: AgentLogger): Promise<any> {
     try {
       const path = require('path')
+      const fs = require('fs')
       // Client Miles Republic est dans apps/node_modules/.prisma/client-miles
       const projectRoot = path.resolve(__dirname, '../../../..')
-      const clientPath = path.join(projectRoot, 'apps', 'node_modules', '.prisma', 'client-miles')
-      const milesClient = await import(clientPath)
+      const possiblePaths = [
+        path.join(projectRoot, 'apps', 'node_modules', '.prisma', 'client-miles'),
+        path.join(projectRoot, 'node_modules', '.prisma', 'client-miles')
+      ]
 
-      logger.info('Utilisation du client Prisma Miles Republic par défaut')
+      let clientPath: string | null = null
+      for (const tryPath of possiblePaths) {
+        if (fs.existsSync(path.join(tryPath, 'index.js'))) {
+          clientPath = tryPath
+          break
+        }
+      }
+
+      if (!clientPath) {
+        throw new Error(`Client Prisma Miles Republic non trouvé dans: ${possiblePaths.join(', ')}`)
+      }
+
+      // Use require instead of dynamic import for reliability
+      const milesClient = require(clientPath)
+
+      logger.info(`Utilisation du client Prisma Miles Republic depuis: ${clientPath}`)
 
       const client = new milesClient.PrismaClient({
         datasources: {
@@ -256,7 +284,7 @@ export class MilesRepublicStrategy implements DatabaseStrategy {
     } catch (error) {
       logger.error('Client Prisma Miles Republic introuvable', { error: String(error) })
       throw new Error(
-        'Client Prisma Miles Republic non généré. Exécutez: cd apps/agents && npx prisma generate'
+        'Client Prisma Miles Republic non généré. Exécutez: cd apps/agents && npx prisma generate --schema=prisma/miles-republic.prisma'
       )
     }
   }
