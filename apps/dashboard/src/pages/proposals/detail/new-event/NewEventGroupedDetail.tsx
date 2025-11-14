@@ -44,6 +44,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           isEventDead,
           isEditionCanceled,
           groupProposals,
+          isAllApproved, // ✅ Mode lecture seule (toutes APPROVED)
           // Validation par bloc
           validateBlock,
           unvalidateBlock,
@@ -94,11 +95,12 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={!allPending || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('event')}
               onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
+              validationDisabled={isAllApproved}
             />
             
             {/* Table des champs Edition */}
@@ -115,28 +117,29 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={!allPending || isPending || isEventDead || isAllApproved}
               isEditionCanceled={isEditionCanceled || isEventDead}
               isBlockValidated={isBlockValidated('edition')}
               onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
+              validationDisabled={isAllApproved}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
-            {/* Section organisateur */}
-            {organizerChange && (
+            {/* Section organisateur - afficher s'il y a un changement OU si le bloc est validé */}
+            {(organizerChange || isBlockValidated('organizer')) && (
               <OrganizerSection
                 change={organizerChange}
                 onApprove={() => handleApproveField('organizer')}
                 onFieldModify={handleFieldModify}
                 userModifiedChanges={userModifiedChanges}
-                disabled={isBlockValidated('organizer') || isEventDead}
+                disabled={isBlockValidated('organizer') || isEventDead || isAllApproved}
                 isBlockValidated={isBlockValidated('organizer')}
                 onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
-                validationDisabled={isEventDead}
+                validationDisabled={isEventDead || isAllApproved}
               />
             )}
             
@@ -146,12 +149,12 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               userModifiedRaceChanges={userModifiedRaceChanges}
               onRaceFieldModify={handleRaceFieldModify}
               onDeleteRace={handleDeleteRace}
-              disabled={!allPending || isPending || isEventDead}
+              disabled={!allPending || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('races')}
               onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
-              validationDisabled={isEventDead}
+              validationDisabled={isEventDead || isAllApproved}
             />
             
             {/* Sources des dates extraites */}

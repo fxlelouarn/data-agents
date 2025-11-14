@@ -67,6 +67,44 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
   
+  // Si change est undefined ET que le bloc est validé, afficher juste le bouton d'annulation
+  if (!change && isBlockValidated) {
+    return (
+      <Paper sx={{ mb: 3 }}>
+        <Box 
+          sx={{ 
+            p: 2, 
+            display: 'flex', 
+            alignItems: 'center', 
+            justifyContent: 'space-between',
+            borderBottom: 1,
+            borderColor: 'divider',
+            bgcolor: 'action.hover',
+            opacity: 0.7
+          }}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <BusinessIcon color="action" />
+            <Typography variant="h6">Organisateur</Typography>
+            <Chip label="Validé" color="success" size="small" />
+          </Box>
+          {onValidateBlock && onUnvalidateBlock && (
+            <BlockValidationButton
+              blockName="Organisateur"
+              isValidated={isBlockValidated}
+              onValidate={onValidateBlock}
+              onUnvalidate={onUnvalidateBlock}
+              disabled={validationDisabled}
+              isPending={isBlockPending}
+            />
+          )}
+        </Box>
+      </Paper>
+    )
+  }
+  
+  if (!change) return null
+  
   const organizer = change.options[0]?.proposedValue
   const currentOrganizer = change.currentValue
   const confidence = change.options[0]?.confidence || 0
