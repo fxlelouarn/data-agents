@@ -70,6 +70,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   allPending: boolean
   hasApproved: boolean
   allApproved: boolean
+  isAllApproved: boolean // ✅ Mode lecture seule (toutes APPROVED)
   editionTimezone: string
   isNewEvent: boolean
   getEventTitle: (proposal: any, isNewEvent: boolean) => string
@@ -791,10 +792,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
   const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
 
-  // ✅ Utiliser les propositions PENDING uniquement pour les calculs de statut
-  const pendingProposals = workingGroup?.originalProposals || groupProposals.filter(p => p.status === 'PENDING')
-  
-  const proposalsWithValidConfidence = pendingProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
+  // ✅ Calculer la confiance avec TOUTES les propositions (PENDING + APPROVED)
+  // Car si toutes sont APPROVED, on veut quand même afficher leur confiance
+  const proposalsWithValidConfidence = groupProposals.filter(p => p.confidence !== undefined && p.confidence !== null && p.confidence > 0)
   const averageConfidence = proposalsWithValidConfidence.length > 0
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
@@ -812,7 +812,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // Utiliser les données consolidées du hook si disponibles, sinon fallback
     const changes = workingGroup?.consolidatedChanges || consolidatedChanges
     const raceChanges = workingGroup?.consolidatedRaces || consolidatedRaceChangesWithCascade
-    const proposals = workingGroup?.originalProposals || groupProposals
+    // ✅ Utiliser TOUTES les propositions (PENDING + APPROVED) pour calculer blockProposals
+    // Sinon aucun bouton d'annulation n'apparaît pour les propositions APPROVED
+    const proposals = groupProposals
     
     // Bloc Event - uniquement les champs appartenant à l'événement
     if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE') {
@@ -896,7 +898,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
-    proposals: workingGroup?.originalProposals || groupProposals,
+    // ✅ Utiliser TOUTES les propositions pour permettre l'annulation des blocs APPROVED
+    proposals: groupProposals,
     blockProposals,
     // ✅ Phase 4: Construire selectedChanges depuis workingGroup.consolidatedChanges
     selectedChanges: (() => {
@@ -927,6 +930,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   
   const hasApproved = groupProposals.some(p => p.status === 'APPROVED')
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
+  // ✅ Mode lecture seule si aucune proposition PENDING ET tous les blocs existants sont validés
+  // Cela évite de désactiver tous les blocs dès qu'on en valide un seul
+  const allBlocksValidated = Object.keys(blockProposals).length > 0 && 
+    Object.keys(blockProposals).every(blockKey => isBlockValidated(blockKey))
+  const isAllApproved = !hasPending && allApproved && allBlocksValidated
 
   // Context pour le render
   // ✅ Phase 4 : Single Source of Truth totale avec workingGroup
@@ -971,6 +979,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     allPending: hasPending, // ✅ Utiliser hasPending pour les boutons d'édition
     hasApproved,
     allApproved,
+    isAllApproved, // ✅ Mode lecture seule (toutes APPROVED)
     editionTimezone,
     isNewEvent,
     killDialogOpen,
@@ -1010,7 +1019,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             onPrevious: () => navigateToGroup('prev'),
             onNext: () => navigateToGroup('next')
           }}
-          showValidateAllBlocksButton={hasPending && !isEventDead && Object.keys(blockProposals).length > 0}
+          showValidateAllBlocksButton={hasPending && !isEventDead && Object.keys(blockProposals).length > 0 && !allBlocksValidated}
           onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
           showUnvalidateAllBlocksButton={hasValidatedBlocks()}
           onUnvalidateAllBlocks={unvalidateAllBlocks}
