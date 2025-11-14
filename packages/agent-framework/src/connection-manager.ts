@@ -204,8 +204,24 @@ export class ConnectionManager {
       const path = await import('path')
       const fs = await import('fs')
       
-      // Le schemaPath est relatif à la racine du projet
-      const projectRoot = process.cwd()
+      // Trouver la racine du monorepo (répertoire contenant package.json avec workspaces)
+      let projectRoot = process.cwd()
+      while (projectRoot !== '/') {
+        const packageJsonPath = path.join(projectRoot, 'package.json')
+        if (fs.existsSync(packageJsonPath)) {
+          try {
+            const packageJson = JSON.parse(fs.readFileSync(packageJsonPath, 'utf-8'))
+            // Vérifier si c'est la racine du monorepo (contient workspaces)
+            if (packageJson.workspaces || packageJson.name === 'data-agents') {
+              break
+            }
+          } catch {}
+        }
+        projectRoot = path.dirname(projectRoot)
+      }
+      
+      logger.debug('Racine du projet détectée', { projectRoot })
+      
       const schemaDir = path.dirname(path.join(projectRoot, config.prismaSchema || ''))
       
       // Chemins possibles pour le client généré
@@ -213,10 +229,10 @@ export class ConnectionManager {
       const clientDirName = config.type === 'miles-republic' ? 'client-miles' : 'client'
       
       const possiblePaths = [
-        // 1. Client au niveau apps/ (apps/node_modules/.prisma/client-miles)
-        path.join(projectRoot, 'apps', 'node_modules', '.prisma', clientDirName),
-        // 2. Client local au package du schéma (apps/agents/node_modules/.prisma/client-miles)
+        // 1. Client local au package du schéma (apps/agents/node_modules/.prisma/client-miles)
         path.join(schemaDir, '..', 'node_modules', '.prisma', clientDirName),
+        // 2. Client au niveau apps/ (apps/node_modules/.prisma/client-miles)
+        path.join(projectRoot, 'apps', 'node_modules', '.prisma', clientDirName),
         // 3. Client au niveau racine (node_modules/.prisma/client-miles)
         path.join(projectRoot, 'node_modules', '.prisma', clientDirName),
         // 4. Dans le répertoire parent du schéma
