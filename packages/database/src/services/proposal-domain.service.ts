@@ -25,12 +25,24 @@ export class ProposalDomainService {
 
   /**
    * Apply a proposal's changes to Miles Republic
+   * 
+   * ⚠️ MODE GROUPÉ DÉTECTION:
+   * Si proposalIds est passé dans options et contient plusieurs IDs,
+   * on applique les modifications UNE SEULE FOIS pour tout le groupe.
    */
   async applyProposal(
     proposalId: string,
     selectedChanges: Record<string, any>,
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
+    // ⚠️ Détection mode groupé
+    const isGroupedMode = options.proposalIds && options.proposalIds.length > 1
+    
+    if (isGroupedMode) {
+      this.logger.info(`📦 MODE GROUPÉ détecté: ${options.proposalIds!.length} propositions`)
+      this.logger.info(`✅ Application unique pour le groupe [${options.proposalIds!.join(', ')}]`)
+    }
+    
     // 1. Fetch proposal via repository
     const proposal = await this.proposalRepo.findById(proposalId)
 
@@ -46,13 +58,17 @@ export class ProposalDomainService {
       )
     }
 
-    // 3. Merge changes (user modifications take precedence)
+    // 3. Extract agent name for audit trail
+    const agentName = (proposal as any).agent?.name || 'data-agents'
+    this.logger.info(`🤖 Application par l'agent: ${agentName}`)
+
+    // 4. Merge changes (user modifications take precedence)
     const finalChanges = {
       ...(proposal.changes as Record<string, any>),
       ...(proposal.userModifiedChanges ? (proposal.userModifiedChanges as Record<string, any>) : {})
     }
 
-    // 4. Filter changes based on approved blocks (Option 2: Partial Application)
+    // 5. Filter changes based on approved blocks (Option 2: Partial Application)
     const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
     const filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
     
@@ -63,7 +79,7 @@ export class ProposalDomainService {
     }
 
     try {
-      // 5. Dry run check
+      // 6. Dry run check
       if (options.dryRun) {
         return {
           success: true,
@@ -72,40 +88,40 @@ export class ProposalDomainService {
         }
       }
 
-      // 6. Route to appropriate handler based on proposal type
+      // 7. Route to appropriate handler based on proposal type
       let result: ProposalApplicationResult
       
       switch (proposal.type) {
         case 'NEW_EVENT':
-          result = await this.applyNewEvent(finalChanges, filteredSelectedChanges, options)
+          result = await this.applyNewEvent(finalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         case 'EVENT_UPDATE':
           if (!proposal.eventId) {
             throw new Error('EventId manquant pour EVENT_UPDATE')
           }
-          result = await this.applyEventUpdate(proposal.eventId, finalChanges, filteredSelectedChanges, options)
+          result = await this.applyEventUpdate(proposal.eventId, finalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         case 'EDITION_UPDATE':
           if (!proposal.editionId) {
             throw new Error('EditionId manquant pour EDITION_UPDATE')
           }
-          result = await this.applyEditionUpdate(proposal.editionId, finalChanges, filteredSelectedChanges, options, proposal)
+          result = await this.applyEditionUpdate(proposal.editionId, finalChanges, filteredSelectedChanges, { ...options, agentName }, proposal)
           break
 
         case 'RACE_UPDATE':
           if (!proposal.raceId) {
             throw new Error('RaceId manquant pour RACE_UPDATE')
           }
-          result = await this.applyRaceUpdate(proposal.raceId, finalChanges, filteredSelectedChanges, options)
+          result = await this.applyRaceUpdate(proposal.raceId, finalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         default:
           return this.errorResult('type', `Type de proposition non supporté: ${proposal.type}`)
       }
       
-      // 7. Add filtered changes info to result
+      // 8. Add filtered changes info to result
       if (removedChanges.length > 0) {
         result.filteredChanges = {
           removed: removedChanges,
@@ -128,7 +144,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
 
       // Extract structured data
       // Note: Utiliser 'changes' qui contient les userModifiedChanges mergées
@@ -240,7 +256,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
       const numericEventId = parseInt(eventId)
 
       if (isNaN(numericEventId)) {
@@ -275,7 +291,7 @@ export class ProposalDomainService {
     try {
       this.logger.info(`\n🔄 Application EDITION_UPDATE pour l'édition ${editionId}`)
       
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
       const numericEditionId = parseInt(editionId)
 
       if (isNaN(numericEditionId)) {
@@ -423,9 +439,48 @@ export class ProposalDomainService {
             editionId: numericEditionId,
             eventId: edition?.eventId,
             name: editedData.name || raceData.name,
-            runDistance: editedData.distance ? parseFloat(editedData.distance) : raceData.distance,
-            runPositiveElevation: editedData.elevation ? parseFloat(editedData.elevation) : raceData.elevation,
-            startDate: editedData.startDate ? new Date(editedData.startDate) : (raceData.startDate ? new Date(raceData.startDate) : null)
+            startDate: editedData.startDate ? new Date(editedData.startDate) : (raceData.startDate ? new Date(raceData.startDate) : null),
+            // ✅ FIX: Renseigner les catégories depuis le scraper FFA
+            categoryLevel1: editedData.categoryLevel1 || raceData.categoryLevel1,
+            categoryLevel2: editedData.categoryLevel2 || raceData.categoryLevel2,
+            timeZone: editedData.timeZone || raceData.timeZone
+          }
+          
+          // ✅ FIX: Appliquer le bon champ de distance selon le type de course
+          // Distance
+          if (editedData.distance) {
+            const distance = parseFloat(editedData.distance)
+            const categoryLevel1 = racePayload.categoryLevel1
+            if (categoryLevel1 === 'WALK') {
+              racePayload.walkDistance = distance
+            } else if (categoryLevel1 === 'CYCLING') {
+              racePayload.bikeDistance = distance
+            } else {
+              racePayload.runDistance = distance
+            }
+          } else {
+            // Utiliser les valeurs proposées par l'agent
+            if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
+            if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
+            if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
+          }
+          
+          // Élévation
+          if (editedData.elevation) {
+            const elevation = parseFloat(editedData.elevation)
+            const categoryLevel1 = racePayload.categoryLevel1
+            if (categoryLevel1 === 'WALK') {
+              racePayload.walkPositiveElevation = elevation
+            } else if (categoryLevel1 === 'CYCLING') {
+              racePayload.bikePositiveElevation = elevation
+            } else {
+              racePayload.runPositiveElevation = elevation
+            }
+          } else {
+            // Utiliser les valeurs proposées par l'agent
+            if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = raceData.runPositiveElevation
+            if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = raceData.bikePositiveElevation
+            if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
           
           // Type est déprécié dans le schéma mais peut être utilisé
@@ -435,7 +490,10 @@ export class ProposalDomainService {
           }
           
           const newRace = await milesRepo.createRace(racePayload)
-          this.logger.info(`  ✅ Course créée: ${newRace.id} (${newRace.name}) - ${newRace.runDistance}km`)
+          this.logger.info(`  ✅ Course créée: ${newRace.id} (${newRace.name}) - ${newRace.runDistance}km`, {
+            categoryLevel1: racePayload.categoryLevel1,
+            categoryLevel2: racePayload.categoryLevel2
+          })
         }
       }
       
@@ -503,7 +561,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
       const numericRaceId = parseInt(raceId)
 
       if (isNaN(numericRaceId)) {
@@ -589,9 +647,9 @@ export class ProposalDomainService {
   /**
    * Get Miles Republic repository (with connection)
    */
-  private async getMilesRepublicRepository(databaseId?: string): Promise<MilesRepublicRepository> {
+  private async getMilesRepublicRepository(databaseId?: string, agentName: string = 'data-agents'): Promise<MilesRepublicRepository> {
     const milesDb = await this.getMilesRepublicConnection(databaseId)
-    return new MilesRepublicRepository(milesDb)
+    return new MilesRepublicRepository(milesDb, agentName)
   }
 
   /**
@@ -806,7 +864,8 @@ export class ProposalDomainService {
         runPositiveElevation: raceData.runPositiveElevation ? parseFloat(raceData.runPositiveElevation) : undefined,
         // Mapper type (obsolète) vers categoryLevel1
         categoryLevel1: raceData.categoryLevel1 || raceData.type,
-        // Note: type est obsolète, on ne le renseigne pas
+        // ✅ FIX: Extraire categoryLevel2 depuis FFA Scraper
+        categoryLevel2: raceData.categoryLevel2,
         price: raceData.price ? parseFloat(raceData.price) : undefined
       })
     }

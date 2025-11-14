@@ -105,6 +105,7 @@ model Proposal {
 model ProposalApplication {
   id           String                  @id @default(cuid())
   proposalId   String
+  proposalIds  String[]                @default([])  // IDs des propositions du groupe (mode groupé)
   status       ApplicationStatus       @default(PENDING)
   scheduledAt  DateTime?
   appliedAt    DateTime?

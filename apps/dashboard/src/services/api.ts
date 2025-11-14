@@ -232,6 +232,14 @@ export const proposalsApi = {
     blockKey: string
   ): Promise<ApiResponse<Proposal>> =>
     api.post(`/proposals/${id}/unvalidate-block`, { block: blockKey }).then(res => res.data),
+
+  // ✅ MODE GROUPÉ : Validation de bloc pour plusieurs propositions
+  validateBlockGroup: (
+    proposalIds: string[],
+    blockKey: string,
+    changes: Record<string, any>
+  ): Promise<ApiResponse<Proposal[]>> =>
+    api.post('/proposals/validate-block-group', { proposalIds, block: blockKey, changes }).then(res => res.data),
 }
 
 // Runs API

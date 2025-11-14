@@ -106,6 +106,12 @@ export interface IProposalService {
     status?: string
     reviewedAt?: Date
     reviewedBy?: string
+    appliedBy?: string
+    userModifiedChanges?: any
+    modificationReason?: string
+    modifiedBy?: string
+    modifiedAt?: Date
+    approvedBlocks?: any
   }): Promise<Proposal>
   
   deleteProposal(id: string): Promise<void>
@@ -201,6 +207,8 @@ export interface ApplyOptions {
   dryRun?: boolean         // Simulation
   milesRepublicDatabaseId?: string // ID de la connexion Miles Republic
   capturedLogs?: string[]  // Tableau pour capturer les logs (pour l'interface utilisateur)
+  agentName?: string       // Nom de l'agent pour l'audit trail (createdBy/updatedBy)
+  proposalIds?: string[]   // IDs des propositions du groupe (mode groupé)
 }
 
 export interface ProposalApplicationResult {

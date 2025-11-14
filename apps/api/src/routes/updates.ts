@@ -284,11 +284,19 @@ router.post('/:id/apply', [
     logs.push('Starting update application...')
     logs.push('Validating proposal changes...')
     
+    // ✅ MODE GROUPÉ : Passer proposalIds si disponibles
+    const applyOptions: any = { capturedLogs: logs }
+    
+    if (application.proposalIds && application.proposalIds.length > 0) {
+      applyOptions.proposalIds = application.proposalIds
+      logs.push(`📦 Mode groupé détecté: ${application.proposalIds.length} propositions`)
+    }
+    
     // Apply the proposal using ProposalApplicationService with log capturing
     const result = await applicationService.applyProposal(
       application.proposalId,
       application.proposal.changes as Record<string, any>, // Use all changes from the proposal
-      { capturedLogs: logs } // Pass logs array to capture detailed logs
+      applyOptions // Pass options with proposalIds if grouped
     )
 
     if (result.success) {

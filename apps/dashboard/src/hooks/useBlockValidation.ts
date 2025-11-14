@@ -55,43 +55,39 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
   }, [proposals, blockProposals])
 
   // Valider un bloc (approuver toutes ses propositions)
+  // ⚠️ MODE GROUPÉ : Un seul appel API avec tous les IDs
   const validateBlock = useCallback(async (blockKey: string, proposalIds: string[]) => {
     try {
-      // Approuver toutes les propositions du bloc
-      await Promise.all(
-        proposalIds.map(id => {
-          const proposal = proposals.find(p => p.id === id)
-          if (!proposal) {
-            console.warn(`Proposition ${id} introuvable`)
-            return Promise.resolve()
-          }
-          
-          // ✅ Construire le payload avec UNIQUEMENT les modifications utilisateur
-          // Le backend mergera automatiquement avec proposal.changes
-          const payload: Record<string, any> = { ...userModifiedChanges }
-          
-          // Ajouter les modifications de courses si bloc "races"
-          if (blockKey === 'races' && userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
-            payload.raceEdits = userModifiedRaceChanges
-          }
-          
-          console.log(`✅ [useBlockValidation] Bloc "${blockKey}" - Envoi modifications uniquement:`, {
-            blockKey,
-            proposalId: id,
-            userModifiedChanges,
-            userModifiedRaceChanges: blockKey === 'races' ? userModifiedRaceChanges : undefined,
-            payload
-          })
-          
-          return updateProposalMutation.mutateAsync({
-            id,
-            status: 'APPROVED',
-            reviewedBy: 'Utilisateur',
-            block: blockKey,
-            userModifiedChanges: payload // ✅ Modifications utilisateur seulement
-          })
-        })
-      )
+      // Vérifier que les propositions existent
+      if (proposalIds.length === 0) {
+        console.warn('Aucune proposition à valider')
+        return
+      }
+      
+      // ✅ Construire le payload consolidé avec UNIQUEMENT les modifications utilisateur
+      // Le backend mergera automatiquement avec proposal.changes
+      const changes: Record<string, any> = { ...userModifiedChanges }
+      
+      // Ajouter les modifications de courses si bloc "races"
+      if (blockKey === 'races' && userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
+        changes.raceEdits = userModifiedRaceChanges
+      }
+      
+      console.log(`📦 [useBlockValidation] MODE GROUPÉ - Bloc "${blockKey}":`, {
+        blockKey,
+        proposalIds,
+        proposalCount: proposalIds.length,
+        userModifiedChanges,
+        userModifiedRaceChanges: blockKey === 'races' ? userModifiedRaceChanges : undefined,
+        changes
+      })
+      
+      // ✅ UN SEUL APPEL API pour tout le groupe
+      await updateProposalMutation.mutateAsync({
+        proposalIds,    // 📦 Passer tous les IDs
+        block: blockKey,
+        changes         // 📦 Payload consolidé
+      })
 
       // Marquer le bloc comme validé
       setBlockStatus(prev => ({
@@ -101,11 +97,13 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
           proposalIds
         }
       }))
+      
+      console.log(`✅ [useBlockValidation] Bloc "${blockKey}" validé pour ${proposalIds.length} propositions`)
     } catch (error) {
       console.error(`Error validating block ${blockKey}:`, error)
       throw error
     }
-  }, [updateProposalMutation])
+  }, [updateProposalMutation, userModifiedChanges, userModifiedRaceChanges])
 
   // Annuler la validation d'un bloc
   const unvalidateBlock = useCallback(async (blockKey: string) => {

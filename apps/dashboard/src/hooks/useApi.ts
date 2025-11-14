@@ -250,8 +250,9 @@ export const useUpdateProposal = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: ({ 
-      id, 
+    mutationFn: async ({ 
+      id,
+      proposalIds,  // 📦 MODE GROUPÉ
       status, 
       reviewedBy, 
       appliedChanges,
@@ -259,9 +260,11 @@ export const useUpdateProposal = () => {
       modificationReason,
       modifiedBy,
       block,
-      killEvent
+      killEvent,
+      changes  // 📦 MODE GROUPÉ : payload consolidé
     }: { 
-      id: string
+      id?: string
+      proposalIds?: string[]  // 📦 MODE GROUPÉ
       status?: string
       reviewedBy?: string
       appliedChanges?: Record<string, any>
@@ -270,11 +273,39 @@ export const useUpdateProposal = () => {
       modifiedBy?: string
       block?: string
       killEvent?: boolean
-    }) => proposalsApi.update(id, { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block, killEvent }),
-    onSuccess: (response, { id }) => {
+      changes?: Record<string, any>  // 📦 MODE GROUPÉ
+    }) => {
+      // 📦 MODE GROUPÉ : Détecter et router vers le bon endpoint
+      if (proposalIds && proposalIds.length > 0 && block) {
+        console.log(`📦 useUpdateProposal MODE GROUPÉ: ${proposalIds.length} propositions, bloc "${block}"`)
+        return proposalsApi.validateBlockGroup(proposalIds, block, changes || {})
+      }
+      
+      // Mode simple (1 proposition) - retourner un tableau pour uniformiser le type
+      if (!id) {
+        throw new Error('id ou proposalIds requis')
+      }
+      const result = await proposalsApi.update(id, { status, reviewedBy, appliedChanges, userModifiedChanges, modificationReason, modifiedBy, block, killEvent })
+      // ✅ Retourner un tableau pour uniformiser avec le mode groupé
+      return { ...result, data: [result.data] }
+    },
+    onSuccess: (response, { id, proposalIds }) => {
       queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      queryClient.invalidateQueries({ queryKey: ['proposals', id] })
-      enqueueSnackbar(response.message || 'Proposition mise à jour', { variant: 'success' })
+      
+      // Invalider les propositions concernées
+      if (proposalIds && proposalIds.length > 0) {
+        proposalIds.forEach(proposalId => {
+          queryClient.invalidateQueries({ queryKey: ['proposals', proposalId] })
+        })
+        // ✅ Invalider TOUS les groupes car on ne connait pas le groupKey ici
+        queryClient.invalidateQueries({ queryKey: ['proposals', 'group'] })
+        enqueueSnackbar(response.message || `${proposalIds.length} propositions mises à jour`, { variant: 'success' })
+      } else if (id) {
+        queryClient.invalidateQueries({ queryKey: ['proposals', id] })
+        // ✅ Invalider les groupes car la proposition peut appartenir à un groupe
+        queryClient.invalidateQueries({ queryKey: ['proposals', 'group'] })
+        enqueueSnackbar(response.message || 'Proposition mise à jour', { variant: 'success' })
+      }
     },
     onError: (error: any) => {
       enqueueSnackbar(
@@ -613,7 +644,7 @@ export const useTestDatabase = () => {
     onSuccess: (response) => {
       const message = response.data.isHealthy 
         ? `Test de connexion réussi (${response.data.responseTime}ms)`
-        : `Test de connexion échoué: ${response.data.error}`
+        : `Test de connexion échoué: ${response.data.error || 'Erreur inconnue'}`
       enqueueSnackbar(message, { 
         variant: response.data.isHealthy ? 'success' : 'error' 
       })
