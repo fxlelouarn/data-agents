@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator'
 import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
+import pLimit from 'p-limit'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -157,6 +158,10 @@ router.post('/', [
 let enrichProposalDbManager: any = null
 let milesRepublicConnectionId: string | null = null
 let milesRepublicConnection: any = null // Cache de la connexion Prisma réutilisable
+
+// Limiter la concurrence des requêtes DB pour éviter "too many clients"
+// Dev local : 20 | Production : 10 (selon config PostgreSQL max_connections)
+const enrichLimit = pLimit(process.env.NODE_ENV === 'production' ? 10 : 20)
 
 export async function enrichProposal(proposal: any) {
   // EVENT_UPDATE: Enrich with event name, city and status
@@ -404,9 +409,9 @@ router.get('/', [
     }
   })
 
-  // Enrichir chaque proposition avec les infos contextuelles
+  // Enrichir chaque proposition avec les infos contextuelles (concurrence limitée à 5)
   const enrichedProposals = await Promise.all(
-    proposals.map(p => enrichProposal(p))
+    proposals.map(p => enrichLimit(() => enrichProposal(p)))
   )
 
   res.json({
@@ -466,9 +471,9 @@ router.get('/group/:groupKey', [
     })
   }
   
-  // Enrichir chaque proposition avec les infos contextuelles
+  // Enrichir chaque proposition avec les infos contextuelles (concurrence limitée à 5)
   const enrichedProposals = await Promise.all(
-    proposals.map(p => enrichProposal(p))
+    proposals.map(p => enrichLimit(() => enrichProposal(p)))
   )
   
   res.json({
@@ -666,6 +671,150 @@ router.put('/:id', requireAuth, [
     data: proposal,
     createdApplication,
     message: `Proposal ${status?.toLowerCase() || 'updated'} successfully${createdApplication ? ' - Application created and ready for deployment' : ''}`
+  })
+}))
+
+// POST /api/proposals/validate-block-group - Validate a block for multiple proposals (grouped mode)
+router.post('/validate-block-group', [
+  body('proposalIds').isArray().withMessage('proposalIds must be an array'),
+  body('proposalIds.*').isString().withMessage('Each proposalId must be a string'),
+  body('block').isString().notEmpty().withMessage('block is required'),
+  body('changes').isObject().withMessage('changes must be an object'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { proposalIds, block, changes } = req.body
+  
+  // Log pour debug
+  console.log('\ud83d\udce6 validate-block-group appelé avec:', {
+    proposalIds,
+    block,
+    changesKeys: Object.keys(changes)
+  })
+
+  // Vérifier que les propositions existent et sont du même groupe
+  const proposals = await db.prisma.proposal.findMany({
+    where: { id: { in: proposalIds } }
+  })
+
+  if (proposals.length !== proposalIds.length) {
+    throw createError(404, 'Some proposals not found', 'PROPOSALS_NOT_FOUND')
+  }
+
+  // Vérifier que toutes les propositions ciblent la même édition
+  const editionIds = [...new Set(proposals.map(p => p.editionId).filter(Boolean))]
+  if (editionIds.length !== 1) {
+    throw createError(400, 'Proposals must target the same edition', 'INVALID_PROPOSAL_GROUP')
+  }
+
+  // Construire le payload consolidé depuis 'changes'
+  // Le frontend envoie déjà les changements consolidés (sélectionnés + modifiés)
+  const approvedBlocks = { [block]: true }
+
+  // Mettre à jour TOUTES les propositions avec le même payload
+  const updatedProposals = await Promise.all(
+    proposalIds.map(async (proposalId: string) => {
+      const proposal = proposals.find(p => p.id === proposalId)!
+      const existingApprovedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+      const existingUserModifiedChanges = (proposal.userModifiedChanges as Record<string, any>) || {}
+
+      return db.updateProposal(proposalId, {
+        approvedBlocks: { ...existingApprovedBlocks, ...approvedBlocks },
+        userModifiedChanges: { ...existingUserModifiedChanges, ...changes },
+        modifiedAt: new Date(),
+        modifiedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+      })
+    })
+  )
+
+  // Vérifier si tous les blocs EXISTANTS sont validés pour marquer les propositions comme APPROVED
+  // On ne vérifie que les blocs qui ont effectivement été proposés/modifiés
+  const firstProposal = updatedProposals[0]
+  const approvedBlocksObj = firstProposal.approvedBlocks as Record<string, boolean>
+  const existingBlocks = Object.keys(approvedBlocksObj)
+  
+  // Tous les blocs existants doivent être validés
+  const allBlocksValidated = existingBlocks.length > 0 && 
+    existingBlocks.every(blockKey => approvedBlocksObj[blockKey] === true)
+
+  console.log('🔍 Vérification blocs:', {
+    existingBlocks,
+    approvedBlocksObj,
+    allBlocksValidated,
+    willApprove: allBlocksValidated
+  })
+
+  if (allBlocksValidated) {
+    // Marquer toutes les propositions comme APPROVED
+    const approvedProposals = await Promise.all(
+      proposalIds.map((proposalId: string) =>
+        db.updateProposal(proposalId, {
+          status: 'APPROVED',
+          reviewedAt: new Date(),
+          reviewedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+        })
+      )
+    )
+    
+    console.log('✅ Statut mis à jour à APPROVED:', {
+      proposalIds,
+      statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
+    })
+
+    // Créer UNE SEULE ProposalApplication pour le groupe
+    const existingApp = await db.prisma.proposalApplication.findFirst({
+      where: {
+        proposalId: proposalIds[0] // Proposition principale (première du groupe)
+        // Note: proposalIds hasSome non supporté par types Prisma (ajouté après génération)
+      } as any // ✅ TypeScript cast (Prisma type incomplet)
+    })
+
+    if (!existingApp) {
+      // ⚠️ WORKAROUND: Prisma runtime ne reconnaît pas proposalIds malgré la migration
+      // Utiliser raw SQL pour créer la ProposalApplication
+      const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
+      await db.prisma.$executeRaw`
+        INSERT INTO "proposal_applications" (
+          "id", "proposalId", "proposalIds", "status", "createdAt", "updatedAt", "logs"
+        ) VALUES (
+          ${applicationId},
+          ${proposalIds[0]},
+          ${proposalIds}::text[],
+          'PENDING',
+          NOW(),
+          NOW(),
+          ARRAY[]::text[]
+        )
+      `
+      
+      const application = { id: applicationId }
+
+      await db.createLog({
+        agentId: firstProposal.agentId,
+        level: 'INFO',
+        message: `Grouped proposals [${proposalIds.join(', ')}] approved - Single application created`,
+        data: { 
+          proposalIds,
+          applicationId: application.id,
+          block,
+          allBlocksValidated: true
+        }
+      })
+
+      console.log('\u2705 Application groupée créée:', application.id)
+    }
+  }
+
+  // Récupérer les propositions finales (avec statut APPROVED si tous blocs validés)
+  const finalProposals = allBlocksValidated 
+    ? await db.prisma.proposal.findMany({ where: { id: { in: proposalIds } } })
+    : updatedProposals
+  
+  console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
+
+  res.json({
+    success: true,
+    data: finalProposals,
+    message: `Block "${block}" validated for ${proposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}`
   })
 }))
 
@@ -990,82 +1139,86 @@ router.post('/:id/convert-to-edition-update', [
       }
     }
 
-    // Courses : Matcher avec l'édition existante (comme dans FFAScraperAgent)
+    // Courses : Matcher avec l'édition existante (algorithme hybride distance + nom)
     if (editionData.races && editionData.races.length > 0) {
       const ffaRaces = editionData.races
       const existingRaces = existingEdition.races || []
       
-      // Convertir les distances DB (km) en mètres
-      const existingRacesWithMeters = existingRaces.map((r: any) => ({
-        ...r,
-        totalDistanceMeters: ((r.runDistance || 0) + (r.walkDistance || 0) + (r.swimDistance || 0) + (r.bikeDistance || 0)) * 1000
-      }))
+      // Importer la fonction de matching hybride depuis le package agents
+      // Note: On importe directement depuis apps/agents car matcher.ts n'est pas dans agent-framework
+      const matcherPath = require('path').resolve(__dirname, '../../../agents/src/ffa/matcher')
+      const { matchRacesByDistanceAndName } = await import(matcherPath)
+      
+      // Utiliser l'algorithme de matching hybride
+      const matchingResult = matchRacesByDistanceAndName(ffaRaces, existingRaces, logger)
+      
+      logger.info(`  📊 Matching result: ${matchingResult.matched.length} matched, ${matchingResult.unmatched.length} unmatched`)
       
       const racesToAdd: any[] = []
       const racesToUpdate: any[] = []
+      const racesExisting: any[] = [] // ✅ Courses matchées SANS changement
       
-      for (const ffaRace of ffaRaces) {
-        // Matcher par distance (tolérance 5%)
-        const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
-          if (ffaRace.runDistance && ffaRace.runDistance > 0) {
-            const ffaDistanceMeters = ffaRace.runDistance * 1000
-            const tolerance = ffaDistanceMeters * 0.05
-            const distanceDiff = Math.abs(dbRace.totalDistanceMeters - ffaDistanceMeters)
-            return distanceDiff <= tolerance
-          }
-          
-          // Fallback sur le nom
-          const nameMatch = dbRace.name?.toLowerCase().includes(ffaRace.name.toLowerCase()) ||
-                            ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
-          return nameMatch
-        })
+      // Courses non matchées → Nouvelles courses
+      for (const ffaRace of matchingResult.unmatched) {
+        racesToAdd.push(ffaRace)
+      }
+      
+      // Courses matchées → Vérifier les différences
+      for (const { ffa: ffaRace, db: matchingRace } of matchingResult.matched) {
+        const raceUpdates: any = {}
         
-        if (!matchingRace) {
-          // Course à ajouter
-          racesToAdd.push(ffaRace)
-        } else {
-          // Course existante - vérifier les mises à jour
-          const raceUpdates: any = {}
+        // Vérifier l'élévation
+        if (ffaRace.runPositiveElevation && 
+            (!matchingRace.runPositiveElevation || 
+             Math.abs(matchingRace.runPositiveElevation - ffaRace.runPositiveElevation) > 10)) {
+          raceUpdates.runPositiveElevation = {
+            old: matchingRace.runPositiveElevation,
+            new: ffaRace.runPositiveElevation,
+            confidence
+          }
+        }
+        
+        // Vérifier la date/heure de départ
+        if (ffaRace.startDate) {
+          const ffaStartDate = new Date(ffaRace.startDate)
+          const dbStartDate = matchingRace.startDate ? new Date(matchingRace.startDate) : null
           
-          // Vérifier l'élévation
-          if (ffaRace.runPositiveElevation && 
-              (!matchingRace.runPositiveElevation || 
-               Math.abs(matchingRace.runPositiveElevation - ffaRace.runPositiveElevation) > 10)) {
-            raceUpdates.runPositiveElevation = {
-              old: matchingRace.runPositiveElevation,
-              new: ffaRace.runPositiveElevation,
+          if (!dbStartDate || Math.abs(ffaStartDate.getTime() - dbStartDate.getTime()) > 3600000) {
+            raceUpdates.startDate = {
+              old: dbStartDate?.toISOString() || null,
+              new: ffaRace.startDate,
               confidence
             }
           }
-          
-          // Vérifier la date/heure de départ
-          if (ffaRace.startDate) {
-            const ffaStartDate = new Date(ffaRace.startDate)
-            const dbStartDate = matchingRace.startDate ? new Date(matchingRace.startDate) : null
-            
-            if (!dbStartDate || Math.abs(ffaStartDate.getTime() - dbStartDate.getTime()) > 3600000) {
-              raceUpdates.startDate = {
-                old: dbStartDate?.toISOString() || null,
-                new: ffaRace.startDate,
-                confidence
-              }
-            }
-          }
-          
-          // Si des mises à jour sont nécessaires, les ajouter
-          if (Object.keys(raceUpdates).length > 0) {
-            racesToUpdate.push({
-              raceId: matchingRace.id,
-              raceName: matchingRace.name,
-              // ✅ Inclure tous les champs FFA pour affichage dans l'interface
-              runDistance: ffaRace.runDistance,
-              runPositiveElevation: ffaRace.runPositiveElevation,
-              categoryLevel1: ffaRace.categoryLevel1,
-              categoryLevel2: ffaRace.categoryLevel2,
-              startDate: ffaRace.startDate,
-              updates: raceUpdates
-            })
-          }
+        }
+        
+        // Si des mises à jour sont nécessaires, les ajouter
+        if (Object.keys(raceUpdates).length > 0) {
+          racesToUpdate.push({
+            raceId: matchingRace.id,
+            raceName: matchingRace.name,
+            // ✅ Inclure tous les champs FFA pour affichage dans l'interface
+            runDistance: ffaRace.runDistance,
+            runPositiveElevation: ffaRace.runPositiveElevation,
+            categoryLevel1: ffaRace.categoryLevel1,
+            categoryLevel2: ffaRace.categoryLevel2,
+            startDate: ffaRace.startDate,
+            updates: raceUpdates
+          })
+        } else {
+          // ✅ Course matchée SANS changement → Affichage informatif
+          racesExisting.push({
+            raceId: matchingRace.id,
+            raceName: matchingRace.name,
+            runDistance: matchingRace.runDistance,
+            walkDistance: matchingRace.walkDistance,
+            bikeDistance: matchingRace.bikeDistance,
+            swimDistance: matchingRace.swimDistance,
+            runPositiveElevation: matchingRace.runPositiveElevation,
+            categoryLevel1: matchingRace.categoryLevel1,
+            categoryLevel2: matchingRace.categoryLevel2,
+            startDate: matchingRace.startDate?.toISOString() || null
+          })
         }
       }
       
@@ -1078,6 +1231,14 @@ router.post('/:id/convert-to-edition-update', [
       if (racesToUpdate.length > 0) {
         editionChanges.racesToUpdate = { new: racesToUpdate, confidence }
       }
+      
+      // ✅ Ajouter les courses existantes sans changement (affichage informatif)
+      if (racesExisting.length > 0) {
+        editionChanges.racesExisting = { new: racesExisting, confidence }
+      }
+      
+      // Logger le résultat
+      logger.info(`  🏁 Races summary: ${racesToAdd.length} to add, ${racesToUpdate.length} to update, ${racesExisting.length} existing unchanged`)
     }
   }
 
