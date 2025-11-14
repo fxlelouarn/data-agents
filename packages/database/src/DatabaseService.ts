@@ -172,6 +172,11 @@ export class DatabaseService {
     reviewedAt?: Date
     reviewedBy?: string
     appliedBy?: string
+    userModifiedChanges?: any
+    modificationReason?: string
+    modifiedBy?: string
+    modifiedAt?: Date
+    approvedBlocks?: any
   }) {
     return this.proposalService.updateProposal(id, data)
   }

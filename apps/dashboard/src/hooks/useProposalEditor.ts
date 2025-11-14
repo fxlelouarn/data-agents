@@ -252,23 +252,28 @@ export function useProposalEditor(
     // ✅ Séparer les propositions PENDING des propositions déjà traitées
     const pendingProposals = proposals.filter(p => p.status === 'PENDING')
     const historicalProposals = proposals.filter(p => p.status !== 'PENDING')
+    const approvedProposals = proposals.filter(p => p.status === 'APPROVED')
     
     const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation
 
-    // ✅ Consolidation UNIQUEMENT des propositions PENDING
-    const consolidatedChanges = consolidateChangesFromProposals(pendingProposals)
-    const consolidatedRaces = consolidateRacesFromProposals(pendingProposals)
+    // ✅ MODE LECTURE SEULE : Si aucune PENDING mais des APPROVED, afficher en lecture seule
+    // Utiliser uniquement les APPROVED (pas REJECTED/ARCHIVED) pour éviter la pollution
+    const proposalsToConsolidate = pendingProposals.length > 0 ? pendingProposals : approvedProposals
 
-    // ✅ Blocs approuvés UNIQUEMENT des propositions PENDING
+    // ✅ Consolidation (PENDING en priorité, sinon APPROVED en lecture seule)
+    const consolidatedChanges = consolidateChangesFromProposals(proposalsToConsolidate)
+    const consolidatedRaces = consolidateRacesFromProposals(proposalsToConsolidate)
+
+    // ✅ Blocs approuvés (PENDING ou APPROVED)
     const approvedBlocks: Record<string, boolean> = {}
     const allBlockKeys = new Set<string>()
-    pendingProposals.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
+    proposalsToConsolidate.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
     allBlockKeys.forEach(blockKey => {
-      approvedBlocks[blockKey] = pendingProposals.every(p => p.approvedBlocks?.[blockKey])
+      approvedBlocks[blockKey] = proposalsToConsolidate.every(p => p.approvedBlocks?.[blockKey])
     })
 
-    // Extraire userModifiedChanges depuis la première proposition PENDING (identique pour toutes)
-    const firstProposal = pendingProposals[0]
+    // Extraire userModifiedChanges depuis la première proposition (PENDING ou APPROVED)
+    const firstProposal = proposalsToConsolidate[0]
     const userModifiedRaceChanges = firstProposal?.userModifiedChanges?.raceEdits || {}
     
     // Extraire les autres modifications utilisateur (hors raceEdits)
@@ -478,6 +483,29 @@ export function useProposalEditor(
       }
     }
     
+    // ✅ Chercher racesExisting (courses sans changement)
+    if (changes.racesExisting && typeof changes.racesExisting === 'object') {
+      const racesExistingObj = extractNewValue(changes.racesExisting)
+      if (Array.isArray(racesExistingObj)) {
+        racesExistingObj.forEach((raceInfo: any) => {
+          const raceId = raceInfo.raceId ? raceInfo.raceId.toString() : `existing-${Math.random()}`
+          // Pour racesExisting, les données sont déjà les valeurs actuelles
+          races[raceId] = {
+            id: raceId,
+            name: raceInfo.raceName || 'Course',
+            startDate: raceInfo.startDate,
+            runDistance: raceInfo.runDistance,
+            bikeDistance: raceInfo.bikeDistance,
+            walkDistance: raceInfo.walkDistance,
+            swimDistance: raceInfo.swimDistance,
+            runPositiveElevation: raceInfo.runPositiveElevation,
+            categoryLevel1: raceInfo.categoryLevel1,
+            categoryLevel2: raceInfo.categoryLevel2
+          }
+        })
+      }
+    }
+    
     // Fallback: utiliser extractRaces avec extractOld=true pour les autres structures
     if (Object.keys(races).length === 0) {
       return extractRaces(proposal.changes, proposal, true)
@@ -635,6 +663,34 @@ export function useProposalEditor(
             Object.entries(raceUpdate.updates).forEach(([field, value]: [string, any]) => {
               raceData[field] = extractOld ? extractOldValue(value) : extractNewValue(value)
             })
+          }
+          
+          races[raceId] = normalizeRace(raceData, raceId, extractOld)
+        })
+      }
+    }
+    
+    // 1d. ✅ Chercher changes.racesExisting (FFA Scraper - EDITION_UPDATE)
+    // Courses existantes sans changement (affichage informatif uniquement)
+    if (changes.racesExisting && typeof changes.racesExisting === 'object') {
+      const racesExistingObj = extractNewValue(changes.racesExisting)
+      if (Array.isArray(racesExistingObj)) {
+        racesExistingObj.forEach((raceInfo: any) => {
+          const raceId = raceInfo.raceId ? raceInfo.raceId.toString() : `existing-${Math.random()}`
+          // Pour les courses existantes sans changement, on met tout dans raceData
+          // car il n'y a pas de distinction old/new
+          const raceData: any = { 
+            id: raceId,
+            name: raceInfo.raceName || 'Course',
+            runDistance: raceInfo.runDistance,
+            walkDistance: raceInfo.walkDistance,
+            bikeDistance: raceInfo.bikeDistance,
+            swimDistance: raceInfo.swimDistance,
+            runPositiveElevation: raceInfo.runPositiveElevation,
+            categoryLevel1: raceInfo.categoryLevel1,
+            categoryLevel2: raceInfo.categoryLevel2,
+            startDate: raceInfo.startDate,
+            _isExistingUnchanged: true // ✅ Marqueur pour l'affichage
           }
           
           races[raceId] = normalizeRace(raceData, raceId, extractOld)
