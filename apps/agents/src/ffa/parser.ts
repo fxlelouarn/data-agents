@@ -24,6 +24,14 @@ export function parseCompetitionsList(html: string, referenceDate?: Date): FFACo
     try {
       const $row = $(element)
       
+      // Ignorer les lignes de header (colspan)
+      const firstTd = $row.find('td:first-child')
+      if (firstTd.attr('colspan')) return
+      
+      // Vérifier qu'on a bien plusieurs colonnes (pas une ligne de header)
+      const cellsCount = $row.find('td').length
+      if (cellsCount < 7) return // Une compétition valide a au moins 7 colonnes
+      
       // Extraire le numéro FFA depuis l'attribut title
       const titleAttr = $row.find('td:first-child a').attr('title')
       const ffaIdMatch = titleAttr?.match(/Compétition numéro : (\d+)/)
@@ -340,7 +348,8 @@ export function parseFrenchDate(dateStr: string, referenceDate?: Date): Date | u
     }
 
     // Format: "01 novembre" ou "01 Novembre 2025"
-    const match = dateStr.match(/(\d{1,2})\s+(\w+)(?:\s+(\d{4}))?/)
+    // Note: \w ne matche pas les accents, utiliser [a-zà-ÿ]+ pour les mois français
+    const match = dateStr.match(/(\d{1,2})\s+([a-zà-ÿ]+)(?:\s+(\d{4}))?/i)
     if (!match) return undefined
 
     const day = parseInt(match[1], 10)
@@ -463,6 +472,169 @@ export function cleanEventName(name: string): string {
   cleaned = cleaned.replace(/^[-–/\s]+|[-–/\s]+$/g, '')
 
   return cleaned.trim()
+}
+
+/**
+ * Normalise un nom de course FFA selon le format standard
+ * [Category Level 1] [Relais ?] [Enfants ?] [Distance]
+ * 
+ * Exemples :
+ * - "1/2 Marathon" (21 km) → "Course 21 km"
+ * - "Trail des Loups" (25 km) → "Trail 25 km"
+ * - "Marche Nordique" (8 km) → "Marche Nordique 8 km"
+ * - "Course Relais 4x5km" (20 km) → "Course Relais 20 km"
+ * 
+ * @param raceName - Nom brut de la course FFA
+ * @param categoryLevel1 - Catégorie inférée (RUNNING, TRAIL, WALK, etc.)
+ * @param categoryLevel2 - Sous-catégorie inférée (HALF_MARATHON, NORDIC_WALK, etc.)
+ * @param distance - Distance en km (optionnelle)
+ * @returns Nom normalisé
+ */
+export function normalizeFFARaceName(
+  raceName: string,
+  categoryLevel1?: string,
+  categoryLevel2?: string,
+  distance?: number
+): string {
+  const lower = raceName.toLowerCase()
+  
+  // 1. Détection des modificateurs
+  const isRelay = /relais|ekiden|x\d/.test(lower)
+  const isKids = /enfant|kids|junior|jeune|pouss/.test(lower)
+  
+  // 2. Label de catégorie principal
+  const categoryLabel = getCategoryLabel(categoryLevel1, categoryLevel2)
+  
+  // 3. Composition
+  const parts: string[] = []
+  
+  // Ajouter le label de catégorie
+  parts.push(categoryLabel)
+  
+  // Ajouter "Relais" si détecté ET pas déjà dans le label
+  if (isRelay && !categoryLabel.toLowerCase().includes('relais')) {
+    parts.push('Relais')
+  }
+  
+  // Ajouter "Enfants" si détecté
+  if (isKids) {
+    parts.push('Enfants')
+  }
+  
+  // Ajouter la distance (sauf pour triathlon avec format spécial)
+  if (distance && categoryLevel1 !== 'TRIATHLON') {
+    if (distance < 1) {
+      parts.push(`${Math.round(distance * 1000)} m`)
+    } else {
+      // Arrondir à 1 décimale si nécessaire
+      const rounded = Math.round(distance * 10) / 10
+      parts.push(`${rounded} km`)
+    }
+  }
+  
+  return parts.join(' ')
+}
+
+/**
+ * Retourne le label de catégorie à afficher selon categoryLevel1 et categoryLevel2
+ * 
+ * Cas spéciaux basés sur level 2, sinon fallback sur level 1
+ */
+export function getCategoryLabel(
+  categoryLevel1?: string,
+  categoryLevel2?: string
+): string {
+  // Cas spéciaux basés sur level 2
+  if (categoryLevel2) {
+    switch (categoryLevel2) {
+      // WALK
+      case 'NORDIC_WALK':
+        return 'Marche Nordique'
+      case 'HIKING':
+        return 'Randonnée'
+      
+      // CYCLING
+      case 'GRAVEL_RIDE':
+      case 'GRAVEL_RACE':
+        return 'Gravel'
+      case 'GRAN_FONDO':
+        return 'Gran Fondo'
+      case 'MOUNTAIN_BIKE_RIDE':
+        return 'VTT'
+      case 'ROAD_CYCLING_TOUR':
+        return 'Vélo'
+      
+      // TRAIL
+      case 'ULTRA_TRAIL':
+        return 'Ultra Trail'
+      case 'DISCOVERY_TRAIL':
+      case 'SHORT_TRAIL':
+      case 'LONG_TRAIL':
+        return 'Trail'
+      case 'VERTICAL_KILOMETER':
+        return 'Kilomètre Vertical'
+      
+      // TRIATHLON
+      case 'TRIATHLON_XS':
+        return 'Triathlon XS'
+      case 'TRIATHLON_S':
+        return 'Triathlon S'
+      case 'TRIATHLON_M':
+        return 'Triathlon M'
+      case 'TRIATHLON_L':
+        return 'Triathlon L'
+      case 'TRIATHLON_XXL':
+        return 'Triathlon XXL'
+      case 'DUATHLON':
+        return 'Duathlon'
+      case 'AQUATHLON':
+        return 'Aquathlon'
+      case 'SWIM_RUN':
+        return 'Swim Run'
+      case 'RUN_BIKE':
+        return 'Run & Bike'
+      case 'SWIM_BIKE':
+        return 'Swim Bike'
+      
+      // RUNNING
+      case 'EKIDEN':
+        return 'Course Relais'
+      case 'CROSS':
+        return 'Cross'
+      
+      // FUN
+      case 'OBSTACLE_RACE':
+        return 'Course à Obstacles'
+      case 'COLOR_RUN':
+        return 'Color Run'
+      case 'SPARTAN_RACE':
+        return 'Spartan Race'
+      case 'MUD_DAY':
+        return 'Mud Day'
+      
+      // OTHER
+      case 'CANICROSS':
+        return 'Canicross'
+      case 'ORIENTEERING':
+        return 'Course d\'Orientation'
+    }
+  }
+  
+  // Fallback sur level 1
+  if (categoryLevel1) {
+    const level1Map: Record<string, string> = {
+      'RUNNING': 'Course',
+      'TRAIL': 'Trail',
+      'WALK': 'Marche',
+      'CYCLING': 'Vélo',
+      'TRIATHLON': 'Triathlon',
+      'FUN': 'Course Fun',
+      'OTHER': 'Autre'
+    }
+    return level1Map[categoryLevel1] || 'Course'
+  }
+  
+  return 'Course' // Défaut
 }
 
 /**

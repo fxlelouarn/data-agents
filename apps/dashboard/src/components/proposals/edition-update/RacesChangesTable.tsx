@@ -347,6 +347,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
             {/* Courses consolidées depuis workingGroup */}
             {consolidatedRaces.map((race) => {
               const isDeleted = isRaceDeleted(race.raceId)
+              const isExistingUnchanged = (race.fields as any)._isExistingUnchanged === true // ✅ Course existante sans changement
               
               return RACE_FIELDS.map((field, fieldIdx) => {
                 const displayValue = getDisplayValue(race, field.key)
@@ -370,9 +371,17 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                     {isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
                         <Chip
-                          label={isDeleted ? "À supprimer" : (isNewRace ? "Nouvelle" : "Existante")}
+                          label={
+                            isDeleted ? "À supprimer" 
+                            : isExistingUnchanged ? "Info" 
+                            : (isNewRace ? "Nouvelle" : "Existante")
+                          }
                           size="small"
-                          color={isDeleted ? "error" : (isNewRace ? "success" : "default")}
+                          color={
+                            isDeleted ? "error" 
+                            : isExistingUnchanged ? "info" 
+                            : (isNewRace ? "success" : "default")
+                          }
                           variant="outlined"
                         />
                       </TableCell>
@@ -381,6 +390,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       <Typography 
                         variant="body2" 
                         fontWeight={hasChange ? 'bold' : 'normal'}
+                        sx={{ fontStyle: isExistingUnchanged ? 'italic' : 'normal' }}
                       >
                         {field.label}
                       </Typography>
@@ -393,7 +403,13 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </TableCell>
                     )}
                     <TableCell>
-                      {renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format)}
+                      {isExistingUnchanged ? (
+                        <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                          Aucun changement
+                        </Typography>
+                      ) : (
+                        renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format)
+                      )}
                     </TableCell>
                     {showDeleteAction && isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>

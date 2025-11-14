@@ -29,6 +29,7 @@ import {
   generateMonthsToScrape,
   humanDelay 
 } from './ffa/scraper'
+import { parseCompetitionsList, parseCompetitionDetails, normalizeFFARaceName } from './ffa/parser'
 import { matchCompetition, calculateAdjustedConfidence, calculateNewEventConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
 import { hasIdenticalPendingProposal, hasNewInformation, filterNewChanges } from './ffa/deduplication'
@@ -454,35 +455,52 @@ export class FFAScraperAgent extends BaseAgent {
         if (!matchingRace) {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
           
-          // Mapper le type FFA vers categoryLevel1
-          let categoryLevel1: string | undefined
-          switch (ffaRace.type) {
-            case 'running':
-              categoryLevel1 = 'RUNNING'
-              break
-            case 'trail':
-              categoryLevel1 = 'TRAIL'
-              break
-            case 'walk':
-              categoryLevel1 = 'WALK'
-              break
-            default:
-              categoryLevel1 = 'RUNNING'
-          }
+          // Inférer les catégories à partir du nom et des distances
+          const [categoryLevel1, categoryLevel2] = this.inferRaceCategories(
+            ffaRace.name,
+            ffaRace.distance ? ffaRace.distance / 1000 : undefined  // runDistance en km
+          )
+          
+          // Normaliser le nom selon le format standard
+          const normalizedName = normalizeFFARaceName(
+            ffaRace.name,
+            categoryLevel1,
+            categoryLevel2,
+            ffaRace.distance ? ffaRace.distance / 1000 : undefined
+          )
           
           // Calculer la startDate complète (date + heure + timezone)
           const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
           
-          racesToAdd.push({
-            name: ffaRace.name,
-            distance: ffaRace.distance ? ffaRace.distance / 1000 : undefined,
-            elevation: ffaRace.positiveElevation,
+          // ✅ Définir le bon champ de distance selon la catégorie
+          const distanceKm = ffaRace.distance ? ffaRace.distance / 1000 : undefined
+          const elevationM = ffaRace.positiveElevation
+          
+          const raceData: any = {
+            name: normalizedName,  // ✅ Nom normalisé au lieu du nom brut
+            distance: distanceKm,  // Pour l'affichage frontend
+            elevation: elevationM,  // Pour l'affichage frontend
             startDate: raceStartDate,  // DateTime UTC complet
             categoryLevel1,
-            categoryLevel2: undefined, // Sera renseigné manuellement si besoin
+            categoryLevel2,  // ✅ Maintenant renseigné à partir du nom
             categories: ffaRace.categories,
             timeZone: this.getTimezoneIANA(ffaData.competition.ligue)
-          })
+          }
+          
+          // Ajouter le bon champ de distance selon la catégorie (pour l'application)
+          if (categoryLevel1 === 'WALK') {
+            raceData.walkDistance = distanceKm
+            raceData.walkPositiveElevation = elevationM
+          } else if (categoryLevel1 === 'CYCLING') {
+            raceData.bikeDistance = distanceKm
+            raceData.bikePositiveElevation = elevationM
+          } else {
+            // RUNNING, TRAIL, TRIATHLON, FUN, OTHER par défaut
+            raceData.runDistance = distanceKm
+            raceData.runPositiveElevation = elevationM
+          }
+          
+          racesToAdd.push(raceData)
         } else {
           this.logger.info(`✅ Course FFA matchée: ${ffaRace.name} (${ffaRace.distance}m) ↔ ${matchingRace.name} (${matchingRace.totalDistanceMeters}m)`)
           const raceUpdates: any = {}
@@ -850,115 +868,165 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
-   * Infère les catégories de course depuis le nom
+   * Infère les catégories de course depuis le nom et les distances
+   * Basé sur les données réelles de Miles Republic (82 combinaisons trouvées)
    * @param raceName Nom de la course
+   * @param runDistance Distance course en km (optionnel)
+   * @param bikeDistance Distance vélo en km (optionnel)
+   * @param swimDistance Distance nage en km (optionnel)
+   * @param walkDistance Distance marche en km (optionnel)
    * @returns Tuple [categoryLevel1, categoryLevel2 | undefined]
    */
-  private inferRaceCategories(raceName: string): [string, string | undefined] {
-    const lowerName = raceName.toLowerCase()
+  private inferRaceCategories(
+    raceName: string,
+    runDistance?: number,
+    bikeDistance?: number,
+    swimDistance?: number,
+    walkDistance?: number
+  ): [string, string | undefined] {
+    const lowerName = this.normalizeRaceName(raceName)
     
-    // TRIATHLON - Sous-catégories spécifiques
-    if (lowerName.includes('swim') && lowerName.includes('run')) {
-      return ['TRIATHLON', 'SWIM_RUN']
-    }
-    if (lowerName.includes('run') && lowerName.includes('bike')) {
-      return ['TRIATHLON', 'RUN_BIKE']
-    }
-    if (lowerName.includes('swim') && lowerName.includes('bike')) {
-      return ['TRIATHLON', 'SWIM_BIKE']
-    }
-    if (lowerName.includes('aquathlon')) {
-      return ['TRIATHLON', 'AQUATHLON']
-    }
-    if (lowerName.includes('duathlon')) {
-      return ['TRIATHLON', 'DUATHLON']
-    }
-    if (lowerName.includes('cross') && lowerName.includes('triathlon')) {
+    // 1. TRIATHLON ET VARIANTS - Prioritaire car très distinctifs
+    if (lowerName.includes('swim') && lowerName.includes('run')) return ['TRIATHLON', 'SWIM_RUN']
+    if (lowerName.includes('swim') && lowerName.includes('bike')) return ['TRIATHLON', 'SWIM_BIKE']
+    if (lowerName.includes('run') && lowerName.includes('bike')) return ['TRIATHLON', 'RUN_BIKE']
+    if (lowerName.includes('aquathlon')) return ['TRIATHLON', 'AQUATHLON']
+    if (lowerName.includes('duathlon')) return ['TRIATHLON', 'DUATHLON']
+    if (lowerName.includes('cross triathlon') || lowerName.includes('cross-triathlon')) {
       return ['TRIATHLON', 'CROSS_TRIATHLON']
     }
+    if (lowerName.includes('ultra triathlon')) return ['TRIATHLON', 'ULTRA_TRIATHLON']
     if (lowerName.includes('triathlon')) {
-      return ['TRIATHLON', undefined]  // Générique
+      // Déduire la taille du triathlon
+      if (lowerName.includes('enfant') || lowerName.includes('kids')) return ['TRIATHLON', 'TRIATHLON_KIDS']
+      if (lowerName.includes('xs')) return ['TRIATHLON', 'TRIATHLON_XS']
+      if (lowerName.match(/\bm\b/)) return ['TRIATHLON', 'TRIATHLON_M']
+      if (lowerName.match(/\bl\b/)) return ['TRIATHLON', 'TRIATHLON_L']
+      if (lowerName.includes('xxl') || lowerName.includes('ultra')) return ['TRIATHLON', 'TRIATHLON_XXL']
+      if (lowerName.match(/\bs\b/)) return ['TRIATHLON', 'TRIATHLON_S']  // Après les autres pour éviter matchage partiel
+      // Si distances détectées, classifier par tailles standard
+      if (swimDistance && bikeDistance && runDistance) {
+        if (swimDistance <= 0.75 && bikeDistance <= 20 && runDistance <= 5) return ['TRIATHLON', 'TRIATHLON_XS']
+        if (swimDistance <= 1.5 && bikeDistance <= 40 && runDistance <= 10) return ['TRIATHLON', 'TRIATHLON_S']
+        if (swimDistance <= 2 && bikeDistance <= 90 && runDistance <= 21) return ['TRIATHLON', 'TRIATHLON_M']
+        if (swimDistance <= 3 && bikeDistance <= 180 && runDistance <= 42) return ['TRIATHLON', 'TRIATHLON_L']
+      }
+      return ['TRIATHLON', undefined]
     }
     
-    // TRAIL
+    // 2. CYCLING - Vélo
+    if (lowerName.includes('gravel')) {
+      return lowerName.includes('race') ? ['CYCLING', 'GRAVEL_RACE'] : ['CYCLING', 'GRAVEL_RIDE']
+    }
+    if (lowerName.includes('gran fondo') || lowerName.includes('granfondo')) return ['CYCLING', 'GRAN_FONDO']
+    if (lowerName.includes('enduro') && (lowerName.includes('vtt') || lowerName.includes('mountain'))) {
+      return ['CYCLING', 'ENDURO_MOUNTAIN_BIKE']
+    }
+    if (lowerName.includes('xc') && (lowerName.includes('vtt') || lowerName.includes('mountain'))) {
+      return ['CYCLING', 'XC_MOUNTAIN_BIKE']
+    }
+    if ((lowerName.includes('vtt') || lowerName.includes('mountain')) && !lowerName.includes('triathlon')) {
+      return ['CYCLING', 'MOUNTAIN_BIKE_RIDE']
+    }
+    if (lowerName.includes('bikepacking') || lowerName.includes('bike packing')) return ['CYCLING', 'BIKEPACKING']
+    if (lowerName.includes('ultra cycling') || (lowerName.includes('ultra') && bikeDistance && bikeDistance > 200)) {
+      return ['CYCLING', 'ULTRA_CYCLING']
+    }
+    if (lowerName.includes('contre-la-montre') || lowerName.includes('clm') || lowerName.includes('time trial') || lowerName.includes('tt')) {
+      return ['CYCLING', 'TIME_TRIAL']
+    }
+    if (lowerName.includes('touring') || lowerName.includes('cyclo')) return ['CYCLING', 'CYCLE_TOURING']
+    if (lowerName.includes('vélo') || lowerName.includes('velo') || lowerName.includes('cyclisme') || lowerName.includes('cycling')) {
+      // Fallback par distance si disponible
+      if (bikeDistance && bikeDistance > 100) return ['CYCLING', 'GRAN_FONDO']
+      return ['CYCLING', 'ROAD_CYCLING_TOUR']
+    }
+    
+    // 3. TRAIL - Trails pédestres
     if (lowerName.includes('trail')) {
-      // Sous-catégories possibles: DISCOVERY_TRAIL, HIKING, KM10, KM15, KM20...
-      // Pour l'instant, laisser générique (pourrait être affiné avec distance)
-      return ['TRAIL', undefined]
+      // Classifier par distance
+      if (runDistance) {
+        if (runDistance < 13) return ['TRAIL', 'DISCOVERY_TRAIL']
+        if (runDistance < 25) return ['TRAIL', 'SHORT_TRAIL']
+        if (runDistance < 50) return ['TRAIL', 'LONG_TRAIL']
+        if (runDistance >= 50) return ['TRAIL', 'ULTRA_TRAIL']
+      }
+      // Si "km" dans le nom avec nombre
+      if (lowerName.includes('km')) {
+        const kmMatch = lowerName.match(/(\d+)\s*km/)
+        if (kmMatch) {
+          const km = parseInt(kmMatch[1])
+          if (km <= 5) return ['TRAIL', 'KM5']
+          if (km <= 10) return ['TRAIL', 'KM10']
+          if (km <= 15) return ['TRAIL', 'KM15']
+          if (km <= 20) return ['TRAIL', 'KM20']
+        }
+      }
+      return ['TRAIL', 'DISCOVERY_TRAIL']  // Défaut trail
     }
     
-    // WALK - Marche
-    if (lowerName.includes('marche nordique') || lowerName.includes('nordic walk')) {
-      return ['WALK', 'NORDIC_WALK']
-    }
-    if (lowerName.includes('randonnée') || lowerName.includes('randonn') || lowerName.includes('hiking')) {
+    // 4. WALK - Marches et randonnées
+    if (lowerName.includes('marche nordique') || lowerName.includes('nordic walk')) return ['WALK', 'NORDIC_WALK']
+    if (lowerName.includes('ski de fond') || lowerName.includes('cross country skiing')) return ['WALK', 'CROSS_COUNTRY_SKIING']
+    if (lowerName.includes('randonnée') || lowerName.includes('rando') || lowerName.includes('hiking')) {
       return ['WALK', 'HIKING']
     }
-    if (lowerName.includes('marche')) {
-      return ['WALK', undefined]
-    }
+    if (lowerName.includes('marche')) return ['WALK', 'HIKING']  // Défaut marche
     
-    // OTHER - Avant RUNNING pour éviter les conflits (ex: canicross vs cross)
-    if (lowerName.includes('canicross')) {
-      return ['OTHER', 'CANICROSS']
-    }
-    if (lowerName.includes('orienteering') || lowerName.includes('orientation')) {
-      return ['OTHER', 'ORIENTEERING']
-    }
-    if (lowerName.includes('raid')) {
-      return ['OTHER', 'RAID']
-    }
+    // 5. FUN - Courses fun
+    if (lowerName.includes('color')) return ['FUN', 'COLOR_RUN']
+    if (lowerName.includes('obstacle')) return ['FUN', 'OBSTACLE_RACE']
+    if (lowerName.includes('spartan')) return ['FUN', 'SPARTAN_RACE']
+    if (lowerName.includes('mud')) return ['FUN', 'MUD_DAY']
     
-    // RUNNING - Course à pied
-    if (lowerName.includes('cross')) {
-      return ['RUNNING', 'CROSS']
-    }
+    // 6. OTHER - Autres sports
+    if (lowerName.includes('canicross')) return ['OTHER', 'CANICROSS']
+    if (lowerName.includes('orienteering') || lowerName.includes('orientation')) return ['OTHER', 'ORIENTEERING']
+    if (lowerName.includes('raid') && !lowerName.includes('triathlon')) return ['OTHER', 'RAID']
+    if (lowerName.includes('biathlon')) return ['OTHER', 'BIATHLON']
+    if (lowerName.includes('natation') || lowerName.includes('swimming')) return ['OTHER', 'SWIMMING']
+    if (lowerName.includes('vol libre') || lowerName.includes('free flight')) return ['OTHER', 'FREE_FLIGHT']
+    if (lowerName.includes('yoga')) return ['OTHER', 'YOGA']
+    
+    // 7. RUNNING - Courses à pied (fallback par défaut)
+    if (lowerName.includes('vertical') || lowerName.includes('vertical km')) return ['RUNNING', 'VERTICAL_KILOMETER']
+    if (lowerName.includes('cross')) return ['RUNNING', 'CROSS']
+    if (lowerName.includes('ekiden')) return ['RUNNING', 'EKIDEN']
     if (lowerName.includes('marathon')) {
       if (lowerName.includes('semi') || lowerName.includes('half') || lowerName.includes('1/2')) {
         return ['RUNNING', 'HALF_MARATHON']
       }
       return ['RUNNING', 'MARATHON']
     }
-    if (lowerName.includes('ekiden')) {
-      return ['RUNNING', 'EKIDEN']
-    }
-    if (lowerName.includes('corrida')) {
-      return ['RUNNING', undefined]  // Distance variable
-    }
-    if (lowerName.includes('vertical') || lowerName.includes('km vertical')) {
-      return ['RUNNING', 'VERTICAL_KILOMETER']
+    if (lowerName.includes('corrida')) return ['RUNNING', undefined]
+    
+    // Classifier par distance si fournie (RUNNING)
+    if (runDistance) {
+      if (runDistance < 5) return ['RUNNING', 'LESS_THAN_5_KM']
+      if (runDistance < 7.5) return ['RUNNING', 'KM5']
+      if (runDistance < 12.5) return ['RUNNING', 'KM10']
+      if (runDistance < 17.5) return ['RUNNING', 'KM15']
+      if (runDistance < 30) return ['RUNNING', 'KM20']
+      if (runDistance < 35) return ['RUNNING', 'HALF_MARATHON']
+      if (runDistance < 50) return ['RUNNING', 'MARATHON']
+      if (runDistance >= 50) return ['RUNNING', 'ULTRA_RUNNING']
     }
     
-    // CYCLING - Vélo (seulement si pas déjà attribué à TRIATHLON)
-    if (lowerName.includes('gravel')) {
-      if (lowerName.includes('race')) {
-        return ['CYCLING', 'GRAVEL_RACE']
-      }
-      return ['CYCLING', 'GRAVEL_RIDE']
-    }
-    if (lowerName.includes('gran fondo') || lowerName.includes('granfondo')) {
-      return ['CYCLING', 'GRAN_FONDO']
-    }
-    if (lowerName.includes('vélo') || lowerName.includes('velo') || lowerName.includes('cyclisme') || lowerName.includes('bike') || lowerName.includes('cycling')) {
-      return ['CYCLING', undefined]
-    }
-    
-    // FUN - Courses fun
-    if (lowerName.includes('color')) {
-      return ['FUN', 'COLOR_RUN']
-    }
-    if (lowerName.includes('obstacle')) {
-      return ['FUN', 'OBSTACLE_RACE']
-    }
-    if (lowerName.includes('mud')) {
-      return ['FUN', 'MUD_DAY']
-    }
-    if (lowerName.includes('spartan')) {
-      return ['FUN', 'SPARTAN_RACE']
-    }
-    
-    // Par défaut : RUNNING (course à pied classique)
+    // Par défaut : RUNNING
     return ['RUNNING', undefined]
+  }
+  
+  /**
+   * Normalise le nom d'une course pour comparaison
+   * Supprime accents, met en minuscules, normalise les espaces
+   */
+  private normalizeRaceName(name: string): string {
+    return name
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')  // Supprime les accents
+      .replace(/\s+/g, ' ')             // Normalise les espaces multiples
+      .trim()
   }
 
   /**
@@ -1163,13 +1231,43 @@ export class FFAScraperAgent extends BaseAgent {
               } : {}),
               races: competition.races.map(race => {
                 const raceStartDate = this.calculateRaceStartDate(competition, race)
-                const [categoryLevel1, categoryLevel2] = this.inferRaceCategories(race.name)
+                // Passer les distances pour une meilleure inférence des catégories
+                const [categoryLevel1, categoryLevel2] = this.inferRaceCategories(
+                  race.name,
+                  race.distance ? race.distance / 1000 : undefined,  // runDistance en km
+                  undefined,  // bikeDistance (pas d'infos FFA)
+                  undefined,  // swimDistance
+                  undefined   // walkDistance
+                )
+                
+                // Normaliser le nom selon le format standard
+                const normalizedName = normalizeFFARaceName(
+                  race.name,
+                  categoryLevel1,
+                  categoryLevel2,
+                  race.distance ? race.distance / 1000 : undefined
+                )
+                
+                // ✅ Définir le bon champ de distance selon la catégorie
+                const distanceKm = race.distance ? race.distance / 1000 : undefined
+                const distanceFields: any = {}
+                
+                if (categoryLevel1 === 'WALK') {
+                  distanceFields.walkDistance = distanceKm
+                  distanceFields.walkPositiveElevation = race.positiveElevation
+                } else if (categoryLevel1 === 'CYCLING') {
+                  distanceFields.bikeDistance = distanceKm
+                  distanceFields.bikePositiveElevation = race.positiveElevation
+                } else {
+                  // RUNNING, TRAIL, TRIATHLON, FUN, OTHER par défaut
+                  distanceFields.runDistance = distanceKm
+                  distanceFields.runPositiveElevation = race.positiveElevation
+                }
                 
                 return {
-                  name: race.name,
+                  name: normalizedName,  // ✅ Nom normalisé au lieu du nom brut
                   startDate: raceStartDate,
-                  runDistance: race.distance ? race.distance / 1000 : undefined,
-                  runPositiveElevation: race.positiveElevation,
+                  ...distanceFields,
                   type: race.type === 'trail' ? 'TRAIL' : 'RUNNING',
                   categoryLevel1,
                   categoryLevel2,

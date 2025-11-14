@@ -61,7 +61,9 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
         )
       }
       onClick={handleClick}
-      disabled={disabled || isPending}
+      // ✅ Le bouton d'annulation ne doit JAMAIS être désactivé par disabled
+      // Seul le bouton de validation peut l'être
+      disabled={(isValidated ? false : disabled) || isPending}
       size="small"
     >
       {isValidated ? `Annuler ${label}` : `Valider ${label}`}

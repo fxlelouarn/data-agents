@@ -9,7 +9,10 @@
  * Note: Uses Prisma client instance for Miles Republic DB
  */
 export class MilesRepublicRepository {
-  constructor(private milesDb: any) {}
+  constructor(
+    private milesDb: any,
+    private auditUser: string = 'data-agents' // Nom de l'agent ou utilisateur pour l'audit trail
+  ) {}
 
   // ============== EVENT OPERATIONS ==============
 
@@ -87,8 +90,8 @@ export class MilesRepublicRepository {
         algoliaObjectToDelete: false,
         
         // Audit
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents'
+        createdBy: this.auditUser,
+        updatedBy: this.auditUser
       }
     })
   }
@@ -101,7 +104,7 @@ export class MilesRepublicRepository {
       where: { id: eventId },
       data: {
         ...data,
-        updatedBy: 'data-agents',
+        updatedBy: this.auditUser,
         updatedAt: new Date(),
         toUpdate: true,
         algoliaObjectToUpdate: true
@@ -217,8 +220,8 @@ export class MilesRepublicRepository {
         organizationId: data.organizationId,
         
         // Audit
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents'
+        createdBy: this.auditUser,
+        updatedBy: this.auditUser
       }
     })
   }
@@ -231,7 +234,7 @@ export class MilesRepublicRepository {
       where: { id: editionId },
       data: {
         ...data,
-        updatedBy: 'data-agents',
+        updatedBy: this.auditUser,
         updatedAt: new Date()
       }
     })
@@ -476,8 +479,8 @@ export class MilesRepublicRepository {
         products: data.products || [],
         
         // Audit
-        createdBy: 'data-agents',
-        updatedBy: 'data-agents'
+        createdBy: this.auditUser,
+        updatedBy: this.auditUser
       }
     })
   }
@@ -490,7 +493,7 @@ export class MilesRepublicRepository {
       where: { id: raceId },
       data: {
         ...data,
-        updatedBy: 'data-agents',
+        updatedBy: this.auditUser,
         updatedAt: new Date()
       }
     })
@@ -542,7 +545,7 @@ export class MilesRepublicRepository {
    */
   async touchEvent(eventId: number) {
     return this.updateEvent(eventId, {
-      updatedBy: 'data-agents',
+      updatedBy: this.auditUser,
       updatedAt: new Date(),
       toUpdate: true,
       algoliaObjectToUpdate: true
