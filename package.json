@@ -11,6 +11,8 @@
   "scripts": {
     "setup": "node setup.js",
     "postinstall": "npm run prisma:generate:all || true",
+    "install:full": "npm run clean:full && npm install && npm run build && npm run tsc && echo '✅ Installation complète terminée !'",
+    "reinstall": "npm run clean:full && npm cache clean --force && npm install && echo '✅ Réinstallation complète terminée !'",
     "prisma:generate:all": "npm run prisma:generate:main && npm run prisma:generate:miles",
     "prisma:generate:main": "cd packages/database && npx prisma generate",
     "prisma:generate:miles": "cd apps/agents && npx prisma generate --schema=prisma/miles-republic.prisma",
@@ -31,6 +33,8 @@
     "test:ffa-url": "tsx scripts/test-ffa-url.ts",
     "clean": "find packages apps -maxdepth 2 -type d -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null || true",
     "clean:turbo": "turbo clean",
+    "clean:full": "rm -rf node_modules apps/*/node_modules packages/*/node_modules node_modules/.prisma apps/node_modules/.prisma pnpm-lock.yaml package-lock.json && npm run clean",
+    "verify": "npm run tsc && npm run lint && echo '✅ Vérification réussie !'",
     "db:generate": "npm run prisma:generate:main",
     "db:migrate": "cd packages/database && npx prisma migrate dev",
     "db:migrate:deploy": "cd packages/database && npx prisma migrate deploy",

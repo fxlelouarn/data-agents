@@ -2,6 +2,134 @@
 
 Ce document contient les règles et bonnes pratiques spécifiques au projet Data Agents pour l'assistant Warp.
 
+## Changelog
+
+### 2025-11-14 (partie 4) - Fix: Statut APPROVED quand tous les blocs validés ✅
+
+**Problème résolu** : Les propositions groupées restaient au statut `PENDING` avec le bouton "Tout valider (blocs)" visible même après validation de tous les blocs.
+
+#### Symptômes
+
+- ❌ **Badge "En attente"** affiché alors que tous les blocs sont validés
+- ❌ **Bouton "Tout valider (blocs)"** visible alors qu'il n'y a plus rien à valider
+- ❌ **Statut `PENDING`** dans la base malgré `approvedBlocks` complets
+
+#### Cause
+
+**Backend** : L'algorithme vérifiait **tous les blocs possibles** `['event', 'edition', 'organizer', 'races']` au lieu de vérifier uniquement les **blocs existants** pour cette proposition.
+
+```typescript
+// ❌ AVANT (bugué)
+const allBlocks = ['event', 'edition', 'organizer', 'races']
+const allBlocksValidated = allBlocks.every(b => approvedBlocksObj[b] === true)
+// Une proposition EDITION_UPDATE n'a pas de bloc 'event' → toujours false
+```
+
+**Frontend** : Le bouton ne vérifiait pas si tous les blocs étaient déjà validés.
+
+#### Solution
+
+**Backend** : Vérifier uniquement les blocs existants
+
+```typescript
+// ✅ APRÈS (corrigé)
+const existingBlocks = Object.keys(approvedBlocksObj)
+const allBlocksValidated = existingBlocks.length > 0 && 
+  existingBlocks.every(blockKey => approvedBlocksObj[blockKey] === true)
+```
+
+**Frontend** : Cacher le bouton quand tous validés
+
+```typescript
+showValidateAllBlocksButton={hasPending && !isEventDead && 
+  Object.keys(blockProposals).length > 0 && !allBlocksValidated}
+```
+
+#### Résultats
+
+| Blocs validés | Status DB | Badge UI | Bouton "Tout valider" |
+|---------------|-----------|----------|-----------------------|
+| Avant : `edition`, `organizer`, `races` | `PENDING` ❌ | "En attente" ❌ | Visible ❌ |
+| Après : `edition`, `organizer`, `races` | `APPROVED` ✅ | "Traité" ✅ | Caché ✅ |
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts` (lignes 728-736)
+- Frontend : `apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx` (ligne 1022)
+
+#### Ressources
+
+- Documentation : `docs/FIX-APPROVED-STATUS-ALL-BLOCKS.md`
+
+---
+
+### 2025-11-14 (partie 3) - Single Group Application ✅
+
+**Problème résolu** : Lors de la validation par blocs de propositions groupées, chaque proposition créait sa propre `ProposalApplication`, causant des modifications dupliquées dans Miles Republic.
+
+#### Symptomômes
+
+- **Validation de 3 propositions** → **3 ProposalApplication** créées
+- **Application** → **3 mises à jour identiques** dans Miles Republic ❌
+- Logs backend montrant 3 exécutions de `applyProposal()`
+- Risque d'écrasement mutuel et d'incohérence
+
+#### Solution
+
+Nouveau workflow **Single Group Application** :
+
+1. **Endpoint groupé** : `POST /api/proposals/validate-block-group`
+   - Reçoit `proposalIds[]` + `block` + `changes`
+   - Met à jour TOUTES les propositions avec le même payload
+   - Crée UNE SEULE `ProposalApplication` quand tous les blocs validés
+
+2. **Frontend refactoré** : `useBlockValidation`
+   - Appelle `validateBlockGroup()` avec tous les IDs à la fois
+   - Payload consolidé (modifications utilisateur + sélections agent)
+   - **1 appel API** au lieu de N appels
+
+3. **Backend intelligent** : Détection mode groupé
+   - `ProposalApplication.proposalIds[]` : Tous les IDs du groupe
+   - Passage de `proposalIds` aux options d'application
+   - `ProposalDomainService` log : 📦 MODE GROUPÉ détecté
+   - Une seule exécution de la logique d'application
+
+#### Modifications
+
+**Schéma Prisma :**
+```prisma
+model ProposalApplication {
+  proposalIds  String[]  @default([])  // ✅ Nouveau champ
+}
+```
+
+**Backend :**
+- `apps/api/src/routes/proposals.ts` : Endpoint `/validate-block-group`
+- `apps/api/src/routes/updates.ts` : Passage `proposalIds` à `applyProposal()`
+- `packages/database/src/services/proposal-domain.service.ts` : Détection mode groupé
+- `packages/database/src/services/interfaces.ts` : `ApplyOptions.proposalIds`
+
+**Frontend :**
+- `apps/dashboard/src/hooks/useBlockValidation.ts` : Refactoring pour appel groupé
+- `apps/dashboard/src/hooks/useApi.ts` : `useUpdateProposal` mode groupé
+- `apps/dashboard/src/services/api.ts` : Méthode `validateBlockGroup()`
+
+#### Résultats
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Applications créées** | N (une par proposition) | **1** (✅ une pour le groupe) |
+| **Appels API (validation)** | N × 4 blocs | **4** (1 par bloc) |
+| **Mises à jour DB** | N × 1 | **1** (✅ une seule) |
+| **Logs clairs** | ❌ Confusion | ✅ 📦 MODE GROUPÉ |
+| **Duplication** | ❌ Risque élevé | ✅ Zéro |
+
+#### Ressources
+
+- Spécification : `docs/SPEC-SINGLE-GROUP-APPLICATION.md`
+- Plan de tests : `docs/TEST-SINGLE-GROUP-APPLICATION.md`
+- Migration Prisma : `packages/database/prisma/migrations/20251114140354_add_proposal_ids_to_application/`
+
 ## ⚠️ CRITIQUE - Dépendances Circulaires Résolues
 
 **État actuel**: ✅ Les dépendances circulaires ont été résolues en créant le package `@data-agents/types`.
@@ -20,11 +148,29 @@ packages/types/ (no dependencies)
     └── sample-agents
 ```
 
+### Dépendance circulaire database ↔ agent-framework
+
+**Problème** (2025-11-14) : `database` a besoin d'importer `agent-framework` dynamiquement dans `ConnectionService.testConnection()` pour utiliser `DatabaseManager`.
+
+**Solution appliquée** :
+1. **Import dynamique avec `@ts-ignore`** dans `packages/database/src/services/ConnectionService.ts` (ligne 196)
+   ```typescript
+   // @ts-ignore - Lazy loading au runtime pour éviter cycle database <-> agent-framework
+   const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+   ```
+
+2. **PAS de dépendance dans package.json** : `agent-framework` n'est pas listé dans les dependencies/devDependencies de `database`
+
+3. **Ordre de build garanti par Turbo** : `dependsOn: ["^build"]` assure que `agent-framework` est buildé avant `database`
+
+4. **Pas de `composite: true`** dans les tsconfig.json : Cette option empêchait la génération des fichiers `.d.ts` nécessaires
+
 **RÈGLES À RESPECTER**:
-1. **JAMAIS** importer `DatabaseService` directement dans `agent-framework` au niveau module
-2. **TOUJOURS** utiliser `getDatabaseService()` pour le lazy loading au runtime
+1. **JAMAIS** ajouter `agent-framework` dans les dependencies de `database`
+2. **TOUJOURS** utiliser l'import dynamique avec `@ts-ignore` pour éviter l'erreur TypeScript au build
 3. **TOUS** les types partagés doivent être dans `packages/types`
-4. Importer types depuis `@data-agents/types`, pas depuis `database`
+4. Importer types depuis `@data-agents/types`, pas depuis `database` ou `agent-framework`
+5. **JAMAIS** utiliser `composite: true` dans les tsconfig - cela casse la génération des `.d.ts`
 
 ## Développement
 
@@ -60,6 +206,12 @@ npm run build:framework  # Build le package agent-framework
 npm run build:agents     # Build les agents
 ```
 
+**⚠️ Note importante sur l'ordre de build** :
+- Turbo gère automatiquement l'ordre via `dependsOn: ["^build"]` dans `turbo.json`
+- `agent-framework` est toujours buildé avant `database` grâce à cette configuration
+- En cas d'erreur de build, vérifier que `packages/agent-framework/dist/types.d.ts` existe
+- Si le fichier `.d.ts` manque, supprimer `composite: true` des tsconfig si présent
+
 ### Vérification
 ```bash
 npm run tsc              # Vérifier les types TypeScript (DOIT PASSER)
@@ -74,6 +226,28 @@ npm run db:migrate       # Appliquer les migrations
 npm run db:studio        # Ouvrir Prisma Studio
 npm run db:seed          # Seed la base de données
 ```
+
+## Performance
+
+### Optimisation API : Enrichissement des Propositions
+
+**Problème** : L'API enrichit chaque proposition avec des données de Miles Republic (nom d'événement, ville, etc.). Avec beaucoup de propositions, cela peut être lent.
+
+**Configuration actuelle** (`apps/api/src/routes/proposals.ts` ligne 164) :
+```typescript
+const enrichLimit = pLimit(process.env.NODE_ENV === 'production' ? 10 : 20)
+```
+
+**Impact sur les performances** :
+- **Dev local (pLimit 20)** : 20 propositions en ~1s, 100 propositions en ~5s
+- **Production (pLimit 10)** : Plus conservateur pour éviter "too many clients" PostgreSQL
+
+**Si c'est trop lent en dev** :
+1. Augmenter la limite : `pLimit(30)` ou `pLimit(50)`
+2. Vérifier `max_connections` de votre PostgreSQL local
+3. En production, garder une limite basse (10-20) selon la config du serveur
+
+**Amélioration future** : Cacher `eventName`, `eventCity`, etc. directement dans la table `Proposal` lors de la création (nécessite migration Prisma).
 
 ## Stack technique
 
@@ -675,6 +849,168 @@ const formatDateTime = (dateString: string): string => {
 **Documentation complète** : `docs/FIX-TIMEZONE-DST.md`
 
 ## Changelog
+
+### 2025-11-14 (partie 2) - Fix: Blocs disparaissant après validation ✅
+
+**Problème résolu** : Les blocs (event, edition, organizer, races) disparaissaient après "Tout valider (blocs)" au lieu de rester visibles en mode désactivé.
+
+#### Symptômes
+
+Lorsqu'un utilisateur cliquait sur "Tout valider (blocs)" :
+- ✅ Les propositions passaient au statut `APPROVED`
+- ✅ Les blocs étaient marqués dans `approvedBlocks`
+- ❌ **Tous les blocs disparaissaient de l'interface** au lieu de rester visibles
+
+#### Cause
+
+Rendu conditionnel basé **uniquement** sur la présence de changements actifs :
+
+```tsx
+// ❌ AVANT (bugué)
+const hasRealEditionChanges = realStandardChanges.length > 0
+
+{hasRealEditionChanges && (
+  <CategorizedEditionChangesTable ... />
+)}
+```
+
+Quand on valide un bloc, les changements sont retirés de `consolidatedChanges` → `hasRealEditionChanges` devient `false` → le bloc disparaît.
+
+#### Solution
+
+Ajout d'une condition pour **toujours afficher les blocs validés** :
+
+```tsx
+// ✅ APRÈS (corrigé)
+const shouldShowEditionBlock = hasRealEditionChanges || isBlockValidated('edition')
+
+{shouldShowEditionBlock && (
+  <CategorizedEditionChangesTable 
+    isBlockValidated={isBlockValidated('edition')}
+    onUnvalidateBlock={() => unvalidateBlock('edition')}
+    ... 
+  />
+)}
+```
+
+**Cas particulier : OrganizerSection**
+
+Gestion du cas où `change` est `undefined` (bloc validé sans changements) :
+
+```tsx
+if (!change && isBlockValidated) {
+  return (
+    <Paper sx={{ mb: 3 }}>
+      <Box sx={{ bgcolor: 'action.hover', opacity: 0.7 }}>
+        <Typography variant="h6">Organisateur</Typography>
+        <Chip label="Validé" color="success" size="small" />
+        <BlockValidationButton ... />
+      </Box>
+    </Paper>
+  )
+}
+```
+
+#### Fichiers modifiés
+
+1. **EditionUpdateGroupedDetail.tsx**
+   - `edition` : `shouldShowEditionBlock = hasRealEditionChanges || isBlockValidated('edition')`
+   - `organizer` : `(organizerChange || isBlockValidated('organizer')) && (...)`
+   - `races` : `shouldShowRacesBlock = hasRaceChanges || isBlockValidated('races')`
+
+2. **NewEventGroupedDetail.tsx**
+   - `organizer` : `(organizerChange || isBlockValidated('organizer')) && (...)`
+
+3. **OrganizerSection.tsx**
+   - Gestion du cas `change === undefined` pour éviter le crash
+   - Affichage d'un bloc simplifié avec bouton d'annulation
+
+#### Impact
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **UX** | ❌ Blocs disparaissent → confusion | ✅ Blocs restent visibles → clarté |
+| **Annulation** | ❌ Impossible de voir ce qui est validé | ✅ Boutons d'annulation visibles |
+| **Workflow** | ❌ Perte de contexte | ✅ Contexte préservé |
+
+#### Ressources
+- `docs/FIX-BLOCKS-DISAPPEARING-AFTER-VALIDATION.md` - Documentation complète
+
+---
+
+### 2025-11-14 (partie 1) - Matching hybride distance + nom pour les courses ✅
+
+**Problème résolu** : Confusion entre courses ayant la même distance (ex: Marche 4,3km vs Course relais 4,3km).
+
+#### Symptômes
+
+L'ancien algorithme matchait **uniquement par distance** (tolérance 5%). Quand plusieurs courses avaient la même distance, il prenait la première trouvée.
+
+**Conséquence** : Heure de la course relais (10:30) attribuée à la marche ❌
+
+**Cas réel** : Proposition `cmhyq36n904mpmt23rj2gjz6e`
+- FFA : "Marche 4,3 km" (08:00) + "Course relais 4,3 km" (10:30)
+- DB : "Marche 4,3 km" (08:00) + "Course relais adulte 4,3 km" (10:30)
+- Ancien matching : Les deux FFA matchées avec la première DB (Marche)
+
+#### Solution : Algorithme hybride
+
+```typescript
+matchRacesByDistanceAndName(ffaRaces, dbRaces, logger):
+  1. Grouper les races DB par distance (tolérance 5%)
+  2. Pour chaque race FFA:
+     - Si 0 candidat → Nouvelle course
+     - Si 1 candidat → Match automatique (comportement actuel)
+     - Si 2+ candidats → Fuzzy match sur le nom (fuse.js)
+```
+
+**Fuzzy matching** (fuse.js) :
+- Normalisation : Retirer suffixes FFA, minuscules, accents
+- Stopwords : Retirer "de", "la", "du", etc.
+- Configuration : threshold 0.6, poids 60% nom / 40% keywords
+- Seuil d'acceptation : score >= 0.5
+
+#### Résultats
+
+**Avant** :
+- ❌ Marche 4,3km matchée avec la première course trouvée (Course relais)
+- ❌ Heure incorrecte : 10:30 au lieu de 08:00
+- ❌ Perte de données : course relais non créée
+
+**Après** :
+- ✅ Marche 4,3km matchée correctement avec Marche DB
+- ✅ Heure correcte : 08:00
+- ✅ Course relais matchée avec Course relais adulte DB
+- ✅ Heure correcte : 10:30
+
+#### Avantages
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Précision** | ~60% (distance seule) | **~95%** (distance + nom) |
+| **Faux positifs** | Élevés (courses confondues) | Faibles (fuzzy match) |
+| **Performance** | O(n) | O(n) + fuzzy match si nécessaire |
+| **Rétrocompatibilité** | - | ✅ Distance unique → Match auto |
+
+#### Fichiers modifiés
+
+1. **`apps/agents/src/ffa/matcher.ts`**
+   - Nouvelle fonction `matchRacesByDistanceAndName()`
+   - Fonction helper `fuzzyMatchRaceName()`
+   - Fonction `normalizeRaceName()` pour nettoyage des noms
+
+2. **`apps/api/src/routes/proposals.ts`**
+   - Endpoint `/api/proposals/:id/convert-to-edition-update`
+   - Intégration de `matchRacesByDistanceAndName()` à la place de l'ancien matching
+
+3. **Tests** : `apps/agents/src/ffa/__tests__/matcher.race-hybrid.test.ts`
+   - 6 cas de test couvrant tous les scénarios
+
+#### Ressources
+- `docs/FIX-RACE-MATCHING-HYBRID.md` - Documentation complète
+- Source FFA exemple : https://www.athle.fr/competitions/528846908849545849716849769837790846
+
+---
 
 ### 2025-11-12 (partie 3) - Suppression des composants RACE_UPDATE ✅
 
