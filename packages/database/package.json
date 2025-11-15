@@ -17,9 +17,6 @@
     "seed": "ts-node prisma/seed.ts",
     "seed:consensus": "ts-node seed-consensus-example.ts"
   },
-  "prisma": {
-    "seed": "ts-node prisma/seed.ts"
-  },
   "dependencies": {
     "@data-agents/types": "*",
     "@prisma/client": "^5.22.0",

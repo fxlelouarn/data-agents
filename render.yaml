@@ -6,10 +6,11 @@ services:
     region: frankfurt
     buildCommand: |-
       npm ci && \
+      npm run prisma:generate:all && \
       npm run db:migrate:deploy && \
       npm run db:seed && \
       turbo build
-    startCommand: sh -c 'npm run prisma:generate:all && node apps/api/dist/index.js'
+    startCommand: node apps/api/dist/index.js
     envVars:
       - key: NODE_ENV
         value: production
