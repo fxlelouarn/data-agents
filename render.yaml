@@ -44,6 +44,8 @@ services:
     envVars:
       - key: VITE_API_URL
         value: https://data-agents-api.onrender.com/api
+      - key: VITE_MUI_LICENSE_KEY
+        sync: false  # À configurer manuellement dans Render Dashboard
     headers:
       - path: /*
         name: X-Frame-Options
