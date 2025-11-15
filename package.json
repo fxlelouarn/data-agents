@@ -40,7 +40,7 @@
     "db:migrate:deploy": "cd packages/database && npx prisma migrate deploy",
     "db:push": "cd packages/database && npx prisma db push",
     "db:studio": "cd packages/database && npx prisma studio",
-    "db:seed": "cd packages/database && npx prisma db seed",
+    "db:seed": "cd packages/database && npx ts-node prisma/seed.ts",
     "format": "turbo format"
   },
   "devDependencies": {
