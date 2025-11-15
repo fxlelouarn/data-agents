@@ -3,6 +3,7 @@ services:
     name: data-agents-api
     env: node
     plan: starter
+    region: frankfurt
     buildCommand: |-
       npm ci && \
       npm run db:generate && \
@@ -33,6 +34,7 @@ services:
 
 databases:
   - name: data-agents-db
+    region: frankfurt
     databaseName: data_agents
     user: data_agents_user
     plan: free
