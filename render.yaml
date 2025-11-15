@@ -38,8 +38,7 @@ services:
     env: static
     buildCommand: |-
       npm ci && \
-      cd apps/dashboard && \
-      npm run build
+      turbo build --filter=@data-agents/dashboard
     staticPublishPath: ./apps/dashboard/dist
     envVars:
       - key: VITE_API_URL
