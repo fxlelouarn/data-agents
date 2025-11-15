@@ -4,61 +4,82 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
-### 2025-11-15 - Fix: Génération du client Prisma au bon emplacement pour Render ✅
+### 2025-11-15 - Fix: Synchronisation des clients Prisma dans le monorepo ✅
 
-**Problème résolu** : Le client Prisma était généré dans `packages/database/node_modules/@prisma/client` au lieu de `node_modules/.prisma/client` à la racine du monorepo, causant des erreurs TypeScript lors du déploiement sur Render.
+**Problème résolu** : Erreurs TypeScript et runtime dues à la résolution différente de `@prisma/client` selon les packages.
 
 #### Symptômes
 
 ```
 error TS2305: Module '"@prisma/client"' has no exported member 'AgentType'.
-error TS2305: Module '"@prisma/client"' has no exported member 'Proposal'.
+Error: @prisma/client did not initialize yet. Please run "prisma generate"
 ```
 
-Le build local fonctionnait grâce au cache npm, mais échouait systématiquement sur Render.
+#### Cause racine
 
-#### Cause
+**Résolution de modules différente par package** :
+- `packages/database` résout depuis `packages/database/node_modules/@prisma/client`
+- `apps/api` et `apps/agents` résolvent depuis `node_modules/@prisma/client` (racine)
+- Prisma génère uniquement dans `packages/database/node_modules/`
+- **Résultat** : Les apps ne trouvent pas le client généré
 
-Le générateur Prisma dans `packages/database/prisma/schema.prisma` n'avait pas de directive `output` explicite, ce qui faisait que Prisma générait le client dans le `node_modules` local du package au lieu de la racine du monorepo.
+#### Solution : Script de synchronisation
 
-#### Solution
+**Approche pragmatique** : Laisser Prisma générer dans son emplacement par défaut, puis **copier** les clients vers tous les emplacements où ils sont recherchés.
 
-Ajout de la directive `output` dans le générateur Prisma :
+**Nouveau script** : `scripts/sync-prisma-clients.js`
 
-```prisma
-generator client {
-  provider      = "prisma-client-js"
-  output        = "../../../node_modules/.prisma/client"  // ✅ Ajouté
-  binaryTargets = ["native", "debian-openssl-3.0.x"]
+```javascript
+// Copie les clients générés vers la racine
+const SOURCES = [
+  {
+    src: 'packages/database/node_modules/@prisma/client',
+    dest: 'node_modules/@prisma/client'
+  },
+  {
+    src: 'packages/database/node_modules/.prisma/client',
+    dest: 'node_modules/.prisma/client'
+  }
+];
+```
+
+**Intégration dans package.json** :
+```json
+{
+  "scripts": {
+    "prisma:generate:all": "npm run prisma:generate:main && npm run prisma:sync && ...",
+    "prisma:sync": "node scripts/sync-prisma-clients.js"
+  }
 }
 ```
-
-**Note importante** : Ne PAS utiliser `../../../node_modules/@prisma/client` car Prisma refuse d'écraser ce répertoire (package système). Le chemin correct est `node_modules/.prisma/client`, et les imports depuis `@prisma/client` sont automatiquement redirigés par Prisma.
 
 #### Résultats
 
 | Aspect | Avant | Après |
 |--------|-------|-------|
-| **Génération** | `packages/database/node_modules/@prisma/client` ❌ | `node_modules/.prisma/client` ✅ |
-| **Imports TypeScript** | Types non trouvés | Types accessibles ✅ |
-| **Build local** | Passe (cache) | Passe ✅ |
-| **Build Render** | Échoue ❌ | Passe ✅ |
+| **Génération** | `packages/database/node_modules/` uniquement | Génération + copie vers racine ✅ |
+| **Résolution packages/database** | `packages/database/node_modules/` | Fonctionne ✅ |
+| **Résolution apps/*" | `node_modules/` (vide) ❌ | `node_modules/` (copié) ✅ |
+| **Build TypeScript** | Échoue | Passe ✅ |
+| **Runtime Render** | Échoue | Passe ✅ |
 
 #### Fichiers modifiés
 
-- `packages/database/prisma/schema.prisma` : Ajout directive `output`
+- `scripts/sync-prisma-clients.js` : Nouveau script de synchronisation
+- `package.json` : Ajout commande `prisma:sync`
+- `packages/database/prisma/schema.prisma` : Pas de directive `output` (défaut Prisma)
 
-#### Cohérence monorepo
+#### Pourquoi cette approche ?
 
-Le schéma Miles Republic (`apps/agents/prisma/miles-republic.prisma`) utilisait déjà le bon pattern :
-```prisma
-output = "../../../node_modules/.prisma/client-miles"
-```
+1. **Réaliste** : Respecte la résolution native de Node.js
+2. **Robuste** : Fonctionne avec npm workspaces sans configuration spéciale
+3. **Testable** : Identique en local et sur Render
+4. **Maintenable** : Script simple et explicite
 
 #### Ressources
 
+- Script : `scripts/sync-prisma-clients.js`
 - Documentation Prisma : [Multiple Prisma Clients](https://www.prisma.io/docs/concepts/components/prisma-client/working-with-prismaclient/use-custom-model-and-field-names#using-multiple-prisma-clients)
-- Render docs : [Troubleshooting Deploys](https://render.com/docs/troubleshooting-deploys)
 
 ---
 
