@@ -36,8 +36,6 @@ services:
   - type: web
     name: data-agents-dashboard
     env: static
-    plan: starter
-    region: frankfurt
     buildCommand: |-
       npm ci && \
       cd apps/dashboard && \
