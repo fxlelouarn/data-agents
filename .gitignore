@@ -62,7 +62,6 @@ dist/
 
 # Lock files - use package.json versions instead
 pnpm-lock.yaml
-package-lock.json
 yarn.lock
 
 # IDE specific
