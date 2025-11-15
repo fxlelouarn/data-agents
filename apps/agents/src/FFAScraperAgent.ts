@@ -1094,40 +1094,95 @@ export class FFAScraperAgent extends BaseAgent {
   }
 
   /**
-   * Calcule la date de début d'une édition en utilisant l'heure de la première course
+   * Calcule la date de début d'une édition en utilisant la première heure réelle (non-minuit)
+   * de la date chronologique la plus précoce
    * Convertit l'heure locale (selon la ligue) en UTC avec date-fns-tz
+   * 
+   * Stratégie:
+   * 1. Déterminer le premier jour chronologique (startDate ou plus ancien raceDate)
+   * 2. Chercher la première heure >= 01:00 de ce jour
+   * 3. Si aucune heure vraie, utiliser minuit locale
    */
   private calculateEditionStartDate(ffaData: FFACompetitionDetails): Date {
-    // La date de la compétition est en UTC à minuit
-    const competitionDate = ffaData.competition.date
-    const year = competitionDate.getUTCFullYear()
-    const month = competitionDate.getUTCMonth()
-    const day = competitionDate.getUTCDate()
-    
-    // Récupérer le timezone IANA de la ligue
+    // Timezone IANA de la ligue
     const ligue = ffaData.competition.ligue
     const timeZone = this.getTimezoneIANA(ligue)
     
-    // Si on a des courses avec une heure de départ
-    if (ffaData.races.length > 0 && ffaData.races[0].startTime) {
+    // 1️⃣ Déterminer la date chronologique la plus précoce
+    let earliestDate = ffaData.startDate // Par défaut, date de l'événement
+    let earliestDay = earliestDate.getUTCDate()
+    let earliestMonth = earliestDate.getUTCMonth()
+    let earliestYear = earliestDate.getUTCFullYear()
+    
+    // Vérifier si une course a une date antérieure
+    for (const race of ffaData.races) {
+      if (race.raceDate) {
+        const [dayStr, monthStr] = race.raceDate.split('/')
+        const raceDay = parseInt(dayStr, 10)
+        const raceMonth = parseInt(monthStr, 10) - 1
+        
+        const raceDate = new Date(Date.UTC(earliestYear, raceMonth, raceDay))
+        if (raceDate < earliestDate) {
+          earliestDate = raceDate
+          earliestDay = raceDay
+          earliestMonth = raceMonth
+        }
+      }
+    }
+    
+    this.logger.info(`🕒 Date chronologique la plus précoce: ${earliestDate.toISOString().split('T')[0]}`)
+    
+    // 2️⃣ Chercher la première heure RÉELLE (non 00:00) de ce jour
+    let firstRealStartTime: string | undefined
+    let raceWithFirstTime: string | undefined
+    
+    for (const race of ffaData.races) {
+      // Vérifier si cette course est le jour le plus précoce
+      let isEarliestDay = false
+      
+      if (race.raceDate) {
+        const [dayStr, monthStr] = race.raceDate.split('/')
+        const raceDay = parseInt(dayStr, 10)
+        const raceMonth = parseInt(monthStr, 10) - 1
+        isEarliestDay = (raceDay === earliestDay && raceMonth === earliestMonth)
+      } else {
+        // Pas de date spécifique = jour de l'événement
+        isEarliestDay = (earliestDay === ffaData.startDate.getUTCDate() && 
+                        earliestMonth === ffaData.startDate.getUTCMonth())
+      }
+      
+      // Si cette course est du jour le plus précoce et a une heure
+      if (isEarliestDay && race.startTime) {
+        const [hours] = race.startTime.split(':').map(Number)
+        // Exclure 00:00 (minuit) - chercher première heure >= 01:00
+        if (hours !== 0) {
+          firstRealStartTime = race.startTime
+          raceWithFirstTime = race.name
+          this.logger.info(`🕒 Première heure réelle du jour le plus précoce: ${race.startTime} (course: ${race.name})`)
+          break
+        }
+      }
+    }
+    
+    if (firstRealStartTime) {
       // Parser l'heure locale (format HH:MM)
-      const [hours, minutes] = ffaData.races[0].startTime.split(':').map(Number)
+      const [hours, minutes] = firstRealStartTime.split(':').map(Number)
       
       // Créer la date en heure locale (pas UTC !)
-      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      const localDateStr = `${earliestYear}-${String(earliestMonth + 1).padStart(2, '0')}-${String(earliestDay).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
       
       // Convertir en UTC en tenant compte du DST
       const startDateUTC = fromZonedTime(localDateStr, timeZone)
       
-      this.logger.info(`🕒 Date édition avec heure première course: ${localDateStr} ${timeZone} -> ${startDateUTC.toISOString()} UTC (course: ${ffaData.races[0].name})`)
+      this.logger.info(`🕒 Édition: première heure réelle ${localDateStr} ${timeZone} -> ${startDateUTC.toISOString()} UTC`)
       return startDateUTC
     }
     
-    // Sinon, minuit heure locale (00:00 local time)
-    const localMidnight = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+    // ⚠️ Aucune course n'a d'heure vraie → minuit locale du jour le plus précoce
+    const localMidnight = `${earliestYear}-${String(earliestMonth + 1).padStart(2, '0')}-${String(earliestDay).padStart(2, '0')}T00:00:00`
     const midnightLocalUTC = fromZonedTime(localMidnight, timeZone)
     
-    this.logger.info(`🕒 Date édition sans heure: minuit locale ${localMidnight} ${timeZone} -> ${midnightLocalUTC.toISOString()} (${ffaData.races.length} courses)`)
+    this.logger.info(`🕒 Aucune heure réelle du jour le plus précoce → minuit locale ${localMidnight} ${timeZone} -> ${midnightLocalUTC.toISOString()}`)
     return midnightLocalUTC
   }
 
