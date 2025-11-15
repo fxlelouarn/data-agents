@@ -43,7 +43,7 @@ services:
     staticPublishPath: ./apps/dashboard/dist
     envVars:
       - key: VITE_API_URL
-        value: https://data-agents-api.onrender.com
+        value: https://data-agents-api.onrender.com/api
     headers:
       - path: /*
         name: X-Frame-Options
