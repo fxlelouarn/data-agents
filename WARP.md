@@ -4,6 +4,64 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-11-15 - Fix: Génération du client Prisma au bon emplacement pour Render ✅
+
+**Problème résolu** : Le client Prisma était généré dans `packages/database/node_modules/@prisma/client` au lieu de `node_modules/.prisma/client` à la racine du monorepo, causant des erreurs TypeScript lors du déploiement sur Render.
+
+#### Symptômes
+
+```
+error TS2305: Module '"@prisma/client"' has no exported member 'AgentType'.
+error TS2305: Module '"@prisma/client"' has no exported member 'Proposal'.
+```
+
+Le build local fonctionnait grâce au cache npm, mais échouait systématiquement sur Render.
+
+#### Cause
+
+Le générateur Prisma dans `packages/database/prisma/schema.prisma` n'avait pas de directive `output` explicite, ce qui faisait que Prisma générait le client dans le `node_modules` local du package au lieu de la racine du monorepo.
+
+#### Solution
+
+Ajout de la directive `output` dans le générateur Prisma :
+
+```prisma
+generator client {
+  provider      = "prisma-client-js"
+  output        = "../../../node_modules/.prisma/client"  // ✅ Ajouté
+  binaryTargets = ["native", "debian-openssl-3.0.x"]
+}
+```
+
+**Note importante** : Ne PAS utiliser `../../../node_modules/@prisma/client` car Prisma refuse d'écraser ce répertoire (package système). Le chemin correct est `node_modules/.prisma/client`, et les imports depuis `@prisma/client` sont automatiquement redirigés par Prisma.
+
+#### Résultats
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Génération** | `packages/database/node_modules/@prisma/client` ❌ | `node_modules/.prisma/client` ✅ |
+| **Imports TypeScript** | Types non trouvés | Types accessibles ✅ |
+| **Build local** | Passe (cache) | Passe ✅ |
+| **Build Render** | Échoue ❌ | Passe ✅ |
+
+#### Fichiers modifiés
+
+- `packages/database/prisma/schema.prisma` : Ajout directive `output`
+
+#### Cohérence monorepo
+
+Le schéma Miles Republic (`apps/agents/prisma/miles-republic.prisma`) utilisait déjà le bon pattern :
+```prisma
+output = "../../../node_modules/.prisma/client-miles"
+```
+
+#### Ressources
+
+- Documentation Prisma : [Multiple Prisma Clients](https://www.prisma.io/docs/concepts/components/prisma-client/working-with-prismaclient/use-custom-model-and-field-names#using-multiple-prisma-clients)
+- Render docs : [Troubleshooting Deploys](https://render.com/docs/troubleshooting-deploys)
+
+---
+
 ### 2025-11-14 (partie 4) - Fix: Statut APPROVED quand tous les blocs validés ✅
 
 **Problème résolu** : Les propositions groupées restaient au statut `PENDING` avec le bouton "Tout valider (blocs)" visible même après validation de tous les blocs.
