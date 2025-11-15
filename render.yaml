@@ -29,7 +29,37 @@ services:
         sync: false  # À configurer manuellement dans Render Dashboard
       - key: FRONTEND_URL
         value: https://data-agents-dashboard.onrender.com
+      - key: CORS_ORIGIN
+        value: https://data-agents-dashboard.onrender.com
     healthCheckPath: /api/health
+
+  - type: web
+    name: data-agents-dashboard
+    env: static
+    plan: starter
+    region: frankfurt
+    buildCommand: |-
+      npm ci && \
+      cd apps/dashboard && \
+      npm run build
+    staticPublishPath: ./apps/dashboard/dist
+    envVars:
+      - key: VITE_API_URL
+        value: https://data-agents-api.onrender.com
+    headers:
+      - path: /*
+        name: X-Frame-Options
+        value: DENY
+      - path: /*
+        name: X-Content-Type-Options
+        value: nosniff
+      - path: /*
+        name: Referrer-Policy
+        value: strict-origin-when-cross-origin
+    routes:
+      - type: rewrite
+        source: /*
+        destination: /index.html
 
 databases:
   - name: data-agents-db
