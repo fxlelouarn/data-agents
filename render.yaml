@@ -35,4 +35,4 @@ databases:
   - name: data-agents-db
     databaseName: data_agents
     user: data_agents_user
-    plan: starter
+    plan: free
