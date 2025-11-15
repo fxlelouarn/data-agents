@@ -18,10 +18,10 @@
   "author": "Data Agents Team",
   "license": "MIT",
   "dependencies": {
-    "string-similarity": "^4.0.4"
+    "string-similarity": "^4.0.4",
+    "@types/string-similarity": "^4.0.2"
   },
   "devDependencies": {
-    "@types/string-similarity": "^4.0.2",
     "typescript": "^5.3.3"
   }
 }
