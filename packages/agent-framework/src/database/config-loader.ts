@@ -8,7 +8,6 @@
 
 import { AgentLogger } from '../types'
 import { DatabaseConfig } from '../database-manager'
-import type { DatabaseConnection } from '@data-agents/database'
 
 /**
  * Charge les configurations de bases de données depuis Prisma
