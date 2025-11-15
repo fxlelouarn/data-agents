@@ -818,10 +818,20 @@ router.post('/validate-block-group', [
     throw createError(404, 'Some proposals not found', 'PROPOSALS_NOT_FOUND')
   }
 
-  // Vérifier que toutes les propositions ciblent la même édition
-  const editionIds = [...new Set(proposals.map(p => p.editionId).filter(Boolean))]
-  if (editionIds.length !== 1) {
-    throw createError(400, 'Proposals must target the same edition', 'INVALID_PROPOSAL_GROUP')
+  // Vérifier la cohérence du groupe selon le type
+  const proposalTypes = [...new Set(proposals.map(p => p.type))]
+  
+  // NEW_EVENT : Pas besoin d'editionId (pas encore créée)
+  if (proposalTypes.includes('NEW_EVENT')) {
+    // Pour NEW_EVENT, on peut avoir plusieurs propositions du même événement
+    // ou des événements différents (validation moins stricte)
+    console.log('✅ NEW_EVENT détecté - Pas de validation editionId requise')
+  } else {
+    // EDITION_UPDATE, EVENT_UPDATE, RACE_UPDATE : Doivent cibler la même édition
+    const editionIds = [...new Set(proposals.map(p => p.editionId).filter(Boolean))]
+    if (editionIds.length !== 1) {
+      throw createError(400, 'Proposals must target the same edition', 'INVALID_PROPOSAL_GROUP')
+    }
   }
 
   // Construire le payload consolidé depuis 'changes'

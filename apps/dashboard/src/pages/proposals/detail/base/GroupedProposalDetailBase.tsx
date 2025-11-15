@@ -936,7 +936,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     unvalidateBlock: unvalidateBlockBase,
     validateAllBlocks: validateAllBlocksBase,
     unvalidateAllBlocks,
-    isBlockValidated,
+    isBlockValidated: isBlockValidatedLegacy,
     hasValidatedBlocks,
     isPending: isBlockPending
   } = useBlockValidation({
@@ -961,6 +961,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     userModifiedRaceChanges: workingGroup?.userModifiedRaceChanges || {}
   })
   
+  // ✅ UTILISER isBlockValidatedEditor du hook useProposalEditor (source de vérité)
+  const isBlockValidated = isBlockValidatedEditor
+  
   // Wrapper pour logger les validations de blocs
   const validateBlock = async (blockKey: string, proposalIds: string[]) => {
     await validateBlockBase(blockKey, proposalIds)
@@ -974,8 +977,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const allApproved = groupProposals.every(p => p.status === 'APPROVED')
   // ✅ Mode lecture seule si aucune proposition PENDING ET tous les blocs existants sont validés
   // Cela évite de désactiver tous les blocs dès qu'on en valide un seul
+  // ✅ Utiliser isBlockValidatedEditor (source de vérité depuis useProposalEditor)
   const allBlocksValidated = Object.keys(blockProposals).length > 0 && 
-    Object.keys(blockProposals).every(blockKey => isBlockValidated(blockKey))
+    Object.keys(blockProposals).every(blockKey => isBlockValidatedEditor(blockKey))
   const isAllApproved = !hasPending && allApproved && allBlocksValidated
 
   // Context pour le render
