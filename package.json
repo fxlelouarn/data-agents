@@ -18,7 +18,7 @@
     "prisma:generate:miles": "cd apps/agents && npx prisma generate --schema=prisma/miles-republic.prisma",
     "prebuild": "npm run clean && npm run prisma:generate:all",
     "build": "turbo build",
-    "build:prod": "npm run clean && npm run prisma:generate:all && turbo build --prod",
+    "build:prod": "npm run clean && npm run prisma:generate:all && turbo build",
     "build:types": "turbo build --filter=@data-agents/types",
     "build:database": "npm run prisma:generate:main && turbo build --filter=@data-agents/database",
     "build:framework": "turbo build --filter=@data-agents/agent-framework",
