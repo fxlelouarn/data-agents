@@ -8,6 +8,7 @@ services:
       npm ci && \
       npm run prisma:generate:all && \
       npm run db:migrate:deploy && \
+      npm run db:seed && \
       turbo build
     startCommand: node apps/api/dist/index.js
     envVars:
