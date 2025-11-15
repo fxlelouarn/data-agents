@@ -10,7 +10,7 @@ services:
       npm run db:migrate:deploy && \
       npm run db:seed && \
       turbo build
-    startCommand: sh -c 'npm run prisma:generate:all && node apps/api/dist/index.js'
+    startCommand: sh -c 'npx prisma generate --schema=packages/database/prisma/schema.prisma && npx prisma generate --schema=apps/agents/prisma/miles-republic.prisma && node apps/api/dist/index.js'
     envVars:
       - key: NODE_ENV
         value: production
