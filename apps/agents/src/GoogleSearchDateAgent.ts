@@ -4,6 +4,7 @@ import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
 import { GoogleSearchDateAgentConfigSchema } from './GoogleSearchDateAgent.configSchema'
 import axios from 'axios'
+import { fromZonedTime } from 'date-fns-tz'
 
 // Interface pour la configuration spécifique de l'agent
 interface GoogleSearchDateConfig {
@@ -745,7 +746,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const month = monthNames[monthName as keyof typeof monthNames]
               
               if (month && year >= currentYear && year <= nextYear + 1) {
-                date = new Date(year, month - 1, day)
+                // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
+                const timezone = event.edition?.timeZone || 'Europe/Paris'
+                const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+                date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.8 // Haute confiance pour les dates explicites
               } else continue
               
@@ -758,7 +762,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
               if (month) {
                 // Utiliser l'année de l'édition ou l'année suivante
                 const editionYear = event.edition?.year ? parseInt(event.edition.year) : nextYear
-                date = new Date(editionYear, month - 1, day)
+                // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
+                const timezone = event.edition?.timeZone || 'Europe/Paris'
+                const localDateStr = `${editionYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+                date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.75 // Confiance légèrement inférieure car année inferred
               } else continue
 
@@ -769,7 +776,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const year = parseInt(match[3])
               
               if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
-                date = new Date(year, month - 1, day)
+                // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
+                const timezone = event.edition?.timeZone || 'Europe/Paris'
+                const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+                date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.7
               } else continue
 
@@ -780,7 +790,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const day = parseInt(match[3])
               
               if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
-                date = new Date(year, month - 1, day)
+                // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
+                const timezone = event.edition?.timeZone || 'Europe/Paris'
+                const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
+                date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.8
               } else continue
 
@@ -791,7 +804,10 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const month = monthNames[monthName as keyof typeof monthNames]
               
               if (month && year >= currentYear && year <= nextYear + 1) {
-                date = new Date(year, month - 1, 1) // Premier du mois par défaut
+                // ✅ Créer date en heure locale française (minuit du 1er) puis convertir en UTC
+                const timezone = event.edition?.timeZone || 'Europe/Paris'
+                const localDateStr = `${year}-${String(month).padStart(2, '0')}-01T00:00:00`
+                date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.5 // Confiance plus faible pour mois seul
               } else continue
             }
