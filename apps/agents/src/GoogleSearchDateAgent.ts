@@ -668,11 +668,15 @@ export class GoogleSearchDateAgent extends BaseAgent {
   private async performGoogleSearch(query: string, config: GoogleSearchDateConfig): Promise<GoogleSearchResult | null> {
     try {
       const { googleApiKey, googleSearchEngineId, googleResultsCount } = config
+      
+      // Support legacy config field name (searchEngineId without "google" prefix)
+      const searchEngineId = googleSearchEngineId || (config as any).searchEngineId
 
-      if (!googleApiKey || !googleSearchEngineId) {
+      if (!googleApiKey || !searchEngineId) {
         this.logger.error('Clés API Google manquantes - impossible de continuer', {
           hasApiKey: !!googleApiKey,
-          hasSearchEngineId: !!googleSearchEngineId
+          hasSearchEngineId: !!searchEngineId,
+          configKeys: Object.keys(config)
         })
         throw new Error('Clés API Google manquantes (googleApiKey et googleSearchEngineId requis)')
       }
@@ -680,7 +684,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       const response = await axios.get('https://www.googleapis.com/customsearch/v1', {
         params: {
           key: googleApiKey,
-          cx: googleSearchEngineId,
+          cx: searchEngineId,
           q: query,
           num: Math.min(googleResultsCount, 10), // Max 10 résultats par requête Google
           dateRestrict: 'y1' // Limiter aux résultats de l'année écoulée
