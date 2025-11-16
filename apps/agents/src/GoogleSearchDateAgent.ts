@@ -4,7 +4,9 @@ import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
 import { GoogleSearchDateAgentConfigSchema } from './GoogleSearchDateAgent.configSchema'
 import axios from 'axios'
-import { fromZonedTime } from 'date-fns-tz'
+import { fromZonedTime, toZonedTime } from 'date-fns-tz'
+import { format } from 'date-fns'
+import { fr } from 'date-fns/locale'
 
 // Interface pour la configuration spécifique de l'agent
 interface GoogleSearchDateConfig {
@@ -639,6 +641,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
   }
 
   /**
+   * Formate une date dans un timezone donné (format français: "29/11/2025")
+   */
+  private formatDateInTimezone(date: Date, timezone: string): string {
+    const zonedDate = toZonedTime(date, timezone)
+    return format(zonedDate, 'dd/MM/yyyy', { locale: fr })
+  }
+
+  /**
    * Vérifie si une date correspond à un jour férié français connu
    */
   private isPublicHoliday(date: Date): boolean {
@@ -883,10 +893,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // Améliorer la confiance basée sur le jour de la semaine et l'historique
       const enhancedConfidence = this.calculateWeekdayConfidence(primaryDate.date, event, avgConfidence)
       
+      // ✅ Déclarer le timezone de l'édition ici pour l'utiliser dans la justification
+      const editionTimezone = event.edition.timeZone || 'Europe/Paris'
+      
       // Créer une justification consolidée avec toutes les sources
+      // ✅ Utiliser le timezone de l'édition pour formatter correctement la date
       const consolidatedJustification = {
         type: 'text' as const,
-        content: `Date proposée: ${primaryDate.date.toLocaleDateString('fr-FR')} (${datesGroup.length} source(s))`,
+        content: `Date proposée: ${this.formatDateInTimezone(primaryDate.date, editionTimezone)} (${datesGroup.length} source(s))`,
         metadata: {
           source: primaryDate.source, // ✅ URL de la première source pour affichage du bouton
           extractedDate: primaryDate.date.toISOString(),
@@ -900,7 +914,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
           sourcesCount: datesGroup.length,
           historicalEditionsCount: event.historicalEditions?.length || 0,
           dateDetails: {
-            date: primaryDate.date.toLocaleDateString('fr-FR'),
+            date: this.formatDateInTimezone(primaryDate.date, editionTimezone), // ✅ Formatter avec timezone
             confidence: enhancedConfidence, // Format décimal uniforme [0,1]
             confidencePercent: Math.round(enhancedConfidence * 100), // Pourcentage pour affichage
             sources: allSources
@@ -911,7 +925,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // Vérifier si la date proposée est différente de la date actuelle de l'édition
       const currentStartDate = event.edition.startDate
       const proposedDate = primaryDate.date
-      const editionTimezone = event.edition.timeZone || 'Europe/Paris'
+      // editionTimezone déjà déclaré ci-dessus
       
       // Ne créer une proposition que si la date est réellement différente
       // Comparer dans la timezone de l'édition pour gérer correctement les DOM-TOM
