@@ -29,8 +29,10 @@ export class AgentScheduler {
     
     try {
       
-      // Chemin vers le répertoire des agents
-      const agentsRegistryPath = path.join(__dirname, '../../../agents/src/registry')
+      // Chemin vers le répertoire des agents compilés
+      // En dev: apps/api/dist/services -> ../../../agents/dist/registry
+      // En prod: /opt/render/project/src/apps/api/dist/services -> ../../../agents/dist/registry
+      const agentsRegistryPath = path.join(__dirname, '../../../agents/dist/registry')
       
       if (!fs.existsSync(agentsRegistryPath)) {
         operationLogger.warn('Répertoire des agents non trouvé', { path: agentsRegistryPath })
