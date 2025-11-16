@@ -4,6 +4,86 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-11-16 - Fix: Suppressions de nouvelles courses (racesToAdd) non enregistrées ✅
+
+**Problème résolu** : Les suppressions de nouvelles courses (`racesToAdd`) n'étaient pas enregistrées lors de la validation du bloc "Courses".
+
+#### Symptômes
+
+Lorsqu'un utilisateur :
+1. Ouvrait une proposition avec des nouvelles courses (`racesToAdd`)
+2. Supprimait certaines courses avec le bouton poubelle 🗑️
+3. Validait le bloc "Courses"
+
+**Résultat attendu** : Les courses supprimées ne doivent pas être créées lors de l'application de la proposition.
+
+**Résultat observé** : 
+- Les courses apparaissaient grisées (UI)
+- Mais la suppression **N'ÉTAIT PAS enregistrée** dans `userModifiedChanges`
+- Lors de l'application, les courses supprimées étaient quand même créées ❌
+
+#### Cause
+
+**Désalignement frontend ↔ backend** :
+
+- **Le backend attendait** (`proposal-domain.service.ts` ligne 421) :
+  ```typescript
+  const racesToAddFiltered = (proposal?.userModifiedChanges)?.racesToAddFiltered || []
+  // Tableau d'indices des courses SUPPRIMÉES : [0, 1]
+  ```
+
+- **Le frontend envoyait** :
+  ```typescript
+  userModifiedRaceChanges = {
+    "new-0": { _deleted: true },  // ❌ Mauvaise structure
+    "new-1": { _deleted: true }
+  }
+  ```
+
+**Résultat** : `racesToAddFiltered` était toujours `[]` → Aucune course filtrée → Toutes les courses créées ❌
+
+#### Solution
+
+**Fichier** : `apps/dashboard/src/hooks/useBlockValidation.ts` (lignes 75-91)
+
+**Ajout** : Construction de `racesToAddFiltered` depuis les clés `new-{index}` marquées `_deleted: true`
+
+```typescript
+// Construire racesToAddFiltered depuis userModifiedRaceChanges
+const racesToAddFiltered: number[] = []
+
+Object.entries(userModifiedRaceChanges).forEach(([key, mods]: [string, any]) => {
+  if (key.startsWith('new-') && mods._deleted === true) {
+    const index = parseInt(key.replace('new-', ''))
+    if (!isNaN(index)) {
+      racesToAddFiltered.push(index)
+    }
+  }
+})
+
+if (racesToAddFiltered.length > 0) {
+  changes.racesToAddFiltered = racesToAddFiltered
+}
+```
+
+#### Résultats
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Payload frontend** | `raceEdits: {"new-0": {_deleted: true}}` | `racesToAddFiltered: [0]` ✅ |
+| **Backend filtre** | Aucun filtrage ❌ | Courses indexées supprimées ✅ |
+| **Résultat application** | Toutes courses créées ❌ | Seulement courses non supprimées ✅ |
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/hooks/useBlockValidation.ts` (lignes 75-91)
+
+#### Ressources
+
+- Documentation : `docs/BUG-RACES-TO-ADD-DELETE.md`
+
+---
+
 ### 2025-11-15 - Fix: Synchronisation des clients Prisma dans le monorepo ✅
 
 **Problème résolu** : Erreurs TypeScript et runtime dues à la résolution différente de `@prisma/client` selon les packages.

@@ -71,6 +71,24 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       // Ajouter les modifications de courses si bloc "races"
       if (blockKey === 'races' && userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
         changes.raceEdits = userModifiedRaceChanges
+        
+        // ✅ FIX: Construire racesToAddFiltered depuis les clés "new-{index}" marquées _deleted
+        const racesToAddFiltered: number[] = []
+        
+        Object.entries(userModifiedRaceChanges).forEach(([key, mods]: [string, any]) => {
+          // Chercher les clés "new-{index}" marquées _deleted
+          if (key.startsWith('new-') && mods._deleted === true) {
+            const index = parseInt(key.replace('new-', ''))
+            if (!isNaN(index)) {
+              racesToAddFiltered.push(index)
+            }
+          }
+        })
+        
+        if (racesToAddFiltered.length > 0) {
+          changes.racesToAddFiltered = racesToAddFiltered
+          console.log('✅ [useBlockValidation] Courses à filtrer (indices):', racesToAddFiltered)
+        }
       }
       
       console.log(`📦 [useBlockValidation] MODE GROUPÉ - Bloc "${blockKey}":`, {
