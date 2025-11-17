@@ -946,10 +946,10 @@ export class FFAScraperAgent extends BaseAgent {
     if (lowerName.includes('trail')) {
       // Classifier par distance
       if (runDistance) {
-        if (runDistance < 13) return ['TRAIL', 'DISCOVERY_TRAIL']
-        if (runDistance < 25) return ['TRAIL', 'SHORT_TRAIL']
-        if (runDistance < 50) return ['TRAIL', 'LONG_TRAIL']
-        if (runDistance >= 50) return ['TRAIL', 'ULTRA_TRAIL']
+        if (runDistance <= 21) return ['TRAIL', 'DISCOVERY_TRAIL']
+        if (runDistance <= 41) return ['TRAIL', 'SHORT_TRAIL']
+        if (runDistance <= 80) return ['TRAIL', 'LONG_TRAIL']
+        if (runDistance > 80) return ['TRAIL', 'ULTRA_TRAIL']
       }
       // Si "km" dans le nom avec nombre
       if (lowerName.includes('km')) {
