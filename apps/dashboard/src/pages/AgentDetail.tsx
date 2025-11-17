@@ -28,6 +28,7 @@ import {
 import { useAgent, useRunAgent, useAgents, useFailureReport, useToggleAgent, useDeleteAgent } from '@/hooks/useApi'
 import AgentNavigation from '@/components/agents/AgentNavigation'
 import ScraperProgressCard from '@/components/ScraperProgressCard'
+import DynamicConfigDisplay from '@/components/DynamicConfigDisplay'
 
 const AgentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -93,17 +94,13 @@ const AgentDetail: React.FC = () => {
     SPECIFIC_FIELD: 'Champ spécifique'
   }
 
-  // TODO: Schema de configuration et valeurs (non utilisés actuellement)
-  // const configSchema = agent?.config?.configSchema || {}
-  // const currentConfigValues = React.useMemo(() => {
-  //   if (!agent?.config) return {}
-  //   const { configSchema, ...configValues } = agent.config
-  //   return configValues
-  // }, [agent?.config])
-
-  // TODO: Fonction pour rendre un champ en mode read-only (non utilisée actuellement)
-
-  // TODO: Grouper les champs par catégorie pour l'affichage en mode formulaire (non utilisé actuellement)
+  // Schema de configuration et valeurs
+  const configSchema = agent?.config?.configSchema || {}
+  const currentConfigValues = React.useMemo(() => {
+    if (!agent?.config) return {}
+    const { configSchema, ...configValues } = agent.config
+    return configValues
+  }, [agent?.config])
 
   const handleRunAgent = async () => {
     try {
@@ -408,6 +405,17 @@ const AgentDetail: React.FC = () => {
           )}
         </Grid>
       </Grid>
+      
+      {/* Configuration de l'agent */}
+      {Object.keys(configSchema).length > 0 && (
+        <Box sx={{ mt: 3 }}>
+          <Typography variant="h6" sx={{ mb: 2 }}>Configuration</Typography>
+          <DynamicConfigDisplay
+            configSchema={configSchema}
+            values={currentConfigValues}
+          />
+        </Box>
+      )}
       
       {/* Dialog des détails du log */}
       <Dialog
