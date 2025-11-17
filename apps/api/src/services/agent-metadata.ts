@@ -1,12 +1,11 @@
 /**
- * Service pour récupérer les métadonnées des agents depuis le code source
+ * Service pour récupérer les métadonnées des agents
  * 
- * Ce service permet d'enrichir automatiquement les agents lors de leur
- * création/installation avec leur version et description depuis le code.
+ * Ce service importe les versions depuis @data-agents/types (source unique de vérité)
+ * et les enrichit avec les descriptions spécifiques.
  */
 
-// Import dynamique pour éviter les dépendances circulaires au build
-let metadataCache: Record<string, AgentMetadata> | null = null
+import { AGENT_VERSIONS } from '@data-agents/types'
 
 interface AgentMetadata {
   version: string
@@ -15,39 +14,23 @@ interface AgentMetadata {
 }
 
 /**
- * Charge les métadonnées des agents de manière lazy
+ * Charge les métadonnées des agents depuis la source centralisée
  */
-async function loadAgentMetadata(): Promise<Record<string, AgentMetadata>> {
-  if (metadataCache) {
-    return metadataCache
-  }
-
-  try {
-    // Import dynamique depuis le package agents
-    const { FFA_SCRAPER_AGENT_VERSION } = await import('@data-agents/sample-agents/dist/FFAScraperAgent')
-    const { GOOGLE_SEARCH_DATE_AGENT_VERSION } = await import('@data-agents/sample-agents/dist/GoogleSearchDateAgent')
-    
-    metadataCache = {
-      'ffa-scraper-agent': {
-        version: FFA_SCRAPER_AGENT_VERSION,
-        description: `Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied (v${FFA_SCRAPER_AGENT_VERSION})`
-      },
-      'google-search-date-agent': {
-        version: GOOGLE_SEARCH_DATE_AGENT_VERSION,
-        description: `Agent qui recherche les dates d'événements via Google Search et propose des mises à jour (v${GOOGLE_SEARCH_DATE_AGENT_VERSION})`
-      }
+function loadAgentMetadata(): Record<string, AgentMetadata> {
+  return {
+    'ffa-scraper-agent': {
+      version: AGENT_VERSIONS.FFA_SCRAPER_AGENT,
+      description: `Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied (v${AGENT_VERSIONS.FFA_SCRAPER_AGENT})`
+    },
+    'google-search-date-agent': {
+      version: AGENT_VERSIONS.GOOGLE_SEARCH_DATE_AGENT,
+      description: `Agent qui recherche les dates d'événements via Google Search et propose des mises à jour (v${AGENT_VERSIONS.GOOGLE_SEARCH_DATE_AGENT})`
     }
-
-    return metadataCache
-  } catch (error) {
-    console.warn('⚠️  Impossible de charger les métadonnées des agents depuis le code:', error)
-    // Fallback: retourner un objet vide
-    return {}
   }
 }
 
 /**
- * Enrichit les données d'un agent avec ses métadonnées depuis le code
+ * Enrichit les données d'un agent avec ses métadonnées depuis la source centralisée
  */
 export async function enrichAgentWithMetadata(agentData: {
   id?: string
@@ -58,7 +41,7 @@ export async function enrichAgentWithMetadata(agentData: {
   description: string
   config: Record<string, any>
 }> {
-  const metadata = await loadAgentMetadata()
+  const metadata = loadAgentMetadata()
   
   // Déterminer l'ID de l'agent (soit fourni, soit dérivé du nom)
   const agentId = agentData.id || deriveAgentId(agentData.name)
@@ -100,7 +83,7 @@ function deriveAgentId(name: string): string {
  * Récupère la version d'un agent depuis son ID
  */
 export async function getAgentVersion(agentId: string): Promise<string | null> {
-  const metadata = await loadAgentMetadata()
+  const metadata = loadAgentMetadata()
   return metadata[agentId]?.version || null
 }
 
@@ -112,7 +95,7 @@ export async function listAvailableAgents(): Promise<Array<{
   version: string
   description: string
 }>> {
-  const metadata = await loadAgentMetadata()
+  const metadata = loadAgentMetadata()
   
   return Object.entries(metadata).map(([id, meta]) => ({
     id,

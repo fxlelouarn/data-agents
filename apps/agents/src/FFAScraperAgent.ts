@@ -7,10 +7,11 @@
  * - Créer des propositions de création/modification d'événements, éditions et courses
  */
 
-// VERSION DE L'AGENT
-export const FFA_SCRAPER_AGENT_VERSION = '2.3.0'
-
+import { AGENT_VERSIONS } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
+
+// Version exportée pour compatibilité
+export const FFA_SCRAPER_AGENT_VERSION = AGENT_VERSIONS.FFA_SCRAPER_AGENT
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import { FFAScraperAgentConfigSchema } from './FFAScraperAgent.configSchema'
 import { 

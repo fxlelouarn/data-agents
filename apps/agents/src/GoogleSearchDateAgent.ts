@@ -1,7 +1,8 @@
-// VERSION DE L'AGENT
-export const GOOGLE_SEARCH_DATE_AGENT_VERSION = '1.1.0'
-
+import { AGENT_VERSIONS } from '@data-agents/types'
 import { BaseAgent, AgentType } from '@data-agents/agent-framework'
+
+// Version exportée pour compatibilité
+export const GOOGLE_SEARCH_DATE_AGENT_VERSION = AGENT_VERSIONS.GOOGLE_SEARCH_DATE_AGENT
 import { IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
