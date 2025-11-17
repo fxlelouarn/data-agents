@@ -11,6 +11,8 @@ export { DatabaseManager } from './database-manager'
 export type { DatabaseConfig } from './database-manager'
 export { ConnectionManager } from './connection-manager'
 export type { SourceConnectionConfig, PrismaClientType } from './connection-manager'
+export { matchRacesByDistanceAndName } from './matching-utils'
+export type { RaceWithDistance } from './matching-utils'
 
 // Export database modules (Phase 2 refactoring)
 export { ConfigLoader } from './database/config-loader'

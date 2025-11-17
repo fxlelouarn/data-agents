@@ -1407,10 +1407,8 @@ router.post('/:id/convert-to-edition-update', [
       const ffaRaces = editionData.races
       const existingRaces = existingEdition.races || []
       
-      // Importer la fonction de matching hybride depuis le package agents
-      // Note: On importe directement depuis apps/agents car matcher.ts n'est pas dans agent-framework
-      const matcherPath = require('path').resolve(__dirname, '../../../agents/src/ffa/matcher')
-      const { matchRacesByDistanceAndName } = await import(matcherPath)
+      // Importer la fonction de matching hybride depuis agent-framework
+      const { matchRacesByDistanceAndName } = await import('@data-agents/agent-framework')
       
       // Utiliser l'algorithme de matching hybride
       const matchingResult = matchRacesByDistanceAndName(ffaRaces, existingRaces, logger)
@@ -1470,6 +1468,12 @@ router.post('/:id/convert-to-edition-update', [
           })
         } else {
           // ✅ Course matchée SANS changement → Affichage informatif
+          const startDateIso = matchingRace.startDate 
+            ? (matchingRace.startDate instanceof Date 
+                ? matchingRace.startDate.toISOString() 
+                : matchingRace.startDate)
+            : null
+          
           racesExisting.push({
             raceId: matchingRace.id,
             raceName: matchingRace.name,
@@ -1480,7 +1484,7 @@ router.post('/:id/convert-to-edition-update', [
             runPositiveElevation: matchingRace.runPositiveElevation,
             categoryLevel1: matchingRace.categoryLevel1,
             categoryLevel2: matchingRace.categoryLevel2,
-            startDate: matchingRace.startDate?.toISOString() || null
+            startDate: startDateIso
           })
         }
       }
