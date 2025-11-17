@@ -1585,6 +1585,267 @@ router.post('/:id/convert-to-edition-update', [
   })
 }))
 
+// POST /api/proposals/edition-update-complete - Create a complete EDITION_UPDATE proposal with current values
+router.post('/edition-update-complete', [
+  body('editionId').isString().notEmpty().withMessage('editionId is required'),
+  body('userModifiedChanges').optional().isObject().withMessage('userModifiedChanges must be an object'),
+  body('userModifiedRaceChanges').optional().isObject().withMessage('userModifiedRaceChanges must be an object'),
+  body('justification').optional().isString(),
+  body('autoValidate').optional().isBoolean(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { editionId, userModifiedChanges = {}, userModifiedRaceChanges = {}, justification, autoValidate = false } = req.body
+
+  // Connexion à Miles Republic
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+
+  if (!milesRepublicConn) {
+    throw createError(500, 'Miles Republic connection not configured', 'CONFIG_ERROR')
+  }
+
+  const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'proposals-api')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const connection = await dbManager.getConnection(milesRepublicConn.id)
+
+  // Récupérer l'édition et l'événement associé
+  const numericEditionId = typeof editionId === 'string' && /^\d+$/.test(editionId)
+    ? parseInt(editionId)
+    : editionId
+
+  const edition = await connection.edition.findUnique({
+    where: { id: numericEditionId },
+    include: {
+      event: true,
+      races: {
+        orderBy: { runDistance: 'asc' }
+      }
+    }
+  })
+
+  if (!edition) {
+    throw createError(404, `Edition ${editionId} not found in Miles Republic`, 'EDITION_NOT_FOUND')
+  }
+
+  const event = edition.event
+  if (!event) {
+    throw createError(404, `Event not found for edition ${editionId}`, 'EVENT_NOT_FOUND')
+  }
+
+  logger.info(`Creating EDITION_UPDATE proposal for edition ${edition.id} (${event.name} ${edition.year})`)
+
+  // Structure: changes = valeurs actuelles, userModifiedChanges = modifications utilisateur
+  const changes: Record<string, any> = {}
+
+  // Ajouter toutes les valeurs actuelles de l'édition
+  const editionFields = [
+    'year', 'startDate', 'endDate', 'timeZone', 'calendarStatus',
+    'registrationOpeningDate', 'registrationClosingDate', 'registrantsNumber', 'currency'
+  ]
+
+  editionFields.forEach(field => {
+    const currentValue = (edition as any)[field]
+    const proposedValue = userModifiedChanges[field] !== undefined 
+      ? userModifiedChanges[field] 
+      : currentValue
+
+    if (currentValue !== null || proposedValue !== null) {
+      changes[field] = {
+        old: currentValue,
+        new: proposedValue,
+        confidence: userModifiedChanges[field] !== undefined ? 1.0 : 1.0
+      }
+    }
+  })
+
+  // Ajouter toutes les valeurs actuelles de l'événement
+  const eventFields = [
+    'name', 'city', 'country', 'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
+    'fullAddress', 'latitude', 'longitude',
+    'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl'
+  ]
+
+  eventFields.forEach(field => {
+    const currentValue = (event as any)[field]
+    const proposedValue = userModifiedChanges[field] !== undefined 
+      ? userModifiedChanges[field] 
+      : currentValue
+
+    if (currentValue !== null || proposedValue !== null) {
+      changes[field] = {
+        old: currentValue,
+        new: proposedValue,
+        confidence: userModifiedChanges[field] !== undefined ? 1.0 : 1.0
+      }
+    }
+  })
+
+  // Extraire toutes les courses existantes et les ajouter dans changes
+  const currentRaces = edition.races.map(race => ({
+    raceId: race.id,
+    name: race.name || '',
+    distance: race.runDistance || null,
+    elevationGain: race.runPositiveElevation || null,
+    startDate: race.startDate ? race.startDate.toISOString() : null,
+    price: race.price || null,
+    categoryLevel1: race.categoryLevel1 || null,
+    categoryLevel2: race.categoryLevel2 || null
+  }))
+
+  // Ajouter toutes les courses dans changes (pour qu'elles soient visibles dans l'interface)
+  if (currentRaces.length > 0) {
+    changes.races = {
+      old: currentRaces,
+      new: currentRaces, // Par défaut, aucune modification
+      confidence: 1.0
+    }
+  }
+
+  // Préparer les modifications de courses (si l'utilisateur en a fait)
+  const racesToUpdate: Array<{
+    raceId: number,
+    currentValues: Record<string, any>,
+    proposedValues: Record<string, any>,
+    differences: string[]
+  }> = []
+
+  currentRaces.forEach(race => {
+    const raceEdits = userModifiedRaceChanges[race.raceId] || {}
+    const hasDifferences = Object.keys(raceEdits).length > 0
+
+    if (hasDifferences) {
+      const differences: string[] = []
+      const currentValues: Record<string, any> = {}
+      const proposedValues: Record<string, any> = {}
+
+      Object.keys(raceEdits).forEach(field => {
+        const currentValue = (race as any)[field]
+        const proposedValue = raceEdits[field]
+
+        if (currentValue !== proposedValue) {
+          differences.push(field)
+          currentValues[field] = currentValue
+          proposedValues[field] = proposedValue
+        }
+      })
+
+      if (differences.length > 0) {
+        racesToUpdate.push({
+          raceId: race.raceId,
+          currentValues,
+          proposedValues,
+          differences
+        })
+      }
+    }
+  })
+
+  // Ajouter racesToUpdate si présent
+  if (racesToUpdate.length > 0) {
+    changes.racesToUpdate = {
+      old: [],
+      new: racesToUpdate,
+      confidence: 1.0
+    }
+  }
+
+  // Créer ou récupérer l'agent manuel
+  let manualAgent = await db.prisma.agent.findFirst({
+    where: { name: 'Manual Input Agent' }
+  })
+
+  if (!manualAgent) {
+    manualAgent = await db.prisma.agent.create({
+      data: {
+        name: 'Manual Input Agent',
+        description: 'Agent for manually created proposals',
+        type: 'SPECIFIC_FIELD',
+        isActive: true,
+        frequency: '0 0 * * *',
+        config: {}
+      }
+    })
+  }
+
+  // Créer la justification
+  const proposalJustification = [
+    {
+      type: 'manual_creation',
+      message: justification || `Modification manuelle de l'édition ${event.name} ${edition.year}`,
+      metadata: {
+        manual: true,
+        eventId: event.id,
+        editionId: edition.id,
+        timestamp: new Date().toISOString()
+      }
+    }
+  ]
+
+  // Déterminer le statut initial
+  const status = autoValidate ? 'APPROVED' : 'PENDING'
+
+  // Créer la proposition
+  const newProposal = await db.prisma.proposal.create({
+    data: {
+      agentId: manualAgent.id,
+      type: 'EDITION_UPDATE',
+      status,
+      eventId: event.id.toString(),
+      editionId: edition.id.toString(),
+      eventName: event.name,
+      eventCity: event.city,
+      editionYear: typeof edition.year === 'string' ? parseInt(edition.year) : edition.year,
+      changes,
+      userModifiedChanges,
+      justification: proposalJustification,
+      confidence: 1.0,
+      approvedBlocks: autoValidate ? {
+        edition: true,
+        races: racesToUpdate.length > 0 ? true : undefined
+      } : {}
+    },
+    include: {
+      agent: {
+        select: { name: true, type: true }
+      }
+    }
+  })
+
+  // Logger la création
+  await db.createLog({
+    agentId: manualAgent.id,
+    level: 'INFO',
+    message: `Manual EDITION_UPDATE proposal created for ${event.name} ${edition.year}`,
+    data: {
+      proposalId: newProposal.id,
+      eventId: event.id,
+      editionId: edition.id,
+      racesToUpdate: racesToUpdate.length,
+      autoValidated: autoValidate
+    }
+  })
+
+  res.status(201).json({
+    success: true,
+    data: {
+      proposal: {
+        id: newProposal.id,
+        type: newProposal.type,
+        status: newProposal.status,
+        eventId: newProposal.eventId,
+        editionId: newProposal.editionId,
+        eventName: newProposal.eventName,
+        editionYear: newProposal.editionYear
+      }
+    },
+    message: autoValidate 
+      ? `EDITION_UPDATE proposal created and validated for ${event.name} ${edition.year}`
+      : `EDITION_UPDATE proposal created for ${event.name} ${edition.year}`
+  })
+}))
+
 // POST /api/proposals/:id/unapprove-block - Cancel approval of a specific block
 router.post('/:id/unapprove-block', [
   param('id').isString().notEmpty(),
