@@ -438,8 +438,9 @@ export class FFAScraperAgent extends BaseAgent {
           
           // Si la course FFA a une distance, matcher principalement sur la distance
           if (ffaRace.distance && ffaRace.distance > 0) {
-            // Tolérance de 5% pour le matching de distance
-            const tolerance = ffaRace.distance * 0.05
+            // Utiliser la tolérance configurée (config.distanceTolerancePercent)
+            const tolerancePercent = (this.config.config as FFAScraperConfig).distanceTolerancePercent
+            const tolerance = ffaRace.distance * tolerancePercent
             const distanceDiff = Math.abs(totalDistance - ffaRace.distance)
             
             // Match si la distance est dans la tolérance

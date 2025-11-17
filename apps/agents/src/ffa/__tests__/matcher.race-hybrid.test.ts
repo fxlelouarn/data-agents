@@ -42,7 +42,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+    const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
@@ -87,7 +87,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(2)
       expect(result.unmatched).toHaveLength(0)
@@ -136,7 +136,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(2)
       expect(result.unmatched).toHaveLength(0)
@@ -178,7 +178,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       // Le nom "Trail nocturne" est trop différent de "Marche nordique" et "Course enfants"
       // → Devrait être traité comme nouvelle course
@@ -216,7 +216,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)
@@ -245,7 +245,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
@@ -271,7 +271,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)
@@ -299,7 +299,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger)
+      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)

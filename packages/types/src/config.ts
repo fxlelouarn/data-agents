@@ -16,7 +16,7 @@ export interface ConfigFieldValidation {
 export interface ConfigField {
   name: string
   label: string
-  type: 'text' | 'number' | 'password' | 'select' | 'textarea' | 'switch' | 'slider'
+  type: 'text' | 'number' | 'password' | 'select' | 'textarea' | 'switch' | 'slider' | 'multiselect'
   category?: string
   required?: boolean
   defaultValue?: any

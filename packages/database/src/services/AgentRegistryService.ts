@@ -119,13 +119,14 @@ export class AgentRegistryService {
         ...fieldConfig,
         type: fieldConfig.type === 'switch' ? 'boolean' : fieldConfig.type,
         description: fieldConfig.helpText || fieldConfig.description,
-        defaultValue: fieldConfig.defaultValue,
+        default: fieldConfig.defaultValue,
         category: fieldConfig.category,
         min: fieldConfig.validation?.min,
         max: fieldConfig.validation?.max,
         step: fieldConfig.validation?.step,
         options: fieldConfig.options,
-        placeholder: fieldConfig.placeholder
+        placeholder: fieldConfig.placeholder,
+        required: fieldConfig.required
       }
     }
     

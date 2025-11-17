@@ -20,7 +20,7 @@ export interface RaceWithDistance {
  * en utilisant un algorithme hybride distance + nom (fuse.js)
  * 
  * Stratégie :
- * 1. Grouper les courses DB par distance (tolérance 5%)
+ * 1. Grouper les courses DB par distance (tolérance configurable)
  * 2. Pour chaque course FFA :
  *    - Si 1 seule course DB avec cette distance → Match automatique
  *    - Si plusieurs courses DB → Fuzzy match sur le nom (fuse.js)
@@ -29,20 +29,22 @@ export interface RaceWithDistance {
  * @param ffaRaces - Courses extraites de la FFA
  * @param dbRaces - Courses existantes dans Miles Republic
  * @param logger - Logger pour debugging
+ * @param tolerancePercent - Tolérance en décimal (0.1 = 10%), par défaut 0.05 (5%)
  * @returns Courses matchées et non matchées
  */
 export function matchRacesByDistanceAndName(
   ffaRaces: any[],
   dbRaces: RaceWithDistance[],
-  logger: any
-): { 
+  logger: any,
+  tolerancePercent: number = 0.05
+): {
   matched: Array<{ ffa: any, db: RaceWithDistance }>, 
   unmatched: any[] 
 } {
   const matched: Array<{ ffa: any, db: RaceWithDistance }> = []
   const unmatched: any[] = []
   
-  // 1. Grouper les courses DB par distance (tolérance 5%)
+  // 1. Grouper les courses DB par distance (tolérance configurable)
   const racesByDistance = new Map<number, RaceWithDistance[]>()
   
   for (const race of dbRaces) {
@@ -53,10 +55,10 @@ export function matchRacesByDistanceAndName(
     
     if (totalDistanceKm === 0) continue
     
-    // Trouver un groupe existant avec tolérance 5%
+    // Trouver un groupe existant avec la tolérance configurée
     let foundGroup = false
     for (const [groupDistance, races] of racesByDistance.entries()) {
-      const tolerance = groupDistance * 0.05
+      const tolerance = groupDistance * tolerancePercent
       if (Math.abs(groupDistance - totalDistanceKm) <= tolerance) {
         races.push(race)
         foundGroup = true
@@ -97,7 +99,7 @@ export function matchRacesByDistanceAndName(
     // Trouver les candidats par distance
     let candidates: RaceWithDistance[] = []
     for (const [groupDistance, races] of racesByDistance.entries()) {
-      const tolerance = groupDistance * 0.05
+      const tolerance = groupDistance * tolerancePercent
       if (Math.abs(groupDistance - ffaDistanceKm) <= tolerance) {
         candidates = races
         break

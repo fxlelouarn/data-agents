@@ -20,7 +20,7 @@ import { useDatabases } from '@/hooks/useApi'
 
 // Interface pour le schema de configuration
 interface ConfigFieldSchema {
-  type: 'text' | 'number' | 'boolean' | 'password' | 'select' | 'textarea' | 'database_select'
+  type: 'text' | 'number' | 'boolean' | 'password' | 'select' | 'textarea' | 'database_select' | 'multiselect'
   label: string
   description?: string
   required?: boolean
@@ -398,6 +398,65 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
               </MenuItem>
             ))}
           </TextField>
+        )
+
+      case 'multiselect':
+        const selectedValues = Array.isArray(value) ? value : []
+        const multiselectOptions = fieldConfig.options || []
+        
+        return (
+          <Box key={fieldName} sx={{ mb: 2 }}>
+            <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 500 }}>
+              {fieldConfig.label}
+              {fieldConfig.description && (
+                <Tooltip title={fieldConfig.description}>
+                  <IconButton size="small">
+                    <HelpIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Typography>
+            <Box sx={{ display: 'flex', flexWrap: 'wrap', gap: 1, ml: 1 }}>
+              {multiselectOptions.map((option) => (
+                <FormControlLabel
+                  key={option.value}
+                  control={
+                    <Switch
+                      checked={selectedValues.includes(option.value)}
+                      onChange={(e) => {
+                        const newValues = e.target.checked
+                          ? [...selectedValues, option.value]
+                          : selectedValues.filter((v: any) => v !== option.value)
+                        onChange(fieldName, newValues)
+                      }}
+                      color="primary"
+                      size="small"
+                    />
+                  }
+                  label={option.label}
+                  sx={{ 
+                    border: '1px solid',
+                    borderColor: selectedValues.includes(option.value) ? 'primary.main' : 'divider',
+                    borderRadius: 1,
+                    px: 1,
+                    py: 0.5,
+                    m: 0,
+                    bgcolor: selectedValues.includes(option.value) ? 'action.selected' : 'transparent'
+                  }}
+                />
+              ))}
+            </Box>
+            {hasError && (
+              <Typography variant="caption" color="error" sx={{ ml: 2, mt: 0.5, display: 'block' }}>
+                {errorMessage}
+              </Typography>
+            )}
+            {fieldConfig.description && !hasError && (
+              <Typography variant="caption" color="text.secondary" sx={{ ml: 2, mt: 0.5, display: 'block' }}>
+                {fieldConfig.description}
+              </Typography>
+            )}
+          </Box>
         )
 
       case 'textarea':

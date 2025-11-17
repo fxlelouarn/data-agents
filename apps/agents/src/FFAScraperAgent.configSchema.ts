@@ -105,7 +105,7 @@ export const FFAScraperAgentConfigSchema: ConfigSchema = {
     {
       name: "levels",
       label: "Niveaux de compétition",
-      type: "select",
+      type: "multiselect",
       category: "filtering",
       required: true,
       defaultValue: ["Départemental", "Régional"],
@@ -134,13 +134,13 @@ export const FFAScraperAgentConfigSchema: ConfigSchema = {
     },
     {
       name: "distanceTolerancePercent",
-      label: "Tolérance distance (%)",
+      label: "Tolérance distance",
       type: "slider",
       category: "matching",
       required: true,
       defaultValue: 0.1,
-      description: "Tolérance pour matcher les distances de courses",
-      helpText: "10% = 10km FFA match avec 9-11km Miles Republic",
+      description: "Tolérance pour matcher les distances de courses (décimal: 0.1 = 10%)",
+      helpText: "0.1 = 10% de tolérance (ex: 10km FFA match avec 9-11km DB)",
       validation: { min: 0, max: 0.5, step: 0.05 }
     },
 
