@@ -4,7 +4,94 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
-### 2025-11-17 - Fix: Bouton "Valider Event" ne fonctionnait pas pour les propositions EDITION_UPDATE ✅
+### 2025-11-17 (partie 2) - Système de versioning des agents ✅
+
+**Nouvelle fonctionnalité** : Chaque agent possède maintenant un numéro de version explicit qui est logé à chaque exécution et stocké en base de données.
+
+#### Problème
+
+❌ Impossible de vérifier quelle version du code agent tourne en production  
+❌ Doutes lors des déploiements : "Les agents sont-ils vraiment recompilés ?"  
+❌ Difficulté à tracer les bugs liés à une version spécifique
+
+#### Solution
+
+Chaque agent exporte une constante de version :
+
+```typescript
+// apps/agents/src/FFAScraperAgent.ts
+export const FFA_SCRAPER_AGENT_VERSION = '2.3.0'
+
+export class FFAScraperAgent extends BaseAgent {
+  constructor(config: any, db?: any, logger?: any) {
+    const agentConfig = {
+      description: `Agent... (v${FFA_SCRAPER_AGENT_VERSION})`,
+      config: {
+        version: FFA_SCRAPER_AGENT_VERSION,
+        // ...
+      }
+    }
+  }
+
+  async run(context: AgentContext): Promise<AgentRunResult> {
+    context.logger.info(`🚀 Démarrage FFA Scraper Agent v${FFA_SCRAPER_AGENT_VERSION}`, {
+      version: FFA_SCRAPER_AGENT_VERSION,
+      timestamp: new Date().toISOString()
+    })
+  }
+}
+```
+
+#### Versions actuelles
+
+| Agent | Version | Fichier |
+|-------|---------|----------|
+| **FFA Scraper Agent** | `2.3.0` | `apps/agents/src/FFAScraperAgent.ts` |
+| **Google Search Date Agent** | `1.1.0` | `apps/agents/src/GoogleSearchDateAgent.ts` |
+
+#### Vérification
+
+**En local** :
+```bash
+npm run show-versions
+# Affiche les versions depuis le code source
+```
+
+**En production (logs Render)** :
+```
+2025-11-17T17:50:00.000Z info: 🚀 Démarrage FFA Scraper Agent v2.3.0
+  version: "2.3.0"
+  timestamp: "2025-11-17T17:50:00.000Z"
+```
+
+**Via l'API** :
+```bash
+GET /api/agents/:id
+# Réponse inclut config.version
+```
+
+#### Avantages
+
+✅ **Traçabilité** : Savoir quelle version tourne en production  
+✅ **Debugging** : Identifier rapidement si un bug est lié à une version spécifique  
+✅ **Confiance** : Vérifier que les changements sont bien déployés  
+✅ **Audit** : Historique des versions dans la base de données  
+✅ **Communication** : Les logs sont plus informatifs
+
+#### Fichiers modifiés
+
+- `apps/agents/src/FFAScraperAgent.ts` : Ajout `FFA_SCRAPER_AGENT_VERSION = '2.3.0'`
+- `apps/agents/src/GoogleSearchDateAgent.ts` : Ajout `GOOGLE_SEARCH_DATE_AGENT_VERSION = '1.1.0'`
+- `scripts/show-agent-versions.ts` : Nouveau script d'affichage
+- `package.json` : Script `show-versions`
+
+#### Ressources
+
+- Documentation complète : `docs/AGENT-VERSIONING.md`
+
+---
+
+### 2025-11-17 (partie 1) - Fix: Bouton "Valider Event" ne fonctionnait pas pour les propositions EDITION_UPDATE ✅
 
 **Problème résolu** : Le bouton "Valider Event" ne faisait rien lorsqu'on cliquait dessus dans les propositions groupées de type `EDITION_UPDATE`.
 

@@ -68,11 +68,13 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       // Le backend mergera automatiquement avec proposal.changes
       const changes: Record<string, any> = { ...userModifiedChanges }
       
-      // Ajouter les modifications de courses si bloc "races"
-      if (blockKey === 'races' && userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
+      // ✅ FIX 2025-11-17 : Construire racesToAddFiltered POUR TOUS LES BLOCS
+      // Les suppressions de nouvelles courses doivent être incluses même si on valide
+      // le bloc "edition" ou "event" au lieu du bloc "races"
+      if (userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
         changes.raceEdits = userModifiedRaceChanges
         
-        // ✅ FIX: Construire racesToAddFiltered depuis les clés "new-{index}" marquées _deleted
+        // Construire racesToAddFiltered depuis les clés "new-{index}" marquées _deleted
         const racesToAddFiltered: number[] = []
         
         Object.entries(userModifiedRaceChanges).forEach(([key, mods]: [string, any]) => {
@@ -87,7 +89,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         
         if (racesToAddFiltered.length > 0) {
           changes.racesToAddFiltered = racesToAddFiltered
-          console.log('✅ [useBlockValidation] Courses à filtrer (indices):', racesToAddFiltered)
+          console.log(`✅ [useBlockValidation] Bloc "${blockKey}" - Courses à filtrer (indices):`, racesToAddFiltered)
         }
       }
       

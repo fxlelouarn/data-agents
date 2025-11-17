@@ -16,9 +16,11 @@ import { databaseRouter } from './routes/databases'
 import { settingsRouter } from './routes/settings'
 import { eventsRouter } from './routes/events'
 import { statsRouter } from './routes/stats'
+import { versionRouter } from './routes/version'
 import authRouter from './routes/auth'
 import { AgentScheduler } from './services/scheduler'
 import { errorHandler } from './middleware/error-handler'
+import { APP_VERSION } from './version'
 
 // Load environment variables
 dotenv.config()
@@ -87,6 +89,7 @@ app.use(express.urlencoded({ extended: true }))
 
 // Routes
 app.use('/api/health', healthRouter)
+app.use('/api/version', versionRouter)  // Version endpoint (public)
 app.use('/api/auth', authRouter)  // Auth routes (login, users)
 app.use('/api/agents', agentRouter)
 app.use('/api/proposals', proposalRouter)
@@ -127,8 +130,10 @@ process.on('SIGINT', async () => {
 
 // Start server
 app.listen(PORT, () => {
-  console.log(`🚀 Data Agents API server running on port ${PORT}`)
+  console.log(`🚀 Data Agents API v${APP_VERSION} running on port ${PORT}`)
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
+  console.log(`🐝 Node version: ${process.version}`)
+  console.log(`📡 Version endpoint: http://localhost:${PORT}/api/version`)
   
   // Start scheduler
   scheduler.start().catch(console.error)

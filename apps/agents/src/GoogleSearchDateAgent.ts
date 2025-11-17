@@ -1,3 +1,6 @@
+// VERSION DE L'AGENT
+export const GOOGLE_SEARCH_DATE_AGENT_VERSION = '1.1.0'
+
 import { BaseAgent, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
@@ -81,11 +84,12 @@ export class GoogleSearchDateAgent extends BaseAgent {
     const agentConfig = {
       id: config.id || 'google-search-date-agent',
       name: config.name || 'Google Search Date Agent',
-      description: 'Agent qui recherche les dates d\'événements via Google Search et propose des mises à jour',
+      description: `Agent qui recherche les dates d'événements via Google Search et propose des mises à jour (v${GOOGLE_SEARCH_DATE_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */6 * * *', // Toutes les 6 heures par défaut
       isActive: config.isActive ?? true,
       config: {
+        version: GOOGLE_SEARCH_DATE_AGENT_VERSION,
         batchSize: config.config?.batchSize || 10,
         googleResultsCount: config.config?.googleResultsCount || 5,
         googleApiKey: config.config?.googleApiKey || process.env.GOOGLE_API_KEY,
@@ -122,11 +126,13 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // Récupérer l'offset persistant
       const offset = await this.stateService.getState<number>(this.config.id, 'offset') || 0
       
-      context.logger.info('🚀 Début de l\'exécution de Google Search Date Agent', {
+      context.logger.info(`🚀 Démarrage Google Search Date Agent v${GOOGLE_SEARCH_DATE_AGENT_VERSION}`, {
+        version: GOOGLE_SEARCH_DATE_AGENT_VERSION,
         batchSize: config.batchSize,
         googleResultsCount: config.googleResultsCount,
         offset: offset,
-        sourceDatabase: config.sourceDatabase
+        sourceDatabase: config.sourceDatabase,
+        timestamp: new Date().toISOString()
       })
 
       // S'assurer que la connexion source est initialisée

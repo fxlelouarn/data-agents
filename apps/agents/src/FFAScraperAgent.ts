@@ -7,6 +7,9 @@
  * - Créer des propositions de création/modification d'événements, éditions et courses
  */
 
+// VERSION DE L'AGENT
+export const FFA_SCRAPER_AGENT_VERSION = '2.3.0'
+
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import { FFAScraperAgentConfigSchema } from './FFAScraperAgent.configSchema'
@@ -44,11 +47,12 @@ export class FFAScraperAgent extends BaseAgent {
     const agentConfig = {
       id: config.id || 'ffa-scraper-agent',
       name: config.name || 'FFA Scraper Agent',
-      description: 'Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied',
+      description: `Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied (v${FFA_SCRAPER_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */12 * * *', // Toutes les 12 heures par défaut
       isActive: config.isActive ?? true,
       config: {
+        version: FFA_SCRAPER_AGENT_VERSION,
         sourceDatabase: config.sourceDatabase || config.config?.sourceDatabase,
         liguesPerRun: config.liguesPerRun || config.config?.liguesPerRun || 2,
         monthsPerRun: config.monthsPerRun || config.config?.monthsPerRun || 1,
@@ -1528,11 +1532,13 @@ export class FFAScraperAgent extends BaseAgent {
     const config = this.config.config as FFAScraperConfig
     
     try {
-      context.logger.info('🚀 Démarrage FFA Scraper Agent', {
+      context.logger.info(`🚀 Démarrage FFA Scraper Agent v${FFA_SCRAPER_AGENT_VERSION}`, {
+        version: FFA_SCRAPER_AGENT_VERSION,
         liguesPerRun: config.liguesPerRun,
         monthsPerRun: config.monthsPerRun,
         levels: config.levels,
-        sourceDatabase: config.sourceDatabase
+        sourceDatabase: config.sourceDatabase,
+        timestamp: new Date().toISOString()
       })
 
       // Initialiser la connexion source
