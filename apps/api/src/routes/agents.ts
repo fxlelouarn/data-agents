@@ -3,6 +3,7 @@ import { body, param, query, validationResult } from 'express-validator'
 import { getDatabaseServiceSync } from '../services/database'
 import { AgentScheduler } from '../services/scheduler'
 import { asyncHandler, createError } from '../middleware/error-handler'
+import { enrichAgentWithMetadata } from '../services/agent-metadata'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -98,12 +99,19 @@ router.post('/', [
     throw createError(400, 'Invalid cron expression', 'INVALID_CRON')
   }
 
+  // Enrichir automatiquement avec les métadonnées depuis le code
+  const enriched = await enrichAgentWithMetadata({
+    name,
+    config,
+    description
+  })
+
   const agent = await db.createAgent({
     name,
-    description,
+    description: enriched.description,
     type,
     frequency,
-    config
+    config: enriched.config
   })
 
   // Register with scheduler

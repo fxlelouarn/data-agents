@@ -129,11 +129,23 @@ process.on('SIGINT', async () => {
 })
 
 // Start server
-app.listen(PORT, () => {
+app.listen(PORT, async () => {
   console.log(`🚀 Data Agents API v${APP_VERSION} running on port ${PORT}`)
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🐝 Node version: ${process.version}`)
   console.log(`📡 Version endpoint: http://localhost:${PORT}/api/version`)
+  
+  // Synchroniser les agents avec le code
+  try {
+    console.log('🔄 Synchronisation des agents avec le code...')
+    const { execSync } = await import('child_process')
+    execSync('npm run sync-agents', { 
+      stdio: 'inherit',
+      cwd: process.cwd().replace('/apps/api', '')
+    })
+  } catch (error) {
+    console.warn('⚠️  Erreur lors de la synchronisation des agents (non-bloquant):', error)
+  }
   
   // Start scheduler
   scheduler.start().catch(console.error)
