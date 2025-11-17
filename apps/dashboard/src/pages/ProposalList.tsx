@@ -81,9 +81,23 @@ const getProposalTypeIcon = (type: ProposalType) => {
 const ProposalList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
-  const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'ALL'>('PENDING')
-  const [typeFilter, setTypeFilter] = useState<ProposalType | 'ALL'>('ALL')
-  const [agentFilter, setAgentFilter] = useState<string>('ALL')
+  
+  // Charger les filtres depuis localStorage au montage
+  const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'ALL'>(() => {
+    const saved = localStorage.getItem('proposalStatusFilter')
+    return (saved as ProposalStatus | 'ALL') || 'PENDING'
+  })
+  
+  const [typeFilter, setTypeFilter] = useState<ProposalType | 'ALL'>(() => {
+    const saved = localStorage.getItem('proposalTypeFilter')
+    return (saved as ProposalType | 'ALL') || 'ALL'
+  })
+  
+  const [agentFilter, setAgentFilter] = useState<string>(() => {
+    const saved = localStorage.getItem('proposalAgentFilter')
+    return saved || 'ALL'
+  })
+  
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -98,6 +112,19 @@ const ProposalList: React.FC = () => {
     const saved = localStorage.getItem('proposalGroupSort')
     return (saved as 'date-asc' | 'date-desc' | 'created-desc') || 'date-asc'
   })
+  
+  // Sauvegarder les filtres dans localStorage quand ils changent
+  React.useEffect(() => {
+    localStorage.setItem('proposalStatusFilter', statusFilter)
+  }, [statusFilter])
+  
+  React.useEffect(() => {
+    localStorage.setItem('proposalTypeFilter', typeFilter)
+  }, [typeFilter])
+  
+  React.useEffect(() => {
+    localStorage.setItem('proposalAgentFilter', agentFilter)
+  }, [agentFilter])
   
   // Sauvegarder l'ordre de tri dans localStorage quand il change
   React.useEffect(() => {
@@ -564,100 +591,104 @@ const ProposalList: React.FC = () => {
 
   return (
     <Box>
-      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Typography variant="h4" sx={{ fontWeight: 600 }}>
-            Propositions
-          </Typography>
-          
-          {/* View Mode Toggle */}
-          <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
-            <Button
-              size="small"
-              startIcon={<GroupIcon />}
-              onClick={() => setViewMode('grouped')}
-              variant={viewMode === 'grouped' ? 'contained' : 'text'}
-              sx={{ borderRadius: 0 }}
+      <Box sx={{ mb: 3 }}>
+        {/* Ligne 1: Titre + View Mode */}
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
+            <Typography variant="h4" sx={{ fontWeight: 600 }}>
+              Propositions
+            </Typography>
+            
+            {/* View Mode Toggle */}
+            <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+              <Button
+                size="small"
+                startIcon={<GroupIcon />}
+                onClick={() => setViewMode('grouped')}
+                variant={viewMode === 'grouped' ? 'contained' : 'text'}
+                sx={{ borderRadius: 0 }}
+              >
+                Groupé
+              </Button>
+              <Button
+                size="small"
+                startIcon={<ViewListIcon />}
+                onClick={() => setViewMode('table')}
+                variant={viewMode === 'table' ? 'contained' : 'text'}
+                sx={{ borderRadius: 0 }}
+              >
+                Tableau
+              </Button>
+            </Box>
+          </Box>
+
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            {/* Bouton de rafraîchissement */}
+            <Tooltip title="Rafraîchir">
+              <IconButton
+                onClick={() => refetch()}
+                disabled={isLoading}
+                color="primary"
+              >
+                <RefreshIcon />
+              </IconButton>
+            </Tooltip>
+            
+            {/* Créer une proposition button avec dropdown */}
+            <ButtonGroup variant="contained" color="primary" size="small">
+              <Button
+                startIcon={<AddIcon />}
+                onClick={() => navigate('/proposals/create')}
+                sx={{ whiteSpace: 'nowrap' }}
+              >
+                Nouveau
+              </Button>
+              <Button
+                size="small"
+                onClick={(e) => setCreateMenuAnchor(e.currentTarget)}
+                sx={{ px: 1 }}
+              >
+                <ArrowDropDownIcon />
+              </Button>
+            </ButtonGroup>
+            <Menu
+              anchorEl={createMenuAnchor}
+              open={createMenuOpen}
+              onClose={() => setCreateMenuAnchor(null)}
+              anchorOrigin={{
+                vertical: 'bottom',
+                horizontal: 'right',
+              }}
+              transformOrigin={{
+                vertical: 'top',
+                horizontal: 'right',
+              }}
             >
-              Groupé
-            </Button>
-            <Button
-              size="small"
-              startIcon={<ViewListIcon />}
-              onClick={() => setViewMode('table')}
-              variant={viewMode === 'table' ? 'contained' : 'text'}
-              sx={{ borderRadius: 0 }}
-            >
-              Tableau
-            </Button>
+              <MenuItem
+                onClick={() => {
+                  setCreateMenuAnchor(null)
+                  navigate('/proposals/create')
+                }}
+              >
+                <AddIcon sx={{ mr: 1 }} fontSize="small" />
+                Nouvel événement
+              </MenuItem>
+              <MenuItem
+                onClick={() => {
+                  setCreateMenuAnchor(null)
+                  navigate('/proposals/create-existing')
+                }}
+              >
+                <SearchIcon sx={{ mr: 1 }} fontSize="small" />
+                Événement existant
+              </MenuItem>
+            </Menu>
           </Box>
         </Box>
-        
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {/* Bouton de rafraîchissement */}
-          <Tooltip title="Rafraîchir">
-            <IconButton
-              onClick={() => refetch()}
-              disabled={isLoading}
-              color="primary"
-            >
-              <RefreshIcon />
-            </IconButton>
-          </Tooltip>
-          
-          {/* Créer une proposition button avec dropdown */}
-          <ButtonGroup variant="contained" color="primary">
-            <Button
-              startIcon={<AddIcon />}
-              onClick={() => navigate('/proposals/create')}
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              Nouvel événement
-            </Button>
-            <Button
-              size="small"
-              onClick={(e) => setCreateMenuAnchor(e.currentTarget)}
-              sx={{ px: 1 }}
-            >
-              <ArrowDropDownIcon />
-            </Button>
-          </ButtonGroup>
-          <Menu
-            anchorEl={createMenuAnchor}
-            open={createMenuOpen}
-            onClose={() => setCreateMenuAnchor(null)}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
-          >
-            <MenuItem
-              onClick={() => {
-                setCreateMenuAnchor(null)
-                navigate('/proposals/create')
-              }}
-            >
-              <AddIcon sx={{ mr: 1 }} fontSize="small" />
-              Nouvel événement
-            </MenuItem>
-            <MenuItem
-              onClick={() => {
-                setCreateMenuAnchor(null)
-                navigate('/proposals/create-existing')
-              }}
-            >
-              <SearchIcon sx={{ mr: 1 }} fontSize="small" />
-              Événement existant
-            </MenuItem>
-          </Menu>
-        
-          {/* Bulk Actions */}
-          {selectedRows.length > 0 && viewMode === 'table' && (
-            <Box sx={{ display: 'flex', gap: 1 }}>
+
+        {/* Ligne 2: Bulk Actions (uniquement si sélection) */}
+        {selectedRows.length > 0 && viewMode === 'table' && (
+          <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
             <Button
               variant="contained"
               color="success"
@@ -666,7 +697,7 @@ const ProposalList: React.FC = () => {
               onClick={handleBulkApprove}
               disabled={bulkApproveMutation.isPending || bulkRejectMutation.isPending || bulkArchiveMutation.isPending || bulkDeleteMutation.isPending}
             >
-              Approuver ({selectedRows.length})
+              ✓ ({selectedRows.length})
             </Button>
             <Button
               variant="contained"
@@ -676,7 +707,7 @@ const ProposalList: React.FC = () => {
               onClick={handleBulkReject}
               disabled={bulkApproveMutation.isPending || bulkRejectMutation.isPending || bulkArchiveMutation.isPending || bulkDeleteMutation.isPending}
             >
-              Rejeter ({selectedRows.length})
+              ✗ ({selectedRows.length})
             </Button>
             <Button
               variant="outlined"
@@ -698,9 +729,8 @@ const ProposalList: React.FC = () => {
             >
               Supprimer ({selectedRows.length})
             </Button>
-            </Box>
-          )}
-        </Box>
+          </Box>
+        )}
       </Box>
 
       {/* Filters */}
