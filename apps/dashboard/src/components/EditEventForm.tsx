@@ -17,6 +17,8 @@ import {
   Alert
 } from '@mui/material'
 import { useCreateManualProposal, useMilesRepublicEditions, useRaces } from '@/hooks/useApi'
+import { proposalsApi } from '@/services/api'
+import { useSnackbar } from 'notistack'
 import MeilisearchEventSelector from './MeilisearchEventSelector'
 
 interface TabPanelProps {
@@ -47,6 +49,7 @@ interface EditEventFormProps {
 }
 
 const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
+  const { enqueueSnackbar } = useSnackbar()
   const [selectedEventId, setSelectedEventId] = useState('')
   const [selectedEditionId, setSelectedEditionId] = useState('')
   const [selectedEventData, setSelectedEventData] = useState<any>(null)
@@ -173,63 +176,60 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
   }
 
   const handleSubmit = async () => {
-    const allChanges = []
-
-    // Create proposals for event changes
-    for (const [field, value] of Object.entries(eventChanges)) {
+    // Convertir les champs de date en ISO strings
+    const processedEditionChanges: Record<string, any> = {}
+    Object.entries(editionChanges).forEach(([field, value]) => {
       if (value !== '') {
-        allChanges.push({
-          type: 'EVENT_UPDATE' as const,
-          eventId: selectedEventId,
-          fieldName: field,
-          fieldValue: value
-        })
+        processedEditionChanges[field] = field.includes('Date') && value 
+          ? new Date(value).toISOString() 
+          : value
       }
-    }
+    })
 
-    // Create proposals for edition changes
-    for (const [field, value] of Object.entries(editionChanges)) {
-      if (value !== '') {
-        allChanges.push({
-          type: 'EDITION_UPDATE' as const,
-          editionId: selectedEditionId,
-          fieldName: field,
-          fieldValue: field.includes('Date') && value ? new Date(value).toISOString() : value,
-          propagateToRaces: field === 'startDate' // Auto-propagate startDate changes
-        })
-      }
-    }
-
-    // Create proposals for race changes
-    for (const [raceId, changes] of Object.entries(raceChanges)) {
-      for (const [field, value] of Object.entries(changes)) {
+    // Convertir les champs de date des courses
+    const processedRaceChanges: Record<string, any> = {}
+    Object.entries(raceChanges).forEach(([raceId, changes]) => {
+      const processedChanges: Record<string, any> = {}
+      Object.entries(changes).forEach(([field, value]) => {
         if (value !== '') {
-          allChanges.push({
-            type: 'RACE_UPDATE' as const,
-            raceId: raceId,
-            fieldName: field,
-            fieldValue: field.includes('Date') && value ? new Date(value).toISOString() : value
-          })
+          processedChanges[field] = field.includes('Date') && value 
+            ? new Date(value).toISOString() 
+            : value
         }
+      })
+      if (Object.keys(processedChanges).length > 0) {
+        processedRaceChanges[raceId] = processedChanges
       }
-    }
+    })
 
-    if (allChanges.length === 0) {
+    const hasPendingChanges = 
+      Object.keys(processedEditionChanges).length > 0 || 
+      Object.keys(processedRaceChanges).length > 0
+
+    if (!hasPendingChanges) {
       return
     }
 
     try {
-      // Create multiple proposals
-      for (const change of allChanges) {
-        await createMutation.mutateAsync({
-          ...change,
-          justification: justification || `Modification manuelle via interface d'édition`
-        })
-      }
+      // Créer une seule proposition EDITION_UPDATE complète
+      const response = await proposalsApi.createEditionUpdateComplete({
+        editionId: selectedEditionId,
+        userModifiedChanges: processedEditionChanges,
+        userModifiedRaceChanges: processedRaceChanges,
+        justification: justification || `Modification manuelle via interface d'édition`,
+        autoValidate: false // Ne pas auto-valider, laisser l'utilisateur vérifier
+      })
 
+      console.log('[EditEventForm] Proposition créée:', response.data)
+      enqueueSnackbar(
+        `Proposition EDITION_UPDATE créée avec succès pour ${response.data.proposal.eventName} ${response.data.proposal.editionYear}`,
+        { variant: 'success' }
+      )
       onClose()
-    } catch (error) {
-      console.error('Error creating edit proposals:', error)
+    } catch (error: any) {
+      console.error('[EditEventForm] Erreur lors de la création de la proposition:', error)
+      const errorMessage = error.response?.data?.error || error.message || 'Erreur lors de la création de la proposition'
+      enqueueSnackbar(errorMessage, { variant: 'error' })
     }
   }
 
@@ -343,7 +343,7 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
       {getPendingChangesCount() > 0 && (
         <Alert severity="info" sx={{ mb: 3 }}>
           <Typography variant="body2">
-            {getPendingChangesCount()} modification(s) en attente
+            {getPendingChangesCount()} champ(s) modifié(s) - Une proposition EDITION_UPDATE complète sera créée
           </Typography>
         </Alert>
       )}
@@ -467,12 +467,9 @@ const EditEventForm: React.FC<EditEventFormProps> = ({ onClose }) => {
         <Button
           variant="contained"
           onClick={handleSubmit}
-          disabled={getPendingChangesCount() === 0 || createMutation.isPending}
+          disabled={getPendingChangesCount() === 0}
         >
-          {createMutation.isPending 
-            ? 'Création des propositions...' 
-            : `Créer ${getPendingChangesCount()} proposition(s)`
-          }
+          Créer la proposition EDITION_UPDATE
         </Button>
       </Box>
     </Box>

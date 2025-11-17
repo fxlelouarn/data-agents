@@ -167,6 +167,25 @@ export const proposalsApi = {
   }): Promise<ApiResponse<Proposal>> =>
     api.post('/proposals/manual', data).then(res => res.data),
 
+  createEditionUpdateComplete: (data: {
+    editionId: string
+    userModifiedChanges?: Record<string, any>
+    userModifiedRaceChanges?: Record<string, any>
+    justification?: string
+    autoValidate?: boolean
+  }): Promise<ApiResponse<{
+    proposal: {
+      id: string
+      type: string
+      status: string
+      eventId: string
+      editionId: string
+      eventName: string
+      editionYear: number
+    }
+  }>> =>
+    api.post('/proposals/edition-update-complete', data).then(res => res.data),
+
   update: (
     id: string, 
     data: { 

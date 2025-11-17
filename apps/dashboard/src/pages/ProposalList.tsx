@@ -12,6 +12,8 @@ import {
   Select,
   MenuItem,
   Button,
+  ButtonGroup,
+  Menu,
   IconButton,
   Chip,
   Grid,
@@ -38,6 +40,7 @@ import {
   Group as GroupIcon,
   ViewList as ViewListIcon,
   Add as AddIcon,
+  ArrowDropDown as ArrowDropDownIcon,
   Refresh as RefreshIcon,
   AddCircleOutline as AddCircleOutlineIcon,
   EditOutlined as EditOutlinedIcon,
@@ -85,6 +88,10 @@ const ProposalList: React.FC = () => {
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 50 })
+  
+  // Dropdown menu pour création proposition
+  const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
+  const createMenuOpen = Boolean(createMenuAnchor)
   
   // Charger l'ordre de tri depuis localStorage au montage
   const [groupSort, setGroupSort] = useState<'date-asc' | 'date-desc' | 'created-desc'>(() => {
@@ -598,16 +605,55 @@ const ProposalList: React.FC = () => {
             </IconButton>
           </Tooltip>
           
-          {/* Créer une proposition button */}
-          <Button
-            variant="contained"
-            color="primary"
-            startIcon={<AddIcon />}
-            onClick={() => navigate('/proposals/create')}
-            sx={{ whiteSpace: 'nowrap' }}
+          {/* Créer une proposition button avec dropdown */}
+          <ButtonGroup variant="contained" color="primary">
+            <Button
+              startIcon={<AddIcon />}
+              onClick={() => navigate('/proposals/create')}
+              sx={{ whiteSpace: 'nowrap' }}
+            >
+              Nouvel événement
+            </Button>
+            <Button
+              size="small"
+              onClick={(e) => setCreateMenuAnchor(e.currentTarget)}
+              sx={{ px: 1 }}
+            >
+              <ArrowDropDownIcon />
+            </Button>
+          </ButtonGroup>
+          <Menu
+            anchorEl={createMenuAnchor}
+            open={createMenuOpen}
+            onClose={() => setCreateMenuAnchor(null)}
+            anchorOrigin={{
+              vertical: 'bottom',
+              horizontal: 'right',
+            }}
+            transformOrigin={{
+              vertical: 'top',
+              horizontal: 'right',
+            }}
           >
-            Créer une proposition
-          </Button>
+            <MenuItem
+              onClick={() => {
+                setCreateMenuAnchor(null)
+                navigate('/proposals/create')
+              }}
+            >
+              <AddIcon sx={{ mr: 1 }} fontSize="small" />
+              Nouvel événement
+            </MenuItem>
+            <MenuItem
+              onClick={() => {
+                setCreateMenuAnchor(null)
+                navigate('/proposals/create-existing')
+              }}
+            >
+              <SearchIcon sx={{ mr: 1 }} fontSize="small" />
+              Événement existant
+            </MenuItem>
+          </Menu>
         
           {/* Bulk Actions */}
           {selectedRows.length > 0 && viewMode === 'table' && (

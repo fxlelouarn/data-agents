@@ -20,6 +20,8 @@ import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher
 import ProposalEditRedirect from '@/pages/proposals/ProposalEditRedirect'
 import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDetailDispatcher'
 import ManualProposalCreate from '@/pages/proposals/ManualProposalCreate'
+import CreateProposalForExistingEvent from '@/pages/CreateProposalForExistingEvent'
+import CreateProposalForEdition from '@/pages/CreateProposalForEdition'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
 import Settings from '@/pages/Settings'
@@ -152,6 +154,22 @@ function App() {
                                 element={
                                   <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
                                     <ManualProposalCreate />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/proposals/create-existing"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <CreateProposalForExistingEvent />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/proposals/create-for-edition/:editionId"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <CreateProposalForEdition />
                                   </ProtectedRoute>
                                 }
                               />

@@ -143,49 +143,6 @@ router.get('/autocomplete', [
 }))
 
 /**
- * GET /api/events/:eventId
- * Récupère un événement spécifique par son ID depuis Meilisearch
- */
-router.get('/:eventId', [
-  validateRequest
-], asyncHandler(async (req: Request, res: Response) => {
-  const { eventId } = req.params
-
-  try {
-    // Chercher dans Meilisearch si configuré
-    if (await settingsService.isMeilisearchConfigured()) {
-      try {
-        const meilisearchService = getMeilisearchService(
-          (await settingsService.getMeilisearchUrl())!,
-          (await settingsService.getMeilisearchApiKey())!
-        )
-
-        const event = await meilisearchService.getEventById(eventId)
-        
-        if (event) {
-          return res.json({
-            success: true,
-            data: { event }
-          })
-        }
-      } catch (meilisearchError) {
-        console.warn('Failed to fetch from Meilisearch:', meilisearchError)
-      }
-    }
-
-    throw createError(404, 'Event not found', 'EVENT_NOT_FOUND')
-
-  } catch (error) {
-    if (error && typeof error === 'object' && 'code' in error && error.code === 'EVENT_NOT_FOUND') {
-      throw error
-    }
-    
-    console.error('Error fetching event:', error)
-    throw createError(500, 'Failed to fetch event', 'FETCH_ERROR')
-  }
-}))
-
-/**
  * POST /api/events/test-meilisearch
  * Teste la connexion à Meilisearch
  */
@@ -719,6 +676,50 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
       message: 'Error creating revive event request',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
+  }
+}))
+
+/**
+ * GET /api/events/:eventId
+ * Récupère un événement spécifique par son ID depuis Meilisearch
+ */
+router.get('/:eventId', [
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { eventId } = req.params
+
+  try {
+    // Chercher dans Meilisearch si configuré
+    if (await settingsService.isMeilisearchConfigured()) {
+      try {
+        const meilisearchService = getMeilisearchService(
+          (await settingsService.getMeilisearchUrl())!,
+          (await settingsService.getMeilisearchApiKey())!
+        )
+
+        const event = await meilisearchService.getEventById(eventId)
+        
+        if (event) {
+          return res.json({
+            success: true,
+            data: { event }
+          })
+        }
+      } catch (meilisearchError) {
+        console.warn('Failed to fetch from Meilisearch:', meilisearchError)
+      }
+    }
+
+    throw createError(404, 'Event not found', 'EVENT_NOT_FOUND')
+
+  } catch (error) {
+    if (error && typeof error === 'object' && 'code' in error && (error as any).code === 'EVENT_NOT_FOUND') {
+      // Relay the 404 error
+      return res.status(404).json({ success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found' } })
+    }
+    
+    console.error('Error fetching event:', error)
+    return res.status(500).json({ success: false, error: { code: 'FETCH_ERROR', message: 'Failed to fetch event' } })
   }
 }))
 
