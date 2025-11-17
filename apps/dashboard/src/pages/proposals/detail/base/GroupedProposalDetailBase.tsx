@@ -219,13 +219,19 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   }, [workingGroup])
   
   // ✅ Phase 4: Cascade startDate changes to races depuis workingGroup
+  // ⚠️ ATTENTION : Ne devrait s'activer QUE si l'utilisateur a MANUELLEMENT modifié startDate
+  // Sinon, on écrase les heures proposées par l'agent pour chaque course !
   const consolidatedRaceChangesWithCascade = useMemo(() => {
     if (!workingGroup) return []
     
     // Récupérer startDate depuis workingGroup
     const startDateChange = workingGroup.consolidatedChanges.find(c => c.field === 'startDate')
-    const editionStartDate = startDateChange?.selectedValue || startDateChange?.options[0]?.proposedValue
     
+    // ⚠️ NE PAS utiliser la cascade si l'utilisateur n'a PAS modifié startDate
+    // selectedValue est défini UNIQUEMENT si l'utilisateur a fait une modification manuelle
+    const editionStartDate = startDateChange?.selectedValue
+    
+    // Si pas de modification manuelle, retourner les courses SANS cascade
     if (!editionStartDate) return workingGroup.consolidatedRaces
     
     // Propager startDate aux courses
@@ -859,7 +865,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     const proposals = groupProposals
     
     // Bloc Event - uniquement les champs appartenant à l'événement
-    if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE') {
+    // ✅ Inclure NEW_EVENT, EVENT_UPDATE ET EDITION_UPDATE (qui peut modifier Event)
+    if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE' || proposals[0]?.type === 'EDITION_UPDATE') {
       const eventProposalIds = proposals
         .filter(p => changes.some(c => 
           isFieldInBlock(c.field, 'event') &&

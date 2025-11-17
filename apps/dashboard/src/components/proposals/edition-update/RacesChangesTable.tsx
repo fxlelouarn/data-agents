@@ -125,6 +125,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   // Priorité: 1) Modification utilisateur, 2) Valeur proposée, 3) Valeur actuelle
   const getDisplayValue = (race: ConsolidatedRaceChange, field: string): any => {
     const userEdits = userModifiedRaceChanges[race.raceId] || {}
+    
     if (field in userEdits) {
       return userEdits[field]
     }

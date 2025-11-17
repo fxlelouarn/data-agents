@@ -4,6 +4,66 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-11-17 - Fix: Bouton "Valider Event" ne fonctionnait pas pour les propositions EDITION_UPDATE ✅
+
+**Problème résolu** : Le bouton "Valider Event" ne faisait rien lorsqu'on cliquait dessus dans les propositions groupées de type `EDITION_UPDATE`.
+
+#### Symptômes
+
+- Bouton "Valider Event" visible et cliquable (vert)
+- Aucune action lors du clic
+- Console affichait : `proposalIds: Array(0), proposalCount: 0`
+
+#### Cause
+
+**Condition trop restrictive** dans `GroupedProposalDetailBase.tsx` ligne 878 :
+
+```typescript
+// ❌ AVANT (bugé)
+if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE') {
+  // Créer le bloc Event
+}
+// Les propositions EDITION_UPDATE n'étaient PAS incluses
+```
+
+**Conséquence** : Le bloc `blockProposals['event']` était créé mais **vide** (`[]`), et `useBlockValidation` retournait immédiatement sans appeler l'API.
+
+**Explication** : Les propositions `EDITION_UPDATE` peuvent **aussi modifier des champs Event** (`name`, `city`, `country`, etc.) en plus des champs Edition. Le scraper FFA propose souvent ces modifications groupées.
+
+#### Solution
+
+**Fichier** : `apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx` (ligne 878)
+
+```typescript
+// ✅ APRÈS (corrigé)
+if (isNewEvent || proposals[0]?.type === 'EVENT_UPDATE' || proposals[0]?.type === 'EDITION_UPDATE') {
+  const eventProposalIds = proposals
+    .filter(p => changes.some(c => 
+      isFieldInBlock(c.field, 'event') &&
+      c.options.some(o => o.proposalId === p.id)
+    ))
+    .map(p => p.id)
+  
+  if (eventProposalIds.length > 0) {
+    blocks['event'] = eventProposalIds
+  }
+}
+```
+
+#### Résultats
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **blockProposals['event']** | `[]` (vide) ❌ | `[id1, id2, id3]` ✅ |
+| **Clic sur "Valider Event"** | Rien ne se passe ❌ | Appel API validé ✅ |
+| **Validation par blocs** | Impossible ❌ | Fonctionne ✅ |
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx` (ligne 878)
+
+---
+
 ### 2025-11-16 - Fix: Suppressions de nouvelles courses (racesToAdd) non enregistrées ✅
 
 **Problème résolu** : Les suppressions de nouvelles courses (`racesToAdd`) n'étaient pas enregistrées lors de la validation du bloc "Courses".
