@@ -2,7 +2,7 @@ import React, { useState } from 'react'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { formatDateInTimezone } from '@/utils/timezone'
-import { getCategoriesForEntityType } from '@/constants/fieldCategories'
+import { proposalTypeLabels } from '@/constants/proposals'
 import { getBlockForField } from '@/utils/blockFieldMapping'
 
 export interface ChangeOption {
@@ -117,13 +117,7 @@ export const useProposalLogic = () => {
   }
 
   const getTypeLabel = (type: string) => {
-    switch (type) {
-      case 'NEW_EVENT': return 'Nouvel événement'
-      case 'EVENT_UPDATE': return 'Mise à jour événement'
-      case 'EDITION_UPDATE': return 'Mise à jour édition'
-      case 'RACE_UPDATE': return 'Mise à jour course'
-      default: return type
-    }
+    return proposalTypeLabels[type as keyof typeof proposalTypeLabels] || type
   }
 
   const getEventTitle = (firstProposal: any, isNewEvent: boolean) => {

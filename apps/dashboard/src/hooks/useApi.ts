@@ -10,7 +10,8 @@ import {
   settingsApi,
   updatesApi,
   cacheApi,
-  eventsApi
+  eventsApi,
+  statsApi
 } from '@/services/api'
 import { 
   AgentFilters, 
@@ -1012,5 +1013,41 @@ export const useMilesRepublicRaces = (filters: { editionId?: string; limit?: num
     queryFn: () => cacheApi.getMilesRepublicRaces(filters),
     staleTime: 60000, // 1 minute
     enabled: !!filters.editionId, // Only enable when editionId is provided
+  })
+}
+
+// Stats hooks
+export const useCalendarConfirmations = (filters: {
+  startDate?: string
+  endDate?: string
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+} = {}) => {
+  return useQuery({
+    queryKey: ['stats', 'calendar-confirmations', filters],
+    queryFn: () => statsApi.getCalendarConfirmations(filters),
+    staleTime: 300000, // 5 minutes
+  })
+}
+
+export const useProposalsCreated = (filters: {
+  startDate?: string
+  endDate?: string
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+} = {}) => {
+  return useQuery({
+    queryKey: ['stats', 'proposals-created', filters],
+    queryFn: () => statsApi.getProposalsCreated(filters),
+    staleTime: 300000, // 5 minutes
+  })
+}
+
+export const useUserLeaderboard = (filters: {
+  startDate?: string
+  endDate?: string
+} = {}) => {
+  return useQuery({
+    queryKey: ['stats', 'user-leaderboard', filters],
+    queryFn: () => statsApi.getUserLeaderboard(filters),
+    staleTime: 300000, // 5 minutes
   })
 }

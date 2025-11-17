@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react'
-import { Link as RouterLink } from 'react-router-dom'
+import { Link as RouterLink, useNavigate } from 'react-router-dom'
 import {
   Box,
   Card,
@@ -25,8 +25,6 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   Divider,
-  Menu,
-  ButtonGroup
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -40,87 +38,25 @@ import {
   Group as GroupIcon,
   ViewList as ViewListIcon,
   Add as AddIcon,
-  ArrowDropDown as ArrowDropDownIcon,
-  Event as EventIcon,
-  Edit as EditIcon,
   Refresh as RefreshIcon,
   AddCircleOutline as AddCircleOutlineIcon,
   EditOutlined as EditOutlinedIcon,
-  Update as UpdateIcon
+  Update as UpdateIcon,
+  Edit as EditIcon
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
 import { ProposalStatus, ProposalType } from '@/types'
-import CreateManualProposal from '@/components/CreateManualProposal'
-
-const proposalStatusLabels: Record<ProposalStatus, string> = {
-  PENDING: 'En attente',
-  APPROVED: 'Approuvé',
-  REJECTED: 'Rejeté',
-  ARCHIVED: 'Archivé',
-}
-
-const proposalStatusColors: Record<ProposalStatus, 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'> = {
-  PENDING: 'warning',
-  APPROVED: 'success',
-  REJECTED: 'error', 
-  ARCHIVED: 'default',
-}
-
-const proposalTypeLabels: Record<ProposalType, string> = {
-  NEW_EVENT: 'Nouvel événement',
-  EVENT_UPDATE: 'Modification événement',
-  EDITION_UPDATE: 'Modification édition',
-  RACE_UPDATE: 'Modification course',
-}
+import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposalTypeStyles } from '@/constants/proposals'
 
 const getProposalTypeStyle = (type: ProposalType) => {
-  switch(type) {
-    case 'NEW_EVENT':
-      return {
-        backgroundColor: '#10b981',
-        color: 'white',
-        borderColor: '#059669',
-        '& .MuiChip-icon': {
-          color: '#059669'
-        }
-      }
-    case 'EDITION_UPDATE':
-      return {
-        backgroundColor: '#3b82f6',
-        color: 'white',
-        borderColor: '#2563eb',
-        '& .MuiChip-icon': {
-          color: '#1d4ed8'
-        }
-      }
-    case 'EVENT_UPDATE':
-      return {
-        backgroundColor: '#8b5cf6',
-        color: 'white',
-        borderColor: '#7c3aed',
-        '& .MuiChip-icon': {
-          color: '#6d28d9'
-        }
-      }
-    case 'RACE_UPDATE':
-      return {
-        backgroundColor: '#f59e0b',
-        color: 'white',
-        borderColor: '#d97706',
-        '& .MuiChip-icon': {
-          color: '#b45309'
-        }
-      }
-    default:
-      return {
-        backgroundColor: '#6b7280',
-        color: 'white',
-        borderColor: '#4b5563',
-        '& .MuiChip-icon': {
-          color: '#374151'
-        }
-      }
+  return proposalTypeStyles[type] || {
+    backgroundColor: '#6b7280',
+    color: 'white',
+    borderColor: '#4b5563',
+    '& .MuiChip-icon': {
+      color: '#374151'
+    }
   }
 }
 
@@ -140,6 +76,7 @@ const getProposalTypeIcon = (type: ProposalType) => {
 }
 
 const ProposalList: React.FC = () => {
+  const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'ALL'>('PENDING')
   const [typeFilter, setTypeFilter] = useState<ProposalType | 'ALL'>('ALL')
@@ -147,9 +84,6 @@ const ProposalList: React.FC = () => {
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
-  const [createProposalOpen, setCreateProposalOpen] = useState(false)
-  const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
-  const [creationType, setCreationType] = useState<'NEW_EVENT' | 'EDIT_EVENT'>('NEW_EVENT')
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 50 })
   
   // Charger l'ordre de tri depuis localStorage au montage
@@ -664,60 +598,16 @@ const ProposalList: React.FC = () => {
             </IconButton>
           </Tooltip>
           
-          {/* Créer une proposition dropdown button */}
-          <ButtonGroup variant="contained" color="primary">
-            <Button
-              startIcon={<AddIcon />}
-              onClick={() => {
-                setCreateProposalOpen(true)
-              }}
-              sx={{ whiteSpace: 'nowrap' }}
-            >
-              Créer une proposition
-            </Button>
-            <Button
-              size="small"
-              onClick={(event) => setCreateMenuAnchor(event.currentTarget)}
-              sx={{ px: 1 }}
-            >
-              <ArrowDropDownIcon />
-            </Button>
-          </ButtonGroup>
-          
-          <Menu
-            anchorEl={createMenuAnchor}
-            open={Boolean(createMenuAnchor)}
-            onClose={() => setCreateMenuAnchor(null)}
-            anchorOrigin={{
-              vertical: 'bottom',
-              horizontal: 'right',
-            }}
-            transformOrigin={{
-              vertical: 'top',
-              horizontal: 'right',
-            }}
+          {/* Créer une proposition button */}
+          <Button
+            variant="contained"
+            color="primary"
+            startIcon={<AddIcon />}
+            onClick={() => navigate('/proposals/create')}
+            sx={{ whiteSpace: 'nowrap' }}
           >
-            <MenuItem 
-              onClick={() => {
-                setCreationType('NEW_EVENT')
-                setCreateMenuAnchor(null)
-                setCreateProposalOpen(true)
-              }}
-            >
-              <EventIcon sx={{ mr: 2 }} />
-              Création d'événement
-            </MenuItem>
-            <MenuItem 
-              onClick={() => {
-                setCreationType('EDIT_EVENT')
-                setCreateMenuAnchor(null)
-                setCreateProposalOpen(true)
-              }}
-            >
-              <EditIcon sx={{ mr: 2 }} />
-              Édition d'événement
-            </MenuItem>
-          </Menu>
+            Créer une proposition
+          </Button>
         
           {/* Bulk Actions */}
           {selectedRows.length > 0 && viewMode === 'table' && (
@@ -1172,13 +1062,6 @@ const ProposalList: React.FC = () => {
           </Box>
         </Card>
       )}
-      
-      {/* Manual Proposal Creation Modal */}
-      <CreateManualProposal
-        open={createProposalOpen}
-        onClose={() => setCreateProposalOpen(false)}
-        mode={creationType}
-      />
     </Box>
   )
 }

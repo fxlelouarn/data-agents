@@ -672,6 +672,64 @@ await sourceDb.race.findFirst({ ... })
 - Mais le client Prisma généré expose ces modèles avec **minuscule** : `prismaClient.event`
 - Ceci est une convention Prisma standard pour éviter les conflits de nommage
 
+### ⚠️ IMPORTANT - Catégorisation des courses (Race)
+
+**Champs dépréciés** : `type` et `distance` (enum `RaceType` et `RaceDistance`)
+
+**✅ Champs à utiliser** : `categoryLevel1` et `categoryLevel2`
+
+#### categoryLevel1 (Catégorie principale)
+
+Valeurs possibles :
+- `RUNNING` - Course à pied
+- `TRAIL` - Trail / Course nature
+- `WALK` - Marche
+- `CYCLING` - Cyclisme
+- `TRIATHLON` - Triathlon
+- `FUN` - Course fun / obstacles
+- `OTHER` - Autre
+
+#### categoryLevel2 (Sous-catégorie)
+
+Valeurs dépendant de `categoryLevel1` :
+
+**RUNNING** :
+- `MARATHON` - Marathon (42.195 km)
+- `HALF_MARATHON` - Semi-marathon (21.1 km)
+- `KM10` - 10 km
+- `KM5` - 5 km
+- `LESS_THAN_5_KM` - Moins de 5 km
+- `ULTRA_RUNNING` - Ultra (> 42 km)
+- `CROSS` - Cross-country
+- `VERTICAL_KILOMETER` - Kilomètre vertical
+- `EKIDEN` - Ekiden (relais)
+
+**TRAIL** :
+- `ULTRA_TRAIL` - Ultra trail (> 42 km)
+- `LONG_TRAIL` - Trail long (20-42 km)
+- `SHORT_TRAIL` - Trail court (< 20 km)
+- `DISCOVERY_TRAIL` - Trail découverte
+- `VERTICAL_KILOMETER` - Kilomètre vertical
+
+**WALK** :
+- `NORDIC_WALK` - Marche nordique
+- `HIKING` - Randonnée
+
+**CYCLING** :
+- `XC_MOUNTAIN_BIKE` - VTT cross-country
+- `ENDURO_MOUNTAIN_BIKE` - VTT enduro
+- `GRAVEL_RACE` - Gravel
+- `ROAD_CYCLING_TOUR` - Route
+- `TIME_TRIAL` - Contre-la-montre
+- `GRAN_FONDO` - Gran Fondo
+- `ULTRA_CYCLING` - Ultra cyclisme
+
+**Exemple de requête SQL** :
+```bash
+# Chercher toutes les courses d'un type
+psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT id, name, \"categoryLevel1\", \"categoryLevel2\" FROM \"Race\" WHERE \"categoryLevel1\" = 'TRAIL' AND \"categoryLevel2\" = 'ULTRA_TRAIL' LIMIT 10;"
+```
+
 **Fichiers concernés :**
 - `apps/agents/src/ffa/matcher.ts` - Matching d'événements FFA
 - `apps/agents/src/FFAScraperAgent.ts` - Agent scraper FFA

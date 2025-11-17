@@ -143,6 +143,141 @@ router.post('/', [
   })
 }))
 
+// POST /api/proposals/manual - Create a complete manual NEW_EVENT proposal
+router.post('/manual', [
+  body('type').equals('NEW_EVENT'),
+  body('changes').isObject(),
+  body('userModifiedChanges').isObject(),
+  body('userModifiedRaceChanges').isObject(),
+  body('races').isArray(),
+  body('justification').isArray(),
+  body('autoValidate').optional().isBoolean(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { 
+    changes, 
+    userModifiedChanges, 
+    userModifiedRaceChanges, 
+    races, 
+    justification, 
+    autoValidate = false 
+  } = req.body
+
+  // Create or get manual agent
+  let manualAgent = await db.prisma.agent.findFirst({
+    where: { name: 'Manual Input Agent' }
+  })
+
+  if (!manualAgent) {
+    manualAgent = await db.prisma.agent.create({
+      data: {
+        name: 'Manual Input Agent',
+        description: 'Agent for manually created proposals',
+        type: 'SPECIFIC_FIELD',
+        isActive: true,
+        frequency: '0 0 * * *',
+        config: {}
+      }
+    })
+  }
+
+  // Structure the changes in the expected format
+  const structuredChanges: Record<string, any> = {}
+  
+  // Add event fields
+  Object.entries(userModifiedChanges).forEach(([key, value]) => {
+    if (!['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate'].includes(key)) {
+      structuredChanges[key] = {
+        old: null,
+        new: value,
+        confidence: 1.0
+      }
+    }
+  })
+  
+  // Add edition nested structure
+  const editionFields = ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate']
+  const editionData: Record<string, any> = {}
+  editionFields.forEach(field => {
+    if (userModifiedChanges[field] !== undefined) {
+      editionData[field] = userModifiedChanges[field]
+    }
+  })
+  
+  if (Object.keys(editionData).length > 0) {
+    structuredChanges.edition = {
+      old: null,
+      new: editionData,
+      confidence: 1.0
+    }
+    
+    // Add races to edition
+    if (races.length > 0) {
+      editionData.races = races.map((race: any) => {
+        const raceData = userModifiedRaceChanges[race.id] || {}
+        return {
+          name: raceData.name || '',
+          distance: raceData.distance || null,
+          elevationGain: raceData.elevationGain || null,
+          startDate: raceData.startDate || null,
+          categoryLevel1: raceData.categoryLevel1 || null,
+          categoryLevel2: raceData.categoryLevel2 || null
+        }
+      })
+    }
+  }
+
+  // Determine initial status
+  const status = autoValidate ? 'APPROVED' : 'PENDING'
+
+  // Create the proposal
+  const proposal = await db.prisma.proposal.create({
+    data: {
+      agentId: manualAgent.id,
+      type: 'NEW_EVENT',
+      status,
+      changes: structuredChanges,
+      userModifiedChanges,
+      justification,
+      confidence: 1.0,
+      approvedBlocks: autoValidate ? {
+        event: true,
+        edition: true,
+        organizer: userModifiedChanges.organizer ? true : undefined,
+        races: races.length > 0 ? true : undefined
+      } : {}
+    },
+    include: {
+      agent: {
+        select: { name: true, type: true }
+      }
+    }
+  })
+
+  // Log the manual creation
+  await db.createLog({
+    agentId: manualAgent.id,
+    level: 'INFO',
+    message: `Complete manual proposal created: ${userModifiedChanges.name || 'Unknown Event'}`,
+    data: {
+      proposalId: proposal.id,
+      eventName: userModifiedChanges.name,
+      city: userModifiedChanges.city,
+      year: userModifiedChanges.year,
+      racesCount: races.length,
+      autoValidated: autoValidate
+    }
+  })
+
+  res.status(201).json({
+    success: true,
+    data: proposal,
+    message: autoValidate 
+      ? 'Manual proposal created and validated successfully' 
+      : 'Manual proposal created successfully'
+  })
+}))
+
 /**
  * Enriches a proposal with contextual information from Miles Republic database
  * 

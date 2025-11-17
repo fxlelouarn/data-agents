@@ -304,7 +304,10 @@ export class ProposalDomainService {
       let racesToDelete: number[] | undefined
       let racesToUpdate: any[] | undefined
       let organizerData: any | undefined
-      const updateData: Record<string, any> = { calendarStatus: 'CONFIRMED' }
+      const updateData: Record<string, any> = { 
+        calendarStatus: 'CONFIRMED',
+        confirmedAt: new Date() // ✅ FIX: Remplir confirmedAt lors de la confirmation
+      }
 
       for (const [field, value] of Object.entries(selectedChanges)) {
         if (field === 'races') {
@@ -964,6 +967,11 @@ export class ProposalDomainService {
       if (extractedValue !== undefined && extractedValue !== null) {
         updateData[field] = extractedValue
       }
+    }
+
+    // ✅ FIX: Remplir confirmedAt automatiquement lors du passage à CONFIRMED
+    if (updateData.calendarStatus === 'CONFIRMED' && !updateData.confirmedAt) {
+      updateData.confirmedAt = new Date()
     }
 
     return updateData
