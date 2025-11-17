@@ -15,6 +15,7 @@ import { healthRouter } from './routes/health'
 import { databaseRouter } from './routes/databases'
 import { settingsRouter } from './routes/settings'
 import { eventsRouter } from './routes/events'
+import { statsRouter } from './routes/stats'
 import authRouter from './routes/auth'
 import { AgentScheduler } from './services/scheduler'
 import { errorHandler } from './middleware/error-handler'
@@ -95,6 +96,7 @@ app.use('/api/logs', logRouter)
 app.use('/api/databases', databaseRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/events', eventsRouter)
+app.use('/api/stats', statsRouter)
 
 // Error handling
 app.use(errorHandler)

@@ -19,11 +19,13 @@ import ProposalList from '@/pages/ProposalList'
 import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher'
 import ProposalEditRedirect from '@/pages/proposals/ProposalEditRedirect'
 import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDetailDispatcher'
+import ManualProposalCreate from '@/pages/proposals/ManualProposalCreate'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
 import Settings from '@/pages/Settings'
 import TestDynamicForm from '@/pages/TestDynamicForm'
 import Users from '@/pages/Users'
+import Statistics from '@/pages/Statistics'
 
 // Create theme similar to Miles Republic style
 const theme = createTheme({
@@ -146,6 +148,14 @@ function App() {
                                 }
                               />
                               <Route
+                                path="/proposals/create"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <ManualProposalCreate />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
                                 path="/proposals/group/:groupKey"
                                 element={
                                   <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
@@ -239,6 +249,16 @@ function App() {
                                 element={
                                   <ProtectedRoute requiredRoles={['ADMIN']}>
                                     <Users />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              
+                              {/* Statistics route - accessible to all roles */}
+                              <Route
+                                path="/statistics"
+                                element={
+                                  <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                    <Statistics />
                                   </ProtectedRoute>
                                 }
                               />

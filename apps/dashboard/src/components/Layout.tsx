@@ -34,6 +34,7 @@ import {
   Person as PersonIcon,
   Logout as LogoutIcon,
   People as PeopleIcon,
+  BarChart as StatisticsIcon,
 } from '@mui/icons-material'
 import { useProposals, useDatabases } from '@/hooks/useApi'
 import { useAuth } from '@/context/AuthContext'
@@ -88,6 +89,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const allNavItems: NavItem[] = [
     { text: 'Propositions', icon: <ProposalIcon />, path: '/proposals', badge: pendingProposals },
     { text: 'Mises à jour', icon: <UpdateIcon />, path: '/updates' },
+    { text: 'Statistiques', icon: <StatisticsIcon />, path: '/statistics' },
     { text: 'Agents', icon: <AgentIcon />, path: '/agents' },
     { text: 'Utilisateurs', icon: <PeopleIcon />, path: '/users' },
     { text: 'Administration', icon: <SettingsIcon />, path: '/settings' },
@@ -96,6 +98,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const navItems = allNavItems.filter(item => {
     if (item.path === '/proposals') return hasRole('VALIDATOR', 'EXECUTOR', 'ADMIN')
     if (item.path === '/updates') return hasRole('EXECUTOR', 'ADMIN')
+    if (item.path === '/statistics') return hasRole('VALIDATOR', 'EXECUTOR', 'ADMIN')
     if (item.path === '/agents') return hasRole('ADMIN')
     if (item.path === '/users') return hasRole('ADMIN')
     if (item.path === '/settings') return hasRole('ADMIN')

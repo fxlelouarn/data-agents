@@ -556,6 +556,64 @@ export const cacheApi = {
     api.get('/events/races', { params: filters }).then(res => res.data),
 }
 
+// Stats API
+export const statsApi = {
+  getCalendarConfirmations: (filters: {
+    startDate?: string
+    endDate?: string
+    granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  } = {}): Promise<ApiResponse<{
+    startDate: string
+    endDate: string
+    granularity: string
+    results: Array<{
+      date: string
+      count: number
+      timestamp: string
+    }>
+  }>> =>
+    api.get('/stats/calendar-confirmations', { params: filters }).then(res => res.data),
+
+  getProposalsCreated: (filters: {
+    startDate?: string
+    endDate?: string
+    granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  } = {}): Promise<ApiResponse<{
+    startDate: string
+    endDate: string
+    granularity: string
+    results: Array<{
+      date: string
+      timestamp: string
+      total: number
+      NEW_EVENT: number
+      EVENT_UPDATE: number
+      EDITION_UPDATE: number
+      RACE_UPDATE: number
+    }>
+  }>> =>
+    api.get('/stats/proposals-created', { params: filters }).then(res => res.data),
+
+  getUserLeaderboard: (filters: {
+    startDate?: string
+    endDate?: string
+  } = {}): Promise<ApiResponse<{
+    startDate: string
+    endDate: string
+    leaderboard: Array<{
+      userId: string
+      firstName: string
+      lastName: string
+      email: string
+      approved: number
+      rejected: number
+      archived: number
+      total: number
+    }>
+  }>> =>
+    api.get('/stats/user-leaderboard', { params: filters }).then(res => res.data),
+}
+
 // Health API
 export const healthApi = {
   check: (): Promise<ApiResponse<{
