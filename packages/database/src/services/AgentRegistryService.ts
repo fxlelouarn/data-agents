@@ -19,12 +19,21 @@ export class AgentRegistryService {
           this.agentRegistry = agentsModule.agentRegistry
           console.log('✅ Registry des agents chargé avec succès')
         } catch (e) {
-          console.warn(`⚠️ Impossible de charger via "${importPath}", tentative avec le chemin absolu...`)
-          // Fallback au chemin absolu
-          const absolutePath = '/Users/fx/dev/data-agents/apps/agents/src/index.ts'
-          const agentsModule = await import(absolutePath)
+          console.warn(`⚠️ Impossible de charger via "${importPath}", tentative avec un chemin relatif...`)
+          // Fallback : Calculer le chemin relatif depuis le répertoire d'exécution
+          // En prod (Render), le code est dans dist/, donc remonter et aller vers apps/agents/dist
+          const path = require('path')
+          
+          // __dirname pointe vers le répertoire du fichier compilé actuel
+          // Ex: /opt/render/project/src/packages/database/dist/services
+          // Remonter vers la racine du projet et aller vers apps/agents/dist
+          // De packages/database/dist/services vers apps/agents/dist
+          const relativePath = path.resolve(__dirname, '../../../../apps/agents/dist/index.js')
+          
+          console.log(`📂 Tentative de chargement depuis: ${relativePath}`)
+          const agentsModule = await import(relativePath)
           this.agentRegistry = agentsModule.agentRegistry
-          console.log('✅ Registry des agents chargé avec succès (chemin absolu)')
+          console.log('✅ Registry des agents chargé avec succès (chemin relatif)')
         }
       } catch (error) {
         console.warn('⚠️ Impossible de charger le registry des agents:', error)
