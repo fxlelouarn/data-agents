@@ -7,9 +7,10 @@ services:
     buildCommand: |-
       npm ci && \
       npm run prisma:generate:all && \
+      turbo build && \
       npm run db:migrate:deploy && \
       npm run db:seed && \
-      turbo build
+      npm run sync-agents
     startCommand: node apps/api/dist/index.js
     envVars:
       - key: NODE_ENV

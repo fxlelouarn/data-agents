@@ -1,4 +1,5 @@
 import { FFAScraperAgent } from '../FFAScraperAgent'
+import { FFAScraperAgentConfigSchema } from '../FFAScraperAgent.configSchema'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -13,22 +14,23 @@ const DEFAULT_CONFIG = {
   frequency: '0 */12 * * *', // Toutes les 12 heures
   isActive: true,
   config: {
-    // Base de données source - doit être configurée explicitement
-    sourceDatabase: null, // ID de la base source (requis)
+    agentType: 'FFA_SCRAPER',
     
-    // Paramètres de scraping
+    // Valeurs par défaut
+    sourceDatabase: null,
     liguesPerRun: 2,
     monthsPerRun: 1,
     levels: ['Départemental', 'Régional'],
     scrapingWindowMonths: 6,
     rescanDelayDays: 30,
     humanDelayMs: 2000,
-    
-    // Paramètres de matching
     similarityThreshold: 0.75,
     distanceTolerancePercent: 0.1,
     confidenceBase: 0.9,
-    maxCompetitionsPerMonth: 500
+    maxCompetitionsPerMonth: 500,
+    
+    // Schéma de configuration pour l'interface dynamique
+    configSchema: FFAScraperAgentConfigSchema
   }
 }
 

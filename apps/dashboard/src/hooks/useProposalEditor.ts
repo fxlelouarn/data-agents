@@ -451,8 +451,9 @@ export function useProposalEditor(
     if (changes.racesToUpdate && typeof changes.racesToUpdate === 'object') {
       const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
       if (Array.isArray(racesToUpdateObj)) {
-        racesToUpdateObj.forEach((raceUpdate: any) => {
-          const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `update-${Math.random()}`
+        racesToUpdateObj.forEach((raceUpdate: any, index: number) => {
+          // ✅ FIX 2025-11-18: Utiliser existing-{index} pour matcher avec extractRaces()
+          const raceId = `existing-${index}`
           
           // ✅ Utiliser currentData si disponible (FFA Scraper enrichi + Google Agent)
           if (raceUpdate.currentData && typeof raceUpdate.currentData === 'object') {
@@ -522,7 +523,7 @@ export function useProposalEditor(
 
     proposals.forEach(p => {
       // ✅ Extraire les valeurs ORIGINALES depuis currentData ou old values
-      const originalRaces = extractRacesOriginalData(p) // ✅ NOUVEAU
+      const originalRaces = extractRacesOriginalData(p)
       
       // Extraire les valeurs PROPOSÉES (avec userModifiedChanges)
       const merged = mergeChanges(p.changes, p.userModifiedChanges || {})
@@ -649,8 +650,10 @@ export function useProposalEditor(
     if (changes.racesToUpdate && typeof changes.racesToUpdate === 'object') {
       const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
       if (Array.isArray(racesToUpdateObj)) {
-        racesToUpdateObj.forEach((raceUpdate: any) => {
-          const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `update-${Math.random()}`
+        racesToUpdateObj.forEach((raceUpdate: any, index: number) => {
+          // ✅ Utiliser existing-{index} comme clé (convention backend)
+          // Le backend mappe cet index vers existingRaces[index] pour récupérer le vrai raceId
+          const raceId = `existing-${index}`
           // ✅ NOUVEAU: Ne mettre dans raceData QUE les champs qui ont des updates
           // Les autres champs (currentData) seront dans originalFields
           const raceData: any = { 
@@ -711,9 +714,11 @@ export function useProposalEditor(
     // 3. Chercher dans changes.raceEdits (déjà mergé depuis userModifiedChanges)
     if (changes.raceEdits) {
       Object.entries(changes.raceEdits).forEach(([key, edits]) => {
-        // key format: "existing-0", "new-0", "151388", etc.
+        // key format: "142064", "142065", "new-0", etc.
         if (!races[key]) {
-          races[key] = { id: key } as RaceData
+          // ✅ Clé orpheline: modification utilisateur sur une course qui n'existe pas dans la proposition
+          // Ne pas créer de course fantôme, ignorer silencieusement
+          return
         }
         
         // Merger les éditions

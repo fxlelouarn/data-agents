@@ -99,37 +99,56 @@ createdb data-agents
 psql -U postgres -d data-agents -c "SELECT 1"
 ```
 
-### 5. Initialiser la Base de Données
-
-```bash
-# Générer le client Prisma
-npm run db:generate
-
-# Appliquer les migrations
-npm run db:migrate
-
-# Seed la base (optionnel)
-npm run db:seed
-```
-
-### 6. Builder le Projet
+### 5. Builder le Projet
 
 ```bash
 # Build tous les packages dans le bon ordre
 npm run build
-
-# Ou build un package spécifique
-npm run build -- --filter=@data-agents/agent-framework
-npm run build -- --filter=@data-agents/database
 ```
 
 **Important** : Le build incluera automatiquement :
 1. `@data-agents/types` (types partagés)
 2. `@data-agents/database` (dépend de types)
 3. `@data-agents/agent-framework` (dépend de types)
-4. Autres applications
+4. `@data-agents/sample-agents` (agents compilés avec registry)
+5. Autres applications
 
-### 7. Démarrer le Développement
+### 6. Setup Initial (DB + Agents)
+
+```bash
+# Commande tout-en-un qui fait :
+# - Migrations DB
+# - Seed (admin + settings)
+# - Synchronisation des agents
+npm run setup
+```
+
+**OU étape par étape** :
+```bash
+# Appliquer les migrations
+npm run db:migrate:deploy
+
+# Seed la base (admin + settings)
+npm run db:seed
+
+# Synchroniser les agents en base
+npm run sync-agents
+```
+
+### 7. Installation Complète (depuis zéro)
+
+**Pour une installation complète from scratch** :
+```bash
+npm run install:full
+```
+
+Cette commande exécute dans l'ordre :
+1. Nettoyage complet
+2. Installation des dépendances
+3. Build de tous les packages
+4. Setup initial (migrations + seed + agents)
+
+### 8. Démarrer le Développement
 
 ```bash
 # Démarrer tous les services en mode dev

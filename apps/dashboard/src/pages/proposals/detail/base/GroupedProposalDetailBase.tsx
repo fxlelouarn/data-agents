@@ -762,59 +762,65 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     const newStartDate = datePropagationModal.newStartDate
     
+    console.log('🔄 [DATE PROPAGATION] Début de la propagation:', {
+      newStartDate,
+      groupProposalsCount: groupProposals.length,
+      firstProposalId: groupProposals[0]?.id
+    })
+    
     // Appliquer la nouvelle startDate à l'édition via le hook
     updateFieldEditor('startDate', newStartDate)
+    console.log('📅 [DATE PROPAGATION] startDate mise à jour pour l\'édition')
     
-    // Propager à toutes les courses (utiliser la structure raceEdits compatible avec RacesChangesTable)
+    // Propager à toutes les courses via le hook
     const firstProposal = groupProposals[0]
-    const newRaceEdits: Record<string, Record<string, any>> = {}
-    const existingRaceEdits = workingGroup?.userModifiedChanges?.raceEdits || {}
+    const changes = firstProposal?.changes
+    const existingRaces = (firstProposal as any)?.existingRaces || []
     
-    // Courses existantes (existingRaces)
-    const existingRaces = firstProposal?.existingRaces || []
-    if (Array.isArray(existingRaces)) {
-      existingRaces.forEach((_: any, index: number) => {
+    console.log('🏁 [DATE PROPAGATION] Données courses:', {
+      changesKeys: Object.keys(changes || {}),
+      racesToUpdate: changes?.racesToUpdate,
+      racesToAdd: changes?.racesToAdd,
+      existingRacesCount: existingRaces.length,
+      existingRaces: existingRaces.map((r: any) => ({ id: r.id, name: r.name }))
+    })
+    
+    // Courses existantes à modifier (racesToUpdate)
+    const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
+    if (Array.isArray(racesToUpdate)) {
+      console.log(`🔄 [DATE PROPAGATION] racesToUpdate: ${racesToUpdate.length} courses`)
+      racesToUpdate.forEach((raceUpdate: any, index: number) => {
+        // ✅ Utiliser existing-{index} comme clé (convention backend)
+        // Le backend mappe cet index vers existingRaces[index] pour récupérer le vrai raceId
         const key = `existing-${index}`
-        newRaceEdits[key] = {
-          ...(existingRaceEdits[key] || {}),
-          startDate: newStartDate
-        }
+        console.log(`  ✅ Propagation vers course existing-${index}:`, {
+          key,
+          raceId: raceUpdate.raceId,
+          raceName: raceUpdate.raceName,
+          newStartDate
+        })
+        updateRaceEditor(key, 'startDate', newStartDate)
       })
     }
     
     // Nouvelles courses (racesToAdd)
-    const changes = firstProposal?.changes
     const races = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
     if (Array.isArray(races)) {
+      console.log(`➕ [DATE PROPAGATION] racesToAdd: ${races.length} courses`)
       races.forEach((_: any, index: number) => {
         const key = `new-${index}`
-        newRaceEdits[key] = {
-          ...(existingRaceEdits[key] || {}),
-          startDate: newStartDate
-        }
+        console.log(`  ✅ Propagation vers racesToAdd[${index}]:`, { key, newStartDate })
+        updateRaceEditor(key, 'startDate', newStartDate)
       })
     }
-      
-      // Sauvegarder via updateProposal pour synchroniser avec le backend (seulement si on a des modifications)
-      // ⚡ Optimisation: Mutation non-bloquante
-      if (Object.keys(newRaceEdits).length > 0 && firstProposal?.id) {
-        updateProposalMutation.mutate({
-          id: firstProposal.id,
-          userModifiedChanges: {
-            ...(workingGroup?.userModifiedChanges || {}),
-            raceEdits: {
-              ...(workingGroup?.userModifiedChanges?.raceEdits || {}),
-              ...newRaceEdits
-            }
-          }
-        }, {
-          onError: (error) => {
-            console.error('Error updating race dates:', error)
-          }
-        })
-      }
+    
+    // ✅ FIX 2025-11-17 : Sauvegarder explicitement via le hook
+    // Cela sauvegarde à la fois startDate ET toutes les modifications de courses
+    console.log('💾 [DATE PROPAGATION] Sauvegarde via saveEditor()')
+    saveEditor()
     
     setDatePropagationModal(null)
+    console.log('✅ [DATE PROPAGATION] Propagation terminée')
   }
   
   // ✅ Phase 4: Confirmer la mise à jour de Edition.startDate/endDate depuis une course
@@ -1164,10 +1170,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           affectedRacesCount={(() => {
             const firstProposal = groupProposals[0]
             const changes = firstProposal?.changes
-            const existingRaces = firstProposal?.existingRaces || []
+            // ✅ FIX 2025-11-17 : Compter uniquement les courses PROPOSÉES (nouvelles + à modifier)
+            // existingRaces contient TOUTES les courses en base, pas seulement celles affectées
             const racesToAdd = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
             const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
-            return existingRaces.length + (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
+            return (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
           })()}
         />
       )}

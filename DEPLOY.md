@@ -13,20 +13,26 @@ Le déploiement suit un ordre strict pour éviter les erreurs de dépendances :
 ```
 1. Installation des dépendances (npm ci)
    ↓
-2. Migration de la base de données (db:migrate:deploy)
+2. Génération des clients Prisma (prisma:generate:all)
+   ├── 2a. Client principal (packages/database/prisma/schema.prisma)
+   └── 2b. Client Miles Republic (apps/agents/prisma/miles-republic.prisma)
    ↓
-3. Génération des clients Prisma (prisma:generate:all)
-   ├── 3a. Client principal (packages/database/prisma/schema.prisma)
-   └── 3b. Client Miles Republic (apps/agents/prisma/miles-republic.prisma)
+3. Build de l'application (turbo build)
+   ├── 3a. types
+   ├── 3b. database
+   ├── 3c. agent-framework
+   ├── 3d. sample-agents (⚠️ CRITIQUE : compile les fichiers registry/*.js)
+   └── 3e. api
    ↓
-4. Build de l'application (build:prod)
-   ├── 4a. types
-   ├── 4b. database
-   ├── 4c. agent-framework
-   ├── 4d. sample-agents
-   └── 4e. api
+4. Migration de la base de données (db:migrate:deploy)
    ↓
-5. Démarrage de l'application
+5. Seed de la base (db:seed)
+   └── Crée admin + settings
+   ↓
+6. Synchronisation des agents (sync-agents)
+   └── Enregistre les agents en base avec agentType correct
+   ↓
+7. Démarrage de l'application
 ```
 
 ## 🚀 Déploiement Automatique (render.yaml)
@@ -41,9 +47,11 @@ services:
     plan: starter
     buildCommand: |
       npm ci && \
-      npm run db:migrate:deploy && \
       npm run prisma:generate:all && \
-      npm run build:prod
+      turbo build && \
+      npm run db:migrate:deploy && \
+      npm run db:seed && \
+      npm run sync-agents
     startCommand: node apps/api/dist/index.js
 ```
 
@@ -195,6 +203,43 @@ npm run prisma:generate:all
 - `apps/agents/prisma/miles-republic.prisma`
 - Tous les `package.json`
 - `turbo.json`
+
+### Erreur : "No agent implementation found for type: EXTRACTOR"
+
+**Cause** : Les agents ne sont pas chargés par le scheduler.
+
+**Vérifications** :
+
+1. **Les fichiers registry sont-ils compilés ?**
+   ```bash
+   # Sur Render, vérifier dans les logs de build
+   ls apps/agents/dist/registry/
+   # Devrait afficher : ffa-scraper.js, google-search-date.js
+   ```
+
+2. **Le champ agentType est-il présent en base ?**
+   ```sql
+   SELECT id, config->>'agentType', config->>'version' FROM agents;
+   -- Devrait afficher FFA_SCRAPER et GOOGLE_SEARCH_DATE
+   ```
+
+**Solution** :
+```bash
+# Ajouter dans le buildCommand de render.yaml
+npm run sync-agents
+```
+
+### Erreur : "Available types: " (vide)
+
+**Cause** : Les fichiers `apps/agents/dist/registry/*.js` n'existent pas.
+
+**Solution** :
+1. Vérifier que `turbo build` compile bien le package `@data-agents/sample-agents`
+2. Vérifier le `tsconfig.json` de `apps/agents` (pas de `noEmit: true`)
+3. Rebuilder :
+   ```bash
+   cd apps/agents && npm run build
+   ```
 
 ### Build lent ou timeout
 

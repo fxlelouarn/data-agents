@@ -98,9 +98,22 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         proposalIds,
         proposalCount: proposalIds.length,
         userModifiedChanges,
-        userModifiedRaceChanges: blockKey === 'races' ? userModifiedRaceChanges : undefined,
+        userModifiedRaceChanges,
         changes
       })
+      
+      // Log détaillé des modifications de courses
+      if (userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
+        console.log(`🏁 [useBlockValidation] Modifications courses:`, {
+          keysCount: Object.keys(userModifiedRaceChanges).length,
+          keys: Object.keys(userModifiedRaceChanges),
+          details: Object.entries(userModifiedRaceChanges).map(([key, value]) => ({
+            key,
+            value,
+            isDeleted: (value as any)._deleted === true
+          }))
+        })
+      }
       
       // ✅ UN SEUL APPEL API pour tout le groupe (non-bloquant pour UX réactive)
       updateProposalMutation.mutate({

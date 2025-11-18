@@ -19,12 +19,39 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
   configSchema,
   values
 }) => {
+  // Normaliser le configSchema (support ancien format objet plat)
+  const normalizedSchema = React.useMemo(() => {
+    // Si c'est déjà le nouveau format avec fields/categories
+    if (configSchema.fields && Array.isArray(configSchema.fields)) {
+      return configSchema
+    }
+    
+    // Sinon, convertir depuis l'ancien format (objet plat avec champs comme clés)
+    const fields: ConfigField[] = []
+    const { title, description, categories, fields: _, ...fieldConfigs } = configSchema as any
+    
+    Object.entries(fieldConfigs).forEach(([name, config]: [string, any]) => {
+      if (config && typeof config === 'object' && config.type) {
+        fields.push({
+          name,
+          ...config
+        })
+      }
+    })
+    
+    return {
+      ...configSchema,
+      fields,
+      categories: categories || []
+    }
+  }, [configSchema])
+  
   // Grouper les champs par catégorie
   const groupedFields = React.useMemo(() => {
     const groups: { [categoryId: string]: { category: ConfigCategory; fields: ConfigField[] } } = {}
     
     // Créer les groupes à partir des catégories définies
-    configSchema.categories?.forEach(category => {
+    normalizedSchema.categories?.forEach(category => {
       groups[category.id] = {
         category,
         fields: []
@@ -32,7 +59,7 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
     })
     
     // Ajouter une catégorie par défaut si aucune n'est définie
-    if (!configSchema.categories || configSchema.categories.length === 0) {
+    if (!normalizedSchema.categories || normalizedSchema.categories.length === 0) {
       groups['default'] = {
         category: { id: 'default', label: 'Configuration' },
         fields: []
@@ -40,7 +67,12 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
     }
     
     // Assigner les champs aux catégories
-    configSchema.fields.forEach(field => {
+    if (!normalizedSchema.fields || !Array.isArray(normalizedSchema.fields)) {
+      console.warn('normalizedSchema.fields is not an array:', normalizedSchema)
+      return groups
+    }
+    
+    normalizedSchema.fields.forEach(field => {
       const categoryId = field.category || 'default'
       if (groups[categoryId]) {
         groups[categoryId].fields.push(field)
@@ -64,7 +96,7 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
     })
     
     return groups
-  }, [configSchema])
+  }, [normalizedSchema])
 
   const formatValue = (field: ConfigField, value: any) => {
     if (value === undefined || value === null) {

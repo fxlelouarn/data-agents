@@ -309,7 +309,9 @@ export class ProposalDomainService {
         confirmedAt: new Date() // ✅ FIX: Remplir confirmedAt lors de la confirmation
       }
 
-      for (const [field, value] of Object.entries(selectedChanges)) {
+      // ⚠️ IMPORTANT: Utiliser 'changes' (qui contient userModifiedChanges mergées)
+      // pour l'édition, pas 'selectedChanges' (qui ne contient que les valeurs sélectionnées agent)
+      for (const [field, value] of Object.entries(changes)) {
         if (field === 'races') {
           racesChanges = value as any[]
           continue
@@ -334,6 +336,12 @@ export class ProposalDomainService {
         // Handle organizer (complex object)
         if (field === 'organizer') {
           organizerData = this.extractNewValue(value)
+          continue
+        }
+        
+        // ⚠️ Filtrer raceEdits (userModifiedChanges spécifique aux courses)
+        // Ce champ n'est pas un champ de la table Edition
+        if (field === 'raceEdits') {
           continue
         }
 
@@ -392,15 +400,20 @@ export class ProposalDomainService {
       // ✅ Update races from racesToUpdate (structure: changes.racesToUpdate[].updates.field)
       // Utilisé par FFA Scraper et Google Agent pour propager les dates d'édition
       if (racesToUpdate && Array.isArray(racesToUpdate)) {
+        // ⚠️ Récupérer les modifications utilisateur pour les courses existantes
+        const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
+        
         this.logger.info(`📅 Propagation des dates vers ${racesToUpdate.length} course(s)`)
-        for (const raceUpdate of racesToUpdate) {
+        
+        for (let i = 0; i < racesToUpdate.length; i++) {
+          const raceUpdate = racesToUpdate[i]
           const raceId = parseInt(raceUpdate.raceId)
           if (isNaN(raceId)) {
             this.logger.warn(`ID de course invalide: ${raceUpdate.raceId}`)
             continue
           }
 
-          // Extraire les updates (startDate, etc.)
+          // Extraire les updates (startDate, etc.) depuis l'agent
           const updates = raceUpdate.updates || {}
           const raceUpdateData: any = {}
           
@@ -409,6 +422,33 @@ export class ProposalDomainService {
             if (extractedValue !== undefined && extractedValue !== null) {
               raceUpdateData[field] = extractedValue
             }
+          }
+          
+          // ✅ MERGER les modifications utilisateur (raceEdits) qui ont priorité
+          // Structure : raceEdits["existing-0"] = { startDate: "...", distance: "..." }
+          const editKey = `existing-${i}`
+          const userEdits = raceEdits[editKey] || {}
+          
+          if (Object.keys(userEdits).length > 0) {
+            this.logger.info(`  📝 Modifications utilisateur détectées pour course index ${i}:`, userEdits)
+            
+            // Appliquer les modifications utilisateur (priorité sur agent)
+            if (userEdits.startDate) raceUpdateData.startDate = new Date(userEdits.startDate)
+            if (userEdits.name) raceUpdateData.name = userEdits.name
+            if (userEdits.type) raceUpdateData.type = userEdits.type
+            
+            // Distances : supporter distance (legacy) et tous les types spécifiques
+            if (userEdits.distance) raceUpdateData.runDistance = parseFloat(userEdits.distance)
+            if (userEdits.runDistance) raceUpdateData.runDistance = parseFloat(userEdits.runDistance)
+            if (userEdits.bikeDistance) raceUpdateData.bikeDistance = parseFloat(userEdits.bikeDistance)
+            if (userEdits.walkDistance) raceUpdateData.walkDistance = parseFloat(userEdits.walkDistance)
+            if (userEdits.swimDistance) raceUpdateData.swimDistance = parseFloat(userEdits.swimDistance)
+            
+            // Élévations : supporter elevation (legacy) et tous les types spécifiques
+            if (userEdits.elevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.elevation)
+            if (userEdits.runPositiveElevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.runPositiveElevation)
+            if (userEdits.bikePositiveElevation) raceUpdateData.bikePositiveElevation = parseFloat(userEdits.bikePositiveElevation)
+            if (userEdits.walkPositiveElevation) raceUpdateData.walkPositiveElevation = parseFloat(userEdits.walkPositiveElevation)
           }
           
           if (Object.keys(raceUpdateData).length > 0) {
@@ -502,6 +542,13 @@ export class ProposalDomainService {
       
       // Update existing races if edited
       const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
+      
+      this.logger.info(`🔍 [RACE EDITS] Contenu complet de raceEdits:`, {
+        keys: Object.keys(raceEdits),
+        keysCount: Object.keys(raceEdits).length,
+        raceEdits: JSON.stringify(raceEdits, null, 2)
+      })
+      
       const existingRaceEdits = Object.keys(raceEdits)
         .filter(key => key.startsWith('existing-'))
         .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
@@ -512,24 +559,48 @@ export class ProposalDomainService {
         // Récupérer les courses existantes enrichies
         const existingRaces = (proposal as any).existingRaces || []
         
-        for (const { index, edits } of existingRaceEdits) {
-          const race = existingRaces[index]
-          if (!race) {
-            this.logger.warn(`  ⚠️  Course index ${index} introuvable dans existingRaces`)
-            continue
-          }
+        this.logger.info(`🏁 [EXISTING RACES] Courses existantes enrichies:`, {
+          count: existingRaces.length,
+          races: existingRaces.map((r: any) => ({ id: r.id, name: r.name, currentStartDate: r._current?.startDate }))
+        })
+        
+        // ⚠️ Si existingRaces n'est pas peuplé, on ne peut pas appliquer les raceEdits
+        // Cela arrive quand la proposition n'a pas été enrichie avec les données Miles Republic
+        if (existingRaces.length === 0) {
+          this.logger.warn(`⚠️  Impossible d'appliquer les raceEdits: existingRaces n'est pas peuplé. Les modifications utilisateur des courses ont probablement déjà été appliquées via racesToUpdate.`)
+          // Les modifications utilisateur ont déjà été mergées dans 'changes' (racesToUpdate)
+          // donc elles ont été appliquées dans la section précédente
+        } else {
+          for (const { index, edits } of existingRaceEdits) {
+            const race = existingRaces[index]
+            if (!race) {
+              this.logger.warn(`  ⚠️  Course index ${index} introuvable dans existingRaces`)
+              continue
+            }
           
           const updateData: any = {}
           
           if (edits.name) updateData.name = edits.name
-          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
-          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
           if (edits.type) updateData.type = edits.type
           if (edits.startDate) updateData.startDate = new Date(edits.startDate)
+          
+          // Distances : supporter distance (legacy) et tous les types spécifiques
+          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
+          if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
+          if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
+          if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
+          if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
+          
+          // Élévations : supporter elevation (legacy) et tous les types spécifiques
+          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
+          if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
+          if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
+          if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
           
           if (Object.keys(updateData).length > 0) {
             await milesRepo.updateRace(race.id, updateData)
             this.logger.info(`  ✅ Course ${race.id} (${race.name}) mise à jour via edits utilisateur:`, updateData)
+          }
           }
         }
       }

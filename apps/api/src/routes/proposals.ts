@@ -570,9 +570,56 @@ export async function enrichProposal(proposal: any) {
         
         // Extraire racesToUpdate de la proposition (si existe)
         const racesToUpdate = proposal.changes?.racesToUpdate?.new || []
+        // ✅ FIX 2025-11-17: Convertir raceId en number pour matcher avec race.id
+        // raceId dans racesToUpdate est un string ("142078") mais race.id est un number
         const raceUpdatesMap = new Map(
-          racesToUpdate.map((update: any) => [update.raceId, update.updates])
+          racesToUpdate.map((update: any) => [
+            typeof update.raceId === 'string' ? parseInt(update.raceId) : update.raceId,
+            update.updates
+          ])
         )
+        
+        // ✅ FIX 2025-11-18: Créer un map race.id -> currentData complet pour enrichissement
+        const raceDataMap = new Map(
+          existingRaces.map((race: any) => [
+            race.id,
+            {
+              name: race.name,
+              runDistance: race.runDistance,
+              walkDistance: race.walkDistance,
+              swimDistance: race.swimDistance,
+              bikeDistance: race.bikeDistance,
+              runPositiveElevation: race.runPositiveElevation,
+              startDate: race.startDate,
+              categoryLevel1: race.categoryLevel1,
+              categoryLevel2: race.categoryLevel2
+            }
+          ])
+        )
+        
+        // ✅ FIX 2025-11-18: Enrichir racesToUpdate avec currentData si absent
+        const enrichedRacesToUpdate = racesToUpdate.map((update: any) => {
+          const raceId = typeof update.raceId === 'string' ? parseInt(update.raceId) : update.raceId
+          const currentData = raceDataMap.get(raceId)
+          
+          // Si currentData est déjà présent (agent récent), le garder
+          // Sinon, injecter les données depuis existingRaces
+          return {
+            ...update,
+            currentData: update.currentData || currentData || null
+          }
+        })
+        
+        // Mettre à jour la proposition avec les données enrichies
+        if (enriched.changes?.racesToUpdate && enrichedRacesToUpdate.length > 0) {
+          enriched.changes = {
+            ...enriched.changes,
+            racesToUpdate: {
+              ...enriched.changes.racesToUpdate,
+              new: enrichedRacesToUpdate
+            }
+          }
+        }
         
         enriched.existingRaces = existingRaces.map((race: any) => {
           const updates = raceUpdatesMap.get(race.id) as any

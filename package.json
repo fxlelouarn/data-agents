@@ -9,9 +9,9 @@
     "packages/*"
   ],
   "scripts": {
-    "setup": "node setup.js",
+    "setup": "npm run db:migrate:deploy && npm run db:seed && npm run sync-agents && echo '✅ Setup initial terminé !'",
     "postinstall": "npm run prisma:generate:all || true",
-    "install:full": "npm run clean:full && npm install && npm run build && npm run tsc && echo '✅ Installation complète terminée !'",
+    "install:full": "npm run clean:full && npm install && npm run build && npm run setup && echo '✅ Installation complète terminée !'",
     "reinstall": "npm run clean:full && npm cache clean --force && npm install && echo '✅ Réinstallation complète terminée !'",
     "prisma:generate:all": "npm run prisma:generate:main && npm run prisma:sync && npm run prisma:generate:miles",
     "prisma:generate:main": "cd packages/database && npx prisma generate",
@@ -35,6 +35,8 @@
     "test:version": "tsx scripts/test-version-endpoint.ts",
     "show-versions": "tsx scripts/show-agent-versions.ts",
     "sync-agents": "tsx scripts/sync-agents.ts",
+    "reset-agents": "tsx scripts/reset-agents.ts",
+    "reset-proposals": "tsx scripts/reset-proposals.ts",
     "clean": "find packages apps -maxdepth 2 -type d -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null || true",
     "clean:turbo": "turbo clean",
     "clean:full": "rm -rf node_modules apps/*/node_modules packages/*/node_modules node_modules/.prisma apps/node_modules/.prisma pnpm-lock.yaml package-lock.json && npm run clean",

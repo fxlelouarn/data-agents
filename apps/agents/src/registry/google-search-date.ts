@@ -1,4 +1,5 @@
 import { GoogleSearchDateAgent } from '../GoogleSearchDateAgent'
+import { GoogleSearchDateAgentConfigSchema } from '../GoogleSearchDateAgent.configSchema'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -13,28 +14,23 @@ const DEFAULT_CONFIG = {
   frequency: '0 */6 * * *', // Toutes les 6 heures
   isActive: true,
   config: {
-    // Paramètres par défaut
-    batchSize: 10,                    // Événements par batch
-    googleResultsCount: 5,            // Résultats Google à analyser
+    agentType: 'GOOGLE_SEARCH_DATE',
     
-    // Base de données source - doit être configurée explicitement
-    sourceDatabase: null, // ID de la base source (requis)
-    
-    // Clés API (variables d'environnement)
+    // Valeurs par défaut
+    batchSize: 10,
+    googleResultsCount: 5,
+    sourceDatabase: null,
     googleApiKey: process.env.GOOGLE_API_KEY,
     googleSearchEngineId: process.env.GOOGLE_SEARCH_ENGINE_ID,
+    dateConfidenceThreshold: 0.6,
+    maxDatesPerEvent: 5,
+    searchTimeoutMs: 10000,
+    onlyFrenchEvents: true,
+    excludeWeekends: false,
+    cooldownDays: 14,
     
-    // Configuration avancée
-    dateConfidenceThreshold: 0.6,     // Seuil de confiance minimum
-    maxDatesPerEvent: 5,              // Dates maximum par événement
-    searchTimeoutMs: 10000,           // Timeout recherche Google
-    
-    // Filtres
-    onlyFrenchEvents: true,           // Limiter aux événements français
-    excludeWeekends: false,           // Exclure les weekends
-    
-    // Base de données Next Prod
-    nextProdUrl: process.env.MILES_REPUBLIC_DATABASE_URL
+    // Schéma de configuration pour l'interface dynamique
+    configSchema: GoogleSearchDateAgentConfigSchema
   }
 }
 
