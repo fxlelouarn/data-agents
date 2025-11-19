@@ -490,18 +490,19 @@ export function useProposalEditor(
       if (Array.isArray(racesExistingObj)) {
         racesExistingObj.forEach((raceInfo: any) => {
           const raceId = raceInfo.raceId ? raceInfo.raceId.toString() : `existing-${Math.random()}`
-          // Pour racesExisting, les données sont déjà les valeurs actuelles
+          // ✅ Utiliser currentData si disponible (backend enrichi), sinon niveau racine
+          const source = raceInfo.currentData || raceInfo
           races[raceId] = {
             id: raceId,
-            name: raceInfo.raceName || 'Course',
-            startDate: raceInfo.startDate,
-            runDistance: raceInfo.runDistance,
-            bikeDistance: raceInfo.bikeDistance,
-            walkDistance: raceInfo.walkDistance,
-            swimDistance: raceInfo.swimDistance,
-            runPositiveElevation: raceInfo.runPositiveElevation,
-            categoryLevel1: raceInfo.categoryLevel1,
-            categoryLevel2: raceInfo.categoryLevel2
+            name: source.name || raceInfo.raceName || 'Course',
+            startDate: source.startDate,
+            runDistance: source.runDistance,
+            bikeDistance: source.bikeDistance,
+            walkDistance: source.walkDistance,
+            swimDistance: source.swimDistance,
+            runPositiveElevation: source.runPositiveElevation,
+            categoryLevel1: source.categoryLevel1,
+            categoryLevel2: source.categoryLevel2
           }
         })
       }
@@ -738,6 +739,9 @@ export function useProposalEditor(
       return { id: raceId, name: 'Course sans nom' }
     }
     
+    // ✅ Préserver le marqueur _isExistingUnchanged AVANT extraction
+    const isExistingUnchanged = race._isExistingUnchanged === true
+    
     // ✅ Extraire TOUTES les valeurs new/old selon le paramètre
     const normalized: any = { id: raceId }
     
@@ -759,7 +763,9 @@ export function useProposalEditor(
       price: normalized.price,
       elevation: normalized.elevation || normalized.runPositiveElevation,
       runPositiveElevation: normalized.runPositiveElevation || normalized.elevation, // ✅ Préserver runPositiveElevation
-      ...normalized
+      ...normalized,
+      // ✅ Remettre le marqueur après le spread
+      ...(isExistingUnchanged && { _isExistingUnchanged: true })
     }
   }
   

@@ -1515,7 +1515,7 @@ router.post('/:id/convert-to-edition-update', [
             updates: raceUpdates
           })
         } else {
-          // ✅ Course matchée SANS changement → Affichage informatif
+          // ✅ Course matchée SANS changement → Affichage informatif avec currentData
           const startDateIso = matchingRace.startDate 
             ? (matchingRace.startDate instanceof Date 
                 ? matchingRace.startDate.toISOString() 
@@ -1525,6 +1525,19 @@ router.post('/:id/convert-to-edition-update', [
           racesExisting.push({
             raceId: matchingRace.id,
             raceName: matchingRace.name,
+            // ✅ Toutes les valeurs actuelles (pour colonne "Valeur actuelle")
+            currentData: {
+              name: matchingRace.name,
+              runDistance: matchingRace.runDistance,
+              walkDistance: matchingRace.walkDistance,
+              bikeDistance: matchingRace.bikeDistance,
+              swimDistance: matchingRace.swimDistance,
+              runPositiveElevation: matchingRace.runPositiveElevation,
+              categoryLevel1: matchingRace.categoryLevel1,
+              categoryLevel2: matchingRace.categoryLevel2,
+              startDate: startDateIso
+            },
+            // ✅ Dupliquer au niveau racine pour compatibilité hook
             runDistance: matchingRace.runDistance,
             walkDistance: matchingRace.walkDistance,
             bikeDistance: matchingRace.bikeDistance,
@@ -1549,7 +1562,12 @@ router.post('/:id/convert-to-edition-update', [
       
       // ✅ Ajouter les courses existantes sans changement (affichage informatif)
       if (racesExisting.length > 0) {
-        editionChanges.racesExisting = { new: racesExisting, confidence }
+        // Format avec marqueur pour que le frontend les reconnaisse
+        const racesExistingWithMarker = racesExisting.map(race => ({
+          ...race,
+          _isExistingUnchanged: true
+        }))
+        editionChanges.racesExisting = { new: racesExistingWithMarker, confidence }
       }
       
       // Logger le résultat
@@ -1734,70 +1752,61 @@ router.post('/edition-update-complete', [
     }
   })
 
-  // Extraire toutes les courses existantes et les ajouter dans changes
-  const currentRaces = edition.races.map((race: any) => ({
-    raceId: race.id,
-    name: race.name || '',
-    distance: race.runDistance || null,
-    elevationGain: race.runPositiveElevation || null,
-    startDate: race.startDate ? race.startDate.toISOString() : null,
-    price: race.price || null,
-    categoryLevel1: race.categoryLevel1 || null,
-    categoryLevel2: race.categoryLevel2 || null
-  }))
-
-  // Ajouter toutes les courses dans changes (pour qu'elles soient visibles dans l'interface)
-  if (currentRaces.length > 0) {
-    changes.races = {
-      old: currentRaces,
-      new: currentRaces, // Par défaut, aucune modification
-      confidence: 1.0
-    }
-  }
-
-  // Préparer les modifications de courses (si l'utilisateur en a fait)
-  const racesToUpdate: Array<{
-    raceId: number,
-    currentValues: Record<string, any>,
-    proposedValues: Record<string, any>,
-    differences: string[]
-  }> = []
-
-  currentRaces.forEach((race: any) => {
-    const raceEdits = userModifiedRaceChanges[race.raceId] || {}
-    const hasDifferences = Object.keys(raceEdits).length > 0
-
-    if (hasDifferences) {
-      const differences: string[] = []
-      const currentValues: Record<string, any> = {}
-      const proposedValues: Record<string, any> = {}
-
-      Object.keys(raceEdits).forEach(field => {
-        const currentValue = (race as any)[field]
-        const proposedValue = raceEdits[field]
-
-        if (currentValue !== proposedValue) {
-          differences.push(field)
-          currentValues[field] = currentValue
-          proposedValues[field] = proposedValue
-        }
-      })
-
-      if (differences.length > 0) {
-        racesToUpdate.push({
-          raceId: race.raceId,
-          currentValues,
-          proposedValues,
-          differences
-        })
+  // ✅ Transformer toutes les courses existantes en racesToUpdate éditables
+  // Chaque champ a une structure { old, new } où old = new (par défaut)
+  const racesToUpdate = edition.races.map((race: any, index: number) => {
+    const startDateIso = race.startDate 
+      ? (race.startDate instanceof Date 
+          ? race.startDate.toISOString() 
+          : race.startDate)
+      : null
+    
+    // ✅ Créer un objet updates avec TOUS les champs au format { old, new }
+    const updates: Record<string, any> = {}
+    const fields = [
+      { key: 'name', dbKey: 'name' },
+      { key: 'startDate', value: startDateIso },
+      { key: 'runDistance', dbKey: 'runDistance' },
+      { key: 'walkDistance', dbKey: 'walkDistance' },
+      { key: 'bikeDistance', dbKey: 'bikeDistance' },
+      { key: 'swimDistance', dbKey: 'swimDistance' },
+      { key: 'runPositiveElevation', dbKey: 'runPositiveElevation' },
+      { key: 'categoryLevel1', dbKey: 'categoryLevel1' },
+      { key: 'categoryLevel2', dbKey: 'categoryLevel2' }
+    ]
+    
+    fields.forEach(field => {
+      const value = field.value !== undefined ? field.value : race[field.dbKey || field.key]
+      updates[field.key] = {
+        old: value,
+        new: value, // Par défaut, new = old (éditable par l'utilisateur)
+        confidence: 1.0
       }
+    })
+    
+    return {
+      raceId: race.id,
+      raceName: race.name || '',
+      // ✅ currentData pour afficher les valeurs actuelles
+      currentData: {
+        name: race.name || '',
+        runDistance: race.runDistance,
+        walkDistance: race.walkDistance,
+        bikeDistance: race.bikeDistance,
+        swimDistance: race.swimDistance,
+        runPositiveElevation: race.runPositiveElevation,
+        categoryLevel1: race.categoryLevel1,
+        categoryLevel2: race.categoryLevel2,
+        startDate: startDateIso
+      },
+      // ✅ updates contient tous les champs au format { old, new }
+      updates
     }
   })
 
-  // Ajouter racesToUpdate si présent
+  // ✅ Ajouter racesToUpdate pour que toutes les courses soient éditables
   if (racesToUpdate.length > 0) {
     changes.racesToUpdate = {
-      old: [],
       new: racesToUpdate,
       confidence: 1.0
     }
@@ -1855,7 +1864,7 @@ router.post('/edition-update-complete', [
       confidence: 1.0,
       approvedBlocks: autoValidate ? {
         edition: true,
-        races: racesToUpdate.length > 0 ? true : undefined
+        races: true
       } : {}
     },
     include: {
