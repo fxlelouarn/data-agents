@@ -339,9 +339,9 @@ export class ProposalDomainService {
           continue
         }
         
-        // ⚠️ Filtrer raceEdits (userModifiedChanges spécifique aux courses)
-        // Ce champ n'est pas un champ de la table Edition
-        if (field === 'raceEdits') {
+        // ⚠️ Filtrer raceEdits et racesToAddFiltered (userModifiedChanges spécifiques aux courses)
+        // Ces champs ne sont pas des champs de la table Edition
+        if (field === 'raceEdits' || field === 'racesToAddFiltered') {
           continue
         }
 
