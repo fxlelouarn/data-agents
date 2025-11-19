@@ -26,7 +26,7 @@ import FieldEditor from '@/components/proposals/FieldEditor'
 import BlockValidationButton from '@/components/proposals/BlockValidationButton'
 
 interface OrganizerSectionProps {
-  change: ConsolidatedChange
+  change?: ConsolidatedChange
   onApprove: () => void
   onFieldModify?: (fieldName: string, newValue: any) => void
   userModifiedChanges?: Record<string, any>

@@ -63,8 +63,8 @@ const getProposalTypeStyle = (type: ProposalType) => {
   }
 }
 
-const getProposalTypeIcon = (type: ProposalType) => {
-  switch(type) {
+const getProposalTypeIcon = (type: ProposalType): React.ReactElement | undefined => {
+  switch (type) {
     case 'NEW_EVENT':
       return <AddCircleOutlineIcon sx={{ fontSize: 16 }} />
     case 'EDITION_UPDATE':
@@ -74,7 +74,7 @@ const getProposalTypeIcon = (type: ProposalType) => {
     case 'RACE_UPDATE':
       return <EditIcon sx={{ fontSize: 16 }} />
     default:
-      return null
+      return undefined
   }
 }
 

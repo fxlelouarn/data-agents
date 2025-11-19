@@ -51,7 +51,7 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
     const groups: { [categoryId: string]: { category: ConfigCategory; fields: ConfigField[] } } = {}
     
     // Créer les groupes à partir des catégories définies
-    normalizedSchema.categories?.forEach(category => {
+    normalizedSchema.categories?.forEach((category: ConfigCategory) => {
       groups[category.id] = {
         category,
         fields: []

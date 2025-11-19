@@ -216,7 +216,7 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
           )}
         </Box>
 
-        {isInCooldown && (
+        {isInCooldown && remainingDays !== null && (
           <Alert severity="info" sx={{ mt: 2 }}>
             Cycle complet terminé. Reprise dans {remainingDays} jour{remainingDays > 1 ? 's' : ''}.
           </Alert>

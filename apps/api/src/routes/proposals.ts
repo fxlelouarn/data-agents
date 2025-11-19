@@ -1735,7 +1735,7 @@ router.post('/edition-update-complete', [
   })
 
   // Extraire toutes les courses existantes et les ajouter dans changes
-  const currentRaces = edition.races.map(race => ({
+  const currentRaces = edition.races.map((race: any) => ({
     raceId: race.id,
     name: race.name || '',
     distance: race.runDistance || null,
@@ -1763,7 +1763,7 @@ router.post('/edition-update-complete', [
     differences: string[]
   }> = []
 
-  currentRaces.forEach(race => {
+  currentRaces.forEach((race: any) => {
     const raceEdits = userModifiedRaceChanges[race.raceId] || {}
     const hasDifferences = Object.keys(raceEdits).length > 0
 
