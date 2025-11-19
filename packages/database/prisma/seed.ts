@@ -11,12 +11,13 @@ async function main() {
   const adminEmail = 'admin@data-agents.local'
   const adminPassword = 'admin123'  // À changer en production !
 
-  const existingAdmin = await prisma.user.findUnique({
-    where: { email: adminEmail }
+  // Vérifier s'il existe déjà un admin (n'importe lequel)
+  const existingAdmin = await prisma.user.findFirst({
+    where: { role: 'ADMIN', isActive: true }
   })
 
   if (existingAdmin) {
-    console.log(`✅ Admin user already exists: ${adminEmail}`)
+    console.log(`✅ Admin user already exists: ${existingAdmin.email}`)
   } else {
     const passwordHash = await bcrypt.hash(adminPassword, 10)
 

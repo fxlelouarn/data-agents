@@ -304,13 +304,25 @@ export class ProposalDomainService {
       let racesToDelete: number[] | undefined
       let racesToUpdate: any[] | undefined
       let organizerData: any | undefined
-      const updateData: Record<string, any> = { 
+      const editionUpdateData: Record<string, any> = { 
         calendarStatus: 'CONFIRMED',
         confirmedAt: new Date() // ✅ FIX: Remplir confirmedAt lors de la confirmation
       }
+      const eventUpdateData: Record<string, any> = {}
 
       // ⚠️ IMPORTANT: Utiliser 'changes' (qui contient userModifiedChanges mergées)
       // pour l'édition, pas 'selectedChanges' (qui ne contient que les valeurs sélectionnées agent)
+      
+      // Liste des champs Event (selon schéma Miles Republic)
+      const eventFields = new Set([
+        'name', 'city', 'country', 
+        'countrySubdivisionNameLevel1', 'countrySubdivisionDisplayCodeLevel1',
+        'countrySubdivisionNameLevel2', 'countrySubdivisionDisplayCodeLevel2',
+        'latitude', 'longitude', 'fullAddress',
+        'websiteUrl', 'facebookUrl', 'twitterUrl', 'instagramUrl',
+        'images', 'coverImage', 'peyceReview', 'dataSource'
+      ])
+      
       for (const [field, value] of Object.entries(changes)) {
         if (field === 'races') {
           racesChanges = value as any[]
@@ -347,20 +359,68 @@ export class ProposalDomainService {
 
         const extractedValue = this.extractNewValue(value)
         if (extractedValue !== undefined && extractedValue !== null) {
-          updateData[field] = extractedValue
+          // ✅ Router vers Event ou Edition selon le champ
+          if (eventFields.has(field)) {
+            eventUpdateData[field] = extractedValue
+          } else {
+            editionUpdateData[field] = extractedValue
+          }
         }
       }
 
-      // Fetch edition to update parent event
+      // Fetch edition and event to compare with current values
       const edition = await milesRepo.findEditionById(numericEditionId)
-      this.logger.info(`📝 Édition trouvée: ${edition?.eventId ? `Event ${edition.eventId}` : 'sans event'}`)
+      if (!edition) {
+        return this.errorResult('edition', `Édition ${numericEditionId} introuvable`)
+      }
+      
+      this.logger.info(`📝 Édition trouvée: Event ${edition.eventId}, Année ${edition.year}`)
 
-      // Log update data
-      this.logger.info(`📋 Données à mettre à jour:`, JSON.stringify(updateData, null, 2))
+      // Fetch current event data if we have event updates
+      let currentEvent: any = null
+      if (edition.eventId && Object.keys(eventUpdateData).length > 0) {
+        currentEvent = await milesRepo.findEventById(edition.eventId)
+      }
 
-      // Update edition
-      await milesRepo.updateEdition(numericEditionId, updateData)
-      this.logger.info(`✅ Édition ${numericEditionId} mise à jour`)
+      // ✅ FILTRAGE: Ne garder que les valeurs qui changent réellement
+      const editionDiff = this.filterChangedFields(editionUpdateData, edition)
+      const eventDiff = currentEvent ? this.filterChangedFields(eventUpdateData, currentEvent) : {}
+
+      // Log differences
+      this.logger.info(`🔍 Analyse des changements Edition:`, {
+        total: Object.keys(editionUpdateData).length,
+        changed: Object.keys(editionDiff).length,
+        unchanged: Object.keys(editionUpdateData).length - Object.keys(editionDiff).length
+      })
+      
+      if (Object.keys(editionDiff).length > 0) {
+        this.logger.info(`📋 Changements Edition à appliquer:`, JSON.stringify(editionDiff, null, 2))
+      } else {
+        this.logger.info(`ℹ️ Aucun changement Edition détecté`)
+      }
+      
+      if (Object.keys(eventDiff).length > 0) {
+        this.logger.info(`🔍 Analyse des changements Event:`, {
+          total: Object.keys(eventUpdateData).length,
+          changed: Object.keys(eventDiff).length,
+          unchanged: Object.keys(eventUpdateData).length - Object.keys(eventDiff).length
+        })
+        this.logger.info(`📋 Changements Event à appliquer:`, JSON.stringify(eventDiff, null, 2))
+      }
+
+      // Update edition only if there are real changes
+      if (Object.keys(editionDiff).length > 0) {
+        await milesRepo.updateEdition(numericEditionId, editionDiff)
+        this.logger.info(`✅ Édition ${numericEditionId} mise à jour avec ${Object.keys(editionDiff).length} champ(s)`)
+      } else {
+        this.logger.info(`⏭️ Édition ${numericEditionId} - Aucun changement à appliquer`)
+      }
+      
+      // Update parent event only if there are real changes
+      if (edition.eventId && Object.keys(eventDiff).length > 0) {
+        await milesRepo.updateEvent(edition.eventId, eventDiff)
+        this.logger.info(`✅ Event ${edition.eventId} mis à jour avec ${Object.keys(eventDiff).length} champ(s)`)
+      }
 
       // Update organizer if provided
       if (organizerData && typeof organizerData === 'object') {
@@ -1425,5 +1485,91 @@ export class ProposalDomainService {
     }
     
     return 'OTHER'
+  }
+
+  /**
+   * Filter update data to keep only changed fields
+   * Compares proposed values with current DB values
+   * 
+   * @param updateData - Proposed changes
+   * @param currentData - Current values from database
+   * @returns Object with only changed fields
+   */
+  private filterChangedFields(
+    updateData: Record<string, any>, 
+    currentData: Record<string, any>
+  ): Record<string, any> {
+    const diff: Record<string, any> = {}
+    
+    for (const [key, newValue] of Object.entries(updateData)) {
+      const currentValue = currentData[key]
+      
+      // Normaliser les valeurs pour comparaison
+      const normalizedNew = this.normalizeValue(newValue)
+      const normalizedCurrent = this.normalizeValue(currentValue)
+      
+      // Comparer les valeurs normalisées
+      if (!this.valuesAreEqual(normalizedNew, normalizedCurrent)) {
+        diff[key] = newValue // Garder la valeur originale (pas normalisée)
+        this.logger.debug(`🔄 Changement détecté [${key}]:`, {
+          ancien: normalizedCurrent,
+          nouveau: normalizedNew
+        })
+      }
+    }
+    
+    return diff
+  }
+
+  /**
+   * Normalize value for comparison
+   * Handles dates, nulls, empty strings, etc.
+   */
+  private normalizeValue(value: any): any {
+    // null, undefined, empty string → null
+    if (value === null || value === undefined || value === '') {
+      return null
+    }
+    
+    // Dates → ISO string
+    if (value instanceof Date) {
+      return value.toISOString()
+    }
+    
+    // String dates → ISO string
+    if (typeof value === 'string' && !isNaN(Date.parse(value))) {
+      return new Date(value).toISOString()
+    }
+    
+    // Arrays → JSON string for comparison
+    if (Array.isArray(value)) {
+      return JSON.stringify(value.sort())
+    }
+    
+    // Objects → JSON string for comparison
+    if (typeof value === 'object') {
+      return JSON.stringify(value)
+    }
+    
+    // Numbers, booleans, strings → as is
+    return value
+  }
+
+  /**
+   * Deep equality check for normalized values
+   */
+  private valuesAreEqual(a: any, b: any): boolean {
+    // Both null/undefined → equal
+    if ((a === null || a === undefined) && (b === null || b === undefined)) {
+      return true
+    }
+    
+    // One null, other not → different
+    if ((a === null || a === undefined) !== (b === null || b === undefined)) {
+      return false
+    }
+    
+    // Simple comparison
+    return a === b
   }
 }
