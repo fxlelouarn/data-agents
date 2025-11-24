@@ -24,6 +24,7 @@ interface EditionContextInfoProps {
   currentEditionYear?: number     // Gardé pour compatibilité mais non affiché
   eventName?: string              // Nom de l'événement
   eventSlug?: string              // Slug pour construire le lien Miles Republic
+  isFeatured?: boolean            // Indicateur si l'événement est mis en avant
 }
 
 const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
@@ -33,7 +34,8 @@ const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
   previousEditionStartDate,
   currentEditionYear,
   eventName,
-  eventSlug
+  eventSlug,
+  isFeatured
 }) => {
   const getCalendarStatusLabel = (status?: string): string => {
     if (!status) return 'Non défini'
@@ -96,6 +98,14 @@ const EditionContextInfo: React.FC<EditionContextInfoProps> = ({
           <InfoIcon color="primary" />
           Informations contextuelles
         </Typography>
+        
+        {isFeatured && (
+          <Box sx={{ mb: 2, p: 1, border: '1px solid', borderColor: 'warning.main', borderRadius: 1 }}>
+            <Typography variant="body2" sx={{ fontWeight: 500, color: 'warning.dark' }}>
+              ⚠️ Cet événement est mis en avant sur la page d'accueil
+            </Typography>
+          </Box>
+        )}
         
         {eventName && eventSlug && (
           <Box sx={{ display: 'flex', alignItems: 'flex-start', gap: 1, mb: 2 }}>

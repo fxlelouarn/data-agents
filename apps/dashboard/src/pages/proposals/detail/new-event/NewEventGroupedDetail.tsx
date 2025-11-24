@@ -83,9 +83,9 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         return (
           <>
             {/* Table des champs Event */}
-            <CategorizedEventChangesTable
+<CategorizedEventChangesTable
               title="Informations de l'événement"
-              changes={eventChangesWithUrls}
+              changes={eventChanges}
               isNewEvent={true}
               selectedChanges={selectedChanges}
               onFieldSelect={handleFieldSelect}
@@ -94,13 +94,13 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               userModifiedChanges={userModifiedChanges}
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
-              timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('event')}
               onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
               validationDisabled={isAllApproved}
+              isFeaturedEvent={groupProposals[0]?.isFeatured}
             />
             
             {/* Table des champs Edition */}
@@ -124,6 +124,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               onUnvalidateBlock={() => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
               validationDisabled={isAllApproved}
+              isFeaturedEvent={groupProposals[0]?.isFeatured}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
@@ -140,6 +141,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
+                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -155,6 +157,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               onUnvalidateBlock={() => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
               validationDisabled={isEventDead || isAllApproved}
+              isFeaturedEvent={groupProposals[0]?.isFeatured}
             />
             
             {/* Sources des dates extraites */}
@@ -196,6 +199,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
                 eventName={(firstProposal as any).eventName}
                 eventSlug={(firstProposal as any).eventSlug}
+                isFeatured={firstProposal.isFeatured}
               />
             )}
             

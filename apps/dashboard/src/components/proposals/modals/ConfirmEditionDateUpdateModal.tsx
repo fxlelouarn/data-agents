@@ -35,8 +35,19 @@ const ConfirmEditionDateUpdateModal: React.FC<ConfirmEditionDateUpdateModalProps
   newRaceDate,
   raceName
 }) => {
-  const formattedCurrentDate = format(new Date(currentEditionDate), 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
-  const formattedNewDate = format(new Date(newRaceDate), 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+  const formatDate = (dateString: string): string => {
+    if (!dateString) return 'Date non disponible'
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) return 'Date invalide'
+      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+    } catch (error) {
+      return 'Date invalide'
+    }
+  }
+  
+  const formattedCurrentDate = formatDate(currentEditionDate)
+  const formattedNewDate = formatDate(newRaceDate)
   
   const isStartDate = dateType === 'startDate'
   const title = isStartDate 

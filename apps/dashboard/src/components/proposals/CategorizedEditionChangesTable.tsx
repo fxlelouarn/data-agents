@@ -12,6 +12,7 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
+  isFeaturedEvent?: boolean // Indicateur si l'événement est mis en avant
   // Handler spécifique pour Edition.startDate (avec logique de propagation aux courses)
   onEditionStartDateChange?: (fieldName: string, newValue: any) => void
   // Affichage colonnes
@@ -32,6 +33,7 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
+  isFeaturedEvent = false,
   onEditionStartDateChange,
   showCurrentValue = true,
   showConfidence = true,
@@ -99,6 +101,7 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}
+      isFeaturedEvent={isFeaturedEvent}
       showCurrentValue={showCurrentValue}
       showConfidence={showConfidence}
       showActions={showActions}

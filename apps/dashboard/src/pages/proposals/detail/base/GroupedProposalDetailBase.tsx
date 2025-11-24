@@ -11,11 +11,13 @@ import {
   Dialog,
   DialogTitle,
   DialogContent,
+  DialogContentText,
   DialogActions,
   TextField,
   Button,
   Typography
 } from '@mui/material'
+import { Warning as WarningIcon } from '@mui/icons-material'
 import ConfirmDatePropagationModal from '@/components/proposals/modals/ConfirmDatePropagationModal'
 import ConfirmEditionDateUpdateModal from '@/components/proposals/modals/ConfirmEditionDateUpdateModal'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
@@ -73,6 +75,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   isAllApproved: boolean // ✅ Mode lecture seule (toutes APPROVED)
   editionTimezone: string
   isNewEvent: boolean
+  isFeatured?: boolean // ✅ Indicateur si l'événement est mis en avant
   getEventTitle: (proposal: any, isNewEvent: boolean) => string
   getEditionYear: (proposal: any) => string | undefined
   handleEditionStartDateChange: (fieldName: string, newValue: any) => void
@@ -120,6 +123,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const [killDialogOpen, setKillDialogOpen] = useState(false)
   const [archiveReason, setArchiveReason] = useState('')
   const [isKilledLocally, setIsKilledLocally] = useState(false)
+  const [featuredEventConfirmOpen, setFeaturedEventConfirmOpen] = useState(false)
   
   // ✅ PHASE 2 STEP 6: Suppression des anciens états locaux (remplacés par workingGroup)
   
@@ -838,10 +842,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     setEditionDateUpdateModal(null)
   }
 
-  // Calculs pour l'interface
+// Calculs pour l'interface
   const firstProposal = groupProposals[0]
   const eventId = firstProposal?.eventId
   const eventStatus = firstProposal?.eventStatus
+  const isFeatured = firstProposal?.isFeatured
   // ✅ Événement mort si Event.status = DEAD OU si au moins une proposition est marquée killEvent OU si tué localement
   const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
   const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
@@ -1030,10 +1035,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     getEventTitle,
     getEditionYear,
     
-    // États UI (inchangés)
+// États UI (inchangés)
     isLoading,
     isPending: updateProposalMutation.isPending || bulkArchiveMutation.isPending,
     isEventDead,
+    isFeatured, // ✅ Indicateur si l'événement est mis en avant
     averageConfidence,
     allPending: hasPending, // ✅ Utiliser hasPending pour les boutons d'édition
     hasApproved,
@@ -1079,7 +1085,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             onNext: () => navigateToGroup('next')
           }}
           showValidateAllBlocksButton={hasPending && !isEventDead && Object.keys(blockProposals).length > 0 && !allBlocksValidated}
-          onValidateAllBlocks={() => validateAllBlocksBase(blockProposals)}
+          onValidateAllBlocks={async () => {
+            if (isFeatured) {
+              setFeaturedEventConfirmOpen(true)
+            } else {
+              await validateAllBlocksBase(blockProposals)
+            }
+          }}
           showUnvalidateAllBlocksButton={hasValidatedBlocks()}
           onUnvalidateAllBlocks={unvalidateAllBlocks}
           isValidateAllBlocksPending={isBlockPending}
@@ -1179,23 +1191,46 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         />
       )}
       
-      {/* Modale de confirmation pour mettre à jour Edition.startDate/endDate depuis une course */}
-      {editionDateUpdateModal && (
-        <ConfirmEditionDateUpdateModal
-          open={editionDateUpdateModal.open}
-          onClose={() => {
-            // Annuler = appliquer juste la modification de la course via le hook
-            const { raceIndex, newRaceDate } = editionDateUpdateModal
-            updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
-            setEditionDateUpdateModal(null)
-          }}
-          onConfirm={confirmEditionDateUpdate}
-          dateType={editionDateUpdateModal.dateType}
-          currentEditionDate={editionDateUpdateModal.currentEditionDate}
-          newRaceDate={editionDateUpdateModal.newRaceDate}
-          raceName={editionDateUpdateModal.raceName}
-        />
-      )}
+{/* Modale de confirmation pour mettre à jour Edition.startDate/endDate depuis une course */}
+      <ConfirmEditionDateUpdateModal
+        open={editionDateUpdateModal?.open || false}
+        currentEditionDate={editionDateUpdateModal?.currentEditionDate || ''}
+        newRaceDate={editionDateUpdateModal?.newRaceDate || ''}
+        raceName={editionDateUpdateModal?.raceName || ''}
+        dateType={editionDateUpdateModal?.dateType || 'startDate'}
+        onClose={() => setEditionDateUpdateModal(null)}
+        onConfirm={confirmEditionDateUpdate}
+      />
+      
+      {/* Dialog de confirmation pour les événements mis en avant */}
+      <Dialog open={featuredEventConfirmOpen} onClose={() => setFeaturedEventConfirmOpen(false)}>
+        <DialogTitle>
+          <WarningIcon sx={{ verticalAlign: 'middle', mr: 1, color: 'warning.main' }} />
+          Confirmation requise
+        </DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Cet événement est actuellement mis en avant sur la page d'accueil. 
+            Êtes-vous sûr de vouloir valider toutes les modifications ?
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={() => setFeaturedEventConfirmOpen(false)} color="primary">
+            Annuler
+          </Button>
+          <Button 
+            onClick={async () => {
+              setFeaturedEventConfirmOpen(false)
+              await validateAllBlocksBase(blockProposals)
+            }} 
+            color="warning" 
+            variant="contained" 
+            autoFocus
+          >
+            Valider
+          </Button>
+</DialogActions>
+      </Dialog>
     </Box>
   )
 }

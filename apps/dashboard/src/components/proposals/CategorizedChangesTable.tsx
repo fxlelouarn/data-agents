@@ -26,6 +26,7 @@ interface CategorizedChangesTableProps {
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
+  isFeaturedEvent?: boolean // Indicateur si l'événement est mis en avant
   // Affichage colonnes
   showCurrentValue?: boolean
   showConfidence?: boolean

@@ -90,7 +90,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
         return (
           <>
             {/* Bloc Événement - afficher s'il y a des changements OU si le bloc est validé */}
-            {shouldShowEventBlock && (
+{shouldShowEventBlock && (
               <CategorizedEventChangesTable
                 title="Événement"
                 changes={eventChanges}
@@ -108,6 +108,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('event')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
+                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -133,6 +134,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
+                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -149,6 +151,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
+                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -165,6 +168,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
+                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -206,6 +210,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 previousEditionStartDate={(firstProposal as any).previousEditionStartDate}
                 eventName={(firstProposal as any).eventName}
                 eventSlug={(firstProposal as any).eventSlug}
+                isFeatured={firstProposal.isFeatured}
               />
             )}
             

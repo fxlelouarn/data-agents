@@ -66,6 +66,7 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
               onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
+              isFeaturedEvent={groupProposals[0]?.isFeatured}
               actions={allPending ? (
                 <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
                   <Button
