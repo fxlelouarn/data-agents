@@ -4,6 +4,87 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-11-28 - Fix: Updates en double lors de la validation par blocs ✅
+
+**Problème résolu** : Lors de la validation de propositions groupées, plusieurs `ProposalApplication` identiques pouvaient être créées au lieu d'une seule, causant des doublons dans la page `/updates`.
+
+#### Symptômes
+
+- Validation d'un groupe de propositions → Plusieurs updates identiques créées
+- Page `/updates` affichait plusieurs lignes pour la même modification
+- Problème particulièrement visible lors de la validation complète de tous les blocs
+
+#### Cause
+
+L'endpoint `POST /api/proposals/validate-block-group` ne vérifiait **pas** si des applications PENDING identiques existaient déjà avant d'en créer une nouvelle.
+
+**Comparaison avec autres endpoints** :
+
+| Endpoint | Logique déduplication | Résultat |
+|----------|----------------------|----------|
+| `PUT /api/proposals/:id` | ✅ Vérifie doublons | Pas de doublons |
+| `POST /api/proposals/bulk-approve` | ✅ Vérifie doublons | Pas de doublons |
+| `POST /api/proposals/validate-block-group` | ❌ **Aucune vérification** | ⚠️ DOUBLONS |
+
+#### Solution
+
+**Fichier** : `apps/api/src/routes/proposals.ts` (lignes 1073-1162)
+
+**Ajout de déduplication** :
+
+```typescript
+if (!existingApp) {
+  // ✅ Vérifier si une application PENDING avec changements identiques existe
+  const proposalChanges = JSON.stringify(firstProposal.changes)
+  const allPendingApplications = await db.prisma.proposalApplication.findMany({
+    where: { status: 'PENDING' },
+    include: { proposal: true }
+  })
+  
+  const duplicateApp = allPendingApplications.find(app => {
+    // Vérifier type et cible (event/edition/race)
+    if (app.proposal.type !== firstProposal.type) return false
+    if (app.proposal.eventId !== firstProposal.eventId) return false
+    if (app.proposal.editionId !== firstProposal.editionId) return false
+    if (app.proposal.raceId !== firstProposal.raceId) return false
+    
+    // Vérifier si changements identiques
+    const appChanges = JSON.stringify(app.proposal.changes)
+    return appChanges === proposalChanges
+  })
+  
+  if (duplicateApp) {
+    // Ne pas créer de nouvelle application
+    await db.createLog({ reason: 'duplicate_changes' })
+  } else {
+    // Créer la nouvelle application
+  }
+}
+```
+
+#### Résultats
+
+**Avant** :
+- ❌ Validation groupe A → 1 application créée
+- ❌ Validation groupe B (mêmes changements) → 1 application créée (doublon)
+- ❌ Page `/updates` : 2 lignes identiques
+
+**Après** :
+- ✅ Validation groupe A → 1 application créée
+- ✅ Validation groupe B (mêmes changements) → Doublon détecté, aucune application créée
+- ✅ Page `/updates` : 1 seule ligne
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts` (endpoint `validate-block-group`)
+
+#### Ressources
+
+- Documentation complète : `docs/FIX-DUPLICATE-BLOCK-VALIDATION-UPDATES.md`
+- Problème lié : `DUPLICATE_UPDATES_FIX.md` (fix similaire pour autres endpoints)
+
+---
+
 ### 2025-11-17 (partie 2) - Système de versioning des agents ✅
 
 **Nouvelle fonctionnalité** : Chaque agent possède maintenant un numéro de version explicit qui est logé à chaque exécution et stocké en base de données.

@@ -187,6 +187,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
 
   // Valider tous les blocs
   const validateAllBlocks = useCallback(async (blocks: Record<string, string[]>) => {
+    // ✅ Valider séquentiellement pour éviter race conditions lors de la création d'applications
     for (const [blockKey, proposalIds] of Object.entries(blocks)) {
       try {
         await validateBlock(blockKey, proposalIds)
