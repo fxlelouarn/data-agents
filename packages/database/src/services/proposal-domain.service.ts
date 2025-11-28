@@ -29,6 +29,9 @@ export class ProposalDomainService {
    * ⚠️ MODE GROUPÉ DÉTECTION:
    * Si proposalIds est passé dans options et contient plusieurs IDs,
    * on applique les modifications UNE SEULE FOIS pour tout le groupe.
+   * 
+   * ✅ NOUVEAU : Support blockType pour application partielle
+   * Si options.blockType est spécifié, seuls les changements de ce bloc seront appliqués.
    */
   async applyProposal(
     proposalId: string,
@@ -41,6 +44,11 @@ export class ProposalDomainService {
     if (isGroupedMode) {
       this.logger.info(`📦 MODE GROUPÉ détecté: ${options.proposalIds!.length} propositions`)
       this.logger.info(`✅ Application unique pour le groupe [${options.proposalIds!.join(', ')}]`)
+    }
+    
+    // ✅ Détection mode bloc partiel
+    if (options.blockType) {
+      this.logger.info(`📦 APPLICATION PARTIELLE - Bloc: ${options.blockType}`)
     }
     
     // 1. Fetch proposal via repository
@@ -68,14 +76,26 @@ export class ProposalDomainService {
       ...(proposal.userModifiedChanges ? (proposal.userModifiedChanges as Record<string, any>) : {})
     }
 
-    // 5. Filter changes based on approved blocks (Option 2: Partial Application)
-    const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
-    const filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
+    // 5. Filter changes based on blockType (partial application) or approved blocks
+    let filteredSelectedChanges: Record<string, any>
     
-    // Log which changes are being filtered out
-    const removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
-    if (removedChanges.length > 0) {
-      this.logger.info(`Filtered out ${removedChanges.length} changes from unapproved blocks: ${removedChanges.join(', ')}`)
+    if (options.blockType) {
+      // ✅ NOUVEAU : Filtrage par blockType (application partielle d'un seul bloc)
+      filteredSelectedChanges = this.filterChangesByBlock(selectedChanges, options.blockType)
+      
+      const removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
+      if (removedChanges.length > 0) {
+        this.logger.info(`Filtered out ${removedChanges.length} changes from other blocks: ${removedChanges.join(', ')}`)
+      }
+    } else {
+      // Mode legacy : filtrage par approved blocks
+      const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+      filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
+      
+      const removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
+      if (removedChanges.length > 0) {
+        this.logger.info(`Filtered out ${removedChanges.length} changes from unapproved blocks: ${removedChanges.join(', ')}`)
+      }
     }
 
     try {
@@ -776,6 +796,56 @@ export class ProposalDomainService {
     }
 
     return filteredChanges
+  }
+
+  /**
+   * ✅ NOUVEAU : Filter changes by specific blockType
+   * Only keep changes from the specified block
+   * 
+   * Block fields mapping:
+   * - 'event': name, city, country, websiteUrl, facebookUrl, instagramUrl, etc.
+   * - 'edition': year, startDate, endDate, timeZone, registrationOpeningDate, etc.
+   * - 'organizer': organizer, organizerId
+   * - 'races': races, racesToUpdate, racesToAdd, race_*, raceEdits, racesToDelete
+   */
+  private filterChangesByBlock(
+    selectedChanges: Record<string, any>,
+    blockType: string
+  ): Record<string, any> {
+    const blockFields: Record<string, string[]> = {
+      event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
+              'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
+              'countrySubdivisionDisplayCodeLevel1', 'countrySubdivisionDisplayCodeLevel2',
+              'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
+              'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'],
+      edition: ['year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
+                'calendarStatus', 'clientStatus', 'status', 'currency', 'medusaVersion', 'customerType',
+                'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
+                'volunteerCode', 'confirmedAt'],
+      organizer: ['organizer', 'organizerId'],
+      races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
+    }
+    
+    const fields = blockFields[blockType] || []
+    const filtered: Record<string, any> = {}
+    
+    // Filtrer les champs du bloc spécifié
+    fields.forEach(field => {
+      if (selectedChanges[field] !== undefined) {
+        filtered[field] = selectedChanges[field]
+      }
+    })
+    
+    // Gérer les champs avec préfixe race_* pour le bloc races
+    if (blockType === 'races') {
+      Object.keys(selectedChanges).forEach(key => {
+        if (key.startsWith('race_')) {
+          filtered[key] = selectedChanges[key]
+        }
+      })
+    }
+    
+    return filtered
   }
 
   /**

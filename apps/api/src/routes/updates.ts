@@ -57,6 +57,8 @@ const transformApplicationForAPI = (app: any) => {
   return {
     id: app.id,
     proposalId: app.proposalId,
+    proposalIds: app.proposalIds || [app.proposalId],  // ✅ Pour groupement frontend
+    blockType: app.blockType || null,  // ✅ Type de bloc ('edition', 'organizer', 'races', 'event', ou null pour legacy)
     status: app.status,
     scheduledAt: app.scheduledAt?.toISOString() || null,
     appliedAt: app.appliedAt?.toISOString() || null,
