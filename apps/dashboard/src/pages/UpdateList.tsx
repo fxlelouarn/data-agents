@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Box,
@@ -28,11 +28,21 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
 } from '@mui/material'
 import {
   Visibility as ViewIcon,
   PlayArrow as ApplyIcon,
   Delete as DeleteIcon,
+  Group as GroupIcon,
+  ViewList as ViewListIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material'
 import { useUpdates, useApplyUpdate, useDeleteUpdate, useBulkDeleteUpdates, useBulkApplyUpdates } from '@/hooks/useApi'
 import { DataUpdate, UpdateStatus } from '@/types'
@@ -46,6 +56,8 @@ const UpdateList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<UpdateStatus | ''>("")
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')  // ✅ Nouveau
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())  // ✅ Nouveau
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     action: 'delete' | 'apply' | null
@@ -237,11 +249,82 @@ const UpdateList: React.FC = () => {
     return update?.status === 'PENDING'
   }).length
 
+  // ✅ Groupement des applications par proposalIds
+  const groupedUpdates = useMemo(() => {
+    const groups = new Map<string, any[]>()
+    
+    updates.forEach((app: any) => {
+      const key = (app.proposalIds || [app.proposalId]).sort().join('-')
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key)!.push(app)
+    })
+    
+    return Array.from(groups.values()).map(apps => ({
+      id: `group-${(apps[0].proposalIds || [apps[0].proposalId]).join('-')}`,
+      applications: apps,
+      proposalIds: apps[0].proposalIds || [apps[0].proposalId],
+      eventName: apps[0].context?.eventName || apps[0].proposal?.eventName || 'Mise à jour',
+      editionYear: apps[0].context?.editionYear,
+      blocks: apps.map(a => a.blockType).filter(Boolean),
+      status: apps.some(a => a.status === 'PENDING') ? 'PENDING' : 
+              apps.every(a => a.status === 'APPLIED') ? 'APPLIED' : 'FAILED'
+    }))
+  }, [updates])
+
+  // ✅ Helper pour labels des blocs
+  const blockLabels: Record<string, string> = {
+    event: 'Événement',
+    edition: 'Édition',
+    organizer: 'Organisateur',
+    races: 'Courses'
+  }
+
+  // ✅ Handler pour toggle accordions
+  const handleToggleGroup = (groupKey: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    setExpandedGroups(prev => {
+      const newExpanded = new Set(prev)
+      if (newExpanded.has(groupKey)) {
+        newExpanded.delete(groupKey)
+      } else {
+        newExpanded.add(groupKey)
+      }
+      return newExpanded
+    })
+  }
+
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
-        Mises à jour
-      </Typography>
+      {/* Titre + View Mode Toggle */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 600 }}>
+          Mises à jour
+        </Typography>
+        
+        {/* View Mode Toggle */}
+        <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+          <Button
+            size="small"
+            startIcon={<GroupIcon />}
+            onClick={() => setViewMode('grouped')}
+            variant={viewMode === 'grouped' ? 'contained' : 'text'}
+            sx={{ borderRadius: 0 }}
+          >
+            Groupé
+          </Button>
+          <Button
+            size="small"
+            startIcon={<ViewListIcon />}
+            onClick={() => setViewMode('table')}
+            variant={viewMode === 'table' ? 'contained' : 'text'}
+            sx={{ borderRadius: 0 }}
+          >
+            Tableau
+          </Button>
+        </Box>
+      </Box>
       
       {/* Filtres */}
       <Card sx={{ mb: 3 }}>
