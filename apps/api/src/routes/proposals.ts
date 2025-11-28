@@ -1053,8 +1053,67 @@ router.post('/validate-block-group', [
     willApprove: allBlocksValidated
   })
 
+  // ✅ NOUVEAU : Créer une application PAR BLOC validé
+  // Vérifier si une application existe déjà pour CE bloc spécifique
+  const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+    where: {
+      proposalId: { in: proposalIds },
+      blockType: block,  // ✅ Filtrer par bloc
+      status: { in: ['PENDING', 'APPLIED'] }
+    }
+  })
+  
+  if (existingAppForBlock) {
+    console.log(`ℹ️ Application déjà existante pour bloc "${block}":`, {
+      applicationId: existingAppForBlock.id,
+      proposalIds,
+      block
+    })
+    
+    await db.createLog({
+      agentId: firstProposal.agentId,
+      level: 'INFO',
+      message: `Block "${block}" already has an application for proposals [${proposalIds.join(', ')}]`,
+      data: { 
+        proposalIds,
+        block,
+        existingApplicationId: existingAppForBlock.id
+      }
+    })
+  } else {
+    // ✅ Créer une nouvelle application pour CE bloc uniquement
+    const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
+    await db.prisma.$executeRaw`
+      INSERT INTO "proposal_applications" (
+        "id", "proposalId", "proposalIds", "blockType", "status", "createdAt", "updatedAt", "logs"
+      ) VALUES (
+        ${applicationId},
+        ${proposalIds[0]},
+        ${proposalIds}::text[],
+        ${block},
+        'PENDING',
+        NOW(),
+        NOW(),
+        ARRAY[]::text[]
+      )
+    `
+    
+    await db.createLog({
+      agentId: firstProposal.agentId,
+      level: 'INFO',
+      message: `Application created for block "${block}" - proposals [${proposalIds.join(', ')}]`,
+      data: { 
+        proposalIds,
+        applicationId,
+        block
+      }
+    })
+    
+    console.log(`✅ Application créée pour bloc "${block}":`, applicationId)
+  }
+  
+  // ✅ Marquer propositions comme APPROVED seulement si TOUS les blocs validés
   if (allBlocksValidated) {
-    // Marquer toutes les propositions comme APPROVED
     const approvedProposals = await Promise.all(
       proposalIds.map((proposalId: string) =>
         db.updateProposal(proposalId, {
@@ -1065,53 +1124,10 @@ router.post('/validate-block-group', [
       )
     )
     
-    console.log('✅ Statut mis à jour à APPROVED:', {
+    console.log('✅ Tous les blocs validés - Statut mis à jour à APPROVED:', {
       proposalIds,
       statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
     })
-
-    // Créer UNE SEULE ProposalApplication pour le groupe
-    const existingApp = await db.prisma.proposalApplication.findFirst({
-      where: {
-        proposalId: proposalIds[0] // Proposition principale (première du groupe)
-        // Note: proposalIds hasSome non supporté par types Prisma (ajouté après génération)
-      } as any // ✅ TypeScript cast (Prisma type incomplet)
-    })
-
-    if (!existingApp) {
-      // ⚠️ WORKAROUND: Prisma runtime ne reconnaît pas proposalIds malgré la migration
-      // Utiliser raw SQL pour créer la ProposalApplication
-      const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
-      await db.prisma.$executeRaw`
-        INSERT INTO "proposal_applications" (
-          "id", "proposalId", "proposalIds", "status", "createdAt", "updatedAt", "logs"
-        ) VALUES (
-          ${applicationId},
-          ${proposalIds[0]},
-          ${proposalIds}::text[],
-          'PENDING',
-          NOW(),
-          NOW(),
-          ARRAY[]::text[]
-        )
-      `
-      
-      const application = { id: applicationId }
-
-      await db.createLog({
-        agentId: firstProposal.agentId,
-        level: 'INFO',
-        message: `Grouped proposals [${proposalIds.join(', ')}] approved - Single application created`,
-        data: { 
-          proposalIds,
-          applicationId: application.id,
-          block,
-          allBlocksValidated: true
-        }
-      })
-
-      console.log('\u2705 Application groupée créée:', application.id)
-    }
   }
 
   // Récupérer les propositions finales (avec statut APPROVED si tous blocs validés)
