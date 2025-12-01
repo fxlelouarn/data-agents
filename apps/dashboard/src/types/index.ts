@@ -240,7 +240,13 @@ export interface LogFilters {
 export interface DataUpdate {
   id: string
   proposalId: string
-  status: UpdateStatus
+  proposalIds?: string[]  // ✅ Pour applications groupées
+  blockType?: string | null  // ✅ Type de bloc ('event', 'edition', 'organizer', 'races', ou null)
+  status: UpdateStatus | 'PENDING' | 'APPLIED' | 'FAILED'  // ✅ Support legacy
+  
+  // ✅ NOUVEAU: Payload complet (agent + user merged)
+  appliedChanges?: Record<string, any>
+  
   scheduledAt?: string
   appliedAt?: string
   errorMessage?: string
@@ -261,6 +267,8 @@ export interface DataUpdate {
       new: any
       confidence: number
     }>
+    // ⚠️ userModifiedChanges devient optionnel (fallback legacy)
+    userModifiedChanges?: Record<string, any>
     agent: {
       name: string
       type: AgentType

@@ -60,6 +60,10 @@ const transformApplicationForAPI = (app: any) => {
     proposalIds: app.proposalIds || [app.proposalId],  // ✅ Pour groupement frontend
     blockType: app.blockType || null,  // ✅ Type de bloc ('edition', 'organizer', 'races', 'event', ou null pour legacy)
     status: app.status,
+    
+    // ✅ PHASE 2: Inclure appliedChanges (payload complet agent + user)
+    appliedChanges: app.appliedChanges || {},
+    
     scheduledAt: app.scheduledAt?.toISOString() || null,
     appliedAt: app.appliedAt?.toISOString() || null,
     errorMessage: app.errorMessage,
@@ -71,6 +75,8 @@ const transformApplicationForAPI = (app: any) => {
       type: app.proposal.type,
       status: app.proposal.status,
       changes: app.proposal.changes,
+      // ⚠️ userModifiedChanges devient optionnel (fallback legacy)
+      userModifiedChanges: app.proposal.userModifiedChanges,
       eventId: app.proposal.eventId,
       editionId: app.proposal.editionId,
       raceId: app.proposal.raceId,
@@ -331,7 +337,12 @@ router.post('/:id/apply', [
         appliedAt: success ? new Date() : null,
         errorMessage: errorMessage,
         logs: logs,
-        appliedChanges: success ? (result.appliedChanges as any) : null,
+        // ✅ TOUJOURS préserver appliedChanges d'origine (payload complet avec racesToDelete, etc.)
+        // Le result.appliedChanges ne contient que les champs envoyés à Miles Republic
+        // mais manque les métadonnées comme racesToDelete
+        appliedChanges: success 
+          ? (application.appliedChanges || result.appliedChanges as any)
+          : (application.appliedChanges || result.appliedChanges as any),
         rollbackData: success ? (result.createdIds as any) || null : null
       },
       include: {

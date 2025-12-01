@@ -1020,6 +1020,139 @@ router.post('/validate-block-group', [
   // Le frontend envoie déjà les changements consolidés (sélectionnés + modifiés)
   const approvedBlocks = { [block]: true }
 
+  // ✅ PHASE 1: Construire le payload final (agent + user merged)
+  const firstProposal = proposals[0]
+  const baseChanges = { ...firstProposal.changes as Record<string, any> }
+  
+  // ✅ FIX: Lire raceEdits depuis 'changes' envoyé par le frontend
+  // Le frontend envoie déjà userModifiedRaceChanges dans changes.raceEdits
+  const raceEdits = changes.raceEdits || {}
+
+  console.log('🔧 Construction payload final:', {
+    block,
+    baseChangesKeys: Object.keys(baseChanges),
+    changesKeys: Object.keys(changes),
+    hasRaceEdits: !!raceEdits,
+    raceEditsKeys: Object.keys(raceEdits)
+  })
+
+  // 1. Merger changes envoyé par le frontend avec baseChanges
+  Object.entries(changes).forEach(([key, value]) => {
+    if (key !== 'raceEdits') {
+      baseChanges[key] = value
+    }
+  })
+
+  // 2. ✅ Construire racesToDelete depuis raceEdits._deleted
+  if (block === 'races' && Object.keys(raceEdits).length > 0) {
+    const racesToDelete: Array<{ raceId: number | string, raceName: string }> = []
+    
+    // Essayer d'extraire existingRaces depuis les changes (racesToUpdate)
+    const existingRacesFromChanges = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
+
+    Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
+      if (mods._deleted === true) {
+        if (key.startsWith('existing-')) {
+          // Course existante supprimée
+          const index = parseInt(key.replace('existing-', ''))
+          const race = existingRacesFromChanges[index]
+          if (race) {
+            racesToDelete.push({
+              raceId: race.raceId || race.id || key,
+              raceName: race.raceName || race.name || `Course ${index}`
+            })
+          } else {
+            // Fallback si pas trouvé
+            racesToDelete.push({
+              raceId: key,
+              raceName: `Course existing-${index}`
+            })
+          }
+        } else if (key.startsWith('new-')) {
+          // Nouvelle course supprimée avant application
+          const index = parseInt(key.replace('new-', ''))
+          racesToDelete.push({
+            raceId: key,
+            raceName: `Nouvelle course ${index}`
+          })
+        }
+      }
+    })
+
+    if (racesToDelete.length > 0) {
+      baseChanges.racesToDelete = racesToDelete
+      console.log('🗑️ Courses à supprimer:', racesToDelete.map(r => `${r.raceName} (${r.raceId})`))
+    }
+  }
+
+  // 3. ✅ Merger modifications utilisateur dans racesToUpdate
+  if (block === 'races' && Object.keys(raceEdits).length > 0) {
+    // Gérer racesToUpdate (nouvelle structure)
+    if (baseChanges.racesToUpdate) {
+      const racesToUpdate = baseChanges.racesToUpdate.new || baseChanges.racesToUpdate
+      if (Array.isArray(racesToUpdate)) {
+        racesToUpdate.forEach((race: any, index: number) => {
+          const key = `existing-${index}`
+          const userEdits = raceEdits[key]
+
+          if (userEdits && !userEdits._deleted) {
+            if (!race.updates) race.updates = {}
+            // Appliquer modifications utilisateur
+            Object.entries(userEdits).forEach(([field, value]) => {
+              if (field !== '_deleted') {
+                race.updates[field] = {
+                  new: value,
+                  old: race.currentData?.[field]
+                }
+              }
+            })
+          }
+        })
+      }
+    }
+
+    // Gérer racesToAdd (nouvelles courses)
+    if (baseChanges.racesToAdd) {
+      const racesToAdd = baseChanges.racesToAdd.new || baseChanges.racesToAdd
+      if (Array.isArray(racesToAdd)) {
+        racesToAdd.forEach((race: any, index: number) => {
+          const key = `new-${index}`
+          const userEdits = raceEdits[key]
+
+          if (userEdits && !userEdits._deleted) {
+            // Appliquer modifications utilisateur sur nouvelles courses
+            Object.entries(userEdits).forEach(([field, value]) => {
+              if (field !== '_deleted') {
+                if (race[field]) {
+                  race[field].new = value
+                } else {
+                  race[field] = { new: value, old: null }
+                }
+              }
+            })
+          }
+        })
+      }
+    }
+  }
+
+  // ✅ FIX: Merger baseChanges (agent) + changes (user) au lieu de choisir l'un ou l'autre
+  const finalPayload = { ...baseChanges, ...changes }
+  
+  // Ajouter raceEdits si non vide (pour compatibilité backend)
+  if (Object.keys(raceEdits).length > 0) {
+    finalPayload.raceEdits = raceEdits
+  }
+
+  console.log('📦 Payload final construit:', {
+    block,
+    payloadKeys: Object.keys(finalPayload),
+    racesToUpdate: finalPayload.racesToUpdate?.length || finalPayload.racesToUpdate?.new?.length || 0,
+    racesToAdd: finalPayload.racesToAdd?.length || finalPayload.racesToAdd?.new?.length || 0,
+    racesToDelete: finalPayload.racesToDelete?.length || 0,
+    hasRaceEdits: !!finalPayload.raceEdits
+  })
+
   // Mettre à jour TOUTES les propositions avec le même payload
   const updatedProposals = await Promise.all(
     proposalIds.map(async (proposalId: string) => {
@@ -1038,12 +1171,12 @@ router.post('/validate-block-group', [
 
   // Vérifier si tous les blocs ATTENDUS sont validés pour marquer les propositions comme APPROVED
   // On détermine les blocs attendus depuis le contenu de changes
-  const firstProposal = updatedProposals[0]
-  const approvedBlocksObj = firstProposal.approvedBlocks as Record<string, boolean>
+  const updatedFirstProposal = updatedProposals[0]
+  const approvedBlocksObj = updatedFirstProposal.approvedBlocks as Record<string, boolean>
   
   // ✅ Déterminer les blocs ATTENDUS en analysant les changes
   const expectedBlocks = new Set<string>()
-  const proposalChanges = firstProposal.changes as Record<string, any>
+  const proposalChanges = updatedFirstProposal.changes as Record<string, any>
   
   // Analyser les champs pour déterminer les blocs nécessaires
   const eventFields = ['name', 'city', 'country', 'countrySubdivisionNameLevel1', 
@@ -1065,7 +1198,7 @@ router.post('/validate-block-group', [
   })
   
   // Pour NEW_EVENT, on attend toujours les blocs: event, edition, races (organizer optionnel)
-  if (firstProposal.type === 'NEW_EVENT') {
+  if (updatedFirstProposal.type === 'NEW_EVENT') {
     expectedBlocks.add('event')
     expectedBlocks.add('edition')
     // races optionnel pour NEW_EVENT
@@ -1099,46 +1232,58 @@ router.post('/validate-block-group', [
       block
     })
     
+    // ✅ Mettre à jour appliedChanges avec le nouveau payload
+    await db.prisma.proposalApplication.update({
+      where: { id: existingAppForBlock.id },
+      data: {
+        appliedChanges: finalPayload,
+        updatedAt: new Date()
+      }
+    })
+    
+    console.log('✅ appliedChanges mis à jour avec payload final')
+    
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Block "${block}" already has an application for proposals [${proposalIds.join(', ')}]`,
+      message: `Block "${block}" application updated with final payload for proposals [${proposalIds.join(', ')}]`,
       data: { 
         proposalIds,
         block,
-        existingApplicationId: existingAppForBlock.id
+        existingApplicationId: existingAppForBlock.id,
+        payloadKeys: Object.keys(finalPayload)
       }
     })
   } else {
     // ✅ Créer une nouvelle application pour CE bloc uniquement
     const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
-    await db.prisma.$executeRaw`
-      INSERT INTO "proposal_applications" (
-        "id", "proposalId", "proposalIds", "blockType", "status", "createdAt", "updatedAt", "logs"
-      ) VALUES (
-        ${applicationId},
-        ${proposalIds[0]},
-        ${proposalIds}::text[],
-        ${block},
-        'PENDING',
-        NOW(),
-        NOW(),
-        ARRAY[]::text[]
-      )
-    `
+    
+    // Utiliser Prisma create au lieu de executeRaw pour pouvoir passer appliedChanges (JSONB)
+    await db.prisma.proposalApplication.create({
+      data: {
+        id: applicationId,
+        proposalId: proposalIds[0],
+        proposalIds: proposalIds,
+        blockType: block,
+        status: 'PENDING',
+        appliedChanges: finalPayload,  // ✅ Payload complet
+        logs: []
+      }
+    })
     
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Application created for block "${block}" - proposals [${proposalIds.join(', ')}]`,
+      message: `Application created for block "${block}" with final payload - proposals [${proposalIds.join(', ')}]`,
       data: { 
         proposalIds,
         applicationId,
-        block
+        block,
+        payloadKeys: Object.keys(finalPayload)
       }
     })
     
-    console.log(`✅ Application créée pour bloc "${block}":`, applicationId)
+    console.log(`✅ Application créée pour bloc "${block}" avec appliedChanges:`, applicationId)
   }
   
   // ✅ Déterminer le statut selon les blocs validés

@@ -37,6 +37,7 @@
     "sync-agents": "tsx scripts/sync-agents.ts",
     "reset-agents": "tsx scripts/reset-agents.ts",
     "reset-proposals": "tsx scripts/reset-proposals.ts",
+    "fix-null-applied-changes": "tsx scripts/fix-null-applied-changes.ts",
     "clean": "find packages apps -maxdepth 2 -type d -name dist -not -path '*/node_modules/*' -exec rm -rf {} + 2>/dev/null || true",
     "clean:turbo": "turbo clean",
     "clean:full": "rm -rf node_modules apps/*/node_modules packages/*/node_modules node_modules/.prisma apps/node_modules/.prisma pnpm-lock.yaml package-lock.json && npm run clean",

@@ -10,10 +10,19 @@ import {
   Typography,
   Box,
 } from '@mui/material'
+import { CheckCircle as CheckCircleIcon } from '@mui/icons-material'
 
 interface BlockChangesTableProps {
   blockType: string
-  changes: any
+  
+  // ✅ NOUVEAU: Payload complet depuis l'application
+  appliedChanges?: any
+  
+  // ✅ Indicateur si les changements sont déjà appliqués
+  isApplied?: boolean
+  
+  // ⚠️ LEGACY: Fallback si appliedChanges vide
+  changes?: any
   userModifiedChanges?: any
 }
 
@@ -61,16 +70,29 @@ const FIELD_LABELS: Record<string, string> = {
 
 const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
   blockType,
+  appliedChanges,
+  isApplied = false,
   changes,
   userModifiedChanges = {},
 }) => {
+  // ✅ Prioriser appliedChanges (nouveau système)
+  const effectiveChanges = appliedChanges || changes
+  const needsManualMerge = !appliedChanges && userModifiedChanges
+  
+  console.log('🛠️ [BlockChangesTable] Source:', {
+    blockType,
+    hasAppliedChanges: !!appliedChanges,
+    needsManualMerge,
+    racesToDelete: effectiveChanges?.racesToDelete?.length || 0
+  })
+  
   const fields = BLOCK_FIELDS[blockType] || []
 
   // ✅ Pour le bloc organizer, les données sont imbriquées dans changes.organizer
   const getOrganizerData = () => {
     if (blockType !== 'organizer') return null
     
-    const organizerChange = changes.organizer
+    const organizerChange = effectiveChanges.organizer
     if (!organizerChange) return null
     
     // Structure nouvelle (avec old/new)
@@ -100,29 +122,34 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
       return organizerData.proposed?.[fieldName]
     }
 
-    // ✅ Cas spécial racesToDelete : Extraire depuis raceEdits
-    if (fieldName === 'racesToDelete' && userModifiedChanges.raceEdits) {
+    // ✅ Si appliedChanges existe, utiliser directement
+    if (appliedChanges && fieldName === 'racesToDelete') {
+      return appliedChanges.racesToDelete || []
+    }
+    
+    // ⚠️ LEGACY: Extraction manuelle depuis userModifiedChanges
+    if (needsManualMerge && fieldName === 'racesToDelete' && userModifiedChanges.raceEdits) {
       const deletedRaces: any[] = []
       Object.entries(userModifiedChanges.raceEdits).forEach(([key, mods]: [string, any]) => {
         if (mods._deleted === true) {
-          // Extraire le raceId depuis la clé (ex: "existing-0" -> besoin de récupérer le vrai ID)
-          // Pour l'instant, on affiche juste la clé
+          console.log('🛠️ [BlockChangesTable] Course supprimée détectée (legacy):', { key, mods })
           deletedRaces.push({
             raceId: key,
             raceName: `Course ${key}`
           })
         }
       })
+      console.log('🛠️ [BlockChangesTable] racesToDelete extrait (legacy):', deletedRaces)
       if (deletedRaces.length > 0) return deletedRaces
     }
 
-    // Priorité aux modifications utilisateur
-    if (userModifiedChanges[fieldName] !== undefined) {
+    // Priorité aux modifications utilisateur (mode legacy uniquement)
+    if (needsManualMerge && userModifiedChanges[fieldName] !== undefined) {
       return userModifiedChanges[fieldName]
     }
 
-    // Sinon, valeur proposée par l'agent
-    const change = changes[fieldName]
+    // Sinon, valeur proposée depuis effectiveChanges
+    const change = effectiveChanges[fieldName]
     if (!change) return null
 
     // ✅ Cas spécial courses : Extraire depuis change.new
@@ -149,7 +176,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
       return organizerData.current?.[fieldName]
     }
 
-    const change = changes[fieldName]
+    const change = effectiveChanges[fieldName]
     if (!change) return null
 
     // ✅ Cas spécial courses : Extraire depuis change.new (structure backend)
@@ -266,9 +293,17 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     return String(value)
   }
 
-  // Filtrer les champs qui ont réellement des changements
+  // ✅ TOUJOURS afficher TOUS les champs (avant, pendant et après application)
+  // Filtrer uniquement les champs vides sans intérêt
   const fieldsWithChanges = fields.filter(field => {
     const proposedValue = getProposedValue(field)
+    
+    // ✅ Filtrer racesToDelete si vide (aucune suppression)
+    if (field === 'racesToDelete') {
+      return Array.isArray(proposedValue) && proposedValue.length > 0
+    }
+    
+    // ✅ Garder tous les autres champs avec des valeurs
     return proposedValue !== null && proposedValue !== undefined
   })
 
@@ -284,12 +319,24 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
 
   return (
     <TableContainer component={Paper} elevation={0}>
+      {/* ✅ Bandeau indicateur si appliqué */}
+      {isApplied && (
+        <Box sx={{ bgcolor: 'success.light', px: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
+          <CheckCircleIcon fontSize="small" sx={{ color: 'success.dark' }} />
+          <Typography variant="body2" sx={{ color: 'success.dark', fontWeight: 600 }}>
+            Changements appliqués avec succès
+          </Typography>
+        </Box>
+      )}
+      
       <Table size="small">
         <TableHead>
           <TableRow>
             <TableCell sx={{ fontWeight: 600 }}>Champ</TableCell>
             <TableCell sx={{ fontWeight: 600 }}>Valeur actuelle</TableCell>
-            <TableCell sx={{ fontWeight: 600 }}>Valeur proposée</TableCell>
+            <TableCell sx={{ fontWeight: 600 }}>
+              {isApplied ? 'Valeur appliquée' : 'Valeur proposée'}
+            </TableCell>
           </TableRow>
         </TableHead>
         <TableBody>
@@ -298,7 +345,15 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
             const proposedValue = getProposedValue(fieldName)
 
             return (
-              <TableRow key={fieldName} hover>
+              <TableRow 
+                key={fieldName} 
+                hover
+                sx={{
+                  // ✅ Grisé si appliqué
+                  bgcolor: isApplied ? 'action.hover' : 'transparent',
+                  opacity: isApplied ? 0.8 : 1
+                }}
+              >
                 <TableCell>
                   <Typography variant="body2" sx={{ fontWeight: 500 }}>
                     {FIELD_LABELS[fieldName] || fieldName}
@@ -312,6 +367,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
                       fontFamily: 'monospace',
                       fontSize: 12,
                       whiteSpace: 'pre-line',
+                      textDecoration: isApplied ? 'line-through' : 'none'
                     }}
                   >
                     {formatValue(currentValue, fieldName, true)}
@@ -321,8 +377,8 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
                   <Typography
                     variant="body2"
                     sx={{
-                      color: 'primary.main',
-                      fontWeight: 500,
+                      color: isApplied ? 'success.dark' : 'primary.main',
+                      fontWeight: isApplied ? 600 : 500,
                       fontFamily: 'monospace',
                       fontSize: 12,
                       whiteSpace: 'pre-line',

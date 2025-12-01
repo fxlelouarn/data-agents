@@ -59,11 +59,21 @@ export class ProposalDomainService {
     }
 
     // 2. Business validation
-    if (proposal.status !== 'APPROVED' && !options.force) {
+    // ✅ Accepter APPROVED ou PARTIALLY_APPROVED (application partielle par bloc)
+    const validStatuses = ['APPROVED', 'PARTIALLY_APPROVED']
+    if (!validStatuses.includes(proposal.status) && !options.force) {
       return this.errorResult(
         'status',
-        'La proposition doit être approuvée pour être appliquée (utilisez force: true pour outrepasser)'
+        `La proposition doit être approuvée (APPROVED ou PARTIALLY_APPROVED) pour être appliquée. Statut actuel: ${proposal.status} (utilisez force: true pour outrepasser)`
       )
+    }
+    
+    // ✅ Log du mode d'application
+    if (proposal.status === 'PARTIALLY_APPROVED') {
+      this.logger.info(`⚠️ Application partielle: Proposition au statut PARTIALLY_APPROVED`)
+      const approvedBlocks = Object.keys((proposal.approvedBlocks as Record<string, boolean>) || {})
+        .filter(k => (proposal.approvedBlocks as Record<string, boolean>)[k])
+      this.logger.info(`   Blocs validés: ${approvedBlocks.length > 0 ? approvedBlocks.join(', ') : 'aucun'}`)
     }
 
     // 3. Extract agent name for audit trail
@@ -254,9 +264,10 @@ export class ProposalDomainService {
         }
       }
 
+      // ✅ Retourner 'changes' qui contient le payload complet (agent + user merged)
       return {
         success: true,
-        appliedChanges: selectedChanges,
+        appliedChanges: changes,
         createdIds: {
           eventId: event.id.toString(),
           editionId: createdEditionIds[0]?.toString(),
@@ -291,9 +302,10 @@ export class ProposalDomainService {
       // Apply update
       await milesRepo.updateEvent(numericEventId, updateData)
 
+      // ✅ Retourner 'changes' qui contient le payload complet (agent + user merged)
       return {
         success: true,
-        appliedChanges: selectedChanges
+        appliedChanges: changes
       }
     } catch (error) {
       return this.errorResult('update', `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
@@ -559,6 +571,35 @@ export class ProposalDomainService {
           const raceData = racesToAdd[i]
           const editedData = raceEdits[`new-${i}`] || {}
           
+          // 🔍 LOG: Inspecter raceData AVANT nettoyage
+          this.logger.info(`🔍 [RACE ${i}] Contenu AVANT nettoyage:`, {
+            raceDataKeys: Object.keys(raceData),
+            raceDataHasId: 'id' in raceData,
+            raceDataHasRaceId: 'raceId' in raceData,
+            raceData: JSON.stringify(raceData, null, 2),
+            editedDataKeys: Object.keys(editedData),
+            editedData: JSON.stringify(editedData, null, 2)
+          })
+          
+          // ⚠️ IMPORTANT: Retirer 'id' et 'raceId' de raceData car ce sont de NOUVELLES courses
+          // Ces champs peuvent être présents par erreur dans appliedChanges
+          if ('id' in raceData) {
+            this.logger.warn(`⚠️  Champ 'id' détecté dans raceData[${i}]: ${raceData.id} - SUPPRESSION`)
+            delete raceData.id
+          }
+          if ('raceId' in raceData) {
+            this.logger.warn(`⚠️  Champ 'raceId' détecté dans raceData[${i}]: ${raceData.raceId} - SUPPRESSION`)
+            delete raceData.raceId
+          }
+          if ('id' in editedData) {
+            this.logger.warn(`⚠️  Champ 'id' détecté dans editedData[${i}]: ${editedData.id} - SUPPRESSION`)
+            delete editedData.id
+          }
+          if ('raceId' in editedData) {
+            this.logger.warn(`⚠️  Champ 'raceId' détecté dans editedData[${i}]: ${editedData.raceId} - SUPPRESSION`)
+            delete editedData.raceId
+          }
+          
           // Appliquer les modifications utilisateur, sinon les valeurs proposées
           const racePayload: any = {
             editionId: numericEditionId,
@@ -613,6 +654,14 @@ export class ProposalDomainService {
           if (finalType) {
             racePayload.type = finalType
           }
+          
+          // 🔍 LOG: Payload final AVANT création
+          this.logger.info(`🔍 [RACE ${i}] Payload FINAL avant createRace:`, {
+            payloadKeys: Object.keys(racePayload),
+            hasId: 'id' in racePayload,
+            hasRaceId: 'raceId' in racePayload,
+            payload: JSON.stringify(racePayload, null, 2)
+          })
           
           const newRace = await milesRepo.createRace(racePayload)
           this.logger.info(`  ✅ Course créée: ${newRace.id} (${newRace.name}) - ${newRace.runDistance}km`, {
@@ -698,9 +747,11 @@ export class ProposalDomainService {
 
       this.logger.info(`\n✅ EDITION_UPDATE appliqué avec succès pour l'édition ${numericEditionId}\n`)
 
+      // ✅ Retourner 'changes' qui contient le payload complet (agent + user merged)
+      // Au lieu de 'selectedChanges' qui ne contient que les sélections initiales
       return {
         success: true,
-        appliedChanges: selectedChanges
+        appliedChanges: changes
       }
     } catch (error) {
       return this.errorResult('update', `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
@@ -737,9 +788,10 @@ export class ProposalDomainService {
         await milesRepo.touchEvent(race.eventId)
       }
 
+      // ✅ Retourner 'changes' qui contient le payload complet (agent + user merged)
       return {
         success: true,
-        appliedChanges: selectedChanges
+        appliedChanges: changes
       }
     } catch (error) {
       return this.errorResult('update', `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
