@@ -148,10 +148,10 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     if (!block) return
 
     try {
-      // Annuler l'approbation seulement des propositions APPROVED
+      // Annuler l'approbation des propositions APPROVED ou PARTIALLY_APPROVED
       const approvedProposalIds = block.proposalIds.filter(id => {
         const proposal = proposals.find(p => p.id === id)
-        return proposal?.status === 'APPROVED'
+        return proposal?.status === 'APPROVED' || proposal?.status === 'PARTIALLY_APPROVED'
       })
       
       if (approvedProposalIds.length > 0) {

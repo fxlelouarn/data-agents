@@ -252,7 +252,7 @@ export function useProposalEditor(
     // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
     const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
     const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
-    const approvedProposals = proposals.filter(p => p.status === 'APPROVED')
+    const approvedProposals = proposals.filter(p => p.status === 'APPROVED' || p.status === 'PARTIALLY_APPROVED')
     
     const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation
 
@@ -1172,31 +1172,54 @@ export function useProposalEditor(
    * Annuler la validation d'un bloc
    */
   const unvalidateBlock = useCallback(async (blockKey: string) => {
-    if (!workingProposal) return
-    
     try {
-      await proposalsApi.unvalidateBlock(workingProposal.id, blockKey)
-      
-      setWorkingProposal(prev => {
-        if (!prev) return prev
+      if (isGroupMode) {
+        if (!workingGroup) return
         
-        const newApprovedBlocks = { ...prev.approvedBlocks }
-        delete newApprovedBlocks[blockKey]
+        // Annuler pour toutes les propositions du groupe
+        await Promise.all(
+          workingGroup.ids.map(id => proposalsApi.unvalidateBlock(id, blockKey))
+        )
         
-        return {
-          ...prev,
-          approvedBlocks: newApprovedBlocks
-        }
-      })
-      
-      queryClient.invalidateQueries({ queryKey: ['proposals', workingProposal.id] })
-      
-      enqueueSnackbar(`Bloc "${blockKey}" dévalidé`, { variant: 'success' })
+        setWorkingGroup(prev => {
+          if (!prev) return prev
+          
+          const newApprovedBlocks = { ...prev.approvedBlocks }
+          delete newApprovedBlocks[blockKey]
+          
+          return {
+            ...prev,
+            approvedBlocks: newApprovedBlocks
+          }
+        })
+        
+        enqueueSnackbar(`Bloc "${blockKey}" dévalidé pour ${workingGroup.ids.length} proposition(s)`, { variant: 'success' })
+      } else {
+        if (!workingProposal) return
+        
+        await proposalsApi.unvalidateBlock(workingProposal.id, blockKey)
+        
+        setWorkingProposal(prev => {
+          if (!prev) return prev
+          
+          const newApprovedBlocks = { ...prev.approvedBlocks }
+          delete newApprovedBlocks[blockKey]
+          
+          return {
+            ...prev,
+            approvedBlocks: newApprovedBlocks
+          }
+        })
+        
+        queryClient.invalidateQueries({ queryKey: ['proposals', workingProposal.id] })
+        
+        enqueueSnackbar(`Bloc "${blockKey}" dévalidé`, { variant: 'success' })
+      }
     } catch (err) {
       enqueueSnackbar('Erreur lors de la dévalidation du bloc', { variant: 'error' })
       throw err
     }
-  }, [workingProposal, queryClient, enqueueSnackbar])
+  }, [isGroupMode, workingGroup, workingProposal, queryClient, enqueueSnackbar])
   
   /**
    * Construire le payload pour un bloc spécifique
