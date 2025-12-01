@@ -249,9 +249,9 @@ export function useProposalEditor(
    * ✅ Filtre PENDING vs historiques pour éviter pollution de l'état
    */
   const initializeWorkingGroup = (proposals: Proposal[]): WorkingProposalGroup => {
-    // ✅ Séparer les propositions PENDING des propositions déjà traitées
-    const pendingProposals = proposals.filter(p => p.status === 'PENDING')
-    const historicalProposals = proposals.filter(p => p.status !== 'PENDING')
+    // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
+    const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
+    const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
     const approvedProposals = proposals.filter(p => p.status === 'APPROVED')
     
     const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation

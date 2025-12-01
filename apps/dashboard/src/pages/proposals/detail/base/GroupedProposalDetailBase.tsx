@@ -206,20 +206,42 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   
   // ✅ Phase 4: Consolider les changements depuis workingGroup
   const consolidatedChanges = useMemo(() => {
-    if (!workingGroup) return []
+    if (!workingGroup) {
+      console.log('🚨 [PARTIALLY_APPROVED DEBUG] workingGroup est null')
+      return []
+    }
+    
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] workingGroup:', {
+      proposalCount: workingGroup.originalProposals.length,
+      statuses: workingGroup.originalProposals.map(p => p.status),
+      consolidatedChangesCount: workingGroup.consolidatedChanges.length,
+      approvedBlocks: workingGroup.originalProposals[0]?.approvedBlocks
+    })
     
     const isEventUpdateDisplay = workingGroup.originalProposals[0]?.type === 'EVENT_UPDATE'
     
     // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
-    return isEventUpdateDisplay
+    const filtered = isEventUpdateDisplay
       ? workingGroup.consolidatedChanges.filter(c => 
           c.field !== 'calendarStatus' && c.field !== 'timeZone'
         )
       : workingGroup.consolidatedChanges
+    
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] consolidatedChanges:', {
+      count: filtered.length,
+      fields: filtered.map(c => c.field)
+    })
+    
+    return filtered
   }, [workingGroup])
   
   const consolidatedRaceChanges = useMemo(() => {
-    return workingGroup?.consolidatedRaces || []
+    const races = workingGroup?.consolidatedRaces || []
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] consolidatedRaceChanges:', {
+      count: races.length,
+      raceIds: races.map(r => r.id)
+    })
+    return races
   }, [workingGroup])
   
   // ✅ Phase 4: Cascade startDate changes to races depuis workingGroup
