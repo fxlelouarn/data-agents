@@ -78,21 +78,23 @@ export class ProposalDomainService {
 
     // 5. Filter changes based on blockType (partial application) or approved blocks
     let filteredSelectedChanges: Record<string, any>
+    let removedChanges: string[] = []  // ✅ Déclarer au bon scope
+    let approvedBlocks: Record<string, boolean> = {}
     
     if (options.blockType) {
       // ✅ NOUVEAU : Filtrage par blockType (application partielle d'un seul bloc)
       filteredSelectedChanges = this.filterChangesByBlock(selectedChanges, options.blockType)
       
-      const removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
+      removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
         this.logger.info(`Filtered out ${removedChanges.length} changes from other blocks: ${removedChanges.join(', ')}`)
       }
     } else {
       // Mode legacy : filtrage par approved blocks
-      const approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+      approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
       filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
       
-      const removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
+      removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
         this.logger.info(`Filtered out ${removedChanges.length} changes from unapproved blocks: ${removedChanges.join(', ')}`)
       }

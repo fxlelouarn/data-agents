@@ -30,7 +30,7 @@ import {
   Refresh as RefreshIcon,
   Delete as DeleteIcon,
 } from '@mui/icons-material'
-import { useUpdates, useApplyUpdate, useDeleteUpdate } from '@/hooks/useApi'
+import { useUpdates, useApplyUpdate, useReplayUpdate, useDeleteUpdate } from '@/hooks/useApi'
 import { DataUpdate, UpdateStatus } from '@/types'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -44,6 +44,7 @@ const UpdateGroupDetail: React.FC = () => {
   // Récupérer toutes les updates et filtrer par proposalIds
   const { data: updatesData, isLoading, error } = useUpdates({}, 1000, 0)
   const applyUpdateMutation = useApplyUpdate()
+  const replayUpdateMutation = useReplayUpdate()
   const deleteUpdateMutation = useDeleteUpdate()
 
   // Extraire proposalIds depuis groupId
@@ -70,7 +71,9 @@ const UpdateGroupDetail: React.FC = () => {
 
     return {
       eventName: firstApp.context?.eventName || firstApp.proposal?.eventName || 'Événement',
+      eventId: firstApp.proposal?.eventId,
       editionYear: firstApp.context?.editionYear,
+      editionId: firstApp.proposal?.editionId,
       proposalType: firstApp.proposal?.type,
       agentName: firstApp.proposal?.agent?.name,
       blocks,
@@ -121,6 +124,22 @@ const UpdateGroupDetail: React.FC = () => {
       }
     } catch (error) {
       console.error('Error applying all blocks:', error)
+    }
+  }
+
+  const handleReplayAllBlocks = async () => {
+    try {
+      const failedApps = groupUpdates.filter(a => a.status === 'FAILED')
+      
+      // Rejouer tous les blocs en erreur en séquence
+      for (const app of failedApps) {
+        // 1. Reset à PENDING via /replay
+        await replayUpdateMutation.mutateAsync(app.id)
+        // 2. Appliquer via /apply
+        await applyUpdateMutation.mutateAsync(app.id)
+      }
+    } catch (error) {
+      console.error('Error replaying all blocks:', error)
     }
   }
 
@@ -201,19 +220,34 @@ const UpdateGroupDetail: React.FC = () => {
         
         {/* Droite: Actions principales */}
         <Box sx={{ display: 'flex', gap: 1 }}>
-          <Button
-            variant="contained"
-            color="success"
-            size="small"
-            startIcon={<RefreshIcon />}
-            onClick={handleApplyAllBlocks}
-            disabled={
-              groupUpdates.every(a => a.status === 'APPLIED') ||
-              applyUpdateMutation.isPending
-            }
-          >
-            Appliquer tous les blocs
-          </Button>
+          {/* Bouton "Rejouer tous les blocs" si au moins un bloc en erreur */}
+          {groupUpdates.some(a => a.status === 'FAILED') && (
+            <Button
+              variant="contained"
+              color="error"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={handleReplayAllBlocks}
+              disabled={replayUpdateMutation.isPending || applyUpdateMutation.isPending}
+            >
+              Rejouer tous les blocs
+            </Button>
+          )}
+          
+          {/* Bouton "Appliquer tous les blocs" si au moins un bloc en attente */}
+          {groupUpdates.some(a => a.status === 'PENDING') && (
+            <Button
+              variant="contained"
+              color="success"
+              size="small"
+              startIcon={<RefreshIcon />}
+              onClick={handleApplyAllBlocks}
+              disabled={applyUpdateMutation.isPending}
+            >
+              Appliquer tous les blocs
+            </Button>
+          )}
+          
           <Button
             variant="outlined"
             size="small"
@@ -229,6 +263,11 @@ const UpdateGroupDetail: React.FC = () => {
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
           <Typography variant="h4" sx={{ fontWeight: 600 }}>
             {groupMetadata.eventName}
+            {groupMetadata.eventId && (
+              <Typography component="span" variant="h6" color="text.secondary" sx={{ ml: 1 }}>
+                (ID: {groupMetadata.eventId})
+              </Typography>
+            )}
           </Typography>
           <Chip
             label={getStatusLabel(groupMetadata.status)}
@@ -240,6 +279,11 @@ const UpdateGroupDetail: React.FC = () => {
         {groupMetadata.editionYear && (
           <Typography variant="h6" color="text.secondary" sx={{ mb: 1 }}>
             Édition {groupMetadata.editionYear}
+            {groupMetadata.editionId && (
+              <Typography component="span" variant="body2" sx={{ ml: 1 }}>
+                (ID: {groupMetadata.editionId})
+              </Typography>
+            )}
           </Typography>
         )}
       </Box>
@@ -381,6 +425,28 @@ const UpdateGroupDetail: React.FC = () => {
                         color="primary"
                         onClick={() => handleApplyUpdate(app.id)}
                         disabled={applyUpdateMutation.isPending}
+                      >
+                        <RefreshIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  )}
+
+                  {app.status === 'FAILED' && (
+                    <Tooltip title="Rejouer">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={async () => {
+                          try {
+                            // 1. Reset à PENDING via /replay
+                            await replayUpdateMutation.mutateAsync(app.id)
+                            // 2. Appliquer via /apply
+                            await applyUpdateMutation.mutateAsync(app.id)
+                          } catch (error) {
+                            console.error('Error replaying block:', error)
+                          }
+                        }}
+                        disabled={replayUpdateMutation.isPending || applyUpdateMutation.isPending}
                       >
                         <RefreshIcon fontSize="small" />
                       </IconButton>
