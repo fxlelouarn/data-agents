@@ -100,6 +100,22 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
       return organizerData.proposed?.[fieldName]
     }
 
+    // ✅ Cas spécial racesToDelete : Extraire depuis raceEdits
+    if (fieldName === 'racesToDelete' && userModifiedChanges.raceEdits) {
+      const deletedRaces: any[] = []
+      Object.entries(userModifiedChanges.raceEdits).forEach(([key, mods]: [string, any]) => {
+        if (mods._deleted === true) {
+          // Extraire le raceId depuis la clé (ex: "existing-0" -> besoin de récupérer le vrai ID)
+          // Pour l'instant, on affiche juste la clé
+          deletedRaces.push({
+            raceId: key,
+            raceName: `Course ${key}`
+          })
+        }
+      })
+      if (deletedRaces.length > 0) return deletedRaces
+    }
+
     // Priorité aux modifications utilisateur
     if (userModifiedChanges[fieldName] !== undefined) {
       return userModifiedChanges[fieldName]
