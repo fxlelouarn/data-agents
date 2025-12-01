@@ -433,7 +433,8 @@ const UpdateList: React.FC = () => {
                       const target = e.target as HTMLElement
                       if (!target.closest('.MuiAccordionSummary-expandIconWrapper')) {
                         e.stopPropagation()
-                        navigate(`/updates/group/${group.proposalIds.join('-')}`)
+                        // Utiliser l'ID de la première application du groupe
+                        navigate(`/updates/group/${group.applications[0].id}`)
                       }
                     }}
                   >

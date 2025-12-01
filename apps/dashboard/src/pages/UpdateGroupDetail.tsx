@@ -47,18 +47,23 @@ const UpdateGroupDetail: React.FC = () => {
   const replayUpdateMutation = useReplayUpdate()
   const deleteUpdateMutation = useDeleteUpdate()
 
-  // Extraire proposalIds depuis groupId
-  const proposalIds = groupId ? groupId.split('-') : []
+  // Trouver l'update correspondant au groupId
+  const targetUpdate = React.useMemo(() => {
+    if (!updatesData?.data || !groupId) return null
+    return (updatesData.data as DataUpdate[]).find(app => app.id === groupId)
+  }, [updatesData, groupId])
 
   // Filtrer les updates appartenant à ce groupe
   const groupUpdates = React.useMemo(() => {
-    if (!updatesData?.data) return []
+    if (!targetUpdate) return []
+    
+    const proposalIds = targetUpdate.proposalIds || (targetUpdate.proposalId ? [targetUpdate.proposalId] : [])
     
     return (updatesData.data as DataUpdate[]).filter(app => {
       const appProposalIds = app.proposalIds || [app.proposalId]
-      return proposalIds.every(id => appProposalIds.includes(id))
+      return proposalIds.some(id => appProposalIds.includes(id))
     })
-  }, [updatesData, proposalIds])
+  }, [updatesData, targetUpdate])
 
   // Métadonnées du groupe
   const groupMetadata = React.useMemo(() => {
@@ -251,7 +256,13 @@ const UpdateGroupDetail: React.FC = () => {
           <Button
             variant="outlined"
             size="small"
-            onClick={() => navigate(`/proposals/group/${proposalIds.join('-')}`)}
+            onClick={() => {
+              // Construire l'URL de la proposition groupée : eventId-editionId
+              if (groupMetadata?.eventId && groupMetadata?.editionId) {
+                navigate(`/proposals/group/${groupMetadata.eventId}-${groupMetadata.editionId}`)
+              }
+            }}
+            disabled={!groupMetadata?.eventId || !groupMetadata?.editionId}
           >
             Voir la proposition
           </Button>
@@ -479,8 +490,12 @@ const UpdateGroupDetail: React.FC = () => {
                 {app.blockType ? (
                   <BlockChangesTable
                     blockType={app.blockType}
-                    changes={app.proposal?.changes || {}}
-                    userModifiedChanges={app.proposal?.userModifiedChanges || {}}
+                    appliedChanges={app.appliedChanges}  // ✅ NOUVEAU: Payload complet
+                    isApplied={app.status === 'APPLIED'}  // ✅ Indicateur visuel
+                    
+                    // ⚠️ LEGACY: Fallback pour applications anciennes
+                    changes={!app.appliedChanges ? app.proposal?.changes : undefined}
+                    userModifiedChanges={!app.appliedChanges ? app.proposal?.userModifiedChanges : undefined}
                   />
                 ) : (
                   // Fallback pour applications legacy sans blockType
