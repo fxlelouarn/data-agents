@@ -1112,8 +1112,9 @@ router.post('/validate-block-group', [
     console.log(`✅ Application créée pour bloc "${block}":`, applicationId)
   }
   
-  // ✅ Marquer propositions comme APPROVED seulement si TOUS les blocs validés
+  // ✅ Déterminer le statut selon les blocs validés
   if (allBlocksValidated) {
+    // Tous les blocs validés → APPROVED
     const approvedProposals = await Promise.all(
       proposalIds.map((proposalId: string) =>
         db.updateProposal(proposalId, {
@@ -1128,12 +1129,34 @@ router.post('/validate-block-group', [
       proposalIds,
       statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
     })
+  } else {
+    // Au moins un bloc validé, mais pas tous → PARTIALLY_APPROVED
+    const validatedBlocksCount = Object.values(approvedBlocksObj).filter(Boolean).length
+    
+    if (validatedBlocksCount > 0) {
+      const partiallyApprovedProposals = await Promise.all(
+        proposalIds.map((proposalId: string) =>
+          db.updateProposal(proposalId, {
+            status: 'PARTIALLY_APPROVED',
+            reviewedAt: new Date(),
+            reviewedBy: 'system'
+          })
+        )
+      )
+      
+      console.log(`🔶 ${validatedBlocksCount} bloc(s) validé(s) - Statut mis à jour à PARTIALLY_APPROVED:`, {
+        proposalIds,
+        validatedBlocks: Object.keys(approvedBlocksObj).filter(k => approvedBlocksObj[k]),
+        statuses: partiallyApprovedProposals.map(p => ({ id: p.id, status: p.status }))
+      })
+    }
   }
 
-  // Récupérer les propositions finales (avec statut APPROVED si tous blocs validés)
-  const finalProposals = allBlocksValidated 
-    ? await db.prisma.proposal.findMany({ where: { id: { in: proposalIds } } })
-    : updatedProposals
+  // Récupérer les propositions finales avec le statut mis à jour
+  // On doit recharger depuis la DB car le statut a été changé après updatedProposals
+  const finalProposals = await db.prisma.proposal.findMany({ 
+    where: { id: { in: proposalIds } } 
+  })
   
   console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
 

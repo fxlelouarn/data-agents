@@ -214,6 +214,7 @@ enum ProposalType {
 
 enum ProposalStatus {
   PENDING
+  PARTIALLY_APPROVED  // Au moins un bloc validé, mais pas tous
   APPROVED
   REJECTED
   ARCHIVED

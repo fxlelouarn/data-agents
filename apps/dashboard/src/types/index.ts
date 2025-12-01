@@ -7,7 +7,7 @@ export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 
 export type ProposalType = 'NEW_EVENT' | 'EVENT_UPDATE' | 'EDITION_UPDATE' | 'RACE_UPDATE'
 
-export type ProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+export type ProposalStatus = 'PENDING' | 'PARTIALLY_APPROVED' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
 
 export type UpdateStatus = 'PENDING' | 'APPLIED' | 'FAILED'
 

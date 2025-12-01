@@ -857,11 +857,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const averageConfidence = proposalsWithValidConfidence.length > 0
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
-  // ✅ hasPending = vrai s'il y a AU MOINS UNE proposition PENDING (même avec historique)
+  // ✅ hasPending = vrai s'il y a AU MOINS UNE proposition PENDING ou PARTIALLY_APPROVED
   // Utilisé pour afficher le chip "En attente" et activer les boutons d'édition
-  const hasPending = groupProposals.some(p => p.status === 'PENDING')
-  // ✅ allPending = vrai si TOUTES les propositions sont PENDING (pour compatibilité)
-  const allPending = groupProposals.every(p => p.status === 'PENDING')
+  const hasPending = groupProposals.some(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
+  // ✅ allPending = vrai si TOUTES les propositions sont PENDING ou PARTIALLY_APPROVED (pour compatibilité)
+  const allPending = groupProposals.every(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
   
   // Identifier les propositions par bloc
   // ✅ Phase 2 Étape 3 : Utiliser workingGroup si disponible

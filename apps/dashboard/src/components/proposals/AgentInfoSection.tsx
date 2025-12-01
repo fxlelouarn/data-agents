@@ -30,7 +30,7 @@ interface Proposal {
   confidence: number
   createdAt: string
   type: string
-  status: 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+  status: 'PENDING' | 'PARTIALLY_APPROVED' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
   // Champs enrichis pour affichage
   eventName?: string
   eventCity?: string
@@ -53,9 +53,9 @@ interface AgentInfoSectionProps {
 }
 
 const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
-  // ✅ Séparer les propositions PENDING des propositions déjà traitées
-  const pendingProposals = proposals.filter(p => p.status === 'PENDING')
-  const historicalProposals = proposals.filter(p => p.status !== 'PENDING')
+  // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
+  const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
+  const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
   
   const formatDate = (dateString: string) => {
     try {
@@ -73,6 +73,8 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
     switch (status) {
       case 'APPROVED':
         return <CheckIcon sx={{ fontSize: '1rem', color: 'success.main' }} />
+      case 'PARTIALLY_APPROVED':
+        return <CheckIcon sx={{ fontSize: '1rem', color: 'info.main' }} />
       case 'REJECTED':
         return <CancelIcon sx={{ fontSize: '1rem', color: 'error.main' }} />
       case 'ARCHIVED':
@@ -86,6 +88,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
   const getStatusLabel = (status: string) => {
     switch (status) {
       case 'APPROVED': return 'Approuvée'
+      case 'PARTIALLY_APPROVED': return 'Partiellement approuvée'
       case 'REJECTED': return 'Rejetée'
       case 'ARCHIVED': return 'Archivée'
       case 'PENDING': return 'En attente'
