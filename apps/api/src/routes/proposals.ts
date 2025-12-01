@@ -1036,18 +1036,47 @@ router.post('/validate-block-group', [
     })
   )
 
-  // Vérifier si tous les blocs EXISTANTS sont validés pour marquer les propositions comme APPROVED
-  // On ne vérifie que les blocs qui ont effectivement été proposés/modifiés
+  // Vérifier si tous les blocs ATTENDUS sont validés pour marquer les propositions comme APPROVED
+  // On détermine les blocs attendus depuis le contenu de changes
   const firstProposal = updatedProposals[0]
   const approvedBlocksObj = firstProposal.approvedBlocks as Record<string, boolean>
-  const existingBlocks = Object.keys(approvedBlocksObj)
   
-  // Tous les blocs existants doivent être validés
-  const allBlocksValidated = existingBlocks.length > 0 && 
-    existingBlocks.every(blockKey => approvedBlocksObj[blockKey] === true)
+  // ✅ Déterminer les blocs ATTENDUS en analysant les changes
+  const expectedBlocks = new Set<string>()
+  const proposalChanges = firstProposal.changes as Record<string, any>
+  
+  // Analyser les champs pour déterminer les blocs nécessaires
+  const eventFields = ['name', 'city', 'country', 'countrySubdivisionNameLevel1', 
+    'countrySubdivisionNameLevel2', 'fullAddress', 'latitude', 'longitude',
+    'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl']
+  const editionFields = ['year', 'startDate', 'endDate', 'calendarStatus', 'timeZone',
+    'registrationStartDate', 'registrationEndDate', 'registrantsNumber']
+  
+  Object.keys(proposalChanges).forEach(field => {
+    if (eventFields.includes(field)) {
+      expectedBlocks.add('event')
+    } else if (editionFields.includes(field)) {
+      expectedBlocks.add('edition')
+    } else if (field === 'organizer') {
+      expectedBlocks.add('organizer')
+    } else if (field === 'races' || field === 'racesToAdd' || field === 'racesToUpdate') {
+      expectedBlocks.add('races')
+    }
+  })
+  
+  // Pour NEW_EVENT, on attend toujours les blocs: event, edition, races (organizer optionnel)
+  if (firstProposal.type === 'NEW_EVENT') {
+    expectedBlocks.add('event')
+    expectedBlocks.add('edition')
+    // races optionnel pour NEW_EVENT
+  }
+  
+  // Tous les blocs attendus doivent être validés
+  const allBlocksValidated = expectedBlocks.size > 0 && 
+    Array.from(expectedBlocks).every(blockKey => approvedBlocksObj[blockKey] === true)
 
   console.log('🔍 Vérification blocs:', {
-    existingBlocks,
+    expectedBlocks: Array.from(expectedBlocks),
     approvedBlocksObj,
     allBlocksValidated,
     willApprove: allBlocksValidated
