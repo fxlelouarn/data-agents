@@ -515,6 +515,16 @@ export class MilesRepublicRepository {
   }
   
   /**
+   * Find all races by edition ID
+   */
+  async findRacesByEditionId(editionId: number) {
+    return this.milesDb.race.findMany({
+      where: { editionId },
+      orderBy: { name: 'asc' }
+    })
+  }
+  
+  /**
    * Delete a race (soft delete)
    * ✅ V2: Utilise isArchived au lieu de archivedAt
    */

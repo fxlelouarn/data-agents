@@ -55,7 +55,7 @@ const UpdateGroupDetail: React.FC = () => {
 
   // Filtrer les updates appartenant à ce groupe
   const groupUpdates = React.useMemo(() => {
-    if (!targetUpdate) return []
+    if (!targetUpdate || !updatesData?.data) return []
     
     const proposalIds = targetUpdate.proposalIds || (targetUpdate.proposalId ? [targetUpdate.proposalId] : [])
     
@@ -70,7 +70,7 @@ const UpdateGroupDetail: React.FC = () => {
     if (groupUpdates.length === 0) return null
 
     const firstApp = groupUpdates[0]
-    const blocks = [...new Set(groupUpdates.map(a => a.blockType).filter(Boolean))]
+    const blocks = [...new Set(groupUpdates.map(a => a.blockType).filter(Boolean))] as string[]
     const hasAnyPending = groupUpdates.some(a => a.status === 'PENDING')
     const allApplied = groupUpdates.every(a => a.status === 'APPLIED')
 
@@ -281,9 +281,9 @@ const UpdateGroupDetail: React.FC = () => {
             )}
           </Typography>
           <Chip
-            label={getStatusLabel(groupMetadata.status)}
-            color={getStatusColor(groupMetadata.status) as any}
-            icon={getStatusIcon(groupMetadata.status) || undefined}
+            label={getStatusLabel(groupMetadata.status as UpdateStatus)}
+            color={getStatusColor(groupMetadata.status as UpdateStatus) as any}
+            icon={getStatusIcon(groupMetadata.status as UpdateStatus) || undefined}
           />
         </Box>
 
@@ -396,7 +396,7 @@ const UpdateGroupDetail: React.FC = () => {
                 {/* Bloc */}
                 {app.blockType && (
                   <Chip
-                    label={blockLabels[app.blockType] || app.blockType}
+                    label={blockLabels[app.blockType as string] || app.blockType}
                     size="small"
                     color="primary"
                     variant="outlined"

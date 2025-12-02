@@ -111,6 +111,7 @@ export interface Proposal {
   previousEditionYear?: number
   previousEditionStartDate?: string
   eventStatus?: 'DEAD' | 'DRAFT' | 'REVIEW' | 'LIVE' | 'DELETED'
+  isFeatured?: boolean  // ✅ Enrichi depuis Event.isFeatured (Miles Republic)
 }
 
 export interface AgentStatus {

@@ -246,8 +246,8 @@ const UpdateList: React.FC = () => {
       eventName: apps[0].context?.eventName || apps[0].proposal?.eventName || 'Mise à jour',
       editionYear: apps[0].context?.editionYear,
       blocks: apps.map(a => a.blockType).filter(Boolean),
-      status: apps.some(a => a.status === 'PENDING') ? 'PENDING' : 
-              apps.every(a => a.status === 'APPLIED') ? 'APPLIED' : 'FAILED'
+      status: (apps.some(a => a.status === 'PENDING') ? 'PENDING' : 
+              apps.every(a => a.status === 'APPLIED') ? 'APPLIED' : 'FAILED') as UpdateStatus
     }))
   }, [updates])
 

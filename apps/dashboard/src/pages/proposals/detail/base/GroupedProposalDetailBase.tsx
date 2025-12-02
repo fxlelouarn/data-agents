@@ -239,7 +239,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     const races = workingGroup?.consolidatedRaces || []
     console.log('🔍 [PARTIALLY_APPROVED DEBUG] consolidatedRaceChanges:', {
       count: races.length,
-      raceIds: races.map(r => r.id)
+      raceIds: races.map(r => r.raceId)  // ✅ Fix: raceId au lieu de id
     })
     return races
   }, [workingGroup])

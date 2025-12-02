@@ -9,7 +9,8 @@ interface CategorizedEventChangesTableProps extends Omit<BaseChangesTableProps, 
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
-  isFeaturedEvent?: boolean // Indicateur si l'événement est mis en avant
+  // ✅ Note: isFeaturedEvent retiré temporairement (non utilisé)
+  // Peut être ré-ajouté pour affichage warning si Event.isFeatured = true
   // Affichage colonnes
   showCurrentValue?: boolean
   showConfidence?: boolean
@@ -26,7 +27,6 @@ const CategorizedEventChangesTable: React.FC<CategorizedEventChangesTableProps> 
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
-  isFeaturedEvent = false,
   showCurrentValue = true,
   showConfidence = true,
   showActions = true,
@@ -49,7 +49,6 @@ const CategorizedEventChangesTable: React.FC<CategorizedEventChangesTableProps> 
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}
-      isFeaturedEvent={isFeaturedEvent}
       showCurrentValue={showCurrentValue}
       showConfidence={showConfidence}
       showActions={showActions}

@@ -100,7 +100,6 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               onUnvalidateBlock={() => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
               validationDisabled={isAllApproved}
-              isFeaturedEvent={groupProposals[0]?.isFeatured}
             />
             
             {/* Table des champs Edition */}
@@ -124,7 +123,6 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               onUnvalidateBlock={() => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
               validationDisabled={isAllApproved}
-              isFeaturedEvent={groupProposals[0]?.isFeatured}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
             
@@ -141,7 +139,6 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
-                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -157,11 +154,10 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               onUnvalidateBlock={() => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
               validationDisabled={isEventDead || isAllApproved}
-              isFeaturedEvent={groupProposals[0]?.isFeatured}
             />
             
             {/* Sources des dates extraites */}
-            <DateSourcesSection
+            <DateSourcesSection 
               justifications={groupProposals.flatMap(p => p.justification || [])} 
             />
           </>

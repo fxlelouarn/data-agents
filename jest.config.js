@@ -17,6 +17,7 @@ module.exports = {
         resolveJsonModule: true,
         isolatedModules: true,
         jsx: 'react',
+        strictNullChecks: false,
       }
     }]
   },

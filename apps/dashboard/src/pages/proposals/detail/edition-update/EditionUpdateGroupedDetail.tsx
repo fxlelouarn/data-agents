@@ -108,7 +108,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('event')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
-                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -134,7 +133,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
-                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -151,7 +149,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
-                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             
@@ -168,7 +165,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 onUnvalidateBlock={() => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
-                isFeaturedEvent={groupProposals[0]?.isFeatured}
               />
             )}
             

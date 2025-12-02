@@ -363,7 +363,8 @@ export async function enrichProposal(proposal: any) {
             name: true,
             city: true,
             status: true,
-            slug: true
+            slug: true,
+            isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
           }
         })
         console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
@@ -379,7 +380,8 @@ export async function enrichProposal(proposal: any) {
           eventName: event.name,
           eventCity: event.city,
           eventStatus: event.status,
-          eventSlug: event.slug
+          eventSlug: event.slug,
+          isFeatured: event.isFeatured  // ✅ Alerter si Event featured
         }
       }
     } catch (error) {
@@ -475,12 +477,13 @@ export async function enrichProposal(proposal: any) {
         const queryStart = Date.now()
         event = await connection.event.findUnique({
           where: { id: numericEventId },
-          select: { 
-            name: true,
-            city: true,
-            status: true,
-            slug: true
-          }
+            select: {
+              name: true,
+              city: true,
+              status: true,
+              slug: true,
+              isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
+            }
         })
         console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
         if (event) enrichmentCache.set(eventCacheKey, event)
@@ -489,12 +492,13 @@ export async function enrichProposal(proposal: any) {
       }
       
       // Base enrichment avec event info
-      const enriched: any = {
+      const enriched = {
         ...proposal,
         eventName: event?.name,
         eventCity: event?.city,
         eventStatus: event?.status,
         eventSlug: event?.slug,
+        isFeatured: event?.isFeatured,  // ✅ Alerter si Event featured
         editionYear: editionYear
       }
 

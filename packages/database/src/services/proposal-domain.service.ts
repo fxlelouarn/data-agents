@@ -799,57 +799,88 @@ export class ProposalDomainService {
       })
       
       const existingRaceEdits = Object.keys(raceEdits)
-        .filter(key => key.startsWith('existing-'))
+        .filter(key => key.startsWith('existing-') && !raceEdits[key]._deleted)
         .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
       
-      if (existingRaceEdits.length > 0) {
-        this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
+      // ✅ FIX: Construire racesToDelete depuis raceEdits._deleted
+      const racesToDeleteFromEdits = Object.keys(raceEdits)
+        .filter(key => key.startsWith('existing-') && raceEdits[key]._deleted === true)
+        .map(key => parseInt(key.replace('existing-', '')))
+      
+      this.logger.info(`🐞 [DEBUG] Edits+Deletes counts:`, {
+        existingRaceEdits: existingRaceEdits.length,
+        racesToDeleteFromEdits: racesToDeleteFromEdits.length,
+        racesToDeleteIndexes: racesToDeleteFromEdits
+      })
+      
+      if (existingRaceEdits.length > 0 || racesToDeleteFromEdits.length > 0) {
+        // ✅ FIX: Créer un mapping index → raceId depuis racesToUpdate
+        // existing-0 fait référence à racesToUpdate[0], pas à existingRaces[0]
+        const indexToRaceId = new Map<number, number>()
+        if (racesToUpdate && Array.isArray(racesToUpdate)) {
+          racesToUpdate.forEach((raceUpdate, i) => {
+            const raceId = parseInt(raceUpdate.raceId)
+            if (!isNaN(raceId)) {
+              indexToRaceId.set(i, raceId)
+            }
+          })
+        }
         
-        // Récupérer les courses existantes enrichies
-        const existingRaces = (proposal as any).existingRaces || []
-        
-        this.logger.info(`🏁 [EXISTING RACES] Courses existantes enrichies:`, {
-          count: existingRaces.length,
-          races: existingRaces.map((r: any) => ({ id: r.id, name: r.name, currentStartDate: r._current?.startDate }))
+        this.logger.info(`🔗 [INDEX MAPPING] Map index → raceId:`, {
+          mappingSize: indexToRaceId.size,
+          mapping: Array.from(indexToRaceId.entries()).map(([idx, id]) => `${idx}→${id}`)
         })
         
-        // ⚠️ Si existingRaces n'est pas peuplé, on ne peut pas appliquer les raceEdits
-        // Cela arrive quand la proposition n'a pas été enrichie avec les données Miles Republic
-        if (existingRaces.length === 0) {
-          this.logger.warn(`⚠️  Impossible d'appliquer les raceEdits: existingRaces n'est pas peuplé. Les modifications utilisateur des courses ont probablement déjà été appliquées via racesToUpdate.`)
-          // Les modifications utilisateur ont déjà été mergées dans 'changes' (racesToUpdate)
-          // donc elles ont été appliquées dans la section précédente
-        } else {
+        // Traiter les suppressions
+        if (racesToDeleteFromEdits.length > 0) {
+          this.logger.info(`🗑️  Suppression de ${racesToDeleteFromEdits.length} course(s) (via raceEdits._deleted)`)
+          
+          for (const index of racesToDeleteFromEdits) {
+            const raceId = indexToRaceId.get(index)
+            if (!raceId) {
+              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
+              continue
+            }
+            
+            await milesRepo.deleteRace(raceId)
+            this.logger.info(`  ✅ Course ${raceId} (index ${index}) supprimée`)
+          }
+        }
+        
+        // Traiter les modifications
+        if (existingRaceEdits.length > 0) {
+          this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
+          
           for (const { index, edits } of existingRaceEdits) {
-            const race = existingRaces[index]
-            if (!race) {
-              this.logger.warn(`  ⚠️  Course index ${index} introuvable dans existingRaces`)
+            const raceId = indexToRaceId.get(index)
+            if (!raceId) {
+              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
               continue
             }
           
-          const updateData: any = {}
-          
-          if (edits.name) updateData.name = edits.name
-          if (edits.type) updateData.type = edits.type
-          if (edits.startDate) updateData.startDate = new Date(edits.startDate)
-          
-          // Distances : supporter distance (legacy) et tous les types spécifiques
-          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
-          if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
-          if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
-          if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
-          if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
-          
-          // Élévations : supporter elevation (legacy) et tous les types spécifiques
-          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
-          if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
-          if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
-          if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
-          
-          if (Object.keys(updateData).length > 0) {
-            await milesRepo.updateRace(race.id, updateData)
-            this.logger.info(`  ✅ Course ${race.id} (${race.name}) mise à jour via edits utilisateur:`, updateData)
-          }
+            const updateData: any = {}
+            
+            if (edits.name) updateData.name = edits.name
+            if (edits.type) updateData.type = edits.type
+            if (edits.startDate) updateData.startDate = new Date(edits.startDate)
+            
+            // Distances : supporter distance (legacy) et tous les types spécifiques
+            if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
+            if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
+            if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
+            if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
+            if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
+            
+            // Élévations : supporter elevation (legacy) et tous les types spécifiques
+            if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
+            if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
+            if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
+            if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
+            
+            if (Object.keys(updateData).length > 0) {
+              await milesRepo.updateRace(raceId, updateData)
+              this.logger.info(`  ✅ Course ${raceId} (index ${index}) mise à jour via edits utilisateur:`, updateData)
+            }
           }
         }
       }
