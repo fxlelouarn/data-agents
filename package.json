@@ -41,6 +41,8 @@
     "test:proposals:user-mods": "jest apps/agents/src/__tests__/proposal-application/user-modifications.test.ts --runInBand",
     "test:proposals:watch": "jest apps/agents/src/__tests__/proposal-application --watch --runInBand",
     "test:proposals:coverage": "jest apps/agents/src/__tests__/proposal-application --coverage --runInBand",
+    "test:setup-db": "./scripts/setup-test-databases.sh",
+    "test:fix-auto": "node scripts/fix-tests-auto.js",
     "show-versions": "tsx scripts/show-agent-versions.ts",
     "sync-agents": "tsx scripts/sync-agents.ts",
     "reset-agents": "tsx scripts/reset-agents.ts",
@@ -59,7 +61,11 @@
     "format": "turbo format"
   },
   "devDependencies": {
+    "@jest/globals": "^30.2.0",
+    "@types/jest": "^30.0.0",
     "@types/node": "^20.0.0",
+    "jest": "^30.2.0",
+    "ts-jest": "^29.4.5",
     "ts-node": "^10.9.2",
     "typescript": "^5.0.4"
   },

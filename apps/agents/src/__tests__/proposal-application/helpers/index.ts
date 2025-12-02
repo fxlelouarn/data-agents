@@ -21,6 +21,14 @@ export {
   runInTransaction
 } from './db-setup'
 
+// Service setup
+export {
+  setupProposalService,
+  cleanupProposalService,
+  setupTestEnvironment,
+  testLogger
+} from './service-setup'
+
 // Fixtures
 export {
   createNewEventProposal,

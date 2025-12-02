@@ -1,7 +1,8 @@
 import { PrismaClient } from '@prisma/client'
+import path from 'path'
 
 /**
- * Client Prisma dédié aux tests
+ * Client Prisma dédié aux tests (data-agents schema)
  * Utilise DATABASE_TEST_URL ou une base locale par défaut
  */
 export const testDb = new PrismaClient({
@@ -15,8 +16,14 @@ export const testDb = new PrismaClient({
 
 /**
  * Client Prisma pour Miles Republic (tests nécessitant la base MR)
+ * ✅ Utilise le client généré depuis apps/agents/prisma/miles-republic.prisma
+ * ✅ Import dynamique pour éviter les problèmes de chemin avec Jest
  */
-export const testMilesRepublicDb = new PrismaClient({
+// ✅ Utiliser process.cwd() depuis la racine du projet
+const clientMilesPath = path.resolve(process.cwd(), 'node_modules/.prisma/client-miles')
+const { PrismaClient: MilesPrismaClient } = require(clientMilesPath)
+
+export const testMilesRepublicDb = new MilesPrismaClient({
   datasources: {
     db: {
       url: process.env.MILES_REPUBLIC_TEST_DATABASE_URL || process.env.MILES_REPUBLIC_DATABASE_URL
@@ -32,13 +39,13 @@ export const testMilesRepublicDb = new PrismaClient({
 export const cleanDatabase = async () => {
   try {
     await testDb.$transaction([
-      testDb.$executeRaw`TRUNCATE TABLE "ProposalApplication" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "Proposal" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "AgentState" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "AgentRun" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "Agent" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "Connection" CASCADE`,
-      testDb.$executeRaw`TRUNCATE TABLE "Log" CASCADE`
+      testDb.$executeRaw`TRUNCATE TABLE "proposal_applications" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "proposals" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "agent_states" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "agent_runs" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "agents" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "database_connections" CASCADE`,
+      testDb.$executeRaw`TRUNCATE TABLE "agent_logs" CASCADE`
     ])
   } catch (error) {
     console.error('❌ Error cleaning database:', error)
@@ -55,8 +62,7 @@ export const cleanMilesRepublicDatabase = async () => {
     await testMilesRepublicDb.$transaction([
       testMilesRepublicDb.$executeRaw`TRUNCATE TABLE "Race" CASCADE`,
       testMilesRepublicDb.$executeRaw`TRUNCATE TABLE "Edition" CASCADE`,
-      testMilesRepublicDb.$executeRaw`TRUNCATE TABLE "Event" CASCADE`,
-      testMilesRepublicDb.$executeRaw`TRUNCATE TABLE "Organizer" CASCADE`
+      testMilesRepublicDb.$executeRaw`TRUNCATE TABLE "Event" CASCADE`
     ])
   } catch (error) {
     console.error('❌ Error cleaning Miles Republic database:', error)

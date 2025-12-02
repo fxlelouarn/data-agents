@@ -34,59 +34,96 @@ const deepMerge = (target: any, source: any): any => {
  * Crée une proposition NEW_EVENT avec valeurs par défaut
  * 
  * @param overrides - Valeurs personnalisées
+ * @param saveToDb - Si true, sauvegarde la proposition en DB (défaut: true)
  * @returns Proposition complète prête à être appliquée
  * 
  * @example
- * const proposal = createNewEventProposal({
- *   name: 'Trail des Loups',
- *   city: 'Bonnefontaine'
+ * const proposal = await createNewEventProposal({
+ *   changes: {
+ *     name: 'Trail des Loups',
+ *     city: 'Bonnefontaine'
+ *   }
  * })
  */
-export const createNewEventProposal = (overrides: any = {}) => {
-  const baseProposal = {
-    id: generateTestId(),
-    type: 'NEW_EVENT',
-    agentId: 'test-agent',
-    status: 'APPROVED',
-    changes: {
-      name: 'Trail Test',
-      city: 'Paris',
-      country: 'France',
-      countrySubdivision: 'Île-de-France',
-      websiteUrl: null,
-      facebookUrl: null,
-      edition: {
-        new: {
-          year: 2026,
-          startDate: '2026-03-15T09:00:00.000Z',
-          endDate: '2026-03-15T18:00:00.000Z',
-          timeZone: 'Europe/Paris',
-          calendarStatus: 'CONFIRMED',
-          races: []
-        }
-      },
-      organizer: {
-        new: null
+export const createNewEventProposal = async (overrides: any = {}, saveToDb: boolean = true) => {
+  const baseChanges = {
+    name: 'Trail Test',
+    city: 'Paris',
+    country: 'France',
+    countrySubdivision: 'Île-de-France',
+    websiteUrl: null,
+    facebookUrl: null,
+    edition: {
+      new: {
+        year: 2026,
+        startDate: '2026-03-15T09:00:00.000Z',
+        endDate: '2026-03-15T18:00:00.000Z',
+        timeZone: 'Europe/Paris',
+        calendarStatus: 'CONFIRMED',
+        races: []
       }
     },
-    selectedChanges: {},
-    userModifiedChanges: {},
-    userModifiedRaceChanges: {},
-    justification: {},
-    confidence: 0.9,
-    eventName: 'Trail Test',
-    eventCity: 'Paris',
-    editionYear: 2026,
-    createdAt: new Date(),
-    updatedAt: new Date()
+    organizer: {
+      new: null
+    }
   }
   
-  const merged = deepMerge(baseProposal, overrides)
+  const changes = deepMerge(baseChanges, overrides.changes || {})
   
-  // selectedChanges = copy of changes (simulation de l'UI)
-  merged.selectedChanges = { ...merged.changes }
+  const proposalData = {
+    type: 'NEW_EVENT',
+    agentId: overrides.agentId || 'test-agent',
+    status: overrides.status || 'APPROVED',
+    changes,
+    userModifiedChanges: overrides.userModifiedChanges || {},
+    justification: overrides.justification || {},
+    confidence: overrides.confidence || 0.9,
+    eventName: changes.name,
+    eventCity: changes.city,
+    editionYear: changes.edition?.new?.year || 2026
+  }
   
-  return merged
+  // ✅ selectedChanges n'est PAS persisté en DB (champ frontend-only)
+  // On le retourne séparément après la création
+  const selectedChanges = overrides.selectedChanges || changes
+  
+  if (!saveToDb) {
+    return {
+      id: generateTestId(),
+      ...proposalData,
+      selectedChanges,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  }
+  
+  // Créer l'agent s'il n'existe pas (ignore si déjà existant)
+  const agent = await testDb.agent.upsert({
+    where: { name: proposalData.agentId },
+    create: {
+      name: proposalData.agentId,
+      type: 'EXTRACTOR',
+      config: {},
+      isActive: true,
+      frequency: 'DAILY'
+    },
+    update: {} // Pas de mise à jour si existe déjà
+  })
+  
+  // Sauvegarder en DB (utiliser l'ID de l'agent, pas le nom)
+  // ❌ Ne PAS inclure selectedChanges (n'existe pas dans le schéma Prisma)
+  const saved = await testDb.proposal.create({
+    data: {
+      ...proposalData,
+      agentId: agent.id  // ✅ Utiliser l'ID (CUID) de l'agent
+    } as any
+  })
+  
+  // ✅ Ajouter selectedChanges au retour (en mémoire uniquement)
+  return {
+    ...saved,
+    selectedChanges
+  }
 }
 
 /**
@@ -95,40 +132,69 @@ export const createNewEventProposal = (overrides: any = {}) => {
  * @param eventId - ID de l'événement existant
  * @param editionId - ID de l'édition existante
  * @param changes - Changements proposés
+ * @param saveToDb - Si true, sauvegarde la proposition en DB (défaut: true)
  * @returns Proposition EDITION_UPDATE
  * 
  * @example
- * const proposal = createEditionUpdateProposal(eventId, editionId, {
+ * const proposal = await createEditionUpdateProposal(eventId, editionId, {
  *   startDate: {
  *     old: '2026-03-15T09:00:00.000Z',
  *     new: '2026-03-20T09:00:00.000Z'
  *   }
  * })
  */
-export const createEditionUpdateProposal = (
+export const createEditionUpdateProposal = async (
   eventId: number,
   editionId: number,
-  changes: any = {}
+  changes: any = {},
+  saveToDb: boolean = true
 ) => {
-  return {
-    id: generateTestId(),
+  const proposalData = {
     type: 'EDITION_UPDATE',
     agentId: 'test-agent',
     status: 'APPROVED',
     eventId: eventId.toString(),
     editionId: editionId.toString(),
     changes,
-    selectedChanges: { ...changes },
     userModifiedChanges: {},
-    userModifiedRaceChanges: {},
     justification: {},
     confidence: 0.85,
     eventName: 'Event Test',
     eventCity: 'Paris',
-    editionYear: 2026,
-    createdAt: new Date(),
-    updatedAt: new Date()
+    editionYear: 2026
   }
+  
+  if (!saveToDb) {
+    return {
+      id: generateTestId(),
+      ...proposalData,
+      createdAt: new Date(),
+      updatedAt: new Date()
+    }
+  }
+  
+  // Créer l'agent s'il n'existe pas (ignore si déjà existant)
+  const agent = await testDb.agent.upsert({
+    where: { name: proposalData.agentId },
+    create: {
+      name: proposalData.agentId,
+      type: 'EXTRACTOR',
+      config: {},
+      isActive: true,
+      frequency: 'DAILY'
+    },
+    update: {} // Pas de mise à jour si existe déjà
+  })
+  
+  // Sauvegarder en DB (utiliser l'ID de l'agent, pas le nom)
+  const saved = await testDb.proposal.create({
+    data: {
+      ...proposalData,
+      agentId: agent.id  // ✅ Utiliser l'ID (CUID) de l'agent
+    } as any
+  })
+  
+  return saved
 }
 
 // ============================================================================
@@ -270,29 +336,12 @@ export const createExistingRace = async (data: any = {}) => {
 /**
  * Crée un organisateur existant en base Miles Republic
  * 
- * @param data - Données personnalisées
- * @returns Organizer créé
- * 
- * @example
- * const organizer = await createExistingOrganizer({
- *   name: 'Association Trail BFC',
- *   email: 'contact@trail.fr'
- * })
+ * NOTE: La table Organizer n'existe plus dans Miles Republic.
+ * Cette fonction est gardée pour compatibilité mais retourne null.
  */
 export const createExistingOrganizer = async (data: any = {}) => {
-  return await testMilesRepublicDb.organizer.create({
-    data: {
-      name: data.name || 'Organizer Test',
-      legalName: data.legalName || null,
-      email: data.email || null,
-      phone: data.phone || null,
-      address: data.address || null,
-      city: data.city || null,
-      zipCode: data.zipCode || null,
-      country: data.country || null,
-      websiteUrl: data.websiteUrl || null
-    }
-  })
+  console.warn('⚠️  createExistingOrganizer: La table Organizer n\'existe plus dans Miles Republic')
+  return null
 }
 
 // ============================================================================
@@ -349,9 +398,7 @@ export const createTestProposal = async (proposalData: any) => {
       editionId: proposalData.editionId || null,
       raceId: proposalData.raceId || null,
       changes: proposalData.changes,
-      selectedChanges: proposalData.selectedChanges,
       userModifiedChanges: proposalData.userModifiedChanges,
-      userModifiedRaceChanges: proposalData.userModifiedRaceChanges,
       justification: proposalData.justification,
       confidence: proposalData.confidence,
       eventName: proposalData.eventName,
@@ -365,10 +412,10 @@ export const createTestProposal = async (proposalData: any) => {
 }
 
 /**
- * Crée un setup complet: Event + Edition + Organizer + Races
+ * Crée un setup complet: Event + Edition + Races
  * 
  * @param config - Configuration du setup
- * @returns { event, edition, organizer, races }
+ * @returns { event, edition, organizer: null, races }
  * 
  * @example
  * const setup = await createCompleteSetup({
@@ -389,15 +436,11 @@ export const createCompleteSetup = async (config: {
     city: config.eventCity || 'Paris'
   })
   
-  // Créer l'organizer
-  const organizer = await createExistingOrganizer({
-    name: config.organizerName || 'Test Organizer'
-  })
+  // NOTE: Organizer supprimé car table n'existe plus dans Miles Republic
   
   // Créer l'édition
   const edition = await createExistingEdition(event.id, {
-    year: config.editionYear || 2026,
-    organizerId: organizer.id
+    year: config.editionYear || 2026
   })
   
   // Créer les courses
@@ -413,5 +456,5 @@ export const createCompleteSetup = async (config: {
     races.push(race)
   }
   
-  return { event, edition, organizer, races }
+  return { event, edition, organizer: null, races }
 }

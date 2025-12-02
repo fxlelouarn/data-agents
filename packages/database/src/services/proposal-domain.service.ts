@@ -999,7 +999,7 @@ export class ProposalDomainService {
     if (editionData && typeof editionData === 'object') {
       // Edition imbriquée (structure FFA Scraper)
       return [{
-        year: editionData.year || new Date().getFullYear().toString(),
+        year: editionData.year ? editionData.year.toString() : new Date().getFullYear().toString(),
         
         // Dates
         startDate: this.parseDate(editionData.startDate),
@@ -1043,7 +1043,7 @@ export class ProposalDomainService {
     // Fallback: chercher au niveau racine (ancienne structure)
     if (selectedChanges.year || selectedChanges.startDate || selectedChanges.endDate) {
       return [{
-        year: this.extractNewValue(selectedChanges.year) || new Date().getFullYear().toString(),
+        year: this.extractNewValue(selectedChanges.year)?.toString() || new Date().getFullYear().toString(),
         
         // Dates
         startDate: this.extractDate(selectedChanges.startDate),
