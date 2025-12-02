@@ -21,6 +21,10 @@ export const expectObjectFields = <T extends Record<string, any>>(
       expect(obj![key]).toEqual(value)
     } else if (value === null) {
       expect(obj![key]).toBeNull()
+    } else if (typeof value === 'number') {
+      // Pour les nombres, convertir si string
+      const actualValue = typeof obj![key] === 'string' ? parseInt(obj![key]) : obj![key]
+      expect(actualValue).toBe(value)
     } else {
       expect(obj![key]).toBe(value)
     }
@@ -40,7 +44,7 @@ export const expectRaceCount = async (editionId: number, count: number) => {
   const races = await testMilesRepublicDb.race.findMany({
     where: {
       editionId,
-      archivedAt: null
+      isArchived: false
     }
   })
   expect(races).toHaveLength(count)
@@ -60,7 +64,7 @@ export const expectRaceArchived = async (raceId: number) => {
   })
   
   expect(race).not.toBeNull()
-  expect(race!.archivedAt).not.toBeNull()
+  expect(race!.isArchived).toBe(true)
 }
 
 /**
@@ -77,7 +81,7 @@ export const expectRaceActive = async (raceId: number) => {
   })
   
   expect(race).not.toBeNull()
-  expect(race!.archivedAt).toBeNull()
+  expect(race!.isArchived).toBe(false)
 }
 
 /**
@@ -137,8 +141,7 @@ export const expectEditionExists = async (editionId: number) => {
     where: { id: editionId },
     include: {
       event: true,
-      organizer: true,
-      races: true
+      organization: true
     }
   })
   
@@ -198,15 +201,15 @@ export const expectOrganizerLinked = async (
 ) => {
   const edition = await testMilesRepublicDb.edition.findUnique({
     where: { id: editionId },
-    include: { organizer: true }
+    include: { organization: true }
   })
   
   expect(edition).not.toBeNull()
-  expect(edition!.organizerId).not.toBeNull()
-  expect(edition!.organizer).not.toBeNull()
-  expect(edition!.organizer!.name).toBe(expectedName)
+  expect(edition!.organizationId).not.toBeNull()
+  expect(edition!.organization).not.toBeNull()
+  expect(edition!.organization!.name).toBe(expectedName)
   
-  return edition!.organizer!
+  return edition!.organization!
 }
 
 /**

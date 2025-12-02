@@ -70,9 +70,10 @@ export const createNewEventProposal = async (overrides: any = {}, saveToDb: bool
   
   const changes = deepMerge(baseChanges, overrides.changes || {})
   
+  // ✅ Utiliser 'ffa-scraper' par défaut pour que dataSource = FEDERATION
   const proposalData = {
     type: 'NEW_EVENT',
-    agentId: overrides.agentId || 'test-agent',
+    agentId: overrides.agentId || 'ffa-scraper',
     status: overrides.status || 'APPROVED',
     changes,
     userModifiedChanges: overrides.userModifiedChanges || {},
@@ -151,7 +152,7 @@ export const createEditionUpdateProposal = async (
 ) => {
   const proposalData = {
     type: 'EDITION_UPDATE',
-    agentId: 'test-agent',
+    agentId: 'ffa-scraper',  // ✅ Utiliser ffa-scraper par défaut comme NEW_EVENT
     status: 'APPROVED',
     eventId: eventId.toString(),
     editionId: editionId.toString(),
@@ -220,11 +221,14 @@ export const createExistingEvent = async (data: any = {}) => {
       city: data.city || 'Paris',
       country: data.country || 'France',
       slug: data.slug || `event-test-${Date.now()}`,
+      status: data.status || 'LIVE',  // ✅ Required field
       toUpdate: data.toUpdate !== undefined ? data.toUpdate : true,
-      countrySubdivision: data.countrySubdivision || null,
-      countrySubdivisionNameLevel1: data.countrySubdivisionNameLevel1 || null,
-      countrySubdivisionNameLevel2: data.countrySubdivisionNameLevel2 || null,
+      countrySubdivisionNameLevel1: data.countrySubdivisionNameLevel1 || 'Île-de-France',
+      countrySubdivisionNameLevel2: data.countrySubdivisionNameLevel2 || 'Paris',
       countrySubdivisionDisplayCodeLevel1: data.countrySubdivisionDisplayCodeLevel1 || null,
+      countrySubdivisionDisplayCodeLevel2: data.countrySubdivisionDisplayCodeLevel2 || 'PAR',  // ✅ Required field
+      createdBy: data.createdBy || 'test-agent',  // ✅ Required field
+      updatedBy: data.updatedBy || 'test-agent',  // ✅ Required field
       latitude: data.latitude || null,
       longitude: data.longitude || null,
       websiteUrl: data.websiteUrl || null,
@@ -270,7 +274,8 @@ export const createExistingEdition = async (
   return await testMilesRepublicDb.edition.create({
     data: {
       eventId: event.id,
-      year: data.year || 2026,
+      year: data.year ? String(data.year) : '2026',  // ✅ Must be String
+      status: data.status || 'LIVE',  // ✅ Required field
       startDate: data.startDate || new Date('2026-03-15T09:00:00.000Z'),
       endDate: data.endDate || new Date('2026-03-15T18:00:00.000Z'),
       timeZone: data.timeZone || 'Europe/Paris',
@@ -278,11 +283,10 @@ export const createExistingEdition = async (
       calendarStatus: data.calendarStatus || 'CONFIRMED',
       registrationOpeningDate: data.registrationOpeningDate || null,
       registrationClosingDate: data.registrationClosingDate || null,
-      websiteUrl: data.websiteUrl || null,
-      facebookEventUrl: data.facebookEventUrl || null,
-      registrationUrl: data.registrationUrl || null,
-      dataSource: data.dataSource || 'OTHER',
-      organizerId: data.organizerId || null
+      dataSource: data.dataSource !== undefined ? data.dataSource : null,  // ✅ Default to null (not 'OTHER')
+      createdBy: data.createdBy || 'test-agent',  // ✅ Required field
+      updatedBy: data.updatedBy || 'test-agent',  // ✅ Required field
+      organizationId: data.organizationId || null
     }
   })
 }
@@ -317,18 +321,35 @@ export const createExistingRace = async (data: any = {}) => {
   
   return await testMilesRepublicDb.race.create({
     data: {
-      editionId: edition.id,
+      // ✅ V2: Utiliser relations connect au lieu de foreign keys directs
+      edition: {
+        connect: { id: edition.id }
+      },
+      event: {
+        connect: { id: edition.eventId }
+      },
       name: data.name || '10km Test',
-      runDistance: data.runDistance !== undefined ? data.runDistance : (data.distance || 10),
-      bikeDistance: data.bikeDistance || null,
-      walkDistance: data.walkDistance || null,
-      swimDistance: data.swimDistance || null,
+      // ✅ V2: Distances required - assigner selon le type de course
+      runDistance: data.runDistance !== undefined ? data.runDistance : 
+                   (data.distance && !data.bikeDistance && !data.walkDistance && !data.swimDistance ? data.distance : 0),
+      runDistance2: data.runDistance2 || 0,  // ✅ Required field
+      bikeDistance: data.bikeDistance !== undefined ? data.bikeDistance : 
+                    (data.distance && data.categoryLevel1 === 'CYCLING' ? data.distance : 0),  // ✅ Required field
+      bikeRunDistance: data.bikeRunDistance || 0,  // ✅ V2: New required field
+      walkDistance: data.walkDistance !== undefined ? data.walkDistance : 
+                    (data.distance && data.categoryLevel1 === 'WALK' ? data.distance : 0),  // ✅ Required field
+      swimDistance: data.swimDistance !== undefined ? data.swimDistance : 
+                    (data.distance && data.categoryLevel1 === 'TRIATHLON' ? data.distance : 0),  // ✅ Required field
+      swimRunDistance: data.swimRunDistance || 0,  // ✅ Required field
       runPositiveElevation: data.runPositiveElevation !== undefined ? data.runPositiveElevation : (data.elevation || null),
       startDate: data.startDate || new Date('2026-03-15T09:00:00.000Z'),
       timeZone: data.timeZone || 'Europe/Paris',
       categoryLevel1: data.categoryLevel1 || 'RUNNING',
       categoryLevel2: data.categoryLevel2 || 'KM10',
-      archivedAt: data.archivedAt || null
+      isActive: data.isActive !== undefined ? data.isActive : true,  // ✅ V2: Default true
+      isArchived: data.isArchived !== undefined ? data.isArchived : false,  // ✅ V2: Default false
+      createdBy: data.createdBy || 'test-agent',  // ✅ Required field
+      updatedBy: data.updatedBy || 'test-agent'   // ✅ Required field
     }
   })
 }

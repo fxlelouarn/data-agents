@@ -20,13 +20,14 @@ Cette suite de tests valide que :
 
 ## 📊 Statistiques
 
-| Catégorie | Fichier | Tests | Couverture |
-|-----------|---------|-------|------------|
-| **NEW_EVENT** | `new-event.test.ts` | 43 | Event (10), Edition (8), Organizer (5), Races (20) |
-| **EDITION_UPDATE** | `edition-update.test.ts` | 21 | Event (6), Edition (8), Organizer (5), Non-régression (2) |
-| **Race Operations** | `race-operations.test.ts` | 20 | Update (10), Add (5), Delete (5) |
-| **Advanced** | `advanced.test.ts` | 18 | Block Application (5), User Modifications (12), Edge Cases (3) |
-| **TOTAL** | 4 fichiers | **102** | **111% de l'objectif initial** 🎉 |
+| Catégorie | Fichier | Tests | Statut |
+|-----------|---------|-------|--------|
+| **NEW_EVENT** | `new-event.test.ts` | 28 | ✅ **28/28 (100%)** |
+| **EDITION_UPDATE** | `edition-update.test.ts` | 14 | ✅ **14/14 (100%)** |
+| **Race Operations** | `race-operations.test.ts` | 21 | ✅ **21/21 (100%)** |
+| **Block Application** | `block-application.test.ts` | 0 | ⏳ À implémenter |
+| **User Modifications** | `user-modifications.test.ts` | 0 | ⏳ À implémenter |
+| **TOTAL** | 3 fichiers | **63** | **63/63 (100%)** 🎉 |
 
 ---
 
@@ -390,33 +391,36 @@ npm test -- --watch apps/agents/src/__tests__/proposal-application
 - ✅ Modification partielle Event → Autres champs intacts
 - ✅ Modification partielle Edition → Autres champs intacts
 
-### `race-operations.test.ts` (20 tests)
+### `race-operations.test.ts` (21 tests) ✅
 
 #### Update Races (10 tests)
-- ✅ Modification de `runDistance`
-- ✅ Modification de `startDate`
-- ✅ Modification de `runPositiveElevation`
+- ✅ Modification de `runDistance` (10km → 12km)
+- ✅ Modification de `startDate` (09:00 → 10:30)
+- ✅ Modification de `runPositiveElevation` (1200m → 1500m)
 - ✅ Modification de plusieurs champs (distance + heure + élévation)
-- ✅ Préservation des champs non modifiés
-- ✅ Modification indépendante de 2 courses
-- ✅ Modification des catégories (RUNNING → TRAIL)
-- ✅ Modification de `bikeDistance` (course vélo)
-- ✅ Modification de 3 distances (triathlon)
-- ✅ Mise à null de l'élévation
+- ✅ Préservation des champs non modifiés (immutabilité)
+- ✅ Modification indépendante de 2 courses (10km + Semi)
+- ✅ Modification des catégories (RUNNING/KM10 → TRAIL/SHORT_TRAIL)
+- ✅ Modification de `bikeDistance` (course vélo 50km → 55km)
+- ✅ Modification de 3 distances (triathlon: swim + bike + run)
+- ✅ Mise à null de l'élévation (100m → null)
 
 #### Add Races (5 tests)
-- ✅ Ajout d'une course à une édition existante
-- ✅ Ajout de plusieurs courses (3 courses)
-- ✅ Ajout d'une course avec élévation (trail)
-- ✅ Ajout d'une course vélo
-- ✅ Ajout d'un triathlon
+- ✅ Ajout d'une course à une édition existante (Semi-Marathon)
+- ✅ Ajout de plusieurs courses (5km + 10km + Semi)
+- ✅ Ajout d'une course avec élévation (Trail 30km, D+ 1500m)
+- ✅ Ajout d'une course vélo (VTT 50km)
+- ✅ Ajout d'un triathlon (swim 0.75km + bike 20km + run 5km)
 
 #### Delete Races (5 tests)
-- ✅ Archive d'une course (soft delete)
-- ✅ Archive de plusieurs courses
+- ✅ Archive d'une course (soft delete via `isArchived`)
+- ✅ Archive de plusieurs courses (2/3 coursés archivées)
 - ✅ Pas de suppression si `toDelete` absent
-- ✅ Vérification soft delete (pas hard delete)
-- ✅ Filtrage `racesToAddFiltered` (exclusion de courses)
+- ✅ Vérification soft delete (course reste en DB)
+- ✅ Filtrage `racesToAddFiltered` (exclusion course index 1)
+
+#### Mixed Operations (1 test)
+- ✅ Combinaison UPDATE + ADD + DELETE (1 modifiée + 1 archivée + 1 ajoutée)
 
 ### `advanced.test.ts` (18 tests)
 
@@ -764,5 +768,6 @@ Avant de merger une PR modifiant `proposal-domain.service.ts` :
 ---
 
 **Maintenu par** : Équipe Data Agents  
-**Dernière mise à jour** : 1er Décembre 2025  
-**Version** : 1.0.0
+**Dernière mise à jour** : 2 Décembre 2025  
+**Version** : 1.1.0  
+**Changelog** : Ajout race-operations.test.ts (21 tests) - Structure `races: { toUpdate, toAdd, toDelete }` validée ✅

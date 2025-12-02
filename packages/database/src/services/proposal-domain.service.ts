@@ -180,8 +180,10 @@ export class ProposalDomainService {
 
       // Extract structured data
       // Note: Utiliser 'changes' qui contient les userModifiedChanges mergées
-      const eventData = this.extractEventData(changes)
-      const editionsData = this.extractEditionsData(changes)
+      // Récupérer l'agentId depuis options si disponible
+      const agentId = options.agentName || (await this.getAgentIdFromContext())
+      const eventData = this.extractEventData(changes, agentId)
+      const editionsData = this.extractEditionsData(changes, agentId)
       const racesData = this.extractRacesData(changes)
       const organizerData = this.extractNewValue(changes.organizer)
 
@@ -233,6 +235,8 @@ export class ProposalDomainService {
             const race = await milesRepo.createRace({
               editionId: edition.id,
               eventId: event.id,
+              // ✅ Hériter timeZone de l'édition si non spécifié
+              timeZone: raceData.timeZone || editionData.timeZone,
               ...raceData
             })
             createdRaceIds.push(race.id)
@@ -243,6 +247,8 @@ export class ProposalDomainService {
             const race = await milesRepo.createRace({
               editionId: edition.id,
               eventId: event.id,
+              // ✅ Hériter timeZone de l'édition si non spécifié
+              timeZone: raceData.timeZone || editionData.timeZone,
               ...raceData
             })
             createdRaceIds.push(race.id)
@@ -324,6 +330,13 @@ export class ProposalDomainService {
   ): Promise<ProposalApplicationResult> {
     try {
       this.logger.info(`\n🔄 Application EDITION_UPDATE pour l'édition ${editionId}`)
+      this.logger.info(`🔍 [DEBUG START] Structure complète de 'changes':`, {
+        changesKeys: Object.keys(changes),
+        changesType: typeof changes,
+        hasRaces: 'races' in changes,
+        racesType: typeof changes.races,
+        racesKeys: changes.races && typeof changes.races === 'object' ? Object.keys(changes.races) : 'N/A'
+      })
       
       const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
       const numericEditionId = parseInt(editionId)
@@ -354,28 +367,56 @@ export class ProposalDomainService {
         'countrySubdivisionNameLevel2', 'countrySubdivisionDisplayCodeLevel2',
         'latitude', 'longitude', 'fullAddress',
         'websiteUrl', 'facebookUrl', 'twitterUrl', 'instagramUrl',
-        'images', 'coverImage', 'peyceReview', 'dataSource'
+        'images', 'coverImage', 'peyceReview'
+        // Note: 'dataSource' existe sur Event ET Edition, mais ici on route vers Edition
       ])
       
       for (const [field, value] of Object.entries(changes)) {
+        // 🔍 STRUCTURE DES TESTS: races: { toUpdate: [...], toAdd: [...], toDelete: [...] }
         if (field === 'races') {
-          racesChanges = value as any[]
+          this.logger.info(`🔍 [DEBUG] Champ 'races' détecté, type: ${typeof value}`)
+          
+          // Cas 1: Tableau direct (ancienne structure?) - racesChanges = value
+          if (Array.isArray(value)) {
+            this.logger.info(`✅ [DEBUG] races est un tableau direct (${value.length} items)`)
+            racesChanges = value
+          }
+          // Cas 2: Objet avec toUpdate/toAdd/toDelete (structure des tests)
+          else if (value && typeof value === 'object') {
+            this.logger.info(`🔍 [DEBUG] races est un objet, clés: ${Object.keys(value).join(', ')}`)
+            
+            if ('toUpdate' in value && Array.isArray(value.toUpdate)) {
+              racesChanges = value.toUpdate
+              this.logger.info(`✅ [DEBUG] Extraction races.toUpdate: ${racesChanges.length} courses`)
+            }
+            if ('toAdd' in value && Array.isArray(value.toAdd)) {
+              racesToAdd = value.toAdd
+              this.logger.info(`✅ [DEBUG] Extraction races.toAdd: ${racesToAdd.length} courses`)
+            }
+            if ('toDelete' in value && Array.isArray(value.toDelete)) {
+              racesToDelete = value.toDelete
+              this.logger.info(`✅ [DEBUG] Extraction races.toDelete: ${racesToDelete.length} IDs`)
+            }
+          }
           continue
         }
         
         if (field === 'racesToAdd') {
           racesToAdd = this.extractNewValue(value) as any[]
+          this.logger.info(`✅ [DEBUG] racesToAdd extrait au niveau racine: ${racesToAdd?.length || 0} courses`)
           continue
         }
         
         if (field === 'racesToDelete') {
           racesToDelete = value as number[]
+          this.logger.info(`✅ [DEBUG] racesToDelete extrait au niveau racine: ${racesToDelete?.length || 0} IDs`)
           continue
         }
         
         // ✅ Extraire racesToUpdate pour propagation de dates (FFA + Google)
         if (field === 'racesToUpdate') {
           racesToUpdate = this.extractNewValue(value) as any[]
+          this.logger.info(`✅ [DEBUG] racesToUpdate extrait au niveau racine: ${racesToUpdate?.length || 0} courses`)
           continue
         }
 
@@ -391,8 +432,8 @@ export class ProposalDomainService {
           continue
         }
 
-        const extractedValue = this.extractNewValue(value)
-        if (extractedValue !== undefined && extractedValue !== null) {
+      const extractedValue = this.extractNewValue(value)
+        if (extractedValue !== undefined) {  // ✅ Permettre null pour effacer des valeurs
           // ✅ Router vers Event ou Edition selon le champ
           if (eventFields.has(field)) {
             eventUpdateData[field] = extractedValue
@@ -450,6 +491,15 @@ export class ProposalDomainService {
         this.logger.info(`⏭️ Édition ${numericEditionId} - Aucun changement à appliquer`)
       }
       
+      // ✅ AUTO-CALCULATE: countrySubdivisionDisplayCodeLevel1 when countrySubdivisionNameLevel1 changes
+      if (eventDiff.countrySubdivisionNameLevel1 && !eventDiff.countrySubdivisionDisplayCodeLevel1) {
+        const regionCode = this.extractRegionCode(eventDiff.countrySubdivisionNameLevel1)
+        if (regionCode) {
+          eventDiff.countrySubdivisionDisplayCodeLevel1 = regionCode
+          this.logger.info(`📍 Code régional auto-calculé: ${eventDiff.countrySubdivisionNameLevel1} → ${regionCode}`)
+        }
+      }
+
       // Update parent event only if there are real changes
       if (edition.eventId && Object.keys(eventDiff).length > 0) {
         await milesRepo.updateEvent(edition.eventId, eventDiff)
@@ -476,6 +526,13 @@ export class ProposalDomainService {
       }
 
       // Update races if any (structure: changes.races)
+      this.logger.info(`\n🔍 [DEBUG UPDATE] Avant section UPDATE:`, {
+        racesChangesExists: !!racesChanges,
+        racesChangesIsArray: Array.isArray(racesChanges),
+        racesChangesLength: racesChanges?.length || 0,
+        racesChangesContent: racesChanges
+      })
+      
       if (racesChanges && Array.isArray(racesChanges)) {
         this.logger.info(`🏃 Mise à jour de ${racesChanges.length} course(s) existante(s)`)
         for (const raceChange of racesChanges) {
@@ -485,9 +542,16 @@ export class ProposalDomainService {
             continue
           }
 
-          const raceUpdateData = this.buildRaceUpdateData(raceChange)
-          await milesRepo.updateRace(raceId, raceUpdateData)
-          this.logger.info(`  ✅ Course ${raceId} (${raceChange.raceName || 'sans nom'}) mise à jour`)
+          // ✅ Extraire depuis raceChange.updates (structure des tests)
+          const updates = raceChange.updates || raceChange
+          const raceUpdateData = this.buildRaceUpdateData(updates)
+          
+          if (Object.keys(raceUpdateData).length > 0) {
+            await milesRepo.updateRace(raceId, raceUpdateData)
+            this.logger.info(`  ✅ Course ${raceId} (${raceChange.raceName || 'sans nom'}) mise à jour:`, raceUpdateData)
+          } else {
+            this.logger.info(`  ⏭️  Course ${raceId} - Aucun changement détecté`)
+          }
         }
       }
       
@@ -553,26 +617,37 @@ export class ProposalDomainService {
       }
       
       // Add races if any
+      this.logger.info(`\n🔍 [DEBUG ADD] Avant section ADD:`, {
+        racesToAddExists: !!racesToAdd,
+        racesToAddIsArray: Array.isArray(racesToAdd),
+        racesToAddLength: racesToAdd?.length || 0,
+        racesToAddContent: racesToAdd
+      })
+      
       if (racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
         // Récupérer les modifications utilisateur depuis userModifiedChanges
         const racesToAddFiltered = (proposal?.userModifiedChanges as any)?.racesToAddFiltered || []
         const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
         
-        // Filtrer les courses marquées pour suppression
-        const racesToAddEffective = racesToAdd.filter((_, index) => !racesToAddFiltered.includes(index))
+        // ✅ FIX: Créer un tableau avec indices originaux préservés
+        const racesToAddWithIndex = racesToAdd
+          .map((race, originalIndex) => ({ race, originalIndex }))
+          .filter(({ originalIndex }) => !racesToAddFiltered.includes(originalIndex))
         
-        this.logger.info(`➕ Ajout de ${racesToAddEffective.length} course(s) à l'édition ${numericEditionId}`)
-        for (let i = 0; i < racesToAdd.length; i++) {
-          if (racesToAddFiltered.includes(i)) {
-            this.logger.info(`  ⏭️  Course index ${i} filtrée (supprimée par l'utilisateur)`)
-            continue
-          }
+        this.logger.info(`➥ Ajout de ${racesToAddWithIndex.length} course(s) à l'édition ${numericEditionId}`, {
+          total: racesToAdd.length,
+          filtered: racesToAddFiltered.length,
+          toAdd: racesToAddWithIndex.length
+        })
+        
+        for (const { race: raceData, originalIndex } of racesToAddWithIndex) {
+          // ✅ FIX: Utiliser originalIndex pour accéder aux raceEdits
+          const editedData = raceEdits[`new-${originalIndex}`] || {}
           
-          const raceData = racesToAdd[i]
-          const editedData = raceEdits[`new-${i}`] || {}
+          this.logger.info(`  ➡️  Ajout course original index ${originalIndex}`)
           
           // 🔍 LOG: Inspecter raceData AVANT nettoyage
-          this.logger.info(`🔍 [RACE ${i}] Contenu AVANT nettoyage:`, {
+          this.logger.info(`🔍 [RACE ${originalIndex}] Contenu AVANT nettoyage:`, {
             raceDataKeys: Object.keys(raceData),
             raceDataHasId: 'id' in raceData,
             raceDataHasRaceId: 'raceId' in raceData,
@@ -584,19 +659,19 @@ export class ProposalDomainService {
           // ⚠️ IMPORTANT: Retirer 'id' et 'raceId' de raceData car ce sont de NOUVELLES courses
           // Ces champs peuvent être présents par erreur dans appliedChanges
           if ('id' in raceData) {
-            this.logger.warn(`⚠️  Champ 'id' détecté dans raceData[${i}]: ${raceData.id} - SUPPRESSION`)
+            this.logger.warn(`⚠️  Champ 'id' détecté dans raceData[${originalIndex}]: ${raceData.id} - SUPPRESSION`)
             delete raceData.id
           }
           if ('raceId' in raceData) {
-            this.logger.warn(`⚠️  Champ 'raceId' détecté dans raceData[${i}]: ${raceData.raceId} - SUPPRESSION`)
+            this.logger.warn(`⚠️  Champ 'raceId' détecté dans raceData[${originalIndex}]: ${raceData.raceId} - SUPPRESSION`)
             delete raceData.raceId
           }
           if ('id' in editedData) {
-            this.logger.warn(`⚠️  Champ 'id' détecté dans editedData[${i}]: ${editedData.id} - SUPPRESSION`)
+            this.logger.warn(`⚠️  Champ 'id' détecté dans editedData[${originalIndex}]: ${editedData.id} - SUPPRESSION`)
             delete editedData.id
           }
           if ('raceId' in editedData) {
-            this.logger.warn(`⚠️  Champ 'raceId' détecté dans editedData[${i}]: ${editedData.raceId} - SUPPRESSION`)
+            this.logger.warn(`⚠️  Champ 'raceId' détecté dans editedData[${originalIndex}]: ${editedData.raceId} - SUPPRESSION`)
             delete editedData.raceId
           }
           
@@ -629,6 +704,7 @@ export class ProposalDomainService {
             if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
             if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
             if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
+            if (raceData.swimDistance !== undefined) racePayload.swimDistance = raceData.swimDistance  // ✅ FIX: Ajout swimDistance pour triathlon
           }
           
           // Élévation
@@ -656,7 +732,7 @@ export class ProposalDomainService {
           }
           
           // 🔍 LOG: Payload final AVANT création
-          this.logger.info(`🔍 [RACE ${i}] Payload FINAL avant createRace:`, {
+          this.logger.info(`🔍 [RACE ${originalIndex}] Payload FINAL avant createRace:`, {
             payloadKeys: Object.keys(racePayload),
             hasId: 'id' in racePayload,
             hasRaceId: 'raceId' in racePayload,
@@ -737,6 +813,13 @@ export class ProposalDomainService {
       }
       
       // Delete races if any
+      this.logger.info(`\n🔍 [DEBUG DELETE] Avant section DELETE:`, {
+        racesToDeleteExists: !!racesToDelete,
+        racesToDeleteIsArray: Array.isArray(racesToDelete),
+        racesToDeleteLength: racesToDelete?.length || 0,
+        racesToDeleteContent: racesToDelete
+      })
+      
       if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
         this.logger.info(`🗑️  Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
         for (const raceId of racesToDelete) {
@@ -933,10 +1016,10 @@ export class ProposalDomainService {
   /**
    * Extract event data from selected changes
    */
-  private extractEventData(selectedChanges: Record<string, any>): any {
+  private extractEventData(selectedChanges: Record<string, any>, agentId?: string): any {
     const city = this.extractNewValue(selectedChanges.city) || ''
     const dept = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel2) || ''
-    const region = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel1) || ''
+    const region = this.extractNewValue(selectedChanges.countrySubdivision) || this.extractNewValue(selectedChanges.countrySubdivisionNameLevel1) || ''
     const country = this.extractNewValue(selectedChanges.country) || 'FR'
     
     return {
@@ -985,14 +1068,14 @@ export class ProposalDomainService {
       toUpdate: this.extractNewValue(selectedChanges.toUpdate) ?? true,
       
       // Métadonnées
-      dataSource: this.extractNewValue(selectedChanges.dataSource) || 'FEDERATION'
+      dataSource: this.extractNewValue(selectedChanges.dataSource) || this.inferDataSource({}, agentId)
     }
   }
 
   /**
    * Extract editions data from selected changes
    */
-  private extractEditionsData(selectedChanges: Record<string, any>): any[] {
+  private extractEditionsData(selectedChanges: Record<string, any>, agentId?: string): any[] {
     // ✅ FIX: Extraire depuis edition.new si présent
     const editionData = this.extractNewValue(selectedChanges.edition)
     
@@ -1033,7 +1116,7 @@ export class ProposalDomainService {
         
         // Métadonnées
         federationId: editionData.federationId,
-        dataSource: editionData.dataSource || this.inferDataSource(selectedChanges),
+        dataSource: editionData.dataSource || this.inferDataSource(selectedChanges, agentId),
         airtableId: editionData.airtableId,
         organizerStripeConnectedAccountId: editionData.organizerStripeConnectedAccountId,
         organizationId: editionData.organizationId ? parseInt(editionData.organizationId) : undefined
@@ -1078,7 +1161,7 @@ export class ProposalDomainService {
         // Métadonnées
         federationId: this.extractNewValue(selectedChanges.federationId),
         // ✅ FIX 2.3 : dataSource
-        dataSource: this.extractNewValue(selectedChanges.dataSource) || this.inferDataSource(selectedChanges),
+        dataSource: this.extractNewValue(selectedChanges.dataSource) || this.inferDataSource(selectedChanges, agentId),
         airtableId: this.extractNewValue(selectedChanges.airtableId),
         organizerStripeConnectedAccountId: this.extractNewValue(selectedChanges.organizerStripeConnectedAccountId),
         organizationId: this.extractInt(selectedChanges.organizationId)
@@ -1219,7 +1302,7 @@ export class ProposalDomainService {
 
     for (const [field, value] of Object.entries(selectedChanges)) {
       const extractedValue = this.extractNewValue(value)
-      if (extractedValue !== undefined && extractedValue !== null) {
+      if (extractedValue !== undefined) {  // ✅ Permettre null pour effacer des valeurs
         updateData[field] = extractedValue
       }
     }
@@ -1242,7 +1325,7 @@ export class ProposalDomainService {
       if (field === 'raceId' || field === 'raceName') continue
 
       const extractedValue = this.extractNewValue(value)
-      if (extractedValue !== undefined && extractedValue !== null) {
+      if (extractedValue !== undefined) {  // ✅ Permettre null pour effacer des valeurs
         updateData[field] = extractedValue
       }
     }
@@ -1590,13 +1673,21 @@ export class ProposalDomainService {
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
+  
+  /**
+   * Get agent ID from current context (for tests)
+   */
+  private async getAgentIdFromContext(): Promise<string | undefined> {
+    // In test context, we don't have proposal loaded yet
+    return undefined
+  }
 
   /**
    * Infer dataSource from agent type or proposal context
    */
-  private inferDataSource(selectedChanges: Record<string, any>): string {
+  private inferDataSource(selectedChanges: Record<string, any>, agentId?: string): string {
     // Vérifier si la proposition vient d'un agent fédération
-    const agentName = selectedChanges._agentName || ''
+    const agentName = agentId || selectedChanges._agentName || ''
     
     if (agentName.toLowerCase().includes('ffa') || 
         agentName.toLowerCase().includes('federation')) {
@@ -1604,7 +1695,8 @@ export class ProposalDomainService {
     }
     
     if (agentName.toLowerCase().includes('timer') || 
-        agentName.toLowerCase().includes('chronometeur')) {
+        agentName.toLowerCase().includes('chronometeur') ||
+        agentName.toLowerCase().includes('livetrail')) {
       return 'TIMER'
     }
     

@@ -172,6 +172,7 @@ export class MilesRepublicRepository {
     airtableId?: string
     organizerStripeConnectedAccountId?: string
     organizationId?: number
+    currentEditionEventId?: number
     slug?: string
   }) {
     return this.milesDb.edition.create({
@@ -218,6 +219,7 @@ export class MilesRepublicRepository {
         airtableId: data.airtableId,
         organizerStripeConnectedAccountId: data.organizerStripeConnectedAccountId,
         organizationId: data.organizationId,
+        currentEditionEventId: data.currentEditionEventId,
         
         // Audit
         createdBy: this.auditUser,
@@ -513,11 +515,18 @@ export class MilesRepublicRepository {
   }
   
   /**
-   * Delete a race
+   * Delete a race (soft delete)
+   * ✅ V2: Utilise isArchived au lieu de archivedAt
    */
   async deleteRace(raceId: number) {
-    return this.milesDb.race.delete({
-      where: { id: raceId }
+    return this.milesDb.race.update({
+      where: { id: raceId },
+      data: {
+        isArchived: true,
+        isActive: false,
+        updatedBy: this.auditUser,
+        updatedAt: new Date()
+      }
     })
   }
 

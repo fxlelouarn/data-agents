@@ -1,42 +1,33 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
-import { testDb, testMilesRepublicDb, setupTestEnvironment, teardownTestEnvironment } from './helpers/db-setup'
-import { 
-  createExistingEvent, 
-  createExistingEdition, 
+import {
+  createEditionUpdateProposal,
+  createExistingEvent,
+  createExistingEdition,
   createExistingRace,
-  createEditionUpdateProposal
-} from './helpers/fixtures'
-import { ProposalDomainService } from '../../../../packages/database/src/services/proposal-domain.service'
-import { DatabaseManager } from '../../../../packages/agent-framework/src/database-manager'
+  testMilesRepublicDb,
+  testDb,
+  setupProposalService,
+  cleanupProposalService,
+  cleanDatabase,
+  cleanMilesRepublicDatabase
+} from './helpers'
+import { ProposalDomainService } from '@data-agents/database'
+import { DatabaseManager } from '@data-agents/agent-framework'
 
 describe('Race Operations', () => {
-  let proposalService: ProposalDomainService
+  let domainService: ProposalDomainService
   let databaseManager: DatabaseManager
 
   beforeEach(async () => {
-    await setupTestEnvironment()
+    await cleanDatabase()
+    await cleanMilesRepublicDatabase()
     
-    // Initialiser les services
-    databaseManager = new DatabaseManager()
-    
-    // Enregistrer la connexion Miles Republic
-    await databaseManager.registerConnection({
-      id: 'miles-republic',
-      type: 'postgres',
-      host: process.env.MILES_REPUBLIC_DATABASE_HOST!,
-      port: parseInt(process.env.MILES_REPUBLIC_DATABASE_PORT || '5432'),
-      username: process.env.MILES_REPUBLIC_DATABASE_USER!,
-      password: process.env.MILES_REPUBLIC_DATABASE_PASSWORD!,
-      database: process.env.MILES_REPUBLIC_DATABASE_NAME!,
-      schemaPath: 'apps/agents/prisma/miles-republic.prisma'
-    })
-    
-    proposalService = new ProposalDomainService(testDb, databaseManager)
+    const setup = await setupProposalService()
+    domainService = setup.proposalService
+    databaseManager = setup.databaseManager
   })
 
   afterEach(async () => {
-    await databaseManager.disconnectAll()
-    await teardownTestEnvironment()
+    await cleanupProposalService(databaseManager)
   })
 
   // ==========================================================================
@@ -68,7 +59,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Distance modifiée
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -105,7 +96,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Heure modifiée
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -139,7 +130,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Élévation modifiée
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -179,7 +170,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 3 champs modifiés
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -218,7 +209,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Seule distance modifiée
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -267,7 +258,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Chaque course modifiée indépendamment
       const updated1 = await testMilesRepublicDb.race.findUnique({ where: { id: race1.id } })
@@ -303,7 +294,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Catégories modifiées
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -322,7 +313,7 @@ describe('Race Operations', () => {
         editionId: edition.id,
         name: 'VTT 50km',
         bikeDistance: 50,
-        runDistance: null,
+        runDistance: 0,  // ✅ FIX: runDistance required (default 0 pour les courses vélo)
         categoryLevel1: 'CYCLING',
         categoryLevel2: 'XC_MOUNTAIN_BIKE'
       })
@@ -340,7 +331,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: bikeDistance modifiée
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -348,7 +339,7 @@ describe('Race Operations', () => {
       })
       
       expect(updated!.bikeDistance).toBe(55)
-      expect(updated!.runDistance).toBeNull() // ✅ Reste null
+      expect(updated!.runDistance).toBe(0) // ✅ FIX: runDistance required, doit rester à 0
     })
 
     it('should update triathlon distances', async () => {
@@ -379,7 +370,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 3 distances modifiées
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -415,7 +406,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Élévation mise à null
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -450,11 +441,11 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 2 courses au total
       const races = await testMilesRepublicDb.race.findMany({
-        where: { editionId: edition.id, archivedAt: null }
+        where: { editionId: edition.id, isArchived: false }
       })
       
       expect(races).toHaveLength(2)
@@ -493,7 +484,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 3 courses créées
       const races = await testMilesRepublicDb.race.findMany({
@@ -526,7 +517,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Trail créé avec élévation
       const race = await testMilesRepublicDb.race.findFirst({
@@ -556,7 +547,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Course vélo créée
       const race = await testMilesRepublicDb.race.findFirst({
@@ -565,7 +556,7 @@ describe('Race Operations', () => {
       
       expect(race).toBeDefined()
       expect(race!.bikeDistance).toBe(50)
-      expect(race!.runDistance).toBeNull()
+      expect(race!.runDistance).toBe(0)  // ✅ V2: runDistance required (default 0)
       expect(race!.categoryLevel1).toBe('CYCLING')
     })
 
@@ -588,7 +579,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Triathlon créé avec les 3 distances
       const race = await testMilesRepublicDb.race.findFirst({
@@ -628,18 +619,18 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Course 1 archivée, course 2 active
       const deleted = await testMilesRepublicDb.race.findUnique({ 
         where: { id: race1.id } 
       })
-      expect(deleted!.archivedAt).not.toBeNull()
+      expect(deleted!.isArchived).toBe(true)
       
       const active = await testMilesRepublicDb.race.findUnique({ 
         where: { id: race2.id } 
       })
-      expect(active!.archivedAt).toBeNull()
+      expect(active!.isArchived).toBe(false)
     })
 
     it('should archive multiple races', async () => {
@@ -658,13 +649,13 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 2 courses archivées, 1 active
       const archived = await testMilesRepublicDb.race.findMany({
         where: { 
           editionId: edition.id,
-          archivedAt: { not: null }
+          isArchived: true
         }
       })
       expect(archived).toHaveLength(2)
@@ -672,7 +663,7 @@ describe('Race Operations', () => {
       const active = await testMilesRepublicDb.race.findMany({
         where: { 
           editionId: edition.id,
-          archivedAt: null
+          isArchived: false
         }
       })
       expect(active).toHaveLength(1)
@@ -701,13 +692,13 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Toutes les courses restent actives
       const active = await testMilesRepublicDb.race.findMany({
         where: { 
           editionId: edition.id,
-          archivedAt: null
+          isArchived: false
         }
       })
       expect(active).toHaveLength(2)
@@ -726,7 +717,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Course toujours en DB (soft delete)
       const deleted = await testMilesRepublicDb.race.findUnique({ 
@@ -734,7 +725,7 @@ describe('Race Operations', () => {
       })
       
       expect(deleted).not.toBeNull() // ✅ Pas supprimée physiquement
-      expect(deleted!.archivedAt).not.toBeNull() // ✅ Archivée logiquement
+      expect(deleted!.isArchived).toBe(true) // ✅ Archivée logiquement
     })
 
     it('should allow filtering toAdd with racesToAddFiltered', async () => {
@@ -752,13 +743,18 @@ describe('Race Operations', () => {
         }
       })
       
-      // Simulation userModifiedChanges filtrant course index 1
-      proposal.userModifiedChanges = {
-        racesToAddFiltered: [1] // Index de la course à exclure
-      }
+      // ✅ FIX: Sauvegarder userModifiedChanges en DB avant d'appliquer
+      await testDb.proposal.update({
+        where: { id: proposal.id },
+        data: {
+          userModifiedChanges: {
+            racesToAddFiltered: [1]  // Index de la course à exclure
+          }
+        }
+      })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: Seulement 2 courses créées (course 2 exclue)
       const races = await testMilesRepublicDb.race.findMany({
@@ -813,7 +809,7 @@ describe('Race Operations', () => {
       })
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, proposal.changes as any, { milesRepublicDatabaseId: 'miles-republic-test', agentName: 'ffa-scraper' })
 
       // Then: 
       // - race1 modifiée
@@ -822,11 +818,11 @@ describe('Race Operations', () => {
       
       // - race2 archivée
       const deleted = await testMilesRepublicDb.race.findUnique({ where: { id: race2.id } })
-      expect(deleted!.archivedAt).not.toBeNull()
+      expect(deleted!.isArchived).toBe(true)
       
       // - Nouvelle course créée
       const active = await testMilesRepublicDb.race.findMany({
-        where: { editionId: edition.id, archivedAt: null }
+        where: { editionId: edition.id, isArchived: false }
       })
       expect(active).toHaveLength(2) // race1 + Semi
       
