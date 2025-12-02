@@ -8,7 +8,8 @@ import {
   setupProposalService,
   cleanupProposalService,
   cleanDatabase,
-  cleanMilesRepublicDatabase
+  cleanMilesRepublicDatabase,
+  updateProposalUserModifications  // ✅ Phase 2.7
 } from './helpers'
 import { ProposalDomainService } from '@data-agents/database'
 import { DatabaseManager } from '@data-agents/agent-framework'
@@ -743,14 +744,9 @@ describe('Race Operations', () => {
         }
       })
       
-      // ✅ FIX: Sauvegarder userModifiedChanges en DB avant d'appliquer
-      await testDb.proposal.update({
-        where: { id: proposal.id },
-        data: {
-          userModifiedChanges: {
-            racesToAddFiltered: [1]  // Index de la course à exclure
-          }
-        }
+      // ✅ Phase 2.7: Sauvegarder userModifiedChanges en DB avant d'appliquer
+      await updateProposalUserModifications(proposal.id, {
+        racesToAddFiltered: [1]  // Index de la course à exclure
       })
 
       // When

@@ -33,3 +33,6 @@ export * from './errors'
 
 // Export logging utilities
 export * from './logging'
+
+// Export utility functions
+export { convertChangesToSelectedChanges } from './utils/proposal-helpers'

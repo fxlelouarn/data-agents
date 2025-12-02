@@ -37,7 +37,9 @@ export {
   createExistingEdition,
   createExistingRace,
   createExistingOrganizer,
-  createTestAgent,
+  convertChangesToSelectedChanges,
+  updateProposalUserModifications,  // ✅ Phase 2.7
+  updateProposalApprovedBlocks,     // ✅ Phase 2.8
   createTestProposal,
   createCompleteSetup
 } from './fixtures'

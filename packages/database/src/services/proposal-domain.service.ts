@@ -1,6 +1,7 @@
 import { ProposalRepository } from '../repositories/proposal.repository'
 import { MilesRepublicRepository } from '../repositories/miles-republic.repository'
 import { ApplyOptions, ProposalApplicationResult } from './interfaces'
+import { convertChangesToSelectedChanges } from '../utils/proposal-helpers'
 
 // DatabaseManager type to avoid circular dependency
 type DatabaseManager = any
@@ -32,10 +33,12 @@ export class ProposalDomainService {
    * 
    * ✅ NOUVEAU : Support blockType pour application partielle
    * Si options.blockType est spécifié, seuls les changements de ce bloc seront appliqués.
+   * 
+   * ✅ PHASE 2.6 : Le paramètre selectedChanges a été SUPPRIMÉ.
+   * selectedChanges est maintenant régénéré depuis finalChanges (après merge intelligent).
    */
   async applyProposal(
     proposalId: string,
-    selectedChanges: Record<string, any>,
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     // ⚠️ Détection mode groupé
@@ -80,20 +83,37 @@ export class ProposalDomainService {
     const agentName = (proposal as any).agent?.name || 'data-agents'
     this.logger.info(`🤖 Application par l'agent: ${agentName}`)
 
-    // 4. Merge changes (user modifications take precedence)
-    const finalChanges = {
-      ...(proposal.changes as Record<string, any>),
-      ...(proposal.userModifiedChanges ? (proposal.userModifiedChanges as Record<string, any>) : {})
-    }
+    // 4. Merge changes with intelligent merge for userModifiedChanges
+    const finalChanges = this.mergeUserModificationsIntoChanges(
+      proposal.changes as Record<string, any>,
+      proposal.userModifiedChanges as Record<string, any> | null
+    )
+
+    // ✅ PHASE 2.6: Régénérer selectedChanges depuis finalChanges
+    // finalChanges contient le merge intelligent (agent + user)
+    // selectedChanges est la version "aplatie" utilisée pour le filtrage et l'application
+    const selectedChanges = convertChangesToSelectedChanges(finalChanges)
+    
+    this.logger.info(`🔄 [PHASE 2.6] selectedChanges régénéré depuis finalChanges`, {
+      finalChangesKeys: Object.keys(finalChanges),
+      selectedChangesKeys: Object.keys(selectedChanges)
+    })
 
     // 5. Filter changes based on blockType (partial application) or approved blocks
     let filteredSelectedChanges: Record<string, any>
+    let filteredFinalChanges: Record<string, any>  // ✅ Filtrer aussi finalChanges
     let removedChanges: string[] = []  // ✅ Déclarer au bon scope
     let approvedBlocks: Record<string, boolean> = {}
+    
+    this.logger.info(`\n🚦 [DEBUG FILTRAGE] AVANT filtrage:`, {
+      finalChangesKeys: Object.keys(finalChanges),
+      finalChanges: JSON.stringify(finalChanges, null, 2)
+    })
     
     if (options.blockType) {
       // ✅ NOUVEAU : Filtrage par blockType (application partielle d'un seul bloc)
       filteredSelectedChanges = this.filterChangesByBlock(selectedChanges, options.blockType)
+      filteredFinalChanges = this.filterChangesByBlock(finalChanges, options.blockType)
       
       removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
@@ -102,7 +122,16 @@ export class ProposalDomainService {
     } else {
       // Mode legacy : filtrage par approved blocks
       approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
+      
+      this.logger.info(`\n🚦 [DEBUG FILTRAGE] approvedBlocks:`, approvedBlocks)
+      
       filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
+      filteredFinalChanges = this.filterChangesByApprovedBlocks(finalChanges, approvedBlocks)
+      
+      this.logger.info(`\n🚦 [DEBUG FILTRAGE] APRÈS filtrage:`, {
+        filteredFinalChangesKeys: Object.keys(filteredFinalChanges),
+        filteredFinalChanges: JSON.stringify(filteredFinalChanges, null, 2)
+      })
       
       removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
@@ -125,28 +154,28 @@ export class ProposalDomainService {
       
       switch (proposal.type) {
         case 'NEW_EVENT':
-          result = await this.applyNewEvent(finalChanges, filteredSelectedChanges, { ...options, agentName })
+          result = await this.applyNewEvent(filteredFinalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         case 'EVENT_UPDATE':
           if (!proposal.eventId) {
             throw new Error('EventId manquant pour EVENT_UPDATE')
           }
-          result = await this.applyEventUpdate(proposal.eventId, finalChanges, filteredSelectedChanges, { ...options, agentName })
+          result = await this.applyEventUpdate(proposal.eventId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         case 'EDITION_UPDATE':
           if (!proposal.editionId) {
             throw new Error('EditionId manquant pour EDITION_UPDATE')
           }
-          result = await this.applyEditionUpdate(proposal.editionId, finalChanges, filteredSelectedChanges, { ...options, agentName }, proposal)
+          result = await this.applyEditionUpdate(proposal.editionId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName }, proposal)
           break
 
         case 'RACE_UPDATE':
           if (!proposal.raceId) {
             throw new Error('RaceId manquant pour RACE_UPDATE')
           }
-          result = await this.applyRaceUpdate(proposal.raceId, finalChanges, filteredSelectedChanges, { ...options, agentName })
+          result = await this.applyRaceUpdate(proposal.raceId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
         default:
@@ -302,8 +331,9 @@ export class ProposalDomainService {
         return this.errorResult('eventId', `ID d'événement invalide: ${eventId}`)
       }
 
-      // Build update data
-      const updateData = this.buildUpdateData(selectedChanges)
+      // ✅ PHASE 2.5: Build update data depuis 'changes' (contient userModifiedChanges mergées)
+      // Au lieu de 'selectedChanges' (ne contient que les valeurs agent)
+      const updateData = this.buildUpdateData(changes)
 
       // Apply update
       await milesRepo.updateEvent(numericEventId, updateData)
@@ -688,7 +718,7 @@ export class ProposalDomainService {
           }
           
           // ✅ FIX: Appliquer le bon champ de distance selon le type de course
-          // Distance
+          // Distance - supporter à la fois 'distance' (legacy) et les champs spécifiques (runDistance, bikeDistance, etc.)
           if (editedData.distance) {
             const distance = parseFloat(editedData.distance)
             const categoryLevel1 = racePayload.categoryLevel1
@@ -700,14 +730,21 @@ export class ProposalDomainService {
               racePayload.runDistance = distance
             }
           } else {
-            // Utiliser les valeurs proposées par l'agent
-            if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
-            if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
-            if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
-            if (raceData.swimDistance !== undefined) racePayload.swimDistance = raceData.swimDistance  // ✅ FIX: Ajout swimDistance pour triathlon
+            // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
+            if (editedData.runDistance !== undefined) racePayload.runDistance = parseFloat(editedData.runDistance)
+            else if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
+            
+            if (editedData.bikeDistance !== undefined) racePayload.bikeDistance = parseFloat(editedData.bikeDistance)
+            else if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
+            
+            if (editedData.walkDistance !== undefined) racePayload.walkDistance = parseFloat(editedData.walkDistance)
+            else if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
+            
+            if (editedData.swimDistance !== undefined) racePayload.swimDistance = parseFloat(editedData.swimDistance)
+            else if (raceData.swimDistance !== undefined) racePayload.swimDistance = raceData.swimDistance
           }
           
-          // Élévation
+          // Élévation - supporter à la fois 'elevation' (legacy) et les champs spécifiques
           if (editedData.elevation) {
             const elevation = parseFloat(editedData.elevation)
             const categoryLevel1 = racePayload.categoryLevel1
@@ -719,10 +756,15 @@ export class ProposalDomainService {
               racePayload.runPositiveElevation = elevation
             }
           } else {
-            // Utiliser les valeurs proposées par l'agent
-            if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = raceData.runPositiveElevation
-            if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = raceData.bikePositiveElevation
-            if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
+            // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
+            if (editedData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = parseFloat(editedData.runPositiveElevation)
+            else if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = raceData.runPositiveElevation
+            
+            if (editedData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = parseFloat(editedData.bikePositiveElevation)
+            else if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = raceData.bikePositiveElevation
+            
+            if (editedData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = parseFloat(editedData.walkPositiveElevation)
+            else if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
           
           // Type est déprécié dans le schéma mais peut être utilisé
@@ -858,7 +900,9 @@ export class ProposalDomainService {
         return this.errorResult('raceId', `ID de course invalide: ${raceId}`)
       }
 
-      const updateData = this.buildUpdateData(selectedChanges)
+      // ✅ PHASE 2.5: Build update data depuis 'changes' (contient userModifiedChanges mergées)
+      // Au lieu de 'selectedChanges' (ne contient que les valeurs agent)
+      const updateData = this.buildUpdateData(changes)
 
       // Fetch race to update parent event
       const race = await milesRepo.findRaceById(numericRaceId)
@@ -888,24 +932,208 @@ export class ProposalDomainService {
    * Based on the GroupedProposalDetailBase logic (lines 656-694)
    * 
    * Blocks:
+   * - 'event': Event-level fields (name, city, country, websiteUrl, etc.)
+   * - 'edition': Edition-level fields (year, startDate, endDate, etc.)
    * - 'organizer': organizer-related fields
    * - 'races': race changes (racesToAdd, races array, race_* fields)
-   * - 'edition': edition/event changes (everything else)
    */
   private getBlockForField(field: string): string {
+    // ✅ Event fields (must match filterChangesByBlock)
+    const eventFields = [
+      'name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
+      'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
+      'countrySubdivisionDisplayCodeLevel1', 'countrySubdivisionDisplayCodeLevel2',
+      'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
+      'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'
+    ]
+    
+    if (eventFields.includes(field)) {
+      return 'event'
+    }
+    
+    // ✅ Edition fields
+    const editionFields = [
+      'year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
+      'calendarStatus', 'clientStatus', 'status', 'currency', 'medusaVersion', 'customerType',
+      'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
+      'volunteerCode', 'confirmedAt'
+    ]
+    
+    if (editionFields.includes(field)) {
+      return 'edition'
+    }
+
     // Organizer block
     if (field === 'organizerId' || field === 'organizer') {
       return 'organizer'
     }
 
     // Races block (racesToAdd, races array, or race_* fields)
-    if (field === 'racesToAdd' || field === 'races' || field.startsWith('race_')) {
+    if (field === 'racesToAdd' || field === 'racesToUpdate' || field === 'races' || field.startsWith('race_') || field === 'raceEdits' || field === 'racesToDelete' || field === 'racesToAddFiltered') {
       return 'races'
     }
 
-    // Everything else is edition/event block (default)
-    // This includes: name, city, startDate, endDate, calendarStatus, etc.
+    // Default: edition (pour les champs non listés)
     return 'edition'
+  }
+
+  /**
+   * ✅ PHASE 2 : Merge intelligent pour userModifiedChanges
+   * 
+   * Au lieu d'écraser complètement les clés de premier niveau,
+   * cette fonction merge intelligemment les modifications utilisateur
+   * dans la structure de changes de l'agent.
+   * 
+   * Cas gérés:
+   * 1. Champs simples { old, new } → Remplacer la valeur new
+   * 2. races.toUpdate → Fusionner les modifications par raceId
+   * 3. races.toAdd → Fusionner les modifications par index
+   * 4. Autres sous-structures → Merge récursif
+   * 
+   * Exemple:
+   * ```
+   * changes = {
+   *   races: {
+   *     toUpdate: [{ raceId: 123, updates: { runDistance: { old: 10, new: 10 } } }]
+   *   }
+   * }
+   * 
+   * userModifiedChanges = {
+   *   races: {
+   *     "123": { runDistance: 12 }
+   *   }
+   * }
+   * 
+   * → Résultat:
+   * {
+   *   races: {
+   *     toUpdate: [{ raceId: 123, updates: { runDistance: { old: 10, new: 12 } } }]
+   *   }
+   * }
+   * ```
+   */
+  private mergeUserModificationsIntoChanges(
+    changes: Record<string, any>,
+    userModifiedChanges: Record<string, any> | null
+  ): Record<string, any> {
+    if (!userModifiedChanges || Object.keys(userModifiedChanges).length === 0) {
+      return changes
+    }
+
+    this.logger.info('🔀 Merge intelligent userModifiedChanges', {
+      changesKeys: Object.keys(changes),
+      userModifiedKeys: Object.keys(userModifiedChanges)
+    })
+
+    const merged = JSON.parse(JSON.stringify(changes)) // Deep copy
+
+    // Itérer sur les modifications utilisateur
+    for (const [key, userValue] of Object.entries(userModifiedChanges)) {
+      // Cas spécial: races (structure complexe)
+      if (key === 'races' && typeof userValue === 'object') {
+        merged.races = this.mergeRacesModifications(merged.races || {}, userValue)
+        continue
+      }
+
+      // Cas standard: champ simple ou objet
+      if (merged[key] && typeof merged[key] === 'object' && 'old' in merged[key] && 'new' in merged[key]) {
+        // Structure { old, new } → Remplacer new
+        merged[key] = { ...merged[key], new: userValue }
+        this.logger.info(`  ✅ Remplacé ${key}.new par modification utilisateur`, {
+          old: merged[key].old,
+          newAgent: changes[key].new,  // Valeur agent AVANT merge
+          newUser: userValue           // Valeur user qui remplace
+        })
+      } else {
+        // Pas de structure { old, new } → Remplacer entièrement
+        merged[key] = userValue
+        this.logger.info(`  ✅ Remplacé ${key} entièrement par modification utilisateur`)
+      }
+    }
+
+    return merged
+  }
+
+  /**
+   * Merge spécifique pour les courses
+   * 
+   * Structure agent:
+   * {
+   *   toUpdate: [{ raceId: 123, raceName: '10km', updates: { runDistance: { old, new } } }],
+   *   toAdd: [{ name: 'Semi', runDistance: 21.1 }]
+   * }
+   * 
+   * Structure user:
+   * {
+   *   "123": { runDistance: 12 },         // Modification toUpdate (key = raceId)
+   *   "new-0": { name: 'Semi 2025' }      // Modification toAdd (key = new-index)
+   * }
+   */
+  private mergeRacesModifications(
+    agentRaces: Record<string, any>,
+    userRacesMods: Record<string, any>
+  ): Record<string, any> {
+    const merged = JSON.parse(JSON.stringify(agentRaces))
+
+    // Séparer les modifications par type (toUpdate vs toAdd)
+    const toUpdateMods: Record<string, any> = {}
+    const toAddMods: Record<string, any> = {}
+
+    for (const [key, value] of Object.entries(userRacesMods)) {
+      if (key.startsWith('new-')) {
+        toAddMods[key] = value
+      } else {
+        toUpdateMods[key] = value
+      }
+    }
+
+    // 1. Fusionner toUpdate (key = raceId)
+    if (merged.toUpdate && Array.isArray(merged.toUpdate)) {
+      merged.toUpdate = merged.toUpdate.map((raceUpdate: any) => {
+        const raceId = raceUpdate.raceId?.toString()
+        if (!raceId || !toUpdateMods[raceId]) {
+          return raceUpdate
+        }
+
+        const userMods = toUpdateMods[raceId]
+        const mergedUpdates = { ...raceUpdate.updates }
+
+        // Appliquer les modifications utilisateur dans updates
+        for (const [field, newValue] of Object.entries(userMods)) {
+          if (mergedUpdates[field] && typeof mergedUpdates[field] === 'object' && 'old' in mergedUpdates[field]) {
+            mergedUpdates[field] = { ...mergedUpdates[field], new: newValue }
+            this.logger.debug(`    ✅ Course ${raceId} - ${field}: ${mergedUpdates[field].old} → ${newValue} (user)`, {
+              raceId,
+              field,
+              oldValue: mergedUpdates[field].old,
+              agentValue: raceUpdate.updates[field].new,
+              userValue: newValue
+            })
+          } else {
+            mergedUpdates[field] = { old: null, new: newValue }
+            this.logger.debug(`    ➕ Course ${raceId} - ${field}: nouvelle modification utilisateur → ${newValue}`)
+          }
+        }
+
+        return { ...raceUpdate, updates: mergedUpdates }
+      })
+    }
+
+    // 2. Fusionner toAdd (key = new-index)
+    if (merged.toAdd && Array.isArray(merged.toAdd)) {
+      merged.toAdd = merged.toAdd.map((race: any, index: number) => {
+        const key = `new-${index}`
+        if (!toAddMods[key]) {
+          return race
+        }
+
+        const userMods = toAddMods[key]
+        this.logger.debug(`    ✅ Nouvelle course [${index}] - modifications utilisateur:`, userMods)
+        return { ...race, ...userMods }
+      })
+    }
+
+    return merged
   }
 
   /**

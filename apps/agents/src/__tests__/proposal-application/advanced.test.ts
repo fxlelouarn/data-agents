@@ -1,44 +1,36 @@
-import { describe, it, expect, beforeEach, afterEach } from '@jest/globals'
-import { testDb, testMilesRepublicDb, setupTestEnvironment, teardownTestEnvironment } from './helpers/db-setup'
-import { 
-  createExistingEvent, 
-  createExistingEdition, 
+import { ProposalDomainService } from '@data-agents/database'
+import {
+  createNewEventProposal,
+  createEditionUpdateProposal,
+  createExistingEvent,
+  createExistingEdition,
   createExistingRace,
   createExistingOrganizer,
-  createNewEventProposal,
-  createEditionUpdateProposal
-} from './helpers/fixtures'
-import { ProposalDomainService } from '../../../../packages/database/src/services/proposal-domain.service'
-import { DatabaseManager } from '../../../../packages/agent-framework/src/database-manager'
+  testMilesRepublicDb,
+  setupProposalService,
+  cleanupProposalService,
+  cleanDatabase,
+  cleanMilesRepublicDatabase,
+  updateProposalUserModifications,  // ✅ Phase 2.7
+  updateProposalApprovedBlocks      // ✅ Phase 2.8
+} from './helpers'
+import { DatabaseManager } from '@data-agents/agent-framework'
 
 describe('Advanced Features', () => {
-  let proposalService: ProposalDomainService
+  let domainService: ProposalDomainService
   let databaseManager: DatabaseManager
 
   beforeEach(async () => {
-    await setupTestEnvironment()
+    await cleanDatabase()
+    await cleanMilesRepublicDatabase()
     
-    // Initialiser les services
-    databaseManager = new DatabaseManager()
-    
-    // Enregistrer la connexion Miles Republic
-    await databaseManager.registerConnection({
-      id: 'miles-republic',
-      type: 'postgres',
-      host: process.env.MILES_REPUBLIC_DATABASE_HOST!,
-      port: parseInt(process.env.MILES_REPUBLIC_DATABASE_PORT || '5432'),
-      username: process.env.MILES_REPUBLIC_DATABASE_USER!,
-      password: process.env.MILES_REPUBLIC_DATABASE_PASSWORD!,
-      database: process.env.MILES_REPUBLIC_DATABASE_NAME!,
-      schemaPath: 'apps/agents/prisma/miles-republic.prisma'
-    })
-    
-    proposalService = new ProposalDomainService(testDb, databaseManager)
+    const setup = await setupProposalService()
+    domainService = setup.proposalService
+    databaseManager = setup.databaseManager
   })
 
   afterEach(async () => {
-    await databaseManager.disconnectAll()
-    await teardownTestEnvironment()
+    await cleanupProposalService(databaseManager)
   })
 
   // ==========================================================================
@@ -87,9 +79,12 @@ describe('Advanced Features', () => {
         edition: true,
         races: false
       }
+      
+      // ✅ Phase 2.8: Sauvegarder en DB pour que applyProposal() respecte les blocs
+      await updateProposalApprovedBlocks(proposal.id, proposal.approvedBlocks)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Event + Edition modifiés, Race inchangée
       const updatedEvent = await testMilesRepublicDb.event.findUnique({ 
@@ -125,7 +120,7 @@ describe('Advanced Features', () => {
       proposal.approvedBlocks = {}
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Tous les changements appliqués
       const updatedEvent = await testMilesRepublicDb.event.findUnique({ 
@@ -139,7 +134,8 @@ describe('Advanced Features', () => {
       expect(updatedEdition!.startDate).toEqual(new Date('2026-03-20T09:00:00.000Z'))
     })
 
-    it('should handle partial block approval', async () => {
+    it.skip('should handle partial block approval', async () => {
+      // ⚠️ SKIP: La table Organizer n'existe plus dans Miles Republic
       // Given: 4 blocs possibles, seulement 1 approuvé
       const event = await createExistingEvent()
       const organizer = await createExistingOrganizer()
@@ -171,7 +167,7 @@ describe('Advanced Features', () => {
       }
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Seulement edition modifiée
       const updatedEvent = await testMilesRepublicDb.event.findUnique({ 
@@ -190,7 +186,8 @@ describe('Advanced Features', () => {
       expect(races).toHaveLength(1) // ✅ Pas de nouvelle course
     })
 
-    it('should apply organizer block correctly', async () => {
+    it.skip('should apply organizer block correctly', async () => {
+      // ⚠️ SKIP: La table Organizer n'existe plus dans Miles Republic
       // Given: Proposition avec bloc organizer approuvé uniquement
       const event = await createExistingEvent()
       const organizer = await createExistingOrganizer({
@@ -217,7 +214,7 @@ describe('Advanced Features', () => {
       }
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Organizer modifié, Edition inchangée
       const updatedOrg = await testMilesRepublicDb.organizer.findUnique({ 
@@ -258,9 +255,12 @@ describe('Advanced Features', () => {
         event: false,
         races: true
       }
+      
+      // ✅ Phase 2.8: Sauvegarder en DB
+      await updateProposalApprovedBlocks(proposal.id, proposal.approvedBlocks)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Races modifiées/ajoutées, Event inchangé
       const updatedRace = await testMilesRepublicDb.race.findUnique({ 
@@ -269,7 +269,7 @@ describe('Advanced Features', () => {
       expect(updatedRace!.runDistance).toBe(12)
       
       const races = await testMilesRepublicDb.race.findMany({
-        where: { editionId: edition.id, archivedAt: null }
+        where: { editionId: edition.id, isArchived: false }
       })
       expect(races).toHaveLength(2)
       
@@ -315,9 +315,12 @@ describe('Advanced Features', () => {
           }
         }
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB pour que applyProposal() puisse merger
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: User override appliqué
       const updated = await testMilesRepublicDb.race.findUnique({ 
@@ -366,9 +369,12 @@ describe('Advanced Features', () => {
           [race2.id]: { runDistance: 21.097 }
         }
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Les 2 modifications user appliquées
       const updated1 = await testMilesRepublicDb.race.findUnique({ 
@@ -400,9 +406,12 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         startDate: '2026-03-25T09:00:00.000Z'
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Date user appliquée
       const updated = await testMilesRepublicDb.edition.findUnique({ 
@@ -427,9 +436,12 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         city: 'Marseille'
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Ville user appliquée
       const updated = await testMilesRepublicDb.event.findUnique({ 
@@ -438,7 +450,8 @@ describe('Advanced Features', () => {
       expect(updated!.city).toBe('Marseille')
     })
 
-    it('should apply user modification to organizer fields', async () => {
+    it.skip('should apply user modification to organizer fields', async () => {
+      // ⚠️ SKIP: La table Organizer n'existe plus dans Miles Republic
       // Given: Agent propose email A, user modifie en email B
       const organizer = await createExistingOrganizer({
         name: 'Org Test',
@@ -463,7 +476,7 @@ describe('Advanced Features', () => {
       }
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Email user appliqué
       const updated = await testMilesRepublicDb.organizer.findUnique({ 
@@ -489,9 +502,12 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         websiteUrl: 'https://new.com'
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Les 2 modifications appliquées
       const updated = await testMilesRepublicDb.event.findUnique({ 
@@ -524,9 +540,12 @@ describe('Advanced Features', () => {
         name: 'Trail User',
         city: 'Lyon'
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Modifications user appliquées
       const event = await testMilesRepublicDb.event.findFirst({
@@ -553,14 +572,19 @@ describe('Advanced Features', () => {
       })
       
       // User modifie la première course
-      proposal.userModifiedRaceChanges = {
-        'new-0': {
-          runDistance: 12 // ✅ Override agent 10 → 12
+      proposal.userModifiedChanges = {
+        raceEdits: {
+          'new-0': {
+            runDistance: 12 // ✅ Override agent 10 → 12
+          }
         }
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Course 1 avec distance user
       const races = await testMilesRepublicDb.race.findMany({
@@ -594,9 +618,12 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         racesToAddFiltered: [1]
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Seulement 2 courses créées
       const races = await testMilesRepublicDb.race.findMany({
@@ -634,9 +661,15 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         name: 'Trail User'
       }
+      
+      // ✅ Phase 2.8: Sauvegarder approvedBlocks en DB
+      await updateProposalApprovedBlocks(proposal.id, proposal.approvedBlocks)
+      
+      // ✅ Phase 2.7: Sauvegarder userModifiedChanges en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Event avec user override, Edition inchangée
       const updatedEvent = await testMilesRepublicDb.event.findUnique({ 
@@ -668,9 +701,15 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         name: 'Trail User'
       }
+      
+      // ✅ Phase 2.8: Sauvegarder approvedBlocks en DB
+      await updateProposalApprovedBlocks(proposal.id, proposal.approvedBlocks)
+      
+      // ✅ Phase 2.7: Sauvegarder userModifiedChanges en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Aucun changement (bloc non approuvé)
       const updated = await testMilesRepublicDb.event.findUnique({ 
@@ -695,9 +734,12 @@ describe('Advanced Features', () => {
       })
       
       proposal.userModifiedChanges = {} // Vide
+      
+      // ✅ Phase 2.7: Sauvegarder en DB (même si vide)
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Proposition agent appliquée normalement
       const updated = await testMilesRepublicDb.event.findUnique({ 
@@ -716,9 +758,12 @@ describe('Advanced Features', () => {
       })
       
       proposal.userModifiedChanges = null as any
+      
+      // ✅ Phase 2.7: Pas de sauvegarde (null n'est pas persistable)
+      // Ce test vérifie que l'agent proposal est appliqué quand userModifiedChanges=null
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: Proposition agent appliquée normalement
       const updated = await testMilesRepublicDb.event.findUnique({ 
@@ -740,9 +785,12 @@ describe('Advanced Features', () => {
       proposal.userModifiedChanges = {
         name: 'Trail User'
       }
+      
+      // ✅ Phase 2.7: Sauvegarder en DB
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
 
       // When
-      await proposalService.applyProposal(proposal.id, proposal.selectedChanges as any, { milesRepublicDatabaseId: 'miles-republic-test' }))
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
 
       // Then: User override appliqué
       const updated = await testMilesRepublicDb.event.findUnique({ 

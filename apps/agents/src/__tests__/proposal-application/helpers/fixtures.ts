@@ -479,3 +479,79 @@ export const createCompleteSetup = async (config: {
   
   return { event, edition, organizer: null, races }
 }
+
+/**
+ * ✅ PHASE 2.7 : Met à jour les userModifiedChanges d'une proposition en DB
+ * 
+ * Cette fonction permet de sauvegarder les modifications utilisateur en base
+ * AVANT d'appeler applyProposal(), pour que le merge intelligent fonctionne.
+ * 
+ * @param proposalId - ID de la proposition à modifier
+ * @param userModifiedChanges - Modifications manuelles de l'utilisateur
+ * @returns Proposition mise à jour
+ * 
+ * @example
+ * const proposal = await createEditionUpdateProposal(event.id, edition.id, changes)
+ * 
+ * // Modifier en mémoire
+ * proposal.userModifiedChanges = { startDate: '2026-03-25T09:00:00.000Z' }
+ * 
+ * // ✅ Sauvegarder en DB pour que applyProposal() puisse merger
+ * await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
+ * 
+ * // Maintenant le merge intelligent fonctionnera
+ * await domainService.applyProposal(proposal.id, { ... })
+ */
+export const updateProposalUserModifications = async (
+  proposalId: string,
+  userModifiedChanges: Record<string, any>
+) => {
+  return await testDb.proposal.update({
+    where: { id: proposalId },
+    data: { userModifiedChanges }
+  })
+}
+
+/**
+ * ✅ PHASE 2.8 : Met à jour les approvedBlocks d'une proposition en DB
+ * 
+ * Cette fonction permet de sauvegarder l'état des blocs approuvés en base
+ * AVANT d'appeler applyProposal(), pour que la logique de blocs fonctionne.
+ * 
+ * @param proposalId - ID de la proposition à modifier
+ * @param approvedBlocks - État des blocs (event, edition, organizer, races)
+ * @returns Proposition mise à jour
+ * 
+ * @example
+ * const proposal = await createEditionUpdateProposal(event.id, edition.id, changes)
+ * 
+ * // Modifier en mémoire
+ * proposal.approvedBlocks = {
+ *   event: true,
+ *   edition: false,
+ *   races: false
+ * }
+ * 
+ * // ✅ Sauvegarder en DB pour que applyProposal() respecte les blocs
+ * await updateProposalApprovedBlocks(proposal.id, proposal.approvedBlocks)
+ * 
+ * // Maintenant seul le bloc event sera appliqué
+ * await domainService.applyProposal(proposal.id, { ... })
+ */
+export const updateProposalApprovedBlocks = async (
+  proposalId: string,
+  approvedBlocks: Record<string, boolean>
+) => {
+  return await testDb.proposal.update({
+    where: { id: proposalId },
+    data: { approvedBlocks }
+  })
+}
+
+/**
+ * ✅ PHASE 2.6 : Cette fonction est déplacée dans @data-agents/database
+ * Elle est ré-exportée ici pour compatibilité avec les tests existants.
+ * 
+ * @deprecated Utiliser directement depuis @data-agents/database/utils/proposal-helpers
+ */
+export { convertChangesToSelectedChanges } from '@data-agents/database'
