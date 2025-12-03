@@ -36,3 +36,6 @@ export * from './logging'
 
 // Export utility functions
 export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
+
+// Export block execution order utilities
+export * from './services/block-execution-order'
