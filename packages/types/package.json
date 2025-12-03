@@ -2,6 +2,7 @@
   "name": "@data-agents/types",
   "version": "1.0.0",
   "description": "Shared type definitions for data agents",
+  "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
   "scripts": {
