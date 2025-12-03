@@ -7,7 +7,7 @@
 
 Système complet garantissant l'exécution correcte des ProposalApplication en respectant les dépendances entre blocs, peu importe l'ordre de validation par l'utilisateur.
 
-## Architecture en 3 phases
+## Architecture en 4 phases
 
 ### Phase 1 : Module de base ✅
 **Fichier** : `packages/database/src/services/block-execution-order.ts`
@@ -64,6 +64,30 @@ applicationsInOrder: [app_event, app_edition, app_races]
 
 ---
 
+### Phase 4 : Intégration Frontend ✅
+**Fichier** : `apps/dashboard/src/pages/UpdateGroupDetail.tsx`
+
+**Fonctionnalité** : Tri automatique dans les boutons "Appliquer tous les blocs" et "Rejouer tous les blocs"
+
+**Exemple** :
+```typescript
+// Utilisateur valide : races → event → edition (désordre)
+// Clic "Appliquer tous les blocs"
+
+// Tri automatique
+const sortedApps = sortBlocksByDependencies(pendingApps)
+
+// Application dans le bon ordre
+📋 Ordre d'exécution: event → edition → races
+✅ Tous les blocs appliqués avec succès
+```
+
+**Tests** : Tests manuels
+
+**Documentation** : `docs/BLOCK-EXECUTION-ORDER-PHASE4.md`
+
+---
+
 ## Graphe de dépendances
 
 ```
@@ -105,10 +129,11 @@ edition (dépend de event)
 
 ## Tests
 
-**Total : 30 tests**
+**Total : 30 tests automatisés + tests manuels**
 - ✅ 21 tests unitaires (Phase 1)
 - ✅ 4 tests intégration tri (Phase 2)
 - ✅ 5 tests intégration validation (Phase 3)
+- ✅ Tests manuels (Phase 4)
 
 **Exécution** :
 ```bash
@@ -199,15 +224,19 @@ Error 400: Missing required blocks for NEW_EVENT: event. Cannot apply changes wi
 - `packages/database/src/services/block-execution-order.ts`
 - `packages/database/src/services/__tests__/block-execution-order.test.ts`
 
-### Intégration API
+### Intégration Backend
 - `apps/api/src/routes/updates.ts`
 - `apps/api/src/routes/__tests__/updates.bulk-apply.test.ts`
+
+### Intégration Frontend
+- `apps/dashboard/src/pages/UpdateGroupDetail.tsx`
 
 ### Documentation
 - `docs/SPEC-BLOCK-EXECUTION-ORDER.md` (Spécification initiale)
 - `docs/BLOCK-EXECUTION-ORDER.md` (Phase 1)
 - `docs/BLOCK-EXECUTION-ORDER-PHASE2.md` (Phase 2)
 - `docs/BLOCK-EXECUTION-ORDER-PHASE3.md` (Phase 3)
+- `docs/BLOCK-EXECUTION-ORDER-PHASE4.md` (Phase 4)
 - `docs/BLOCK-EXECUTION-ORDER-SUMMARY.md` (Ce fichier)
 
 ## Métriques de production
@@ -297,11 +326,12 @@ WHERE "proposalId" IN (...)
 ORDER BY "createdAt" DESC;
 ```
 
-## Évolutions futures (Phase 4+)
+## Évolutions futures (Phase 5+)
 
-### Option A : Validation côté frontend
+### Option A : Validation proactive côté frontend
 - Désactiver bouton "Appliquer tout" si blocs manquants
-- Afficher warning : "Validez event et edition d'abord"
+- Afficher tooltip : "Blocs manquants : event, edition"
+- Voir Phase 4 pour implémentation possible
 
 ### Option B : Application incrémentale
 - Appliquer blocs disponibles un par un
@@ -311,7 +341,7 @@ ORDER BY "createdAt" DESC;
 - Si échec pendant application, rollback automatique
 - Marquer applications comme "ROLLED_BACK"
 
-**Pour l'instant** : Système actuel suffit (défense en profondeur)
+**Pour l'instant** : Système actuel suffit (défense en profondeur + tri automatique)
 
 ## Références
 

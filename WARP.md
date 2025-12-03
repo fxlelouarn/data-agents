@@ -4,6 +4,56 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-03 - Tri topologique dans UpdateGroupDetail (Phase 4) ✅
+
+**Problème résolu** : Dans la page `/updates/:groupId`, les boutons "Appliquer tous les blocs" et "Rejouer tous les blocs" appliquaient les `ProposalApplication` dans l'ordre de création au lieu de respecter les dépendances entre blocs.
+
+#### Symptômes
+
+Pour une proposition **NEW_EVENT** avec validation dans le désordre :
+1. Utilisateur valide `races` (14:30)
+2. Utilisateur valide `event` (14:35)
+3. Utilisateur valide `edition` (14:40)
+4. Clic "Appliquer tous les blocs" → ❌ **Erreurs FK** (races appliquée avant edition)
+
+#### Solution
+
+Réutilisation du module `block-execution-order` (Phase 1) :
+
+```typescript
+import { sortBlocksByDependencies, explainExecutionOrder } from '@data-agents/database'
+
+const sortedApps = sortBlocksByDependencies(pendingApps)
+console.log('📋 ' + explainExecutionOrder(sortedApps))
+// 📋 Ordre d'exécution: event → edition → races
+
+for (const app of sortedApps) {
+  await applyUpdateMutation.mutateAsync(app.id)
+}
+```
+
+#### Résultats
+
+| Aspect | Avant | Après |
+|--------|-------|-------|
+| **Ordre** | ❌ Ordre de création (races → event → edition) | ✅ Ordre dépendances (event → edition → races) |
+| **Erreurs FK** | ⚠️ Fréquentes | ✅ Impossibles |
+| **Cohérence** | ❌ Backend OK, Frontend bugé | ✅ Backend + Frontend |
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/pages/UpdateGroupDetail.tsx`
+  - `handleApplyAllBlocks()` : Tri topologique ajouté
+  - `handleReplayAllBlocks()` : Tri topologique ajouté
+
+#### Ressources
+
+- Documentation complète : `docs/BLOCK-EXECUTION-ORDER-PHASE4.md`
+- Summary : `docs/BLOCK-EXECUTION-ORDER-SUMMARY.md`
+- Module partagé : `packages/database/src/services/block-execution-order.ts`
+
+---
+
 ### 2025-11-28 - Fix: Updates en double lors de la validation par blocs ✅
 
 **Problème résolu** : Lors de la validation de propositions groupées, plusieurs `ProposalApplication` identiques pouvaient être créées au lieu d'une seule, causant des doublons dans la page `/updates`.
