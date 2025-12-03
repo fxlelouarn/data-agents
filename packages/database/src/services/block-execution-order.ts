@@ -150,6 +150,40 @@ export function validateRequiredBlocks(
 }
 
 /**
+ * Récupère toutes les dépendances d'un bloc (récursif)
+ * 
+ * @param blockType Type de bloc
+ * @returns Liste de tous les blocs dont dépend ce bloc (ordre: racine → feuille)
+ * 
+ * @example
+ * getAllDependencies('races') // → ['event', 'edition']
+ * getAllDependencies('edition') // → ['event']
+ * getAllDependencies('event') // → []
+ */
+export function getAllDependencies(blockType: BlockType): BlockType[] {
+  const deps = BLOCK_DEPENDENCIES[blockType] || []
+  const allDeps: BlockType[] = []
+  
+  // Ajouter les dépendances directes
+  for (const dep of deps) {
+    // Récursivement ajouter les dépendances de la dépendance
+    const subDeps = getAllDependencies(dep)
+    subDeps.forEach(subDep => {
+      if (!allDeps.includes(subDep)) {
+        allDeps.push(subDep)
+      }
+    })
+    
+    // Ajouter la dépendance elle-même
+    if (!allDeps.includes(dep)) {
+      allDeps.push(dep)
+    }
+  }
+  
+  return allDeps
+}
+
+/**
  * Explique l'ordre d'exécution pour le logging
  * 
  * @param blocks Liste triée de blocs

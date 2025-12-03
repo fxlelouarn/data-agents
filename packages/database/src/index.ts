@@ -38,4 +38,12 @@ export * from './logging'
 export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
 
 // Export block execution order utilities
-export * from './services/block-execution-order'
+export { 
+  sortBlocksByDependencies, 
+  validateRequiredBlocks, 
+  getAllDependencies,
+  explainExecutionOrder,
+  BLOCK_DEPENDENCIES,
+  type BlockType,
+  type BlockApplication
+} from './services/block-execution-order'
