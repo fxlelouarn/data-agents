@@ -284,6 +284,98 @@ router.post('/:id/apply', [
   if (application.status !== 'PENDING') {
     throw createError(400, 'Update is not pending', 'INVALID_STATUS')
   }
+  
+  // ✅ CASCADE AUTOMATIQUE: Appliquer les dépendances manquantes
+  if (application.blockType) {
+    const { getAllDependencies } = require('@data-agents/database')
+    const requiredDeps = getAllDependencies(application.blockType as any)
+    
+    if (requiredDeps.length > 0) {
+      console.log(`🔄 Bloc "${application.blockType}" nécessite: ${requiredDeps.join(' → ')}`)
+      
+      // Récupérer toutes les applications de cette proposition
+      const allApps = await db.prisma.proposalApplication.findMany({
+        where: {
+          proposalId: application.proposalId,
+          blockType: { in: requiredDeps }
+        },
+        include: {
+          proposal: {
+            include: {
+              agent: {
+                select: { name: true, type: true }
+              }
+            }
+          }
+        }
+      })
+      
+      // Appliquer les dépendances PENDING dans l'ordre
+      for (const depType of requiredDeps) {
+        const depApp = allApps.find((a: any) => a.blockType === depType)
+        
+        if (!depApp) {
+          // ✅ EXCEPTION: Pour EDITION_UPDATE, le bloc 'event' n'est pas obligatoire
+          // car applyEditionUpdate() récupère eventId depuis la base de données
+          const proposalType = application.proposal.type
+          
+          if (proposalType === 'EDITION_UPDATE' && depType === 'event') {
+            console.log(`  ⏭️  Bloc "event" non trouvé pour EDITION_UPDATE - eventId sera récupéré depuis la base`)
+            continue  // Skip cette dépendance
+          }
+          
+          throw createError(400, `Bloc requis "${depType}" introuvable pour cette proposition`, 'MISSING_DEPENDENCY')
+        }
+        
+        if (depApp.status === 'PENDING') {
+          console.log(`  → Application automatique du bloc "${depType}"...`)
+          
+          // Appliquer directement sans récursion HTTP
+          const depLogs: string[] = []
+          const applyOptions: any = { 
+            capturedLogs: depLogs,
+            proposalId: depApp.proposalId,  // ✅ Nécessaire pour récupérer les IDs
+            blockType: depType  // ✅ Type de bloc à appliquer
+          }
+          
+          if (depApp.proposalIds && depApp.proposalIds.length > 0) {
+            applyOptions.proposalIds = depApp.proposalIds
+          }
+          
+          const depResult = await applicationService.applyProposal(
+            depApp.proposalId,
+            depApp.proposal.changes as Record<string, any>,
+            applyOptions
+          )
+          
+          if (!depResult.success) {
+            const errorMsg = depResult.errors?.map((e: any) => e.message).join('; ') || 'Unknown error'
+            throw createError(500, `Échec application du bloc "${depType}": ${errorMsg}`, 'DEPENDENCY_APPLICATION_FAILED')
+          }
+          
+          // Mettre à jour le statut de la dépendance
+          await db.prisma.proposalApplication.update({
+            where: { id: depApp.id },
+            data: {
+              status: 'APPLIED',
+              appliedAt: new Date(),
+              logs: depLogs,
+              appliedChanges: depResult.appliedChanges as any,
+              rollbackData: (depResult.createdIds as any) || null
+            }
+          })
+          
+          console.log(`  ✅ Bloc "${depType}" appliqué avec succès`)
+        } else if (depApp.status === 'FAILED') {
+          throw createError(400, `Bloc requis "${depType}" en échec. Veuillez le rejouer d'abord.`, 'DEPENDENCY_FAILED')
+        } else if (depApp.status === 'APPLIED') {
+          console.log(`  ✅ Bloc "${depType}" déjà appliqué`)
+        }
+      }
+      
+      console.log(`🚀 Toutes les dépendances appliquées, application du bloc "${application.blockType}"...`)
+    }
+  }
 
   const logs: string[] = []
   let success = false
@@ -294,18 +386,27 @@ router.post('/:id/apply', [
     logs.push('Validating proposal changes...')
     
     // ✅ MODE GROUPÉ : Passer proposalIds si disponibles
-    const applyOptions: any = { capturedLogs: logs }
+    const applyOptions: any = { 
+      capturedLogs: logs,
+      proposalId: application.proposalId  // ✅ Nécessaire pour récupérer les IDs des blocs précédents
+    }
     
     if (application.proposalIds && application.proposalIds.length > 0) {
       applyOptions.proposalIds = application.proposalIds
       logs.push(`📦 Mode groupé détecté: ${application.proposalIds.length} propositions`)
     }
     
+    // ✅ Passer blockType pour application par blocs (NEW_EVENT)
+    if (application.blockType) {
+      applyOptions.blockType = application.blockType
+      logs.push(`📦 Application bloc "${application.blockType}"`)
+    }
+    
     // Apply the proposal using ProposalApplicationService with log capturing
     const result = await applicationService.applyProposal(
       application.proposalId,
       application.proposal.changes as Record<string, any>, // Use all changes from the proposal
-      applyOptions // Pass options with proposalIds if grouped
+      applyOptions // Pass options with proposalIds, blockType, proposalId
     )
 
     if (result.success) {
