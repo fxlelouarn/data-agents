@@ -94,7 +94,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               userModifiedChanges={userModifiedChanges}
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
-              disabled={!allPending || isPending || isEventDead || isAllApproved}
+              disabled={isBlockValidated('event') || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('event')}
               onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('event')}
@@ -116,7 +116,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               formatValue={formatValue}
               formatAgentsList={formatAgentsList}
               timezone={editionTimezone}
-              disabled={!allPending || isPending || isEventDead || isAllApproved}
+              disabled={isBlockValidated('edition') || isPending || isEventDead || isAllApproved}
               isEditionCanceled={isEditionCanceled || isEventDead}
               isBlockValidated={isBlockValidated('edition')}
               onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
@@ -148,7 +148,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               userModifiedRaceChanges={userModifiedRaceChanges}
               onRaceFieldModify={handleRaceFieldModify}
               onDeleteRace={handleDeleteRace}
-              disabled={!allPending || isPending || isEventDead || isAllApproved}
+              disabled={isBlockValidated('races') || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('races')}
               onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
               onUnvalidateBlock={() => unvalidateBlock('races')}
