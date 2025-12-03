@@ -119,7 +119,7 @@ function App() {
           <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
             <CssBaseline />
             <SnackbarProvider
-              maxSnack={3}
+              maxSnack={5} // ✅ Phase 4: Augmenté pour validation en cascade (jusqu'à 4 dépendances + 1 final)
               anchorOrigin={{
                 vertical: 'top',
                 horizontal: 'right',

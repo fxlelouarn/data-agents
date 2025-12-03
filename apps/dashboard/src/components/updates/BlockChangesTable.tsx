@@ -112,6 +112,27 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
 
   const organizerData = getOrganizerData()
 
+  // ✅ NOUVEAU: Extraire données Edition depuis structure imbriquée (NEW_EVENT)
+  const getEditionData = () => {
+    if (blockType !== 'edition') return null
+    
+    const editionChange = effectiveChanges.edition
+    if (!editionChange) return null
+    
+    // Structure imbriquée (NEW_EVENT) : edition.new
+    if (editionChange.new) {
+      return {
+        current: editionChange.old || {},
+        proposed: editionChange.new
+      }
+    }
+    
+    // Structure plate (EDITION_UPDATE) : champs au niveau racine
+    return null
+  }
+
+  const editionData = getEditionData()
+
   // Extraire la valeur proposée pour un champ
   const getProposedValue = (fieldName: string) => {
     // ✅ Cas spécial organizer
@@ -120,6 +141,30 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
         return userModifiedChanges.organizer[fieldName]
       }
       return organizerData.proposed?.[fieldName]
+    }
+
+    // ✅ NOUVEAU: Cas spécial edition
+    if (blockType === 'edition' && editionData) {
+      if (userModifiedChanges[fieldName] !== undefined) {
+        return userModifiedChanges[fieldName]
+      }
+      return editionData.proposed?.[fieldName]
+    }
+
+    // ✅ NOUVEAU: Cas spécial races pour NEW_EVENT
+    // Les courses sont dans edition.new.races, pas dans racesToAdd au niveau racine
+    if (blockType === 'races' && fieldName === 'racesToAdd') {
+      // Priorité 1: racesToAdd au niveau racine (EDITION_UPDATE)
+      if (effectiveChanges.racesToAdd) {
+        return effectiveChanges.racesToAdd
+      }
+      
+      // Priorité 2: edition.new.races (NEW_EVENT)
+      if (effectiveChanges.edition?.new?.races) {
+        return effectiveChanges.edition.new.races
+      }
+      
+      return null
     }
 
     // ✅ Si appliedChanges existe, utiliser directement
@@ -174,6 +219,11 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     // ✅ Cas spécial organizer
     if (blockType === 'organizer' && organizerData) {
       return organizerData.current?.[fieldName]
+    }
+
+    // ✅ NOUVEAU: Cas spécial edition
+    if (blockType === 'edition' && editionData) {
+      return editionData.current?.[fieldName]
     }
 
     const change = effectiveChanges[fieldName]
