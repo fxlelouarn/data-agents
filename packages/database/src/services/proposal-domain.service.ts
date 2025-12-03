@@ -198,6 +198,11 @@ export class ProposalDomainService {
 
   /**
    * Apply NEW_EVENT proposal
+   * 
+   * ✅ Support application par blocs:
+   * - blockType='event' : Crée Event uniquement, stocke ID dans rollbackData
+   * - blockType='edition' : Récupère Event depuis rollbackData, crée Edition
+   * - blockType='races' : Récupère Event+Edition depuis rollbackData, crée Races
    */
   async applyNewEvent(
     changes: any,
@@ -208,41 +213,118 @@ export class ProposalDomainService {
       const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
 
       // Extract structured data
-      // Note: Utiliser 'changes' qui contient les userModifiedChanges mergées
-      // Récupérer l'agentId depuis options si disponible
       const agentId = options.agentName || (await this.getAgentIdFromContext())
+      
+      this.logger.info(`\n🔍 [DEBUG] Avant extractEventData:`, {
+        changesKeys: Object.keys(changes),
+        hasIdInChanges: 'id' in changes,
+        changesId: changes.id,
+        changesStringified: JSON.stringify(changes, null, 2).substring(0, 500)
+      })
+      
       const eventData = this.extractEventData(changes, agentId)
+      
+      this.logger.info(`\n🔍 [DEBUG] Après extractEventData:`, {
+        eventDataKeys: Object.keys(eventData),
+        hasIdInEventData: 'id' in eventData,
+        eventDataId: eventData.id,
+        eventDataStringified: JSON.stringify(eventData, null, 2).substring(0, 500)
+      })
       const editionsData = this.extractEditionsData(changes, agentId)
       const racesData = this.extractRacesData(changes)
       const organizerData = this.extractNewValue(changes.organizer)
+      
+      // ✅ PHASE 5: Application par blocs pour NEW_EVENT
+      // Récupérer les IDs créés précédemment depuis rollbackData
+      let existingEventId: number | null = null
+      let existingEditionId: number | null = null
+      
+      if (options.blockType && options.proposalId) {
+        // Chercher les applications précédentes pour récupérer les IDs créés
+        const previousApps = await this.proposalRepo.findApplicationsByProposalId(options.proposalId)
+        
+        for (const app of previousApps) {
+          if (app.rollbackData) {
+            const rollback = app.rollbackData as any
+            if (rollback.eventId) existingEventId = parseInt(rollback.eventId)
+            if (rollback.editionId) existingEditionId = parseInt(rollback.editionId)
+          }
+        }
+        
+        this.logger.info(`🔍 [BLOC ${options.blockType}] IDs existants:`, {
+          eventId: existingEventId,
+          editionId: existingEditionId
+        })
+      }
 
-      // Create event
-      const event = await milesRepo.createEvent(eventData)
-
-      // ✅ FIX 1.4 : Générer le slug avec l'ID
-      const slug = this.generateEventSlug(event.name, event.id)
-      await milesRepo.updateEvent(event.id, { slug })
-      this.logger.info(`Slug généré pour l'événement ${event.id}: ${slug}`)
+      // Créer ou récupérer Event
+      let event: any
+      
+      if (existingEventId) {
+        this.logger.info(`♻️  Réutilisation Event existant: ${existingEventId}`)
+        event = await milesRepo.findEventById(existingEventId)
+        if (!event) {
+          throw new Error(`Event ${existingEventId} non trouvé en base`)
+        }
+      } else if (options.blockType === 'event' || !options.blockType) {
+        // Créer Event seulement si:
+        // - blockType = 'event' (application du bloc event)
+        // - blockType non spécifié (application complète)
+        this.logger.info(`🆕 Création nouvel Event`)
+        event = await milesRepo.createEvent(eventData)
+        
+        // ✅ FIX 1.4 : Générer le slug avec l'ID
+        const slug = this.generateEventSlug(event.name, event.id)
+        await milesRepo.updateEvent(event.id, { slug })
+        this.logger.info(`Slug généré pour l'événement ${event.id}: ${slug}`)
+        
+        // ✅ FIX 1.2 : Géocoder si coordonnées manquantes
+        if (!event.latitude || !event.longitude) {
+          this.logger.info(`Coordonnées manquantes pour l'événement ${event.id}, tentative de géocodage...`)
+          const coords = await this.geocodeCity(event.city, event.country)
+          if (coords) {
+            await milesRepo.updateEvent(event.id, {
+              latitude: coords.latitude,
+              longitude: coords.longitude
+            })
+            this.logger.info(`Coordonnées mises à jour pour ${event.city}: ${coords.latitude}, ${coords.longitude}`)
+          }
+        }
+      } else {
+        throw new Error(`Bloc "${options.blockType}" nécessite que le bloc "event" soit appliqué d'abord`)
+      }
 
       const createdEditionIds: number[] = []
       const createdRaceIds: number[] = []
 
-      // Create editions
-      for (const editionData of editionsData) {
-        const edition = await milesRepo.createEdition({
-          eventId: event.id,
-          // ✅ FIX 2.2 : currentEditionEventId
-          currentEditionEventId: event.id,
-          ...editionData
-        })
+      // Créer ou récupérer Edition
+      if (options.blockType === 'edition' || options.blockType === 'organizer' || options.blockType === 'races' || !options.blockType) {
+        if (existingEditionId) {
+          this.logger.info(`♻️  Réutilisation Edition existante: ${existingEditionId}`)
+          createdEditionIds.push(existingEditionId)
+        } else {
+          // Créer editions
+          this.logger.info(`🆕 Création Edition(s)`)
+          for (const editionData of editionsData) {
+            const edition = await milesRepo.createEdition({
+              eventId: event.id,
+              // ✅ FIX 2.2 : currentEditionEventId
+              currentEditionEventId: event.id,
+              ...editionData
+            })
 
-        createdEditionIds.push(edition.id)
-        this.logger.info(`Édition créée: ${edition.id} pour l'événement ${event.id}`)
-
-        // Create organizer if provided
-        if (organizerData && typeof organizerData === 'object') {
-          this.logger.info(`Création de l'organisateur pour l'édition ${edition.id}`)
-          await milesRepo.upsertOrganizerPartner(edition.id, {
+            createdEditionIds.push(edition.id)
+            this.logger.info(`Édition créée: ${edition.id} pour l'événement ${event.id}`)
+          }
+        }
+      }
+      
+      // Créer organizer si bloc organizer ou application complète
+      if ((options.blockType === 'organizer' || !options.blockType) && organizerData && typeof organizerData === 'object') {
+        const editionId = createdEditionIds[0] || existingEditionId
+        if (editionId) {
+          this.logger.info(`🆕 Création de l'organisateur pour l'édition ${editionId}`)
+          await milesRepo.upsertOrganizerPartner(editionId, {
             name: organizerData.name,
             websiteUrl: organizerData.websiteUrl,
             email: organizerData.email,
@@ -251,51 +333,25 @@ export class ProposalDomainService {
             instagramUrl: organizerData.instagramUrl
           })
         }
-
-        // ✅ FIX 3.1 : Create races for this edition
-        const editionRaces = racesData.filter(race => 
-          race.editionYear === editionData.year
-        )
-        
-        if (editionRaces.length === 0 && racesData.length > 0) {
-          // Si aucune race ne correspond à l'année, créer toutes les races
-          this.logger.info(`Aucune race avec editionYear=${editionData.year}, création de toutes les races (${racesData.length})`)
+      }
+      
+      // Créer races si bloc races ou application complète
+      if (options.blockType === 'races' || !options.blockType) {
+        const editionId = createdEditionIds[0] || existingEditionId
+        if (editionId && racesData.length > 0) {
+          this.logger.info(`🆕 Création de ${racesData.length} course(s)`)
+          
           for (const raceData of racesData) {
             const race = await milesRepo.createRace({
-              editionId: edition.id,
+              editionId: editionId,
               eventId: event.id,
               // ✅ Hériter timeZone de l'édition si non spécifié
-              timeZone: raceData.timeZone || editionData.timeZone,
+              timeZone: raceData.timeZone || editionsData[0]?.timeZone,
               ...raceData
             })
             createdRaceIds.push(race.id)
-            this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${edition.id}`)
+            this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${editionId}`)
           }
-        } else {
-          for (const raceData of editionRaces) {
-            const race = await milesRepo.createRace({
-              editionId: edition.id,
-              eventId: event.id,
-              // ✅ Hériter timeZone de l'édition si non spécifié
-              timeZone: raceData.timeZone || editionData.timeZone,
-              ...raceData
-            })
-            createdRaceIds.push(race.id)
-            this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${edition.id}`)
-          }
-        }
-      }
-
-      // ✅ FIX 1.2 : Géocoder si coordonnées manquantes
-      if (!event.latitude || !event.longitude) {
-        this.logger.info(`Coordonnées manquantes pour l'événement ${event.id}, tentative de géocodage...`)
-        const coords = await this.geocodeCity(event.city, event.country)
-        if (coords) {
-          await milesRepo.updateEvent(event.id, {
-            latitude: coords.latitude,
-            longitude: coords.longitude
-          })
-          this.logger.info(`Coordonnées mises à jour pour ${event.city}: ${coords.latitude}, ${coords.longitude}`)
         }
       }
 
@@ -1274,12 +1330,19 @@ export class ProposalDomainService {
 
   /**
    * Extract event data from selected changes
+   * ⚠️ IMPORTANT: Ne JAMAIS passer 'id' à createEvent (auto-généré par PostgreSQL)
    */
   private extractEventData(selectedChanges: Record<string, any>, agentId?: string): any {
     const city = this.extractNewValue(selectedChanges.city) || ''
     const dept = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel2) || ''
     const region = this.extractNewValue(selectedChanges.countrySubdivision) || this.extractNewValue(selectedChanges.countrySubdivisionNameLevel1) || ''
     const country = this.extractNewValue(selectedChanges.country) || 'FR'
+    
+    // ⚠️ CRITICAL: Log si 'id' est présent dans selectedChanges (ne devrait JAMAIS arriver)
+    if ('id' in selectedChanges || this.extractNewValue(selectedChanges.id)) {
+      this.logger.warn(`⚠️⚠️⚠️ ALERTE: 'id' détecté dans selectedChanges lors de la création d'Event! Valeur: ${this.extractNewValue(selectedChanges.id)}. Ce champ sera IGNORÉ.`)
+      this.logger.warn(`   selectedChanges keys: ${Object.keys(selectedChanges).join(', ')}`)
+    }
     
     return {
       // Requis
