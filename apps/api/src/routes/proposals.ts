@@ -1127,10 +1127,17 @@ router.post('/validate-block-group', [
             // Appliquer modifications utilisateur sur nouvelles courses
             Object.entries(userEdits).forEach(([field, value]) => {
               if (field !== '_deleted') {
-                if (race[field]) {
+                // ✅ Vérifier si race[field] est déjà un objet {new, old}
+                if (race[field] && typeof race[field] === 'object' && 'new' in race[field]) {
+                  // Déjà au bon format, juste mettre à jour .new
                   race[field].new = value
                 } else {
-                  race[field] = { new: value, old: null }
+                  // Soit undefined, soit une valeur simple (string, number, etc.)
+                  // Créer la structure {new, old}
+                  race[field] = { 
+                    new: value, 
+                    old: race[field] || null  // Préserver l'ancienne valeur si elle existe
+                  }
                 }
               }
             })
