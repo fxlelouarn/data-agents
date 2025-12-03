@@ -6,6 +6,7 @@ interface CategorizedEventChangesTableProps extends Omit<BaseChangesTableProps, 
   // Props de validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
@@ -24,6 +25,7 @@ interface CategorizedEventChangesTableProps extends Omit<BaseChangesTableProps, 
 const CategorizedEventChangesTable: React.FC<CategorizedEventChangesTableProps> = ({
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -42,10 +44,12 @@ const CategorizedEventChangesTable: React.FC<CategorizedEventChangesTableProps> 
     <CategorizedChangesTable
       {...props}
       entityType="EVENT"
+      blockKey="event"  // ✅ Nouveau
       isFieldDisabledFn={isFieldDisabledFn}
       renderCustomEditor={undefined}
       isBlockValidated={isBlockValidated}
       onValidateBlock={onValidateBlock}
+      onValidateBlockWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}

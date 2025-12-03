@@ -23,6 +23,8 @@ interface CategorizedChangesTableProps {
   // Validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
+  blockKey?: string  // ✅ Clé du bloc pour validation en cascade
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean

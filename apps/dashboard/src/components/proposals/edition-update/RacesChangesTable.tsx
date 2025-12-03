@@ -40,6 +40,7 @@ interface RacesChangesTableProps {
   disabled?: boolean
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
@@ -87,6 +88,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   disabled = false,
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -319,12 +321,15 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
         </Box>
         {onValidateBlock && onUnvalidateBlock && (
           <BlockValidationButton
+            blockKey="races"
             blockName="Courses"
             isValidated={isBlockValidated}
             onValidate={onValidateBlock}
+            onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
             onUnvalidate={onUnvalidateBlock}
             disabled={validationDisabled}
             isPending={isBlockPending}
+            useCascadeValidation={true}  // ✅ Activé par défaut
           />
         )}
       </Box>

@@ -58,6 +58,8 @@ export interface GenericChangesTableProps {
   // Validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
+  blockKey?: string  // ✅ Clé du bloc pour validation en cascade
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
@@ -114,6 +116,8 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
   variant = 'base',
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
+  blockKey,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -366,12 +370,15 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {onValidateBlock && onUnvalidateBlock && (
             <BlockValidationButton
+              blockKey={blockKey}  // ✅ Nouveau
               blockName={entityType === 'EDITION' ? 'Édition' : entityType === 'EVENT' ? 'Event' : entityType === 'RACE' ? 'Courses' : title}
               isValidated={isBlockValidated}
               onValidate={onValidateBlock}
+              onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
               onUnvalidate={onUnvalidateBlock}
               disabled={validationDisabled}
               isPending={isBlockPending}
+              useCascadeValidation={true}  // ✅ Activé par défaut
             />
           )}
           {actions}

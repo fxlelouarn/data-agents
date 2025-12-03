@@ -9,6 +9,7 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
   // Props de validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
@@ -31,6 +32,7 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   isEditionCanceled = false,
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -94,10 +96,12 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
       {...props}
       onFieldModify={handleFieldModifyWithStartDateLogic}
       entityType="EDITION"
+      blockKey="edition"  // ✅ Nouveau
       isFieldDisabledFn={isFieldDisabledFn}
       renderCustomEditor={renderCustomEditor}
       isBlockValidated={isBlockValidated}
       onValidateBlock={onValidateBlock}
+      onValidateBlockWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}

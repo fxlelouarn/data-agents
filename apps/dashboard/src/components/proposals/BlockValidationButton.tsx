@@ -1,6 +1,7 @@
 import React from 'react'
 import { Button, CircularProgress } from '@mui/material'
 import { CheckCircle as ValidateIcon, Cancel as CancelIcon } from '@mui/icons-material'
+import { BlockType } from '@data-agents/types'
 
 interface BlockValidationButtonProps {
   blockKey?: string // Optionnel, pour compatibilité
@@ -10,6 +11,9 @@ interface BlockValidationButtonProps {
   disabled?: boolean
   isPending?: boolean
   blockName?: string // Nom du bloc pour le label
+  // ✅ Nouveau : support validation en cascade
+  onValidateWithDependencies?: (blockKey: BlockType) => Promise<void>
+  useCascadeValidation?: boolean  // Default: true
 }
 
 /**
@@ -35,13 +39,20 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
   onUnvalidate,
   disabled = false,
   isPending = false,
-  blockName
+  blockName,
+  onValidateWithDependencies,
+  useCascadeValidation = true
 }) => {
   const handleClick = async () => {
     if (isValidated) {
       await onUnvalidate()
     } else {
-      await onValidate()
+      // ✅ Utiliser validation en cascade si disponible et activée
+      if (useCascadeValidation && onValidateWithDependencies && blockKey) {
+        await onValidateWithDependencies(blockKey as BlockType)
+      } else {
+        await onValidate()
+      }
     }
   }
 
