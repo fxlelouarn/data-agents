@@ -95,6 +95,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   isEditionCanceled: boolean
   // Validation par blocs
   validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  validateBlockWithDependencies: (blockKey: string) => Promise<void>  // ✅ Nouveau
   unvalidateBlock: (blockKey: string) => Promise<void>
   validateAllBlocks: () => Promise<void>
   isBlockValidated: (blockKey: string) => boolean
@@ -973,6 +974,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const {
     blockStatus,
     validateBlock: validateBlockBase,
+    validateBlockWithDependencies: validateBlockWithDependenciesBase,  // ✅ Nouveau
     unvalidateBlock: unvalidateBlockBase,
     validateAllBlocks: validateAllBlocksBase,
     unvalidateAllBlocks,
@@ -1005,8 +1007,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const isBlockValidated = isBlockValidatedEditor
   
   // Wrapper pour logger les validations de blocs
+  // ✅ Phase 4: Utiliser automatiquement la validation en cascade
   const validateBlock = async (blockKey: string, proposalIds: string[]) => {
-    await validateBlockBase(blockKey, proposalIds)
+    await validateBlockWithDependenciesBase(blockKey as any, { silent: false })
+  }
+  
+  // ✅ Wrapper pour validation en cascade
+  const validateBlockWithDependencies = async (blockKey: string) => {
+    await validateBlockWithDependenciesBase(blockKey, { silent: false })
   }
   
   const unvalidateBlock = async (blockKey: string) => {
@@ -1075,6 +1083,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     // Validation par blocs
     validateBlock,
+    validateBlockWithDependencies,  // ✅ Nouveau
     unvalidateBlock,
     validateAllBlocks: () => validateAllBlocksBase(blockProposals),
     isBlockValidated,
