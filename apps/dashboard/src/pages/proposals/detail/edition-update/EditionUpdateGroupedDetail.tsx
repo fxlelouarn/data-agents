@@ -51,6 +51,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           isAllApproved, // ✅ Mode lecture seule (toutes APPROVED)
           // Validation par bloc
           validateBlock,
+          validateBlockWithDependencies,  // ✅ Nouveau
           unvalidateBlock,
           isBlockValidated,
           isBlockPending,
@@ -105,6 +106,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 disabled={isBlockValidated('event') || isEventDead || isAllApproved}
                 isBlockValidated={isBlockValidated('event')}
                 onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
+                onValidateBlockWithDependencies={validateBlockWithDependencies}  // ✅ Nouveau
                 onUnvalidateBlock={() => unvalidateBlock('event')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
@@ -130,6 +132,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 isEditionCanceled={isEditionCanceled || isEventDead}
                 isBlockValidated={isBlockValidated('edition')}
                 onValidateBlock={() => validateBlock('edition', blockProposals['edition'] || [])}
+                onValidateBlockWithDependencies={validateBlockWithDependencies}  // ✅ Nouveau
                 onUnvalidateBlock={() => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
@@ -146,6 +149,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 disabled={isBlockValidated('organizer') || isEventDead || isAllApproved}
                 isBlockValidated={isBlockValidated('organizer')}
                 onValidateBlock={() => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onValidateBlockWithDependencies={validateBlockWithDependencies}  // ✅ Nouveau
                 onUnvalidateBlock={() => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
@@ -162,6 +166,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 disabled={isBlockValidated('races') || isEventDead || isAllApproved}
                 isBlockValidated={isBlockValidated('races')}
                 onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}
+                onValidateBlockWithDependencies={validateBlockWithDependencies}  // ✅ Nouveau
                 onUnvalidateBlock={() => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isEventDead || isAllApproved}
