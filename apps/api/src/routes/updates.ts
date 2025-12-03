@@ -3,6 +3,7 @@ import { param, query, body, validationResult } from 'express-validator'
 import { getDatabaseService } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichProposal } from './proposals'
+import { sortBlocksByDependencies, explainExecutionOrder, validateRequiredBlocks, BlockApplication } from '@data-agents/database'
 
 const router = Router()
 
@@ -462,6 +463,22 @@ router.post('/bulk/apply', [
     }
   })
 
+  // ✅ PHASE 2: Trier les applications selon les dépendances entre blocs
+  const sortedApplications = sortBlocksByDependencies(
+    applications.map((app: any) => ({
+      blockType: app.blockType,
+      id: app.id
+    }))
+  )
+  
+  // Récupérer les applications complètes dans l'ordre trié
+  const applicationsInOrder = sortedApplications
+    .map((sorted: BlockApplication) => applications.find((app: any) => app.id === sorted.id)!)
+    .filter(Boolean)
+  
+  const executionOrder = explainExecutionOrder(sortedApplications)
+  console.log(`📋 ${executionOrder}`)
+
   const foundIds = applications.map((app: any) => app.id)
   const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
 
@@ -475,13 +492,38 @@ router.post('/bulk/apply', [
     throw createError(400, `Some updates are not pending: ${nonPendingApps.map((a: any) => a.id).join(', ')}`, 'INVALID_STATUS')
   }
 
-  // Appliquer toutes les mises à jour
+  // ✅ PHASE 3: Valider que les blocs requis sont présents
+  // Pour les propositions groupées, toutes doivent avoir le même type
+  const proposalTypes = [...new Set(applications.map((app: any) => app.proposal.type))]
+  
+  if (proposalTypes.length > 1) {
+    console.warn('⚠️ Applications avec types de propositions différents:', proposalTypes)
+    // On valide quand même avec le premier type
+  }
+  
+  const proposalType = applications[0].proposal.type
+  const validation = validateRequiredBlocks(sortedApplications, proposalType)
+  
+  if (!validation.valid) {
+    const missingBlocksList = validation.missing.join(', ')
+    console.error(`❌ Blocs manquants pour ${proposalType}:`, validation.missing)
+    
+    throw createError(
+      400,
+      `Missing required blocks for ${proposalType}: ${missingBlocksList}. Cannot apply changes without these blocks.`,
+      'MISSING_REQUIRED_BLOCKS'
+    )
+  }
+  
+  console.log(`✅ Validation passed: All required blocks present for ${proposalType}`)
+
+  // Appliquer toutes les mises à jour dans l'ordre trié
   const results = {
     successful: [] as string[],
     failed: [] as { id: string; error: string | null }[]
   }
 
-  for (const application of applications) {
+  for (const application of applicationsInOrder) {
     const logs: string[] = []
     let success = false
     let errorMessage: string | null = null
