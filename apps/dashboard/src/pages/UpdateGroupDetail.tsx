@@ -35,6 +35,7 @@ import { DataUpdate, UpdateStatus } from '@/types'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import BlockChangesTable from '@/components/updates/BlockChangesTable'
+import { sortBlocksByDependencies, explainExecutionOrder } from '@/utils/block-execution-order'
 
 const UpdateGroupDetail: React.FC = () => {
   const { groupId } = useParams<{ groupId: string }>()
@@ -123,10 +124,24 @@ const UpdateGroupDetail: React.FC = () => {
     try {
       const pendingApps = groupUpdates.filter(a => a.status === 'PENDING')
       
-      // Appliquer tous les blocs en séquence
-      for (const app of pendingApps) {
+      // ✅ Tri topologique pour respecter les dépendances (event → edition → organizer → races)
+      const sortedApps = sortBlocksByDependencies(
+        pendingApps.map(app => ({
+          blockType: app.blockType as any,
+          id: app.id
+        }))
+      )
+      
+      console.log('📋 ' + explainExecutionOrder(sortedApps))
+      console.log('   Applications:', sortedApps.map(a => `${a.blockType}(${a.id.slice(-6)})`).join(', '))
+      
+      // Appliquer tous les blocs en séquence (ordre respecté)
+      for (const app of sortedApps) {
+        console.log(`  → Application bloc "${app.blockType || 'unknown'}"...`)
         await applyUpdateMutation.mutateAsync(app.id)
       }
+      
+      console.log('✅ Tous les blocs appliqués avec succès')
     } catch (error) {
       console.error('Error applying all blocks:', error)
     }
@@ -136,13 +151,27 @@ const UpdateGroupDetail: React.FC = () => {
     try {
       const failedApps = groupUpdates.filter(a => a.status === 'FAILED')
       
-      // Rejouer tous les blocs en erreur en séquence
-      for (const app of failedApps) {
+      // ✅ Tri topologique pour respecter les dépendances (event → edition → organizer → races)
+      const sortedApps = sortBlocksByDependencies(
+        failedApps.map(app => ({
+          blockType: app.blockType as any,
+          id: app.id
+        }))
+      )
+      
+      console.log('🔄 Rejeu - ' + explainExecutionOrder(sortedApps))
+      console.log('   Applications:', sortedApps.map(a => `${a.blockType}(${a.id.slice(-6)})`).join(', '))
+      
+      // Rejouer tous les blocs en erreur en séquence (ordre respecté)
+      for (const app of sortedApps) {
+        console.log(`  → Rejeu bloc "${app.blockType || 'unknown'}"...`)
         // 1. Reset à PENDING via /replay
         await replayUpdateMutation.mutateAsync(app.id)
         // 2. Appliquer via /apply
         await applyUpdateMutation.mutateAsync(app.id)
       }
+      
+      console.log('✅ Tous les blocs rejoués avec succès')
     } catch (error) {
       console.error('Error replaying all blocks:', error)
     }
