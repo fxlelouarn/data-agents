@@ -1,6 +1,8 @@
 import { useState, useCallback, useMemo } from 'react'
 import { useUpdateProposal, useUnapproveProposal, useUnapproveBlock } from './useApi'
 import { Proposal } from '@/types'
+import { getAllDependencies, getAllDependents, BlockType } from '@data-agents/types'
+import { useSnackbar } from 'notistack'
 
 export interface BlockStatus {
   [blockKey: string]: {
@@ -26,7 +28,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     userModifiedChanges = {},
     userModifiedRaceChanges = {}
   } = props || {}
-  const [blockStatus, setBlockStatus] = useState<BlockStatus>({})
+  const { enqueueSnackbar } = useSnackbar()
   const updateProposalMutation = useUpdateProposal()
   const unapproveProposalMutation = useUnapproveProposal()
   const unapproveBlockMutation = useUnapproveBlock()
@@ -115,35 +117,32 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         })
       }
       
-      // ✅ UN SEUL APPEL API pour tout le groupe (non-bloquant pour UX réactive)
-      updateProposalMutation.mutate({
+      // ✅ Utiliser mutateAsync pour permettre await dans la cascade
+      await updateProposalMutation.mutateAsync({
         proposalIds,    // 📦 Passer tous les IDs
         block: blockKey,
         changes         // 📦 Payload consolidé
-      }, {
-        onSuccess: () => {
-          // Marquer le bloc comme validé après succès API
-          setBlockStatus(prev => ({
-            ...prev,
-            [blockKey]: {
-              isValidated: true,
-              proposalIds
-            }
-          }))
-          console.log(`✅ [useBlockValidation] Bloc "${blockKey}" validé pour ${proposalIds.length} propositions`)
-        },
-        onError: (error) => {
-          console.error(`❌ [useBlockValidation] Erreur validation bloc "${blockKey}":`, error)
-        }
       })
+      
+      // ✅ Attendre que React Query refetch les propositions mises à jour
+      // Sinon isBlockValidated() retourne false immédiatement après
+      await new Promise(resolve => setTimeout(resolve, 100))
+      
+      console.log(`✅ [useBlockValidation] Bloc "${blockKey}" validé pour ${proposalIds.length} propositions`)
     } catch (error) {
       console.error(`Error validating block ${blockKey}:`, error)
       throw error
     }
   }, [updateProposalMutation, userModifiedChanges, userModifiedRaceChanges])
 
-  // Annuler la validation d'un bloc
-  const unvalidateBlock = useCallback(async (blockKey: string) => {
+  // Vérifier si un bloc est validé (utilise syncedBlockStatus au lieu de blockStatus)
+  // ✅ Défini AVANT unvalidateBlock pour éviter la référence circulaire
+  const isBlockValidated = useCallback((blockKey: string) => {
+    return syncedBlockStatus[blockKey]?.isValidated || false
+  }, [syncedBlockStatus])
+
+  // Annulation "raw" d'un bloc (sans cascade inverse, sans prompt)
+  const unvalidateBlockRaw = useCallback(async (blockKey: string) => {
     const block = syncedBlockStatus[blockKey]
     if (!block) return
 
@@ -174,16 +173,42 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
         await Promise.all(promises)
       }
 
-      // Retirer le bloc du statut validé
-      setBlockStatus(prev => {
-        const { [blockKey]: _, ...rest } = prev
-        return rest
-      })
+      // Le statut sera mis à jour automatiquement via syncedBlockStatus après invalidation du cache
     } catch (error) {
       console.error(`Error unvalidating block ${blockKey}:`, error)
       throw error
     }
   }, [syncedBlockStatus, proposals, unapproveBlockMutation])
+
+  // Annuler la validation d'un bloc avec cascade inverse automatique
+  const unvalidateBlock = useCallback(async (blockKey: string) => {
+    // Détecter les dépendants validés (organizer, races pour edition ; rien pour event)
+    const dependents = getAllDependents(blockKey as BlockType).filter(dep => isBlockValidated(dep))
+    
+    // Notification informative si des dépendants seront annulés
+    if (dependents.length > 0) {
+      const label = dependents.join(', ')
+      enqueueSnackbar(
+        `ℹ️ Annulation automatique : ${blockKey} et dépendants (${label})`,
+        { 
+          variant: 'info',
+          autoHideDuration: 3000
+        }
+      )
+    }
+    
+    // Annuler le bloc demandé
+    await unvalidateBlockRaw(blockKey)
+    
+    // Annuler automatiquement tous les dépendants séquentiellement
+    for (const dep of dependents) {
+      await unvalidateBlockRaw(dep)
+      enqueueSnackbar(
+        `✅ ${dep} annulé`,
+        { variant: 'success', autoHideDuration: 2000 }
+      )
+    }
+  }, [enqueueSnackbar, isBlockValidated, unvalidateBlockRaw])
 
   // Valider tous les blocs
   const validateAllBlocks = useCallback(async (blocks: Record<string, string[]>) => {
@@ -209,19 +234,130 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     }
   }, [syncedBlockStatus, unvalidateBlock])
 
-  // Vérifier si un bloc est validé (utilise syncedBlockStatus au lieu de blockStatus)
-  const isBlockValidated = useCallback((blockKey: string) => {
-    return syncedBlockStatus[blockKey]?.isValidated || false
-  }, [syncedBlockStatus])
-
   // Vérifier si au moins un bloc est validé
   const hasValidatedBlocks = useCallback(() => {
     return Object.values(syncedBlockStatus).some(block => block.isValidated)
   }, [syncedBlockStatus])
 
+  /**
+   * Valide un bloc et toutes ses dépendances manquantes automatiquement
+   * 
+   * @param blockKey - Bloc à valider
+   * @param options - Options de validation
+   * @param options.silent - Si true, pas de notifications (utile pour tests)
+   * 
+   * @example
+   * // Utilisateur clique "Valider Organisateur"
+   * await validateBlockWithDependencies('organizer')
+   * // → Système valide automatiquement: event → edition → organizer
+   */
+  const validateBlockWithDependencies = useCallback(async (
+    blockKey: BlockType,
+    options?: {
+      silent?: boolean
+    }
+  ) => {
+    try {
+      // 1. Calculer les dépendances manquantes
+      const allDeps = getAllDependencies(blockKey)
+      const missingDeps = allDeps.filter(dep => !isBlockValidated(dep))
+      
+      const proposalIds = blockProposals[blockKey] || []
+      
+      if (proposalIds.length === 0) {
+        console.warn(`[validateBlockWithDependencies] Aucune proposition pour le bloc "${blockKey}"`)
+        return
+      }
+      
+      // 2. Si pas de dépendances manquantes, validation directe
+      if (missingDeps.length === 0) {
+        console.log(`[validateBlockWithDependencies] Bloc "${blockKey}" sans dépendances manquantes, validation directe`)
+        return validateBlock(blockKey, proposalIds)
+      }
+      
+      // 3. Notification anticipée de la cascade
+      if (!options?.silent) {
+        const depsChain = [...missingDeps, blockKey].join(' → ')
+        enqueueSnackbar(
+          `Validation automatique : ${depsChain}`,
+          { 
+            variant: 'info',
+            autoHideDuration: 3000
+          }
+        )
+      }
+      
+      console.log(`[validateBlockWithDependencies] Démarrage cascade pour "${blockKey}":`, {
+        allDeps,
+        missingDeps,
+        alreadyValidated: allDeps.filter(dep => isBlockValidated(dep))
+      })
+      
+      // 4. Valider les dépendances dans l'ordre (séquentiel)
+      for (const dep of missingDeps) {
+        const depProposalIds = blockProposals[dep] || []
+        
+        if (depProposalIds.length === 0) {
+          console.warn(`[validateBlockWithDependencies] Aucune proposition pour la dépendance "${dep}"`)
+          continue
+        }
+        
+        try {
+          console.log(`[validateBlockWithDependencies] Validation dépendance "${dep}"...`)
+          await validateBlock(dep, depProposalIds)
+          
+          if (!options?.silent) {
+            enqueueSnackbar(
+              `✅ ${dep} validé`,
+              { variant: 'success', autoHideDuration: 2000 }
+            )
+          }
+        } catch (error) {
+          console.error(`[validateBlockWithDependencies] Erreur validation "${dep}":`, error)
+          if (!options?.silent) {
+            enqueueSnackbar(
+              `❌ Erreur lors de la validation de ${dep}`,
+              { variant: 'error' }
+            )
+          }
+          throw error  // Stop la cascade
+        }
+      }
+      
+      // 5. Valider le bloc demandé
+      try {
+        console.log(`[validateBlockWithDependencies] Validation finale "${blockKey}"...`)
+        await validateBlock(blockKey, proposalIds)
+        
+        if (!options?.silent) {
+          const message = missingDeps.length > 0
+            ? `✅ ${blockKey} validé avec succès (+ ${missingDeps.length} dépendance(s))`
+            : `✅ ${blockKey} validé avec succès`
+          
+          enqueueSnackbar(message, { variant: 'success' })
+        }
+        
+        console.log(`[validateBlockWithDependencies] Cascade complète pour "${blockKey}" ✅`)
+      } catch (error) {
+        console.error(`[validateBlockWithDependencies] Erreur validation finale "${blockKey}":`, error)
+        if (!options?.silent) {
+          enqueueSnackbar(
+            `❌ Erreur lors de la validation de ${blockKey}`,
+            { variant: 'error' }
+          )
+        }
+        throw error
+      }
+    } catch (error) {
+      console.error(`[validateBlockWithDependencies] Erreur cascade pour "${blockKey}":`, error)
+      throw error
+    }
+  }, [blockProposals, isBlockValidated, validateBlock, enqueueSnackbar])
+
   return {
     blockStatus: syncedBlockStatus,
     validateBlock,
+    validateBlockWithDependencies,  // ✅ Nouveau : validation en cascade
     unvalidateBlock,
     validateAllBlocks,
     unvalidateAllBlocks,
