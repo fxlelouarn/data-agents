@@ -25,6 +25,7 @@ import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
 import { useProposalEditor, ConsolidatedRaceChange, isGroupReturn } from '@/hooks/useProposalEditor'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
+import { BlockType } from '@data-agents/types'
 import { 
   useProposals, 
   useUpdateProposal, 
@@ -1014,7 +1015,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   
   // ✅ Wrapper pour validation en cascade
   const validateBlockWithDependencies = async (blockKey: string) => {
-    await validateBlockWithDependenciesBase(blockKey, { silent: false })
+    await validateBlockWithDependenciesBase(blockKey as BlockType, { silent: false })
   }
   
   const unvalidateBlock = async (blockKey: string) => {
