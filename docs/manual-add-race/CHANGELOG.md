@@ -1,5 +1,43 @@
 # Changelog - Feature "Ajout manuel de courses"
 
+## 2025-12-04 - v1.2.0 - Fix application des courses manuelles ✅
+
+### 🐛 Bug corrigé
+
+**Problème** : Les courses ajoutées manuellement n'étaient pas créées en base lors de l'application du bloc `races`, et n'apparaissaient pas dans la page `/updates`.
+
+**Cause** : Le backend ne traitait que les courses de `racesToAdd` avec des clés `new-{index}` (0, 1, 2...) correspondant aux courses proposées par l'agent. Les courses manuelles utilisent des clés `new-{timestamp}` (ex: `new-1764849197632`) stockées dans `raceEdits`.
+
+**Solution** :
+
+1. **Backend** (`proposal-domain.service.ts`) : Ajout d'un bloc de traitement pour les courses manuelles :
+   - Détection des clés `new-{timestamp}` où timestamp > 1000000
+   - Création des courses en base avec tous les champs
+
+2. **Frontend** (`BlockChangesTable.tsx`) : Affichage des courses manuelles :
+   - Nouveau champ `manuallyAddedRaces` dans la liste des champs du bloc races
+   - Extraction des courses manuelles depuis `raceEdits`
+   - Affichage dans une section dédiée "Courses ajoutées manuellement"
+
+### 📝 Fichiers modifiés
+
+| Fichier | Changements |
+|---------|------------|
+| `packages/database/src/services/proposal-domain.service.ts` | +56 lignes - Traitement des courses manuelles |
+| `apps/dashboard/src/components/updates/BlockChangesTable.tsx` | +25 lignes - Affichage des courses manuelles |
+
+### 📝 Fichiers créés
+
+| Fichier | Description |
+|---------|-------------|
+| `docs/manual-add-race/FIX-MANUAL-RACE-APPLICATION.md` | Documentation détaillée du fix |
+
+### 🔗 Documentation
+
+- Voir `FIX-MANUAL-RACE-APPLICATION.md` pour les détails techniques
+
+---
+
 ## 2025-12-04 - v1.1.0 - Fix affichage + Tests ✅
 
 ### 🐛 Bug corrigé
