@@ -56,7 +56,13 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
 
         // Extraire la date d'édition pour pré-remplir AddRaceDialog
         const editionStartDate = useMemo(() => {
-          // Pour NEW_EVENT, priorité: userModifiedChanges > consolidatedChanges > edition.new.startDate
+          // Pour NEW_EVENT, priorité:
+          // 1) userModifiedChanges (modifications manuelles)
+          // 2) consolidatedChanges (propositions agents)
+          // 3) edition.new.startDate (structure imbriquée)
+          // 4) courses déjà ajoutées manuellement
+          // 5) édition existante (si disponible)
+
           if (userModifiedChanges?.startDate) {
             return userModifiedChanges.startDate
           }
@@ -72,8 +78,28 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
             return firstProposal.changes.edition.new.startDate
           }
 
+          // Fallback: chercher dans les courses déjà ajoutées manuellement
+          if (userModifiedRaceChanges && Object.keys(userModifiedRaceChanges).length > 0) {
+            const firstRaceWithDate = Object.values(userModifiedRaceChanges).find(
+              (race: any) => race.startDate && !race._deleted
+            )
+            if (firstRaceWithDate && (firstRaceWithDate as any).startDate) {
+              return (firstRaceWithDate as any).startDate
+            }
+          }
+
+          // Fallback: chercher dans les courses consolidées existantes
+          if (consolidatedRaceChanges && consolidatedRaceChanges.length > 0) {
+            const firstRaceWithDate = consolidatedRaceChanges.find(
+              race => race.fields?.startDate || race.originalFields?.startDate
+            )
+            if (firstRaceWithDate) {
+              return firstRaceWithDate.fields?.startDate || firstRaceWithDate.originalFields?.startDate
+            }
+          }
+
           return undefined
-        }, [userModifiedChanges, consolidatedChanges, groupProposals])
+        }, [userModifiedChanges, consolidatedChanges, groupProposals, userModifiedRaceChanges, consolidatedRaceChanges])
 
         const editionTimeZone = useMemo(() => {
           if (userModifiedChanges?.timeZone) {
@@ -96,20 +122,20 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
 
         // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
-        
+
         // Champs Event (bloqués par EDITION_FIELDS et organizer)
         const editionFields = ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate']
-        const eventChanges = consolidatedChanges.filter(c => 
+        const eventChanges = consolidatedChanges.filter(c =>
           !editionFields.includes(c.field) && c.field !== 'organizer'
         )
-        
+
         // Champs Edition uniquement
         const editionChanges = consolidatedChanges.filter(c => editionFields.includes(c.field))
-        
+
         // Ajouter les champs URL éditables même s'ils ne sont pas proposés
         const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
         const eventChangesWithUrls = [...eventChanges]
-        
+
         urlFields.forEach(urlField => {
           if (!eventChangesWithUrls.some(c => c.field === urlField)) {
             // Ajouter un champ vide éditable
@@ -120,7 +146,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
             })
           }
         })
-        
+
         return (
           <>
             {/* Table des champs Event */}
@@ -142,7 +168,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               isBlockPending={isBlockPending}
               validationDisabled={isAllApproved}
             />
-            
+
             {/* Table des champs Edition */}
             <CategorizedEditionChangesTable
               title="Informations de l'édition"
@@ -166,7 +192,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               validationDisabled={isAllApproved}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
-            
+
             {/* Section organisateur - afficher s'il y a un changement OU si le bloc est validé */}
             {(organizerChange || isBlockValidated('organizer')) && (
               <OrganizerSection
@@ -182,7 +208,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 validationDisabled={isEventDead || isAllApproved}
               />
             )}
-            
+
             {/* Section des courses */}
             <RacesChangesTable
               consolidatedRaces={consolidatedRaceChanges}
@@ -199,38 +225,38 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               isBlockPending={isBlockPending}
               validationDisabled={isEventDead || isAllApproved}
             />
-            
+
             {/* Sources des dates extraites */}
-            <DateSourcesSection 
-              justifications={groupProposals.flatMap(p => p.justification || [])} 
+            <DateSourcesSection
+              justifications={groupProposals.flatMap(p => p.justification || [])}
             />
           </>
         )
       }}
       renderSidebar={(context) => {
-        const { 
+        const {
           groupProposals, // ✅ PENDING uniquement
           allGroupProposals, // ✅ Toutes les propositions (PENDING + historiques)
-          getEditionYear, 
-          selectedChanges, 
+          getEditionYear,
+          selectedChanges,
           userModifiedChanges
         } = context
-        
+
         const firstProposal = groupProposals[0]
-        
+
         // Extraire les matches rejetés depuis les justifications de la première proposition
         const rejectedMatches = firstProposal?.justification
           ?.find((j: any) => j.type === 'text')
           ?.metadata?.rejectedMatches || []
-        
+
         return (
           <>
             {/* Informations contextuelles de l'édition */}
             {firstProposal && (
               <EditionContextInfo
                 currentCalendarStatus={
-                  userModifiedChanges['calendarStatus'] || 
-                  selectedChanges['calendarStatus'] || 
+                  userModifiedChanges['calendarStatus'] ||
+                  selectedChanges['calendarStatus'] ||
                   undefined
                 }
                 currentEditionYear={getEditionYear(firstProposal) ? parseInt(getEditionYear(firstProposal)!) : undefined}
@@ -242,16 +268,16 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 isFeatured={firstProposal.isFeatured}
               />
             )}
-            
+
             {/* ✅ AgentInfoSection gère la séparation PENDING vs historique en interne */}
-            <AgentInfoSection 
-              proposals={allGroupProposals.map(p => ({ 
-                ...p, 
-                confidence: p.confidence || 0, 
-                status: p.status 
-              }))} 
+            <AgentInfoSection
+              proposals={allGroupProposals.map(p => ({
+                ...p,
+                confidence: p.confidence || 0,
+                status: p.status
+              }))}
             />
-            
+
             {/* Afficher la card des matches rejetés */}
             {rejectedMatches.length > 0 && (
               <RejectedMatchesCard

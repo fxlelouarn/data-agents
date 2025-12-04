@@ -57,9 +57,9 @@ const UpdateGroupDetail: React.FC = () => {
   // Filtrer les updates appartenant à ce groupe
   const groupUpdates = React.useMemo(() => {
     if (!targetUpdate || !updatesData?.data) return []
-    
+
     const proposalIds = targetUpdate.proposalIds || (targetUpdate.proposalId ? [targetUpdate.proposalId] : [])
-    
+
     return (updatesData.data as DataUpdate[]).filter(app => {
       const appProposalIds = app.proposalIds || [app.proposalId]
       return proposalIds.some(id => appProposalIds.includes(id))
@@ -123,7 +123,7 @@ const UpdateGroupDetail: React.FC = () => {
   const handleApplyAllBlocks = async () => {
     try {
       const pendingApps = groupUpdates.filter(a => a.status === 'PENDING')
-      
+
       // ✅ Tri topologique pour respecter les dépendances (event → edition → organizer → races)
       const sortedApps = sortBlocksByDependencies(
         pendingApps.map(app => ({
@@ -131,16 +131,16 @@ const UpdateGroupDetail: React.FC = () => {
           id: app.id
         }))
       )
-      
+
       console.log('📋 ' + explainExecutionOrder(sortedApps))
       console.log('   Applications:', sortedApps.map(a => `${a.blockType}(${a.id.slice(-6)})`).join(', '))
-      
+
       // Appliquer tous les blocs en séquence (ordre respecté)
       for (const app of sortedApps) {
         console.log(`  → Application bloc "${app.blockType || 'unknown'}"...`)
         await applyUpdateMutation.mutateAsync(app.id)
       }
-      
+
       console.log('✅ Tous les blocs appliqués avec succès')
     } catch (error) {
       console.error('Error applying all blocks:', error)
@@ -150,7 +150,7 @@ const UpdateGroupDetail: React.FC = () => {
   const handleReplayAllBlocks = async () => {
     try {
       const failedApps = groupUpdates.filter(a => a.status === 'FAILED')
-      
+
       // ✅ Tri topologique pour respecter les dépendances (event → edition → organizer → races)
       const sortedApps = sortBlocksByDependencies(
         failedApps.map(app => ({
@@ -158,10 +158,10 @@ const UpdateGroupDetail: React.FC = () => {
           id: app.id
         }))
       )
-      
+
       console.log('🔄 Rejeu - ' + explainExecutionOrder(sortedApps))
       console.log('   Applications:', sortedApps.map(a => `${a.blockType}(${a.id.slice(-6)})`).join(', '))
-      
+
       // Rejouer tous les blocs en erreur en séquence (ordre respecté)
       for (const app of sortedApps) {
         console.log(`  → Rejeu bloc "${app.blockType || 'unknown'}"...`)
@@ -170,7 +170,7 @@ const UpdateGroupDetail: React.FC = () => {
         // 2. Appliquer via /apply
         await applyUpdateMutation.mutateAsync(app.id)
       }
-      
+
       console.log('✅ Tous les blocs rejoués avec succès')
     } catch (error) {
       console.error('Error replaying all blocks:', error)
@@ -242,8 +242,8 @@ const UpdateGroupDetail: React.FC = () => {
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         {/* Gauche: Bouton retour */}
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-          <Button 
-            variant="outlined" 
+          <Button
+            variant="outlined"
             size="small"
             startIcon={<BackIcon />}
             onClick={() => navigate('/updates')}
@@ -251,7 +251,7 @@ const UpdateGroupDetail: React.FC = () => {
             Retour
           </Button>
         </Box>
-        
+
         {/* Droite: Actions principales */}
         <Box sx={{ display: 'flex', gap: 1 }}>
           {/* Bouton "Rejouer tous les blocs" si au moins un bloc en erreur */}
@@ -267,7 +267,7 @@ const UpdateGroupDetail: React.FC = () => {
               Rejouer tous les blocs
             </Button>
           )}
-          
+
           {/* Bouton "Appliquer tous les blocs" si au moins un bloc en attente */}
           {groupUpdates.some(a => a.status === 'PENDING') && (
             <Button
@@ -281,7 +281,7 @@ const UpdateGroupDetail: React.FC = () => {
               Appliquer tous les blocs
             </Button>
           )}
-          
+
           <Button
             variant="outlined"
             size="small"
@@ -442,12 +442,6 @@ const UpdateGroupDetail: React.FC = () => {
 
                 {/* Dates */}
                 <Box sx={{ flex: 1, minWidth: 0 }}>
-                  <Typography variant="body2" color="text.secondary">
-                    Programmée le{' '}
-                    {app.scheduledAt
-                      ? format(new Date(app.scheduledAt), 'dd/MM/yyyy HH:mm', { locale: fr })
-                      : '-'}
-                  </Typography>
                   {app.appliedAt && (
                     <Typography variant="body2" color="text.secondary">
                       Appliquée le{' '}
@@ -521,7 +515,7 @@ const UpdateGroupDetail: React.FC = () => {
                     blockType={app.blockType}
                     appliedChanges={app.appliedChanges}  // ✅ NOUVEAU: Payload complet
                     isApplied={app.status === 'APPLIED'}  // ✅ Indicateur visuel
-                    
+
                     // ⚠️ LEGACY: Fallback pour applications anciennes
                     changes={!app.appliedChanges ? app.proposal?.changes : undefined}
                     userModifiedChanges={!app.appliedChanges ? app.proposal?.userModifiedChanges : undefined}
