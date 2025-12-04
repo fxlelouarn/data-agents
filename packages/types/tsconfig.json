@@ -2,7 +2,7 @@
   "compilerOptions": {
     "target": "ES2022",
     "lib": ["ES6"],
-    "module": "ESNext",
+    "module": "NodeNext",
     "outDir": "./dist",
     "rootDir": "./src",
     "declaration": true,
@@ -13,7 +13,7 @@
     "skipLibCheck": true,
     "strict": true,
     "esModuleInterop": true,
-    "moduleResolution": "node",
+    "moduleResolution": "NodeNext",
     "resolveJsonModule": true,
     "allowSyntheticDefaultImports": true
   },
