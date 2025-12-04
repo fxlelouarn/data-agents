@@ -4,6 +4,41 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-04 - Application automatique des mises à jour PENDING ✅
+
+**Fonctionnalité ajoutée** : Nouvelle option dans le panneau d'Administration permettant d'appliquer automatiquement et périodiquement les `ProposalApplication` en statut `PENDING`.
+
+#### Fonctionnalités
+
+- **Switch d'activation** : Active/désactive le scheduler automatique
+- **Intervalle configurable** : Entre 5 minutes et 24 heures
+- **Statut en temps réel** : Scheduler actif/inactif, prochaine exécution, dernière exécution avec résultats
+- **Bouton "Exécuter maintenant"** : Lance une exécution manuelle immédiate
+- **Tri topologique** : Les applications sont triées par dépendances (event → edition → organizer → races)
+
+#### Nouveaux endpoints API
+
+| Endpoint | Description |
+|----------|-------------|
+| `GET /api/settings/auto-apply-status` | Statut du scheduler et résultats |
+| `POST /api/settings/run-auto-apply` | Exécution manuelle immédiate |
+
+#### Fichiers créés/modifiés
+
+- `packages/database/prisma/schema.prisma` : +5 champs Settings
+- `apps/api/src/services/update-auto-apply-scheduler.ts` : **Nouveau** service scheduler
+- `apps/api/src/config/settings.ts` : Interface + méthodes auto-apply
+- `apps/api/src/routes/settings.ts` : Nouveaux endpoints
+- `apps/api/src/index.ts` : Intégration scheduler au démarrage
+- `apps/dashboard/src/pages/Settings.tsx` : Nouvelle section UI
+
+#### Ressources
+
+- Documentation complète : `docs/feature-auto-apply-pending-updates/IMPLEMENTATION.md`
+- Plan initial : `docs/feature-auto-apply-pending-updates/PLAN.md`
+
+---
+
 ### 2025-12-03 - Tri topologique dans UpdateGroupDetail (Phase 4) ✅
 
 **Problème résolu** : Dans la page `/updates/:groupId`, les boutons "Appliquer tous les blocs" et "Rejouer tous les blocs" appliquaient les `ProposalApplication` dans l'ordre de création au lieu de respecter les dépendances entre blocs.
