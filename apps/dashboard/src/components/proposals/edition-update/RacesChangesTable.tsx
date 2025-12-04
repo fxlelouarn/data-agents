@@ -389,7 +389,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
       // ✅ Éditeur select pour categoryLevel2
       if (field === 'categoryLevel2') {
         // Récupérer le categoryLevel1 actuel pour filtrer les options
-        const currentCategoryLevel1 = getDisplayValue(race, 'categoryLevel1') || 'OTHER'
+        const currentCategoryLevel1 = race ? getDisplayValue(race, 'categoryLevel1') || 'OTHER' : 'OTHER'
         const options = CATEGORY_LEVEL_2_OPTIONS[currentCategoryLevel1] || []
         
         return (

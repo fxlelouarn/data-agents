@@ -181,7 +181,7 @@ const AddRaceDialog: React.FC<AddRaceDialogProps> = ({
       Object.entries(formData).filter(([_, value]) =>
         value !== undefined && value !== '' && value !== null
       )
-    ) as RaceData
+    ) as unknown as RaceData
 
     onAdd(cleanedData)
 
