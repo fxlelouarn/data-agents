@@ -37,7 +37,7 @@ import { ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
 
 interface RacesChangesTableProps {
   consolidatedRaces: ConsolidatedRaceChange[]  // ✅ Depuis workingGroup
-  userModifiedRaceChanges: Record<string, any> // ✅ Depuis workingGroup  
+  userModifiedRaceChanges: Record<string, any> // ✅ Depuis workingGroup
   onRaceFieldModify: (raceId: string, field: string, value: any) => void
   onDeleteRace?: (raceId: string) => void // ✅ Suppression de course
   disabled?: boolean
@@ -142,9 +142,9 @@ const CATEGORY_LEVEL_2_OPTIONS: Record<string, { value: string, label: string }[
 
 const RACE_FIELDS: RaceField[] = [
   { key: 'name', label: 'Nom' },
-  { 
-    key: 'startDate', 
-    label: 'Date + Heure', 
+  {
+    key: 'startDate',
+    label: 'Date + Heure',
     format: (v) => {
       if (!v) return '-'
       try {
@@ -162,6 +162,7 @@ const RACE_FIELDS: RaceField[] = [
   { key: 'bikeDistance', label: 'Distance vélo (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'walkDistance', label: 'Distance marche (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'runPositiveElevation', label: 'D+ (m)', format: (v) => v ? `${v} m` : '-' },
+  { key: 'price', label: 'Prix', format: (v) => v != null ? `${v} €` : '-' },
 ]
 
 const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
@@ -183,76 +184,76 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   // États locaux uniquement pour l'édition en cours
   const [editingRace, setEditingRace] = useState<{ raceId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
-  
+
   // Vérifier si une course est marquée comme supprimée
   const isRaceDeleted = (raceId: string): boolean => {
     return userModifiedRaceChanges[raceId]?._deleted === true
   }
-  
+
   const startEdit = (raceId: string, field: string, currentValue: any) => {
     setEditingRace({ raceId, field })
     setEditValue(currentValue || '')
   }
-  
+
   const cancelEdit = () => {
     setEditingRace(null)
     setEditValue('')
   }
-  
+
   const saveEdit = () => {
     if (!editingRace) return
-    
+
     // Appeler directement le handler depuis le context
     onRaceFieldModify(editingRace.raceId, editingRace.field, editValue)
     setEditingRace(null)
   }
-  
+
   // Récupérer la valeur affichée d'un champ de course
   // Priorité: 1) Modification utilisateur, 2) Valeur proposée, 3) Valeur actuelle
   const getDisplayValue = (race: ConsolidatedRaceChange, field: string): any => {
     const userEdits = userModifiedRaceChanges[race.raceId] || {}
-    
+
     if (field in userEdits) {
       return userEdits[field]
     }
-    
+
     // ✅ race.fields[field] peut être un ConsolidatedChange ou une valeur primitive
     const fieldValue = race.fields[field]
-    
+
     // Si c'est un ConsolidatedChange, extraire la première option
     if (fieldValue && typeof fieldValue === 'object' && 'options' in fieldValue && Array.isArray(fieldValue.options)) {
       return fieldValue.options[0]?.proposedValue
     }
-    
+
     // Si c'est un objet {old, new, confidence} (format agent), extraire 'new'
     if (fieldValue && typeof fieldValue === 'object' && 'new' in fieldValue) {
       return fieldValue.new
     }
-    
+
     // ✅ Fallback: valeur actuelle si aucune proposition
     if (fieldValue === undefined || fieldValue === null) {
       return race.originalFields[field]
     }
-    
+
     // Sinon, retourner la valeur directement
     return fieldValue
   }
-  
-  
+
+
   // ✅ Vérifier si un champ a été modifié par l'utilisateur
   const isFieldModified = (raceId: string, field: string): boolean => {
     const userEdits = userModifiedRaceChanges[raceId] || {}
     return field in userEdits
   }
-  
+
   // ✅ Vérifier si un champ a un changement proposé (par l'agent)
   const hasProposedChange = (race: ConsolidatedRaceChange, field: string): boolean => {
     const fieldValue = race.fields[field]
     const originalValue = race.originalFields[field]
-    
+
     // ✅ Si le champ n'existe pas dans fields, c'est qu'il n'y a pas de changement proposé
     if (fieldValue === undefined) return false
-    
+
     // Si c'est un ConsolidatedChange avec options
     if (fieldValue && typeof fieldValue === 'object' && 'options' in fieldValue && Array.isArray(fieldValue.options)) {
       // ✅ Vérifier que la valeur proposée est différente de la valeur actuelle
@@ -264,7 +265,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
       if (currentValue === undefined || currentValue === null) return proposedValue !== null && proposedValue !== undefined
       return proposedValue !== currentValue
     }
-    
+
     // Si c'est un objet {old, new, confidence} (format agent)
     if (fieldValue && typeof fieldValue === 'object' && 'new' in fieldValue && 'old' in fieldValue) {
       // ✅ Vérifier que new est différent de old
@@ -280,7 +281,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
       }
       return newVal !== oldVal
     }
-    
+
     // ✅ Si le champ existe dans fields ET est différent de originalValue
     if (originalValue !== undefined) {
       // Pour les dates, comparer les timestamps
@@ -289,11 +290,11 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
       }
       return fieldValue !== originalValue
     }
-    
+
     // ✅ Si le champ existe dans fields mais pas dans originalFields, c'est un nouveau champ
     return true
   }
-  
+
   const renderEditableCell = (
     raceId: string,
     field: string,
@@ -304,7 +305,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     race?: ConsolidatedRaceChange // ✅ Passer race pour categoryLevel2
   ) => {
     const isEditing = editingRace?.raceId === raceId && editingRace?.field === field
-    
+
     // ✅ Formatter les valeurs des catégories avec labels lisibles
     let displayValue: string
     if (field === 'categoryLevel1') {
@@ -318,7 +319,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     } else {
       displayValue = format ? format(value) : value
     }
-    
+
     if (isEditing) {
       // Éditeur spécial pour les dates
       if (field === 'startDate') {
@@ -348,7 +349,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           </LocalizationProvider>
         )
       }
-      
+
       // ✅ Éditeur select pour categoryLevel1
       if (field === 'categoryLevel1') {
         return (
@@ -376,13 +377,13 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           </Box>
         )
       }
-      
+
       // ✅ Éditeur select pour categoryLevel2
-      if (field === 'categoryLevel2') {
+      if (field === 'categoryLevel2' && race) {
         // Récupérer le categoryLevel1 actuel pour filtrer les options
         const currentCategoryLevel1 = getDisplayValue(race, 'categoryLevel1') || 'OTHER'
         const options = CATEGORY_LEVEL_2_OPTIONS[currentCategoryLevel1] || []
-        
+
         return (
           <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
             <FormControl size="small" sx={{ flexGrow: 1, minWidth: 200 }}>
@@ -408,7 +409,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           </Box>
         )
       }
-      
+
       // Éditeur texte par défaut pour les autres champs
       return (
         <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
@@ -428,7 +429,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
         </Box>
       )
     }
-    
+
     return (
       <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
         <Typography variant="body2">
@@ -455,16 +456,16 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
       </Box>
     )
   }
-  
+
   const totalRaces = consolidatedRaces.length
-  
+
   return (
     <Paper sx={{ mb: 3 }}>
-      <Box 
-        sx={{ 
-          p: 2, 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
           borderBottom: 1,
           borderColor: 'divider',
@@ -491,7 +492,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           />
         )}
       </Box>
-      
+
       <TableContainer>
         <Table size="small">
           <TableHead sx={{ bgcolor: 'background.paper' }}>
@@ -499,10 +500,10 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
               <TableCell sx={{ width: '10%' }}>Statut</TableCell>
               <TableCell sx={{ width: '20%' }}>Champ</TableCell>
               {showCurrentValue && <TableCell sx={{ width: '30%' }}>Valeur actuelle</TableCell>}
-              <TableCell sx={{ 
-                width: showDeleteAction 
-                  ? (showCurrentValue ? '30%' : '60%') 
-                  : (showCurrentValue ? '40%' : '70%'), 
+              <TableCell sx={{
+                width: showDeleteAction
+                  ? (showCurrentValue ? '30%' : '60%')
+                  : (showCurrentValue ? '40%' : '70%'),
               }}>Valeur proposée</TableCell>
               {showDeleteAction && <TableCell sx={{ width: '10%' }}>Action</TableCell>}
             </TableRow>
@@ -512,17 +513,17 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
             {consolidatedRaces.map((race) => {
               const isDeleted = isRaceDeleted(race.raceId)
               const isExistingUnchanged = (race.fields as any)._isExistingUnchanged === true // ✅ Course existante sans changement
-              
+
               return RACE_FIELDS.map((field, fieldIdx) => {
                 const displayValue = getDisplayValue(race, field.key)
                 const isFirstRow = fieldIdx === 0
                 const isNewRace = race.raceId.startsWith('new-')
                 const isModified = isFieldModified(race.raceId, field.key) // ✅ Badge Modifié
                 const hasChange = hasProposedChange(race, field.key)      // ✅ Changement proposé
-                
+
                 // ✅ Valeur actuelle = originalFields (vraie valeur de la base)
                 const currentValue = isNewRace ? '-' : race.originalFields[field.key]
-                
+
                 return (
                   <TableRow
                     key={`${race.raceId}-${field.key}`}
@@ -536,14 +537,14 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
                         <Chip
                           label={
-                            isDeleted ? "À supprimer" 
-                            : isExistingUnchanged ? "Info" 
+                            isDeleted ? "À supprimer"
+                            : isExistingUnchanged ? "Info"
                             : (isNewRace ? "Nouvelle" : "Existante")
                           }
                           size="small"
                           color={
-                            isDeleted ? "error" 
-                            : isExistingUnchanged ? "info" 
+                            isDeleted ? "error"
+                            : isExistingUnchanged ? "info"
                             : (isNewRace ? "success" : "default")
                           }
                           variant="outlined"
@@ -551,8 +552,8 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                       </TableCell>
                     )}
                     <TableCell>
-                      <Typography 
-                        variant="body2" 
+                      <Typography
+                        variant="body2"
                         fontWeight={hasChange ? 'bold' : 'normal'}
                         sx={{ fontStyle: isExistingUnchanged ? 'italic' : 'normal' }}
                       >
@@ -578,8 +579,8 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                     {showDeleteAction && isFirstRow && (
                       <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
                         <Tooltip title={
-                          disabled || isBlockValidated 
-                            ? "Suppression désactivée" 
+                          disabled || isBlockValidated
+                            ? "Suppression désactivée"
                             : (isDeleted ? "Annuler la suppression" : "Supprimer la course")
                         }>
                           <span>
@@ -588,7 +589,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                               disabled={disabled || isBlockValidated || !onDeleteRace}
                               onClick={() => onDeleteRace && onDeleteRace(race.raceId)}
                               color={isDeleted ? "default" : "error"}
-                              sx={{ 
+                              sx={{
                                 opacity: (disabled || isBlockValidated || !onDeleteRace) ? 0.3 : 0.7,
                                 '&:hover': { opacity: 1 }
                               }}
