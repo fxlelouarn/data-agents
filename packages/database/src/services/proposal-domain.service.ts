@@ -347,7 +347,9 @@ export class ProposalDomainService {
               eventId: event.id,
               // ✅ Hériter timeZone de l'édition si non spécifié
               timeZone: raceData.timeZone || editionsData[0]?.timeZone,
-              ...raceData
+              ...raceData,
+              // ✅ FIX: Les nouvelles courses doivent être inactives par défaut
+              isActive: false
             })
             createdRaceIds.push(race.id)
             this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${editionId}`)
@@ -355,10 +357,61 @@ export class ProposalDomainService {
         }
       }
 
-      // ✅ Retourner 'changes' qui contient le payload complet (agent + user merged)
+      // ✅ Construire appliedChanges selon le bloc appliqué
+      // Retourner les données réellement créées/utilisées, pas les 'changes' filtrés (qui peuvent être vides)
+      let appliedChanges: Record<string, any> = {}
+
+      if (options.blockType === 'event') {
+        // Bloc event : retourner les données de l'événement créé
+        appliedChanges = {
+          event: {
+            id: event.id,
+            name: event.name,
+            city: event.city,
+            country: event.country,
+            slug: event.slug,
+            latitude: event.latitude,
+            longitude: event.longitude
+          }
+        }
+      } else if (options.blockType === 'edition') {
+        // Bloc edition : retourner les données de l'édition créée
+        const editionId = createdEditionIds[0]
+        if (editionId) {
+          const edition = await milesRepo.findEditionById(editionId)
+          appliedChanges = {
+            edition: {
+              id: editionId,
+              eventId: event.id,
+              year: edition?.year,
+              startDate: edition?.startDate,
+              endDate: edition?.endDate,
+              timeZone: edition?.timeZone
+            }
+          }
+        }
+      } else if (options.blockType === 'organizer') {
+        // Bloc organizer : retourner les données de l'organisateur
+        appliedChanges = {
+          organizer: organizerData || { message: 'Aucun organisateur à créer' }
+        }
+      } else if (options.blockType === 'races') {
+        // Bloc races : retourner les courses créées
+        appliedChanges = {
+          races: {
+            created: createdRaceIds.length,
+            raceIds: createdRaceIds
+          },
+          racesData: racesData
+        }
+      } else {
+        // Application complète (pas de blockType) : retourner tout
+        appliedChanges = changes
+      }
+
       return {
         success: true,
-        appliedChanges: changes,
+        appliedChanges,
         createdIds: {
           eventId: event.id.toString(),
           editionId: createdEditionIds[0]?.toString(),
@@ -791,7 +844,9 @@ export class ProposalDomainService {
             // ✅ FIX: Renseigner les catégories depuis le scraper FFA
             categoryLevel1: editedData.categoryLevel1 || raceData.categoryLevel1,
             categoryLevel2: editedData.categoryLevel2 || raceData.categoryLevel2,
-            timeZone: editedData.timeZone || raceData.timeZone
+            timeZone: editedData.timeZone || raceData.timeZone,
+            // ✅ FIX: Les nouvelles courses doivent être inactives par défaut
+            isActive: false
           }
 
           // ✅ FIX: Appliquer le bon champ de distance selon le type de course
@@ -895,7 +950,9 @@ export class ProposalDomainService {
             startDate: raceData.startDate ? new Date(raceData.startDate) : null,
             categoryLevel1: raceData.categoryLevel1,
             categoryLevel2: raceData.categoryLevel2,
-            timeZone: raceData.timeZone
+            timeZone: raceData.timeZone,
+            // ✅ FIX: Les nouvelles courses doivent être inactives par défaut
+            isActive: false
           }
 
           // Distances

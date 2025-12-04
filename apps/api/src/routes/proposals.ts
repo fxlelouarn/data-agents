@@ -1004,10 +1004,24 @@ function filterChangesByBlock(changes: Record<string, any>, blockType: string): 
   const fields = blockFields[blockType] || []
   const filtered: Record<string, any> = {}
 
+  // ✅ FIX: Pour NEW_EVENT, les données edition/races/organizer sont dans changes.edition.new
+  const editionData = changes.edition?.new || changes.edition || {}
+
   // Filter fields for the specified block
   fields.forEach(field => {
+    // D'abord chercher au niveau racine
     if (changes[field] !== undefined) {
       filtered[field] = changes[field]
+    }
+    // ✅ Pour edition, races et organizer : chercher aussi dans edition.new (structure NEW_EVENT)
+    else if (blockType === 'edition' && editionData[field] !== undefined) {
+      filtered[field] = { new: editionData[field], confidence: changes.edition?.confidence || 1 }
+    }
+    else if (blockType === 'organizer' && field === 'organizer' && editionData.organizer !== undefined) {
+      filtered[field] = { new: editionData.organizer, confidence: changes.edition?.confidence || 1 }
+    }
+    else if (blockType === 'races' && field === 'races' && editionData.races !== undefined) {
+      filtered[field] = { new: editionData.races, confidence: changes.edition?.confidence || 1 }
     }
   })
 
