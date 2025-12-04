@@ -315,12 +315,12 @@ router.post('/:id/apply', [
         const depApp = allApps.find((a: any) => a.blockType === depType)
         
         if (!depApp) {
-          // ✅ EXCEPTION: Pour EDITION_UPDATE, le bloc 'event' n'est pas obligatoire
-          // car applyEditionUpdate() récupère eventId depuis la base de données
+          // ✅ EXCEPTION: Pour EDITION_UPDATE, les blocs 'event' et 'edition' ne sont pas obligatoires
+          // car applyEditionUpdate() utilise directement l'editionId et l'eventId existants de la proposition
           const proposalType = application.proposal.type
           
-          if (proposalType === 'EDITION_UPDATE' && depType === 'event') {
-            console.log(`  ⏭️  Bloc "event" non trouvé pour EDITION_UPDATE - eventId sera récupéré depuis la base`)
+          if (proposalType === 'EDITION_UPDATE' && (depType === 'event' || depType === 'edition')) {
+            console.log(`  ⏭️  Bloc "${depType}" non trouvé pour EDITION_UPDATE - ${depType}Id sera récupéré depuis la proposition/base`)
             continue  // Skip cette dépendance
           }
           
