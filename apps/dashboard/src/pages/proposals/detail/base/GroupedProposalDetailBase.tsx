@@ -86,6 +86,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   handleRejectAllRaces: () => Promise<void>
   handleRaceFieldModify: (raceId: string, fieldName: string, newValue: any) => void
   handleDeleteRace: (raceId: string) => void
+  handleAddRace: (race: any) => void
   userModifiedRaceChanges: Record<string, Record<string, any>>
   // Actions événement mort
   handleKillEvent: () => Promise<void>
@@ -1057,6 +1058,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     handleRejectAllRaces,
     handleRaceFieldModify, // ✅ Déjà adapté à l'Étape 2 pour utiliser updateRaceEditor
     handleDeleteRace: deleteRaceEditor, // ✅ Suppression de course via le hook
+    handleAddRace: addRaceEditor, // ✅ Ajout de course via le hook
     handleKillEvent,
     handleReviveEvent,
     

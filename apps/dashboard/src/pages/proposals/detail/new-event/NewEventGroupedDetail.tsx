@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import { Box, Button } from '@mui/material'
 import { CheckCircle as ApproveIcon, Cancel as RejectIcon } from '@mui/icons-material'
 import GroupedProposalDetailBase from '../base/GroupedProposalDetailBase'
@@ -35,6 +35,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           handleRejectAllRaces,
           handleRaceFieldModify,
           handleDeleteRace,
+          handleAddRace,
           userModifiedChanges,
           formatValue,
           formatAgentsList,
@@ -52,7 +53,47 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           isBlockPending,
           blockProposals
         } = context
-        
+
+        // Extraire la date d'édition pour pré-remplir AddRaceDialog
+        const editionStartDate = useMemo(() => {
+          // Pour NEW_EVENT, priorité: userModifiedChanges > consolidatedChanges > edition.new.startDate
+          if (userModifiedChanges?.startDate) {
+            return userModifiedChanges.startDate
+          }
+
+          const startDateField = consolidatedChanges?.find(c => c.field === 'startDate')
+          if (startDateField) {
+            return startDateField.options[0]?.proposedValue
+          }
+
+          // Fallback: chercher dans edition.new pour NEW_EVENT
+          const firstProposal = groupProposals[0]
+          if (firstProposal?.changes?.edition?.new?.startDate) {
+            return firstProposal.changes.edition.new.startDate
+          }
+
+          return undefined
+        }, [userModifiedChanges, consolidatedChanges, groupProposals])
+
+        const editionTimeZone = useMemo(() => {
+          if (userModifiedChanges?.timeZone) {
+            return userModifiedChanges.timeZone
+          }
+
+          const timeZoneField = consolidatedChanges?.find(c => c.field === 'timeZone')
+          if (timeZoneField) {
+            return timeZoneField.options[0]?.proposedValue
+          }
+
+          // Fallback: chercher dans edition.new pour NEW_EVENT
+          const firstProposal = groupProposals[0]
+          if (firstProposal?.changes?.edition?.new?.timeZone) {
+            return firstProposal.changes.edition.new.timeZone
+          }
+
+          return 'Europe/Paris'
+        }, [userModifiedChanges, consolidatedChanges, groupProposals])
+
         // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
         
@@ -148,6 +189,9 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
               userModifiedRaceChanges={userModifiedRaceChanges}
               onRaceFieldModify={handleRaceFieldModify}
               onDeleteRace={handleDeleteRace}
+              onAddRace={handleAddRace}
+              editionStartDate={editionStartDate}
+              editionTimeZone={editionTimeZone}
               disabled={isBlockValidated('races') || isPending || isEventDead || isAllApproved}
               isBlockValidated={isBlockValidated('races')}
               onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}

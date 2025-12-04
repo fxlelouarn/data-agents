@@ -1,4 +1,4 @@
-import React from 'react'
+import React, { useMemo } from 'react'
 import GroupedProposalDetailBase from '../base/GroupedProposalDetailBase'
 import CategorizedEditionChangesTable from '@/components/proposals/CategorizedEditionChangesTable'
 import CategorizedEventChangesTable from '@/components/proposals/CategorizedEventChangesTable'
@@ -36,6 +36,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           handleRejectAllRaces,
           handleRaceFieldModify,
           handleDeleteRace,
+          handleAddRace,
           handleReviveEvent,
           handleKillEvent,
           userModifiedChanges,
@@ -57,7 +58,22 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           isBlockPending,
           blockProposals
         } = context
-        
+
+        // Extraire la date d'édition pour pré-remplir AddRaceDialog
+        const editionStartDate = useMemo(() => {
+          // Priorité: userModifiedChanges > consolidatedChanges > originalProposals
+          return userModifiedChanges?.startDate
+            || consolidatedChanges?.find(c => c.field === 'startDate')?.options[0]?.proposedValue
+            || groupProposals[0]?.changes?.startDate?.new
+        }, [userModifiedChanges, consolidatedChanges, groupProposals])
+
+        const editionTimeZone = useMemo(() => {
+          return userModifiedChanges?.timeZone
+            || consolidatedChanges?.find(c => c.field === 'timeZone')?.options[0]?.proposedValue
+            || groupProposals[0]?.changes?.timeZone?.new
+            || 'Europe/Paris'
+        }, [userModifiedChanges, consolidatedChanges, groupProposals])
+
         // Séparer les champs événement, édition et champs spéciaux
         const eventFields = ['name', 'city', 'country', 'countrySubdivisionNameLevel1', 
           'countrySubdivisionNameLevel2', 'fullAddress', 'latitude', 'longitude',
@@ -163,6 +179,9 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 userModifiedRaceChanges={userModifiedRaceChanges}
                 onRaceFieldModify={handleRaceFieldModify}
                 onDeleteRace={handleDeleteRace}
+                onAddRace={handleAddRace}
+                editionStartDate={editionStartDate}
+                editionTimeZone={editionTimeZone}
                 disabled={isBlockValidated('races') || isEventDead || isAllApproved}
                 isBlockValidated={isBlockValidated('races')}
                 onValidateBlock={() => validateBlock('races', blockProposals['races'] || [])}

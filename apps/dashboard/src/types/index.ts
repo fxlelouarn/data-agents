@@ -180,6 +180,8 @@ export interface RaceData {
   price?: number
   elevation?: number
   runPositiveElevation?: number  // ✅ Dénivelé positif
+  bikePositiveElevation?: number // ✅ Dénivelé positif vélo
+  walkPositiveElevation?: number // ✅ Dénivelé positif marche
   categoryLevel1?: string        // ✅ Catégorie principale
   categoryLevel2?: string        // ✅ Sous-catégorie
   timeZone?: string              // ✅ Timezone

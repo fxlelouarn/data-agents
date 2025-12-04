@@ -34,12 +34,17 @@ import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import BlockValidationButton from '../BlockValidationButton'
 import { ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
+import AddRaceDialog from './AddRaceDialog'
+import { RaceData } from '@/types'
 
 interface RacesChangesTableProps {
   consolidatedRaces: ConsolidatedRaceChange[]  // ✅ Depuis workingGroup
-  userModifiedRaceChanges: Record<string, any> // ✅ Depuis workingGroup  
+  userModifiedRaceChanges: Record<string, any> // ✅ Depuis workingGroup
   onRaceFieldModify: (raceId: string, field: string, value: any) => void
   onDeleteRace?: (raceId: string) => void // ✅ Suppression de course
+  onAddRace?: (race: RaceData) => void // ✅ Ajout de course manuelle
+  editionStartDate?: string // ✅ Date d'édition pour pré-remplir
+  editionTimeZone?: string // ✅ Fuseau horaire pour pré-remplir
   disabled?: boolean
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
@@ -59,8 +64,8 @@ type RaceField = {
   format?: (value: any) => string
 }
 
-// ✅ Options pour categoryLevel1
-const CATEGORY_LEVEL_1_OPTIONS = [
+// ✅ Options pour categoryLevel1 (exportées pour AddRaceDialog)
+export const CATEGORY_LEVEL_1_OPTIONS = [
   { value: 'RUNNING', label: 'Course à pied' },
   { value: 'TRAIL', label: 'Trail' },
   { value: 'TRIATHLON', label: 'Triathlon' },
@@ -70,8 +75,8 @@ const CATEGORY_LEVEL_1_OPTIONS = [
   { value: 'OTHER', label: 'Autre' }
 ]
 
-// ✅ Options pour categoryLevel2 (groupées par categoryLevel1)
-const CATEGORY_LEVEL_2_OPTIONS: Record<string, { value: string, label: string }[]> = {
+// ✅ Options pour categoryLevel2 (groupées par categoryLevel1, exportées pour AddRaceDialog)
+export const CATEGORY_LEVEL_2_OPTIONS: Record<string, { value: string, label: string }[]> = {
   RUNNING: [
     { value: 'LESS_THAN_5_KM', label: 'Moins de 5 km' },
     { value: 'KM5', label: '5 km' },
@@ -169,6 +174,9 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   userModifiedRaceChanges,
   onRaceFieldModify,
   onDeleteRace,
+  onAddRace,
+  editionStartDate,
+  editionTimeZone,
   disabled = false,
   isBlockValidated = false,
   onValidateBlock,
@@ -183,6 +191,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   // États locaux uniquement pour l'édition en cours
   const [editingRace, setEditingRace] = useState<{ raceId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
+  const [isAddDialogOpen, setIsAddDialogOpen] = useState(false)
   
   // Vérifier si une course est marquée comme supprimée
   const isRaceDeleted = (raceId: string): boolean => {
@@ -476,6 +485,19 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           <Typography variant="h6">
             Courses ({totalRaces} total)
           </Typography>
+
+          {/* Bouton Ajouter une course */}
+          {showActions && !isBlockValidated && onAddRace && (
+            <Button
+              variant="outlined"
+              size="small"
+              startIcon={<AddIcon />}
+              onClick={() => setIsAddDialogOpen(true)}
+              sx={{ ml: 2 }}
+            >
+              Ajouter une course
+            </Button>
+          )}
         </Box>
         {onValidateBlock && onUnvalidateBlock && (
           <BlockValidationButton
@@ -606,6 +628,18 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           </TableBody>
         </Table>
       </TableContainer>
+
+      {/* Modale d'ajout de course */}
+      {onAddRace && (
+        <AddRaceDialog
+          open={isAddDialogOpen}
+          onClose={() => setIsAddDialogOpen(false)}
+          onAdd={onAddRace}
+          defaultStartDate={editionStartDate}
+          defaultTimeZone={editionTimeZone}
+          isBlockValidated={isBlockValidated}
+        />
+      )}
     </Paper>
   )
 }
