@@ -125,10 +125,10 @@ export const agentsApi = {
 
 // Proposals API
 export const proposalsApi = {
-  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0): Promise<PaginatedResponse<Proposal>> => {
+  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0, sort = 'created-desc'): Promise<PaginatedResponse<Proposal>> => {
     const start = Date.now()
-    console.log(`[📋 PROPOSALS] Frontend: Initiating GET /api/proposals (limit=${limit}, offset=${offset})`)
-    return api.get('/proposals', { params: { ...filters, limit, offset } }).then(res => {
+    console.log(`[📋 PROPOSALS] Frontend: Initiating GET /api/proposals (limit=${limit}, offset=${offset}, sort=${sort})`)
+    return api.get('/proposals', { params: { ...filters, limit, offset, sort } }).then(res => {
       const duration = Date.now() - start
       console.log(`[📋 PROPOSALS] Frontend: GET /api/proposals completed in ${duration}ms, received ${res.data.data?.length} proposals`)
       if (duration > 2000) {

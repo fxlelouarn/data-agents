@@ -4,7 +4,7 @@ import { ProposalFilters } from '../services/interfaces'
 
 /**
  * Repository Pattern - Pure data access for Proposals
- * 
+ *
  * Responsibilities:
  * - CRUD operations on proposals
  * - Query building and filtering
@@ -19,7 +19,7 @@ export class ProposalRepository {
    */
   async findMany(filters: ProposalFilters = {}) {
     const whereClause: any = {}
-    
+
     if (filters.status) whereClause.status = filters.status as any
     if (filters.type) whereClause.type = filters.type as any
     if (filters.eventId) whereClause.eventId = filters.eventId
@@ -74,6 +74,7 @@ export class ProposalRepository {
     eventCity?: string
     editionYear?: number
     raceName?: string
+    proposedStartDate?: Date
   }) {
     return this.prisma.proposal.create({
       data: {
@@ -156,13 +157,13 @@ export class ProposalRepository {
         status: true
       }
     })
-    
+
     return proposals.reduce((acc, p) => {
       acc[p.status] = p._count.status
       return acc
     }, {} as Record<string, number>)
   }
-  
+
   /**
    * Find all applications for a proposal
    * Utile pour récupérer les IDs créés dans les blocs précédents (NEW_EVENT)

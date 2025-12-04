@@ -663,13 +663,37 @@ router.get('/', [
   query('type').optional().isIn(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE']),
   query('eventId').optional().isString(),
   query('editionId').optional().isString(),
+  query('sort').optional().isIn(['date-asc', 'date-desc', 'created-desc']),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
+
+  // Déterminer l'ordre de tri selon le paramètre
+  let orderBy: any
+  switch (sort) {
+    case 'date-asc':
+      // proposedStartDate croissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' }  // Secondaire pour départager
+      ]
+      break
+    case 'date-desc':
+      // proposedStartDate décroissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' }
+      ]
+      break
+    case 'created-desc':
+    default:
+      orderBy = { createdAt: 'desc' }
+      break
+  }
 
   const findStart = Date.now()
   const proposals = await db.prisma.proposal.findMany({
@@ -684,7 +708,7 @@ const { status, type, eventId, editionId, limit = 20, offset = 0 } = req.query
         select: { name: true, type: true }
       }
     },
-    orderBy: { createdAt: 'desc' },
+    orderBy,
     take: parseInt(String(limit)),
     skip: parseInt(String(offset))
   })

@@ -91,6 +91,8 @@ model Proposal {
   eventCity     String?
   editionYear   Int?
   raceName      String?
+  // Champ dénormalisé pour tri par date d'événement proposée
+  proposedStartDate DateTime?
   createdAt     DateTime              @default(now())
   updatedAt     DateTime              @updatedAt
   reviewedAt    DateTime?

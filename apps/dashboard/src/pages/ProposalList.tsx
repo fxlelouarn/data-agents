@@ -81,70 +81,71 @@ const getProposalTypeIcon = (type: ProposalType): React.ReactElement | undefined
 const ProposalList: React.FC = () => {
   const navigate = useNavigate()
   const [searchTerm, setSearchTerm] = useState('')
-  
+
   // Charger les filtres depuis localStorage au montage
   const [statusFilter, setStatusFilter] = useState<ProposalStatus | 'ALL'>(() => {
     const saved = localStorage.getItem('proposalStatusFilter')
     return (saved as ProposalStatus | 'ALL') || 'PENDING'
   })
-  
+
   const [typeFilter, setTypeFilter] = useState<ProposalType | 'ALL'>(() => {
     const saved = localStorage.getItem('proposalTypeFilter')
     return (saved as ProposalType | 'ALL') || 'ALL'
   })
-  
+
   const [agentFilter, setAgentFilter] = useState<string>(() => {
     const saved = localStorage.getItem('proposalAgentFilter')
     return saved || 'ALL'
   })
-  
+
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
   const [paginationModel, setPaginationModel] = useState({ page: 0, pageSize: 50 })
-  
+
   // Dropdown menu pour création proposition
   const [createMenuAnchor, setCreateMenuAnchor] = useState<null | HTMLElement>(null)
   const createMenuOpen = Boolean(createMenuAnchor)
-  
+
   // Charger l'ordre de tri depuis localStorage au montage
   const [groupSort, setGroupSort] = useState<'date-asc' | 'date-desc' | 'created-desc'>(() => {
     const saved = localStorage.getItem('proposalGroupSort')
     return (saved as 'date-asc' | 'date-desc' | 'created-desc') || 'date-asc'
   })
-  
+
   // Sauvegarder les filtres dans localStorage quand ils changent
   React.useEffect(() => {
     localStorage.setItem('proposalStatusFilter', statusFilter)
   }, [statusFilter])
-  
+
   React.useEffect(() => {
     localStorage.setItem('proposalTypeFilter', typeFilter)
   }, [typeFilter])
-  
+
   React.useEffect(() => {
     localStorage.setItem('proposalAgentFilter', agentFilter)
   }, [agentFilter])
-  
+
   // Sauvegarder l'ordre de tri dans localStorage quand il change
   React.useEffect(() => {
     localStorage.setItem('proposalGroupSort', groupSort)
   }, [groupSort])
 
   const { data: proposalsData, isLoading, refetch } = useProposals(
-    { 
+    {
       status: statusFilter !== 'ALL' ? statusFilter : undefined,
       type: typeFilter !== 'ALL' ? typeFilter : undefined,
     },
     paginationModel.pageSize,
-    paginationModel.page * paginationModel.pageSize
+    paginationModel.page * paginationModel.pageSize,
+    groupSort  // Tri côté serveur
   )
-  
-  // Reset pagination when filters change
+
+  // Reset pagination when filters or sort change
   React.useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }))
-  }, [statusFilter, typeFilter, agentFilter])
-  
+  }, [statusFilter, typeFilter, agentFilter, groupSort])
+
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
   const bulkArchiveMutation = useBulkArchiveProposals()
@@ -161,15 +162,15 @@ const ProposalList: React.FC = () => {
   // Filter proposals based on search term and agent
   const filteredProposals = useMemo(() => {
     if (!proposalsData?.data) return []
-    
+
     return proposalsData.data.filter(proposal => {
       // Filter by agent
       if (agentFilter !== 'ALL' && proposal.agent.name !== agentFilter) {
         return false
       }
-      
+
       const searchLower = searchTerm.toLowerCase()
-      
+
       // Recherche dans les champs de base
       if (
         proposal.agent.name.toLowerCase().includes(searchLower) ||
@@ -177,7 +178,7 @@ const ProposalList: React.FC = () => {
       ) {
         return true
       }
-      
+
       // Recherche dans les métadonnées d'événements
       if (proposal.justification && Array.isArray(proposal.justification)) {
         for (const justif of proposal.justification) {
@@ -193,7 +194,7 @@ const ProposalList: React.FC = () => {
           }
         }
       }
-      
+
       // Fallback: recherche dans les IDs (conservé pour compatibilité)
       if (
         (proposal.eventId && proposal.eventId.toString().toLowerCase().includes(searchLower)) ||
@@ -201,7 +202,7 @@ const ProposalList: React.FC = () => {
       ) {
         return true
       }
-      
+
       return false
     })
   }, [proposalsData?.data, searchTerm, agentFilter])
@@ -209,7 +210,7 @@ const ProposalList: React.FC = () => {
   // Group proposals by event/edition
   const groupedProposals = useMemo(() => {
     const groups: Record<string, typeof filteredProposals> = {}
-    
+
     filteredProposals.forEach(proposal => {
       let groupKey: string
       if (proposal.type === 'NEW_EVENT') {
@@ -217,13 +218,13 @@ const ProposalList: React.FC = () => {
       } else {
         groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
       }
-      
+
       if (!groups[groupKey]) {
         groups[groupKey] = []
       }
       groups[groupKey].push(proposal)
     })
-    
+
     // Trier les propositions dans chaque groupe par confiance décroissante
     Object.keys(groups).forEach(groupKey => {
       groups[groupKey].sort((a, b) => {
@@ -232,60 +233,35 @@ const ProposalList: React.FC = () => {
         return confidenceB - confidenceA
       })
     })
-    
+
     return groups
   }, [filteredProposals])
-  
-  // Trier les groupes selon le critère sélectionné
+
+  // Clés des groupes dans l'ordre d'apparition (tri déjà effectué côté serveur)
+  // On utilise un Set pour préserver l'ordre d'insertion des propositions triées par le serveur
   const sortedGroupKeys = useMemo(() => {
-    const keys = Object.keys(groupedProposals)
-    
-    return keys.sort((keyA, keyB) => {
-      const groupA = groupedProposals[keyA]
-      const groupB = groupedProposals[keyB]
-      
-      if (groupSort === 'created-desc') {
-        // Tri par date de création : plus récent en premier
-        const latestA = Math.max(...groupA.map(p => new Date(p.createdAt).getTime()))
-        const latestB = Math.max(...groupB.map(p => new Date(p.createdAt).getTime()))
-        return latestB - latestA
-      }
-      
-      // Tri par startDate proposée
-      // Extraire la startDate minimale de chaque groupe (date la plus proche)
-      const getMinStartDate = (proposals: typeof filteredProposals) => {
-        const dates: number[] = []
-        
-        for (const proposal of proposals) {
-          // Chercher startDate dans changes
-          if (proposal.changes?.startDate) {
-            const startDate = typeof proposal.changes.startDate === 'object' && proposal.changes.startDate.new
-              ? proposal.changes.startDate.new
-              : proposal.changes.startDate
-            if (startDate) {
-              dates.push(new Date(startDate).getTime())
-            }
-          }
-        }
-        
-        // Retourner la date la plus proche (minimum)
-        // Si aucune date, retourner Infinity pour mettre à la fin
-        return dates.length > 0 ? Math.min(...dates) : Infinity
-      }
-      
-      const dateA = getMinStartDate(groupA)
-      const dateB = getMinStartDate(groupB)
-      
-      if (groupSort === 'date-asc') {
-        // startDate la plus proche en premier (ordre croissant)
-        return dateA - dateB
+    const orderedKeys: string[] = []
+    const seenKeys = new Set<string>()
+
+    // Parcourir les propositions dans l'ordre retourné par le serveur
+    // et collecter les clés de groupe dans cet ordre
+    filteredProposals.forEach(proposal => {
+      let groupKey: string
+      if (proposal.type === 'NEW_EVENT') {
+        groupKey = `new-event-${proposal.id}`
       } else {
-        // startDate la plus éloignée en premier (ordre décroissant)
-        return dateB - dateA
+        groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
+      }
+
+      if (!seenKeys.has(groupKey)) {
+        seenKeys.add(groupKey)
+        orderedKeys.push(groupKey)
       }
     })
-  }, [groupedProposals, groupSort])
-  
+
+    return orderedKeys
+  }, [filteredProposals])
+
   const handleToggleGroup = (groupKey: string, event: React.MouseEvent) => {
     event.stopPropagation()
     setExpandedGroups(prev => {
@@ -317,16 +293,16 @@ const ProposalList: React.FC = () => {
       const eventName = (typeof eventNameValue === 'object' && eventNameValue?.new) ? eventNameValue.new : eventNameValue
       return eventName || 'Nouvel événement'
     }
-    
+
     const proposal = proposals[0]
-    
+
     // PRIORITÉ 1: Utiliser les champs enrichis par l'API (eventName, eventCity, editionYear)
     if (proposal.eventName) {
       const cityPart = proposal.eventCity ? ` - ${proposal.eventCity}` : ''
       const yearPart = proposal.editionYear ? ` ${proposal.editionYear}` : ''
       return `${proposal.eventName}${cityPart}${yearPart}`
     }
-    
+
     // PRIORITÉ 2: Essayer d'extraire le nom depuis les métadonnées de justification
     if (proposal.justification && Array.isArray(proposal.justification)) {
       for (const justif of proposal.justification) {
@@ -334,7 +310,7 @@ const ProposalList: React.FC = () => {
           const eventName = justif.metadata.eventName
           const eventCity = justif.metadata.eventCity
           const year = justif.metadata.editionYear
-          
+
           // Construire le titre avec le nom, ville et année
           const cityPart = eventCity ? ` - ${eventCity}` : ''
           const yearPart = year ? ` ${year}` : ''
@@ -342,19 +318,19 @@ const ProposalList: React.FC = () => {
         }
       }
     }
-    
+
     // Pour EDITION_UPDATE sans eventId, utiliser editionId avec les métadonnées si disponibles
     if (!proposal.eventId && proposal.editionId) {
       return `Édition ${proposal.editionId}`
     }
-    
+
     if (!proposal.eventId) {
       return 'Événement inconnu'
     }
-    
+
     // Fallback: extraire le nom de l'événement depuis l'ID (logique existante)
     let eventName = proposal.eventId.toString().replace('event_', '')
-    
+
     // Nettoyer et formater le nom
     if (eventName.includes('marathon_paris')) {
       eventName = 'Marathon de Paris'
@@ -366,11 +342,11 @@ const ProposalList: React.FC = () => {
       // Fallback: remplacer les underscores par des espaces et capitaliser
       eventName = eventName.replace(/_/g, ' ').replace(/\b\w/g, (l: string) => l.toUpperCase())
     }
-    
+
     // Extraire l'année depuis l'eventId ou editionId
     const yearMatch = (proposal.eventId + (proposal.editionId || '')).match(/202\d/)
     const year = yearMatch ? yearMatch[0] : ''
-    
+
     return year ? `${eventName} ${year}` : eventName
   }
 
@@ -450,14 +426,14 @@ const ProposalList: React.FC = () => {
           const eventName = (typeof eventNameValue === 'object' && eventNameValue?.new) ? eventNameValue.new : eventNameValue
           return name || eventName || 'Nouvel événement'
         }
-        
+
         // PRIORITÉ 1: Utiliser les champs enrichis par l'API
         if (proposal.eventName) {
           const cityPart = proposal.eventCity ? ` - ${proposal.eventCity}` : ''
           const yearPart = proposal.editionYear ? ` ${proposal.editionYear}` : ''
           return `${proposal.eventName}${cityPart}${yearPart}`
         }
-        
+
         // PRIORITÉ 2: Essayer d'extraire depuis les métadonnées de justification
         if (proposal.justification && Array.isArray(proposal.justification)) {
           for (const justif of proposal.justification) {
@@ -468,7 +444,7 @@ const ProposalList: React.FC = () => {
             }
           }
         }
-        
+
         // Fallback sur les IDs
         if (proposal.editionId) {
           return `Édition ${proposal.editionId}`
@@ -598,7 +574,7 @@ const ProposalList: React.FC = () => {
             <Typography variant="h4" sx={{ fontWeight: 600 }}>
               Propositions
             </Typography>
-            
+
             {/* View Mode Toggle */}
             <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
               <Button
@@ -633,7 +609,7 @@ const ProposalList: React.FC = () => {
                 <RefreshIcon />
               </IconButton>
             </Tooltip>
-            
+
             {/* Créer une proposition button avec dropdown */}
             <ButtonGroup variant="contained" color="primary" size="small">
               <Button
@@ -829,7 +805,7 @@ const ProposalList: React.FC = () => {
         /* Grouped View */
         <Box>
           {isLoading && <LinearProgress sx={{ mb: 2 }} />}
-          
+
           {/* Pagination info for grouped view */}
           {proposalsData?.meta && (
             <Box sx={{ mb: 2, display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
@@ -854,13 +830,13 @@ const ProposalList: React.FC = () => {
               </Box>
             </Box>
           )}
-          
+
           {sortedGroupKeys.map(groupKey => {
             const proposals = groupedProposals[groupKey]
             const isExpanded = expandedGroups.has(groupKey)
             return (
             <Accordion key={groupKey} expanded={isExpanded} sx={{ mb: 2 }}>
-              <AccordionSummary 
+              <AccordionSummary
                 onClick={(e) => {
                   // Empêcher l'expansion/contraction si on clique sur le contenu principal
                   const target = e.target as HTMLElement
@@ -897,15 +873,15 @@ const ProposalList: React.FC = () => {
                   >
                     <ExpandMoreIcon />
                   </IconButton>
-                  <Chip 
-                    size="small" 
-                    label={proposals.length.toString()} 
-                    color="primary" 
-                    sx={{ 
+                  <Chip
+                    size="small"
+                    label={proposals.length.toString()}
+                    color="primary"
+                    sx={{
                       minWidth: '32px',
                       borderRadius: '12px',
                       fontWeight: 600
-                    }} 
+                    }}
                   />
                   <Typography variant="h6" sx={{ flexGrow: 1 }}>
                     {getEventTitle(groupKey, proposals)}
@@ -918,7 +894,7 @@ const ProposalList: React.FC = () => {
                         size="small"
                         label={agentName}
                         variant="outlined"
-                        sx={{ 
+                        sx={{
                           backgroundColor: '#f3f4f6',
                           borderColor: '#9ca3af',
                           fontWeight: 500
@@ -980,7 +956,7 @@ const ProposalList: React.FC = () => {
                               <Typography component="div" variant="body2" sx={{ display: 'block', mb: 1 }}>
                                 {getChangesSummary(proposal.changes)}
                               </Typography>
-                              
+
                               {/* Affichage des changements principaux */}
                               {Object.entries(proposal.changes).map(([key, value]: [string, any]) => {
                                 if (key === 'startDate' && typeof value === 'object' && value.new) {
@@ -1028,8 +1004,8 @@ const ProposalList: React.FC = () => {
                                     <Chip
                                       key={key}
                                       size="small"
-                                      label={`${key}: ${typeof value === 'string' && value.includes('T') ? 
-                                        new Date(value).toLocaleDateString('fr-FR') : 
+                                      label={`${key}: ${typeof value === 'string' && value.includes('T') ?
+                                        new Date(value).toLocaleDateString('fr-FR') :
                                         String(value)}`}
                                       variant="outlined"
                                       sx={{ mr: 1, mb: 0.5 }}
@@ -1084,7 +1060,7 @@ const ProposalList: React.FC = () => {
             </Accordion>
             )
           })}
-          
+
           {Object.keys(groupedProposals).length === 0 && !isLoading && (
             <Card>
               <CardContent sx={{ textAlign: 'center', py: 6 }}>
