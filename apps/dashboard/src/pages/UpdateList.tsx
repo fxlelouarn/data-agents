@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Box,
@@ -28,11 +28,21 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  Accordion,
+  AccordionSummary,
+  AccordionDetails,
+  List,
+  ListItem,
+  ListItemText,
+  Divider,
 } from '@mui/material'
 import {
   Visibility as ViewIcon,
   PlayArrow as ApplyIcon,
   Delete as DeleteIcon,
+  Group as GroupIcon,
+  ViewList as ViewListIcon,
+  ExpandMore as ExpandMoreIcon,
 } from '@mui/icons-material'
 import { useUpdates, useApplyUpdate, useDeleteUpdate, useBulkDeleteUpdates, useBulkApplyUpdates } from '@/hooks/useApi'
 import { DataUpdate, UpdateStatus } from '@/types'
@@ -46,6 +56,8 @@ const UpdateList: React.FC = () => {
   const [statusFilter, setStatusFilter] = useState<UpdateStatus | ''>("")
   const [searchQuery, setSearchQuery] = useState('')
   const [selectedIds, setSelectedIds] = useState<string[]>([])
+  const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')  // ✅ Nouveau
+  const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())  // ✅ Nouveau
   const [confirmDialog, setConfirmDialog] = useState<{
     open: boolean
     action: 'delete' | 'apply' | null
@@ -206,6 +218,40 @@ const UpdateList: React.FC = () => {
     return getProposalTypeLabel(update.proposal.type)
   }
 
+  // ✅ Extraire les données AVANT les returns conditionnels (Rules of Hooks)
+  const updates = updatesData?.data || []
+  const totalCount = updatesData?.meta?.total || 0
+  const numSelected = selectedIds.length
+  const numPendingSelected = selectedIds.filter(id => {
+    const update = updates.find((u: DataUpdate) => u.id === id)
+    return update?.status === 'PENDING'
+  }).length
+
+  // ✅ Groupement des applications par proposalIds (AVANT les returns conditionnels)
+  const groupedUpdates = useMemo(() => {
+    const groups = new Map<string, any[]>()
+    
+    updates.forEach((app: any) => {
+      const key = (app.proposalIds || [app.proposalId]).sort().join('-')
+      if (!groups.has(key)) {
+        groups.set(key, [])
+      }
+      groups.get(key)!.push(app)
+    })
+    
+    return Array.from(groups.values()).map(apps => ({
+      id: `group-${(apps[0].proposalIds || [apps[0].proposalId]).join('-')}`,
+      applications: apps,
+      proposalIds: apps[0].proposalIds || [apps[0].proposalId],
+      eventName: apps[0].context?.eventName || apps[0].proposal?.eventName || 'Mise à jour',
+      editionYear: apps[0].context?.editionYear,
+      blocks: apps.map(a => a.blockType).filter(Boolean),
+      status: (apps.some(a => a.status === 'PENDING') ? 'PENDING' : 
+              apps.every(a => a.status === 'APPLIED') ? 'APPLIED' : 'FAILED') as UpdateStatus
+    }))
+  }, [updates])
+
+  // Returns conditionnels APRÈS tous les hooks
   if (isLoading) return <LinearProgress />
 
   if (error) {
@@ -229,19 +275,58 @@ const UpdateList: React.FC = () => {
     )
   }
 
-  const updates = updatesData?.data || []
-  const totalCount = updatesData?.meta?.total || 0
-  const numSelected = selectedIds.length
-  const numPendingSelected = selectedIds.filter(id => {
-    const update = updates.find((u: DataUpdate) => u.id === id)
-    return update?.status === 'PENDING'
-  }).length
+  // ✅ Helper pour labels des blocs
+  const blockLabels: Record<string, string> = {
+    event: 'Événement',
+    edition: 'Édition',
+    organizer: 'Organisateur',
+    races: 'Courses'
+  }
+
+  // ✅ Handler pour toggle accordions
+  const handleToggleGroup = (groupKey: string, event: React.MouseEvent) => {
+    event.stopPropagation()
+    setExpandedGroups(prev => {
+      const newExpanded = new Set(prev)
+      if (newExpanded.has(groupKey)) {
+        newExpanded.delete(groupKey)
+      } else {
+        newExpanded.add(groupKey)
+      }
+      return newExpanded
+    })
+  }
 
   return (
     <Box>
-      <Typography variant="h4" sx={{ mb: 3, fontWeight: 600 }}>
-        Mises à jour
-      </Typography>
+      {/* Titre + View Mode Toggle */}
+      <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+        <Typography variant="h4" sx={{ fontWeight: 600 }}>
+          Mises à jour
+        </Typography>
+        
+        {/* View Mode Toggle */}
+        <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
+          <Button
+            size="small"
+            startIcon={<GroupIcon />}
+            onClick={() => setViewMode('grouped')}
+            variant={viewMode === 'grouped' ? 'contained' : 'text'}
+            sx={{ borderRadius: 0 }}
+          >
+            Groupé
+          </Button>
+          <Button
+            size="small"
+            startIcon={<ViewListIcon />}
+            onClick={() => setViewMode('table')}
+            variant={viewMode === 'table' ? 'contained' : 'text'}
+            sx={{ borderRadius: 0 }}
+          >
+            Tableau
+          </Button>
+        </Box>
+      </Box>
       
       {/* Filtres */}
       <Card sx={{ mb: 3 }}>
@@ -312,158 +397,375 @@ const UpdateList: React.FC = () => {
         </Card>
       )}
 
-      {/* Tableau des mises à jour */}
-      <Card>
-        <CardContent sx={{ p: 0 }}>
-          <TableContainer component={Paper} elevation={0}>
-            <Table>
-              <TableHead>
-                <TableRow>
-                  <TableCell padding="checkbox">
-                    <Checkbox
-                      indeterminate={numSelected > 0 && numSelected < updates.length}
-                      checked={updates.length > 0 && numSelected === updates.length}
-                      onChange={handleSelectAll}
-                    />
-                  </TableCell>
-                  <TableCell>Mise à jour</TableCell>
-                  <TableCell>Agent</TableCell>
-                  <TableCell>Type</TableCell>
-                  <TableCell>Statut</TableCell>
-                  <TableCell>Programmée le</TableCell>
-                  <TableCell>Appliquée le</TableCell>
-                  <TableCell align="right">Actions</TableCell>
-                </TableRow>
-              </TableHead>
-              <TableBody>
-                {updates.map((update: DataUpdate) => {
-                  const isSelected = selectedIds.includes(update.id)
-                  return (
-                  <TableRow key={update.id} hover selected={isSelected}>
-                    <TableCell padding="checkbox">
+      {/* Rendu conditionnel : Vue Groupée OU Vue Tableau */}
+      {viewMode === 'grouped' ? (
+        /* ========== VUE GROUPÉE : ACCORDIONS ========== */
+        <Box>
+          {groupedUpdates.length === 0 ? (
+            <Card>
+              <CardContent>
+                <Typography variant="body2" color="text.secondary" align="center" sx={{ py: 4 }}>
+                  Aucune mise à jour trouvée
+                </Typography>
+              </CardContent>
+            </Card>
+          ) : (
+            groupedUpdates.map(group => {
+              const isExpanded = expandedGroups.has(group.id)
+              const allAppsIds = group.applications.map((a: any) => a.id)
+              const hasSelection = allAppsIds.some(id => selectedIds.includes(id))
+              
+              return (
+                <Accordion 
+                  key={group.id}
+                  expanded={isExpanded}
+                  onChange={(e) => handleToggleGroup(group.id, e as any)}
+                  sx={{ mb: 2 }}
+                >
+                  <AccordionSummary
+                    expandIcon={<ExpandMoreIcon />}
+                    sx={{
+                      '&:hover': { bgcolor: 'action.hover' },
+                      cursor: 'pointer'
+                    }}
+                    onClick={(e) => {
+                      // Si clic sur la zone principale (pas expand icon), naviguer vers détail
+                      const target = e.target as HTMLElement
+                      if (!target.closest('.MuiAccordionSummary-expandIconWrapper')) {
+                        e.stopPropagation()
+                        // Utiliser l'ID de la première application du groupe
+                        navigate(`/updates/group/${group.applications[0].id}`)
+                      }
+                    }}
+                  >
+                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, width: '100%', pr: 2 }}>
+                      {/* Checkbox groupe */}
                       <Checkbox
-                        checked={isSelected}
-                        onChange={() => handleSelectOne(update.id)}
+                        checked={hasSelection}
+                        indeterminate={hasSelection && !allAppsIds.every(id => selectedIds.includes(id))}
+                        onClick={(e) => {
+                          e.stopPropagation()
+                          if (hasSelection) {
+                            setSelectedIds(prev => prev.filter(id => !allAppsIds.includes(id)))
+                          } else {
+                            setSelectedIds(prev => [...prev, ...allAppsIds])
+                          }
+                        }}
                       />
-                    </TableCell>
-                    <TableCell>
-                      <Box component={Link} to={`/proposals/${update.proposalId}`} sx={{ textDecoration: 'none', display: 'block' }}>
-                        <Typography 
-                          variant="body1" 
-                          sx={{ color: 'primary.main', fontWeight: 600, mb: 0.5 }}
-                        >
-                          {getUpdatePrimaryText(update)}
+                      
+                      {/* Nom événement */}
+                      <Box sx={{ flex: 1, minWidth: 0 }}>
+                        <Typography variant="h6" sx={{ fontWeight: 600 }}>
+                          {group.eventName}
+                          {group.editionYear && (
+                            <Typography component="span" variant="body2" sx={{ ml: 1, color: 'text.secondary' }}>
+                              ({group.editionYear})
+                            </Typography>
+                          )}
                         </Typography>
-                        <Typography 
-                          variant="caption" 
-                          sx={{ color: 'text.secondary' }}
-                        >
-                          {getUpdateSecondaryText(update)}
-                        </Typography>
+                        
+                        {/* Chips des blocs */}
+                        <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
+                          {group.blocks.map((block: string) => (
+                            <Chip
+                              key={block}
+                              label={blockLabels[block] || block}
+                              size="small"
+                              variant="outlined"
+                            />
+                          ))}
+                          {group.blocks.length === 0 && (
+                            <Chip label="Tous les blocs" size="small" variant="outlined" />
+                          )}
+                        </Box>
                       </Box>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">{update.proposal.agent.name}</Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {getProposalTypeLabel(update.proposal.type)}
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
+                      
+                      {/* Statut global du groupe */}
                       <Chip
-                        label={getStatusLabel(update.status)}
-                        color={getStatusColor(update.status) as any}
+                        label={getStatusLabel(group.status)}
+                        color={getStatusColor(group.status) as any}
                         size="small"
                       />
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {update.scheduledAt
-                          ? format(new Date(update.scheduledAt), 'dd/MM/yyyy HH:mm', { locale: fr })
-                          : '-'
-                        }
-                      </Typography>
-                    </TableCell>
-                    <TableCell>
-                      <Typography variant="body2">
-                        {update.appliedAt
-                          ? format(new Date(update.appliedAt), 'dd/MM/yyyy HH:mm', { locale: fr })
-                          : '-'
-                        }
-                      </Typography>
-                    </TableCell>
-                    <TableCell align="right">
-                      <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
-                        <Tooltip title="Voir les détails">
-                          <IconButton
-                            size="small"
-                            onClick={() => navigate(`/updates/${update.id}`)}
+                    </Box>
+                  </AccordionSummary>
+                  
+                  <AccordionDetails sx={{ bgcolor: 'grey.50' }}>
+                    {/* Liste des applications individuelles */}
+                    <List disablePadding>
+                      {group.applications.map((app: any, index: number) => (
+                        <React.Fragment key={app.id}>
+                          {index > 0 && <Divider />}
+                          <ListItem
+                            sx={{
+                              display: 'flex',
+                              alignItems: 'flex-start',
+                              py: 2,
+                              bgcolor: 'background.paper'
+                            }}
                           >
-                            <ViewIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
-                        
-                        {update.status === 'PENDING' && (
-                          <Tooltip title="Appliquer maintenant">
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="primary"
-                                onClick={() => handleApplyUpdate(update.id)}
-                                disabled={applyUpdateMutation.isPending}
-                              >
-                                <ApplyIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        )}
-                        
-                        {update.status === 'APPLIED' && (
-                          <Tooltip title="Supprimer">
-                            <span>
-                              <IconButton
-                                size="small"
-                                color="error"
-                                onClick={() => handleDeleteUpdate(update.id)}
-                                disabled={deleteUpdateMutation.isPending}
-                              >
-                                <DeleteIcon fontSize="small" />
-                              </IconButton>
-                            </span>
-                          </Tooltip>
-                        )}
-                      </Box>
-                    </TableCell>
-                  </TableRow>
-                  )
-                })}
-                {updates.length === 0 && (
+                            <Box sx={{ flex: 1 }}>
+                              {/* Titre application */}
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                                {app.blockType && (
+                                  <Chip
+                                    label={blockLabels[app.blockType] || app.blockType}
+                                    size="small"
+                                    color="primary"
+                                    variant="outlined"
+                                  />
+                                )}
+                                <Chip
+                                  label={getStatusLabel(app.status)}
+                                  color={getStatusColor(app.status) as any}
+                                  size="small"
+                                />
+                              </Box>
+                              
+                              {/* Dates */}
+                              <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
+                                <Box>
+                                  <Typography variant="caption" color="text.secondary" display="block">
+                                    Programmée
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {app.scheduledAt
+                                      ? format(new Date(app.scheduledAt), 'dd/MM/yyyy HH:mm', { locale: fr })
+                                      : '-'
+                                    }
+                                  </Typography>
+                                </Box>
+                                {app.appliedAt && (
+                                  <Box>
+                                    <Typography variant="caption" color="text.secondary" display="block">
+                                      Appliquée
+                                    </Typography>
+                                    <Typography variant="body2">
+                                      {format(new Date(app.appliedAt), 'dd/MM/yyyy HH:mm', { locale: fr })}
+                                    </Typography>
+                                  </Box>
+                                )}
+                              </Box>
+                            </Box>
+                            
+                            {/* Actions */}
+                            <Box sx={{ display: 'flex', gap: 1, ml: 2 }}>
+                              <Tooltip title="Voir les détails">
+                                <IconButton
+                                  size="small"
+                                  onClick={() => navigate(`/updates/${app.id}`)}
+                                >
+                                  <ViewIcon fontSize="small" />
+                                </IconButton>
+                              </Tooltip>
+                              
+                              {app.status === 'PENDING' && (
+                                <Tooltip title="Appliquer maintenant">
+                                  <IconButton
+                                    size="small"
+                                    color="primary"
+                                    onClick={() => handleApplyUpdate(app.id)}
+                                    disabled={applyUpdateMutation.isPending}
+                                  >
+                                    <ApplyIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                              
+                              {app.status === 'APPLIED' && (
+                                <Tooltip title="Supprimer">
+                                  <IconButton
+                                    size="small"
+                                    color="error"
+                                    onClick={() => handleDeleteUpdate(app.id)}
+                                    disabled={deleteUpdateMutation.isPending}
+                                  >
+                                    <DeleteIcon fontSize="small" />
+                                  </IconButton>
+                                </Tooltip>
+                              )}
+                            </Box>
+                          </ListItem>
+                        </React.Fragment>
+                      ))}
+                    </List>
+                    
+                    {/* Actions groupées en bas de l'accordion */}
+                    <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
+                      <Button
+                        size="small"
+                        variant="contained"
+                        onClick={() => navigate(`/updates/group/${group.proposalIds.join('-')}`)}
+                      >
+                        Voir les détails du groupe
+                      </Button>
+                      <Button
+                        size="small"
+                        variant="outlined"
+                        onClick={() => navigate(`/proposals/group/${group.proposalIds.join('-')}`)}
+                      >
+                        Voir la proposition
+                      </Button>
+                    </Box>
+                  </AccordionDetails>
+                </Accordion>
+              )
+            })
+          )}
+        </Box>
+      ) : (
+        /* ========== VUE TABLEAU : TABLE ========== */
+        <Card>
+          <CardContent sx={{ p: 0 }}>
+            <TableContainer component={Paper} elevation={0}>
+              <Table>
+                <TableHead>
                   <TableRow>
-                    <TableCell colSpan={8} align="center">
-                      <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
-                        Aucune mise à jour trouvée
-                      </Typography>
+                    <TableCell padding="checkbox">
+                      <Checkbox
+                        indeterminate={numSelected > 0 && numSelected < updates.length}
+                        checked={updates.length > 0 && numSelected === updates.length}
+                        onChange={handleSelectAll}
+                      />
                     </TableCell>
+                    <TableCell>Mise à jour</TableCell>
+                    <TableCell>Agent</TableCell>
+                    <TableCell>Type</TableCell>
+                    <TableCell>Statut</TableCell>
+                    <TableCell>Programmée le</TableCell>
+                    <TableCell>Appliquée le</TableCell>
+                    <TableCell align="right">Actions</TableCell>
                   </TableRow>
-                )}
-              </TableBody>
-            </Table>
-          </TableContainer>
-          
-          <TablePagination
-            rowsPerPageOptions={[10, 20, 50]}
-            component="div"
-            count={totalCount}
-            rowsPerPage={rowsPerPage}
-            page={page}
-            onPageChange={handleChangePage}
-            onRowsPerPageChange={handleChangeRowsPerPage}
-            labelRowsPerPage="Lignes par page:"
-            labelDisplayedRows={({ from, to, count }) => `${from}-${to} sur ${count}`}
-          />
-        </CardContent>
-      </Card>
+                </TableHead>
+                <TableBody>
+                  {updates.map((update: DataUpdate) => {
+                    const isSelected = selectedIds.includes(update.id)
+                    return (
+                    <TableRow key={update.id} hover selected={isSelected}>
+                      <TableCell padding="checkbox">
+                        <Checkbox
+                          checked={isSelected}
+                          onChange={() => handleSelectOne(update.id)}
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Box component={Link} to={`/proposals/${update.proposalId}`} sx={{ textDecoration: 'none', display: 'block' }}>
+                          <Typography 
+                            variant="body1" 
+                            sx={{ color: 'primary.main', fontWeight: 600, mb: 0.5 }}
+                          >
+                            {getUpdatePrimaryText(update)}
+                          </Typography>
+                          <Typography 
+                            variant="caption" 
+                            sx={{ color: 'text.secondary' }}
+                          >
+                            {getUpdateSecondaryText(update)}
+                          </Typography>
+                        </Box>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">{update.proposal.agent.name}</Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {getProposalTypeLabel(update.proposal.type)}
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Chip
+                          label={getStatusLabel(update.status)}
+                          color={getStatusColor(update.status) as any}
+                          size="small"
+                        />
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {update.scheduledAt
+                            ? format(new Date(update.scheduledAt), 'dd/MM/yyyy HH:mm', { locale: fr })
+                            : '-'
+                          }
+                        </Typography>
+                      </TableCell>
+                      <TableCell>
+                        <Typography variant="body2">
+                          {update.appliedAt
+                            ? format(new Date(update.appliedAt), 'dd/MM/yyyy HH:mm', { locale: fr })
+                            : '-'
+                          }
+                        </Typography>
+                      </TableCell>
+                      <TableCell align="right">
+                        <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end' }}>
+                          <Tooltip title="Voir les détails">
+                            <IconButton
+                              size="small"
+                              onClick={() => navigate(`/updates/${update.id}`)}
+                            >
+                              <ViewIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          
+                          {update.status === 'PENDING' && (
+                            <Tooltip title="Appliquer maintenant">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color="primary"
+                                  onClick={() => handleApplyUpdate(update.id)}
+                                  disabled={applyUpdateMutation.isPending}
+                                >
+                                  <ApplyIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
+                          
+                          {update.status === 'APPLIED' && (
+                            <Tooltip title="Supprimer">
+                              <span>
+                                <IconButton
+                                  size="small"
+                                  color="error"
+                                  onClick={() => handleDeleteUpdate(update.id)}
+                                  disabled={deleteUpdateMutation.isPending}
+                                >
+                                  <DeleteIcon fontSize="small" />
+                                </IconButton>
+                              </span>
+                            </Tooltip>
+                          )}
+                        </Box>
+                      </TableCell>
+                    </TableRow>
+                    )
+                  })}
+                  {updates.length === 0 && (
+                    <TableRow>
+                      <TableCell colSpan={8} align="center">
+                        <Typography variant="body2" color="text.secondary" sx={{ py: 4 }}>
+                          Aucune mise à jour trouvée
+                        </Typography>
+                      </TableCell>
+                    </TableRow>
+                  )}
+                </TableBody>
+              </Table>
+            </TableContainer>
+            
+            <TablePagination
+              rowsPerPageOptions={[10, 20, 50]}
+              component="div"
+              count={totalCount}
+              rowsPerPage={rowsPerPage}
+              page={page}
+              onPageChange={handleChangePage}
+              onRowsPerPageChange={handleChangeRowsPerPage}
+              labelRowsPerPage="Lignes par page:"
+              labelDisplayedRows={({ from, to, count }) => `${from}-${to} sur ${count}`}
+            />
+          </CardContent>
+        </Card>
+      )}
 
       {/* Dialog de confirmation */}
       <Dialog open={confirmDialog.open} onClose={cancelBulkAction}>

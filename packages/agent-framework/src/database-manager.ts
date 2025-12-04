@@ -233,4 +233,28 @@ export class DatabaseManager {
     // Marquer comme chargé pour éviter le chargement depuis la BD
     this.configsLoaded = true
   }
+
+  /**
+   * Ajouter une connexion de test directement (client Prisma déjà instancié)
+   * Utile pour les tests où le client Prisma est déjà créé
+   */
+  async addTestConnection(databaseId: string, prismaClient: any): Promise<void> {
+    this.connections.set(databaseId, prismaClient)
+    // Ajouter une config minimale pour compatibilité
+    this.configs.set(databaseId, {
+      id: databaseId,
+      name: databaseId,
+      type: 'postgresql',
+      host: 'localhost',
+      port: 5432,
+      database: databaseId,
+      username: '',
+      password: '',
+      ssl: false,
+      isDefault: false,
+      isActive: true
+    })
+    this.configsLoaded = true
+    this.logger.info(`Connexion de test ajoutée: ${databaseId}`)
+  }
 }

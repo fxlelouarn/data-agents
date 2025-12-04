@@ -7,7 +7,7 @@ export type LogLevel = 'DEBUG' | 'INFO' | 'WARN' | 'ERROR'
 
 export type ProposalType = 'NEW_EVENT' | 'EVENT_UPDATE' | 'EDITION_UPDATE' | 'RACE_UPDATE'
 
-export type ProposalStatus = 'PENDING' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
+export type ProposalStatus = 'PENDING' | 'PARTIALLY_APPROVED' | 'APPROVED' | 'REJECTED' | 'ARCHIVED'
 
 export type UpdateStatus = 'PENDING' | 'APPLIED' | 'FAILED'
 
@@ -111,6 +111,7 @@ export interface Proposal {
   previousEditionYear?: number
   previousEditionStartDate?: string
   eventStatus?: 'DEAD' | 'DRAFT' | 'REVIEW' | 'LIVE' | 'DELETED'
+  isFeatured?: boolean  // ✅ Enrichi depuis Event.isFeatured (Miles Republic)
 }
 
 export interface AgentStatus {
@@ -240,7 +241,13 @@ export interface LogFilters {
 export interface DataUpdate {
   id: string
   proposalId: string
-  status: UpdateStatus
+  proposalIds?: string[]  // ✅ Pour applications groupées
+  blockType?: string | null  // ✅ Type de bloc ('event', 'edition', 'organizer', 'races', ou null)
+  status: UpdateStatus | 'PENDING' | 'APPLIED' | 'FAILED'  // ✅ Support legacy
+  
+  // ✅ NOUVEAU: Payload complet (agent + user merged)
+  appliedChanges?: Record<string, any>
+  
   scheduledAt?: string
   appliedAt?: string
   errorMessage?: string
@@ -261,6 +268,8 @@ export interface DataUpdate {
       new: any
       confidence: number
     }>
+    // ⚠️ userModifiedChanges devient optionnel (fallback legacy)
+    userModifiedChanges?: Record<string, any>
     agent: {
       name: string
       type: AgentType

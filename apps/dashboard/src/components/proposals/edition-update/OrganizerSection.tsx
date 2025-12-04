@@ -34,6 +34,7 @@ interface OrganizerSectionProps {
   // Props de validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
@@ -58,6 +59,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   disabled,
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -90,12 +92,15 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
           </Box>
           {onValidateBlock && onUnvalidateBlock && (
             <BlockValidationButton
+              blockKey="organizer"
               blockName="Organisateur"
               isValidated={isBlockValidated}
               onValidate={onValidateBlock}
+              onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
               onUnvalidate={onUnvalidateBlock}
               disabled={validationDisabled}
               isPending={isBlockPending}
+              useCascadeValidation={true}  // ✅ Activé par défaut
             />
           )}
         </Box>
@@ -207,12 +212,15 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
         </Box>
         {onValidateBlock && onUnvalidateBlock && (
           <BlockValidationButton
+            blockKey="organizer"
             blockName="Organisateur"
             isValidated={isBlockValidated}
             onValidate={onValidateBlock}
+            onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
             onUnvalidate={onUnvalidateBlock}
             disabled={validationDisabled}
             isPending={isBlockPending}
+            useCascadeValidation={true}  // ✅ Activé par défaut
           />
         )}
       </Box>

@@ -25,6 +25,7 @@ import ProposalNavigation from '@/components/proposals/ProposalNavigation'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
 import { useProposalEditor, ConsolidatedRaceChange, isGroupReturn } from '@/hooks/useProposalEditor'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
+import { BlockType } from '@data-agents/types'
 import { 
   useProposals, 
   useUpdateProposal, 
@@ -95,6 +96,7 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   isEditionCanceled: boolean
   // Validation par blocs
   validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  validateBlockWithDependencies: (blockKey: string) => Promise<void>  // ✅ Nouveau
   unvalidateBlock: (blockKey: string) => Promise<void>
   validateAllBlocks: () => Promise<void>
   isBlockValidated: (blockKey: string) => boolean
@@ -206,20 +208,42 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   
   // ✅ Phase 4: Consolider les changements depuis workingGroup
   const consolidatedChanges = useMemo(() => {
-    if (!workingGroup) return []
+    if (!workingGroup) {
+      console.log('🚨 [PARTIALLY_APPROVED DEBUG] workingGroup est null')
+      return []
+    }
+    
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] workingGroup:', {
+      proposalCount: workingGroup.originalProposals.length,
+      statuses: workingGroup.originalProposals.map(p => p.status),
+      consolidatedChangesCount: workingGroup.consolidatedChanges.length,
+      approvedBlocks: workingGroup.originalProposals[0]?.approvedBlocks
+    })
     
     const isEventUpdateDisplay = workingGroup.originalProposals[0]?.type === 'EVENT_UPDATE'
     
     // Filtrer calendarStatus et timeZone pour EVENT_UPDATE uniquement
-    return isEventUpdateDisplay
+    const filtered = isEventUpdateDisplay
       ? workingGroup.consolidatedChanges.filter(c => 
           c.field !== 'calendarStatus' && c.field !== 'timeZone'
         )
       : workingGroup.consolidatedChanges
+    
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] consolidatedChanges:', {
+      count: filtered.length,
+      fields: filtered.map(c => c.field)
+    })
+    
+    return filtered
   }, [workingGroup])
   
   const consolidatedRaceChanges = useMemo(() => {
-    return workingGroup?.consolidatedRaces || []
+    const races = workingGroup?.consolidatedRaces || []
+    console.log('🔍 [PARTIALLY_APPROVED DEBUG] consolidatedRaceChanges:', {
+      count: races.length,
+      raceIds: races.map(r => r.raceId)  // ✅ Fix: raceId au lieu de id
+    })
+    return races
   }, [workingGroup])
   
   // ✅ Phase 4: Cascade startDate changes to races depuis workingGroup
@@ -857,11 +881,11 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const averageConfidence = proposalsWithValidConfidence.length > 0
     ? proposalsWithValidConfidence.reduce((sum, p) => sum + p.confidence!, 0) / proposalsWithValidConfidence.length
     : 0
-  // ✅ hasPending = vrai s'il y a AU MOINS UNE proposition PENDING (même avec historique)
+  // ✅ hasPending = vrai s'il y a AU MOINS UNE proposition PENDING ou PARTIALLY_APPROVED
   // Utilisé pour afficher le chip "En attente" et activer les boutons d'édition
-  const hasPending = groupProposals.some(p => p.status === 'PENDING')
-  // ✅ allPending = vrai si TOUTES les propositions sont PENDING (pour compatibilité)
-  const allPending = groupProposals.every(p => p.status === 'PENDING')
+  const hasPending = groupProposals.some(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
+  // ✅ allPending = vrai si TOUTES les propositions sont PENDING ou PARTIALLY_APPROVED (pour compatibilité)
+  const allPending = groupProposals.every(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
   
   // Identifier les propositions par bloc
   // ✅ Phase 2 Étape 3 : Utiliser workingGroup si disponible
@@ -951,6 +975,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const {
     blockStatus,
     validateBlock: validateBlockBase,
+    validateBlockWithDependencies: validateBlockWithDependenciesBase,  // ✅ Nouveau
     unvalidateBlock: unvalidateBlockBase,
     validateAllBlocks: validateAllBlocksBase,
     unvalidateAllBlocks,
@@ -983,8 +1008,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const isBlockValidated = isBlockValidatedEditor
   
   // Wrapper pour logger les validations de blocs
+  // ✅ Phase 4: Utiliser automatiquement la validation en cascade
   const validateBlock = async (blockKey: string, proposalIds: string[]) => {
-    await validateBlockBase(blockKey, proposalIds)
+    await validateBlockWithDependenciesBase(blockKey as any, { silent: false })
+  }
+  
+  // ✅ Wrapper pour validation en cascade
+  const validateBlockWithDependencies = async (blockKey: string) => {
+    await validateBlockWithDependenciesBase(blockKey as BlockType, { silent: false })
   }
   
   const unvalidateBlock = async (blockKey: string) => {
@@ -1053,6 +1084,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     
     // Validation par blocs
     validateBlock,
+    validateBlockWithDependencies,  // ✅ Nouveau
     unvalidateBlock,
     validateAllBlocks: () => validateAllBlocksBase(blockProposals),
     isBlockValidated,

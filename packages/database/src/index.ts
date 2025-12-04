@@ -33,3 +33,17 @@ export * from './errors'
 
 // Export logging utilities
 export * from './logging'
+
+// Export utility functions
+export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
+
+// Export block execution order utilities
+export { 
+  sortBlocksByDependencies, 
+  validateRequiredBlocks, 
+  getAllDependencies,
+  explainExecutionOrder,
+  BLOCK_DEPENDENCIES,
+  type BlockType,
+  type BlockApplication
+} from './services/block-execution-order'

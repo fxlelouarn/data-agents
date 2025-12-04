@@ -363,7 +363,8 @@ export async function enrichProposal(proposal: any) {
             name: true,
             city: true,
             status: true,
-            slug: true
+            slug: true,
+            isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
           }
         })
         console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
@@ -379,7 +380,8 @@ export async function enrichProposal(proposal: any) {
           eventName: event.name,
           eventCity: event.city,
           eventStatus: event.status,
-          eventSlug: event.slug
+          eventSlug: event.slug,
+          isFeatured: event.isFeatured  // ✅ Alerter si Event featured
         }
       }
     } catch (error) {
@@ -475,12 +477,13 @@ export async function enrichProposal(proposal: any) {
         const queryStart = Date.now()
         event = await connection.event.findUnique({
           where: { id: numericEventId },
-          select: { 
-            name: true,
-            city: true,
-            status: true,
-            slug: true
-          }
+            select: {
+              name: true,
+              city: true,
+              status: true,
+              slug: true,
+              isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
+            }
         })
         console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
         if (event) enrichmentCache.set(eventCacheKey, event)
@@ -489,12 +492,13 @@ export async function enrichProposal(proposal: any) {
       }
       
       // Base enrichment avec event info
-      const enriched: any = {
+      const enriched = {
         ...proposal,
         eventName: event?.name,
         eventCity: event?.city,
         eventStatus: event?.status,
         eventSlug: event?.slug,
+        isFeatured: event?.isFeatured,  // ✅ Alerter si Event featured
         editionYear: editionYear
       }
 
@@ -1020,6 +1024,146 @@ router.post('/validate-block-group', [
   // Le frontend envoie déjà les changements consolidés (sélectionnés + modifiés)
   const approvedBlocks = { [block]: true }
 
+  // ✅ PHASE 1: Construire le payload final (agent + user merged)
+  const firstProposal = proposals[0]
+  const baseChanges = { ...firstProposal.changes as Record<string, any> }
+  
+  // ✅ FIX: Lire raceEdits depuis 'changes' envoyé par le frontend
+  // Le frontend envoie déjà userModifiedRaceChanges dans changes.raceEdits
+  const raceEdits = changes.raceEdits || {}
+
+  console.log('🔧 Construction payload final:', {
+    block,
+    baseChangesKeys: Object.keys(baseChanges),
+    changesKeys: Object.keys(changes),
+    hasRaceEdits: !!raceEdits,
+    raceEditsKeys: Object.keys(raceEdits)
+  })
+
+  // 1. Merger changes envoyé par le frontend avec baseChanges
+  Object.entries(changes).forEach(([key, value]) => {
+    if (key !== 'raceEdits') {
+      baseChanges[key] = value
+    }
+  })
+
+  // 2. ✅ Construire racesToDelete depuis raceEdits._deleted
+  if (block === 'races' && Object.keys(raceEdits).length > 0) {
+    const racesToDelete: Array<{ raceId: number | string, raceName: string }> = []
+    
+    // Essayer d'extraire existingRaces depuis les changes (racesToUpdate)
+    const existingRacesFromChanges = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
+
+    Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
+      if (mods._deleted === true) {
+        if (key.startsWith('existing-')) {
+          // Course existante supprimée
+          const index = parseInt(key.replace('existing-', ''))
+          const race = existingRacesFromChanges[index]
+          if (race) {
+            racesToDelete.push({
+              raceId: race.raceId || race.id || key,
+              raceName: race.raceName || race.name || `Course ${index}`
+            })
+          } else {
+            // Fallback si pas trouvé
+            racesToDelete.push({
+              raceId: key,
+              raceName: `Course existing-${index}`
+            })
+          }
+        } else if (key.startsWith('new-')) {
+          // Nouvelle course supprimée avant application
+          const index = parseInt(key.replace('new-', ''))
+          racesToDelete.push({
+            raceId: key,
+            raceName: `Nouvelle course ${index}`
+          })
+        }
+      }
+    })
+
+    if (racesToDelete.length > 0) {
+      baseChanges.racesToDelete = racesToDelete
+      console.log('🗑️ Courses à supprimer:', racesToDelete.map(r => `${r.raceName} (${r.raceId})`))
+    }
+  }
+
+  // 3. ✅ Merger modifications utilisateur dans racesToUpdate
+  if (block === 'races' && Object.keys(raceEdits).length > 0) {
+    // Gérer racesToUpdate (nouvelle structure)
+    if (baseChanges.racesToUpdate) {
+      const racesToUpdate = baseChanges.racesToUpdate.new || baseChanges.racesToUpdate
+      if (Array.isArray(racesToUpdate)) {
+        racesToUpdate.forEach((race: any, index: number) => {
+          const key = `existing-${index}`
+          const userEdits = raceEdits[key]
+
+          if (userEdits && !userEdits._deleted) {
+            if (!race.updates) race.updates = {}
+            // Appliquer modifications utilisateur
+            Object.entries(userEdits).forEach(([field, value]) => {
+              if (field !== '_deleted') {
+                race.updates[field] = {
+                  new: value,
+                  old: race.currentData?.[field]
+                }
+              }
+            })
+          }
+        })
+      }
+    }
+
+    // Gérer racesToAdd (nouvelles courses)
+    if (baseChanges.racesToAdd) {
+      const racesToAdd = baseChanges.racesToAdd.new || baseChanges.racesToAdd
+      if (Array.isArray(racesToAdd)) {
+        racesToAdd.forEach((race: any, index: number) => {
+          const key = `new-${index}`
+          const userEdits = raceEdits[key]
+
+          if (userEdits && !userEdits._deleted) {
+            // Appliquer modifications utilisateur sur nouvelles courses
+            Object.entries(userEdits).forEach(([field, value]) => {
+              if (field !== '_deleted') {
+                // ✅ Vérifier si race[field] est déjà un objet {new, old}
+                if (race[field] && typeof race[field] === 'object' && 'new' in race[field]) {
+                  // Déjà au bon format, juste mettre à jour .new
+                  race[field].new = value
+                } else {
+                  // Soit undefined, soit une valeur simple (string, number, etc.)
+                  // Créer la structure {new, old}
+                  race[field] = { 
+                    new: value, 
+                    old: race[field] || null  // Préserver l'ancienne valeur si elle existe
+                  }
+                }
+              }
+            })
+          }
+        })
+      }
+    }
+  }
+
+  // ✅ FIX: Merger baseChanges (agent) + changes (user) au lieu de choisir l'un ou l'autre
+  const finalPayload = { ...baseChanges, ...changes }
+  
+  // Ajouter raceEdits si non vide (pour compatibilité backend)
+  if (Object.keys(raceEdits).length > 0) {
+    finalPayload.raceEdits = raceEdits
+  }
+
+  console.log('📦 Payload final construit:', {
+    block,
+    payloadKeys: Object.keys(finalPayload),
+    racesToUpdate: finalPayload.racesToUpdate?.length || finalPayload.racesToUpdate?.new?.length || 0,
+    racesToAdd: finalPayload.racesToAdd?.length || finalPayload.racesToAdd?.new?.length || 0,
+    racesToDelete: finalPayload.racesToDelete?.length || 0,
+    hasRaceEdits: !!finalPayload.raceEdits
+  })
+
   // Mettre à jour TOUTES les propositions avec le même payload
   const updatedProposals = await Promise.all(
     proposalIds.map(async (proposalId: string) => {
@@ -1036,25 +1180,126 @@ router.post('/validate-block-group', [
     })
   )
 
-  // Vérifier si tous les blocs EXISTANTS sont validés pour marquer les propositions comme APPROVED
-  // On ne vérifie que les blocs qui ont effectivement été proposés/modifiés
-  const firstProposal = updatedProposals[0]
-  const approvedBlocksObj = firstProposal.approvedBlocks as Record<string, boolean>
-  const existingBlocks = Object.keys(approvedBlocksObj)
+  // Vérifier si tous les blocs ATTENDUS sont validés pour marquer les propositions comme APPROVED
+  // On détermine les blocs attendus depuis le contenu de changes
+  const updatedFirstProposal = updatedProposals[0]
+  const approvedBlocksObj = updatedFirstProposal.approvedBlocks as Record<string, boolean>
   
-  // Tous les blocs existants doivent être validés
-  const allBlocksValidated = existingBlocks.length > 0 && 
-    existingBlocks.every(blockKey => approvedBlocksObj[blockKey] === true)
+  // ✅ Déterminer les blocs ATTENDUS en analysant les changes
+  const expectedBlocks = new Set<string>()
+  const proposalChanges = updatedFirstProposal.changes as Record<string, any>
+  
+  // Analyser les champs pour déterminer les blocs nécessaires
+  const eventFields = ['name', 'city', 'country', 'countrySubdivisionNameLevel1', 
+    'countrySubdivisionNameLevel2', 'fullAddress', 'latitude', 'longitude',
+    'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl']
+  const editionFields = ['year', 'startDate', 'endDate', 'calendarStatus', 'timeZone',
+    'registrationStartDate', 'registrationEndDate', 'registrantsNumber']
+  
+  Object.keys(proposalChanges).forEach(field => {
+    if (eventFields.includes(field)) {
+      expectedBlocks.add('event')
+    } else if (editionFields.includes(field)) {
+      expectedBlocks.add('edition')
+    } else if (field === 'organizer') {
+      expectedBlocks.add('organizer')
+    } else if (field === 'races' || field === 'racesToAdd' || field === 'racesToUpdate') {
+      expectedBlocks.add('races')
+    }
+  })
+  
+  // Pour NEW_EVENT, on attend toujours les blocs: event, edition, races (organizer optionnel)
+  if (updatedFirstProposal.type === 'NEW_EVENT') {
+    expectedBlocks.add('event')
+    expectedBlocks.add('edition')
+    // races optionnel pour NEW_EVENT
+  }
+  
+  // Tous les blocs attendus doivent être validés
+  const allBlocksValidated = expectedBlocks.size > 0 && 
+    Array.from(expectedBlocks).every(blockKey => approvedBlocksObj[blockKey] === true)
 
   console.log('🔍 Vérification blocs:', {
-    existingBlocks,
+    expectedBlocks: Array.from(expectedBlocks),
     approvedBlocksObj,
     allBlocksValidated,
     willApprove: allBlocksValidated
   })
 
+  // ✅ NOUVEAU : Créer une application PAR BLOC validé
+  // Vérifier si une application existe déjà pour CE bloc spécifique
+  const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+    where: {
+      proposalId: { in: proposalIds },
+      blockType: block,  // ✅ Filtrer par bloc
+      status: { in: ['PENDING', 'APPLIED'] }
+    }
+  })
+  
+  if (existingAppForBlock) {
+    console.log(`ℹ️ Application déjà existante pour bloc "${block}":`, {
+      applicationId: existingAppForBlock.id,
+      proposalIds,
+      block
+    })
+    
+    // ✅ Mettre à jour appliedChanges avec le nouveau payload
+    await db.prisma.proposalApplication.update({
+      where: { id: existingAppForBlock.id },
+      data: {
+        appliedChanges: finalPayload,
+        updatedAt: new Date()
+      }
+    })
+    
+    console.log('✅ appliedChanges mis à jour avec payload final')
+    
+    await db.createLog({
+      agentId: firstProposal.agentId,
+      level: 'INFO',
+      message: `Block "${block}" application updated with final payload for proposals [${proposalIds.join(', ')}]`,
+      data: { 
+        proposalIds,
+        block,
+        existingApplicationId: existingAppForBlock.id,
+        payloadKeys: Object.keys(finalPayload)
+      }
+    })
+  } else {
+    // ✅ Créer une nouvelle application pour CE bloc uniquement
+    const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
+    
+    // Utiliser Prisma create au lieu de executeRaw pour pouvoir passer appliedChanges (JSONB)
+    await db.prisma.proposalApplication.create({
+      data: {
+        id: applicationId,
+        proposalId: proposalIds[0],
+        proposalIds: proposalIds,
+        blockType: block,
+        status: 'PENDING',
+        appliedChanges: finalPayload,  // ✅ Payload complet
+        logs: []
+      }
+    })
+    
+    await db.createLog({
+      agentId: firstProposal.agentId,
+      level: 'INFO',
+      message: `Application created for block "${block}" with final payload - proposals [${proposalIds.join(', ')}]`,
+      data: { 
+        proposalIds,
+        applicationId,
+        block,
+        payloadKeys: Object.keys(finalPayload)
+      }
+    })
+    
+    console.log(`✅ Application créée pour bloc "${block}" avec appliedChanges:`, applicationId)
+  }
+  
+  // ✅ Déterminer le statut selon les blocs validés
   if (allBlocksValidated) {
-    // Marquer toutes les propositions comme APPROVED
+    // Tous les blocs validés → APPROVED
     const approvedProposals = await Promise.all(
       proposalIds.map((proposalId: string) =>
         db.updateProposal(proposalId, {
@@ -1065,59 +1310,38 @@ router.post('/validate-block-group', [
       )
     )
     
-    console.log('✅ Statut mis à jour à APPROVED:', {
+    console.log('✅ Tous les blocs validés - Statut mis à jour à APPROVED:', {
       proposalIds,
       statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
     })
-
-    // Créer UNE SEULE ProposalApplication pour le groupe
-    const existingApp = await db.prisma.proposalApplication.findFirst({
-      where: {
-        proposalId: proposalIds[0] // Proposition principale (première du groupe)
-        // Note: proposalIds hasSome non supporté par types Prisma (ajouté après génération)
-      } as any // ✅ TypeScript cast (Prisma type incomplet)
-    })
-
-    if (!existingApp) {
-      // ⚠️ WORKAROUND: Prisma runtime ne reconnaît pas proposalIds malgré la migration
-      // Utiliser raw SQL pour créer la ProposalApplication
-      const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
-      await db.prisma.$executeRaw`
-        INSERT INTO "proposal_applications" (
-          "id", "proposalId", "proposalIds", "status", "createdAt", "updatedAt", "logs"
-        ) VALUES (
-          ${applicationId},
-          ${proposalIds[0]},
-          ${proposalIds}::text[],
-          'PENDING',
-          NOW(),
-          NOW(),
-          ARRAY[]::text[]
+  } else {
+    // Au moins un bloc validé, mais pas tous → PARTIALLY_APPROVED
+    const validatedBlocksCount = Object.values(approvedBlocksObj).filter(Boolean).length
+    
+    if (validatedBlocksCount > 0) {
+      const partiallyApprovedProposals = await Promise.all(
+        proposalIds.map((proposalId: string) =>
+          db.updateProposal(proposalId, {
+            status: 'PARTIALLY_APPROVED',
+            reviewedAt: new Date(),
+            reviewedBy: 'system'
+          })
         )
-      `
+      )
       
-      const application = { id: applicationId }
-
-      await db.createLog({
-        agentId: firstProposal.agentId,
-        level: 'INFO',
-        message: `Grouped proposals [${proposalIds.join(', ')}] approved - Single application created`,
-        data: { 
-          proposalIds,
-          applicationId: application.id,
-          block,
-          allBlocksValidated: true
-        }
+      console.log(`🔶 ${validatedBlocksCount} bloc(s) validé(s) - Statut mis à jour à PARTIALLY_APPROVED:`, {
+        proposalIds,
+        validatedBlocks: Object.keys(approvedBlocksObj).filter(k => approvedBlocksObj[k]),
+        statuses: partiallyApprovedProposals.map(p => ({ id: p.id, status: p.status }))
       })
-
-      console.log('\u2705 Application groupée créée:', application.id)
     }
   }
 
-  // Récupérer les propositions finales (avec statut APPROVED si tous blocs validés)
-  const finalProposals = allBlocksValidated 
-    ? await db.prisma.proposal.findMany({ where: { id: { in: proposalIds } } })
-    : updatedProposals
+  // Récupérer les propositions finales avec le statut mis à jour
+  // On doit recharger depuis la DB car le statut a été changé après updatedProposals
+  const finalProposals = await db.prisma.proposal.findMany({ 
+    where: { id: { in: proposalIds } } 
+  })
   
   console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
 

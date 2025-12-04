@@ -3,6 +3,7 @@ import { param, query, body, validationResult } from 'express-validator'
 import { getDatabaseService } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichProposal } from './proposals'
+import { sortBlocksByDependencies, explainExecutionOrder, validateRequiredBlocks, BlockApplication } from '@data-agents/database'
 
 const router = Router()
 
@@ -57,7 +58,13 @@ const transformApplicationForAPI = (app: any) => {
   return {
     id: app.id,
     proposalId: app.proposalId,
+    proposalIds: app.proposalIds || [app.proposalId],  // ✅ Pour groupement frontend
+    blockType: app.blockType || null,  // ✅ Type de bloc ('edition', 'organizer', 'races', 'event', ou null pour legacy)
     status: app.status,
+    
+    // ✅ PHASE 2: Inclure appliedChanges (payload complet agent + user)
+    appliedChanges: app.appliedChanges || {},
+    
     scheduledAt: app.scheduledAt?.toISOString() || null,
     appliedAt: app.appliedAt?.toISOString() || null,
     errorMessage: app.errorMessage,
@@ -69,6 +76,8 @@ const transformApplicationForAPI = (app: any) => {
       type: app.proposal.type,
       status: app.proposal.status,
       changes: app.proposal.changes,
+      // ⚠️ userModifiedChanges devient optionnel (fallback legacy)
+      userModifiedChanges: app.proposal.userModifiedChanges,
       eventId: app.proposal.eventId,
       editionId: app.proposal.editionId,
       raceId: app.proposal.raceId,
@@ -275,6 +284,98 @@ router.post('/:id/apply', [
   if (application.status !== 'PENDING') {
     throw createError(400, 'Update is not pending', 'INVALID_STATUS')
   }
+  
+  // ✅ CASCADE AUTOMATIQUE: Appliquer les dépendances manquantes
+  if (application.blockType) {
+    const { getAllDependencies } = require('@data-agents/database')
+    const requiredDeps = getAllDependencies(application.blockType as any)
+    
+    if (requiredDeps.length > 0) {
+      console.log(`🔄 Bloc "${application.blockType}" nécessite: ${requiredDeps.join(' → ')}`)
+      
+      // Récupérer toutes les applications de cette proposition
+      const allApps = await db.prisma.proposalApplication.findMany({
+        where: {
+          proposalId: application.proposalId,
+          blockType: { in: requiredDeps }
+        },
+        include: {
+          proposal: {
+            include: {
+              agent: {
+                select: { name: true, type: true }
+              }
+            }
+          }
+        }
+      })
+      
+      // Appliquer les dépendances PENDING dans l'ordre
+      for (const depType of requiredDeps) {
+        const depApp = allApps.find((a: any) => a.blockType === depType)
+        
+        if (!depApp) {
+          // ✅ EXCEPTION: Pour EDITION_UPDATE, les blocs 'event' et 'edition' ne sont pas obligatoires
+          // car applyEditionUpdate() utilise directement l'editionId et l'eventId existants de la proposition
+          const proposalType = application.proposal.type
+          
+          if (proposalType === 'EDITION_UPDATE' && (depType === 'event' || depType === 'edition')) {
+            console.log(`  ⏭️  Bloc "${depType}" non trouvé pour EDITION_UPDATE - ${depType}Id sera récupéré depuis la proposition/base`)
+            continue  // Skip cette dépendance
+          }
+          
+          throw createError(400, `Bloc requis "${depType}" introuvable pour cette proposition`, 'MISSING_DEPENDENCY')
+        }
+        
+        if (depApp.status === 'PENDING') {
+          console.log(`  → Application automatique du bloc "${depType}"...`)
+          
+          // Appliquer directement sans récursion HTTP
+          const depLogs: string[] = []
+          const applyOptions: any = { 
+            capturedLogs: depLogs,
+            proposalId: depApp.proposalId,  // ✅ Nécessaire pour récupérer les IDs
+            blockType: depType  // ✅ Type de bloc à appliquer
+          }
+          
+          if (depApp.proposalIds && depApp.proposalIds.length > 0) {
+            applyOptions.proposalIds = depApp.proposalIds
+          }
+          
+          const depResult = await applicationService.applyProposal(
+            depApp.proposalId,
+            depApp.proposal.changes as Record<string, any>,
+            applyOptions
+          )
+          
+          if (!depResult.success) {
+            const errorMsg = depResult.errors?.map((e: any) => e.message).join('; ') || 'Unknown error'
+            throw createError(500, `Échec application du bloc "${depType}": ${errorMsg}`, 'DEPENDENCY_APPLICATION_FAILED')
+          }
+          
+          // Mettre à jour le statut de la dépendance
+          await db.prisma.proposalApplication.update({
+            where: { id: depApp.id },
+            data: {
+              status: 'APPLIED',
+              appliedAt: new Date(),
+              logs: depLogs,
+              appliedChanges: depResult.appliedChanges as any,
+              rollbackData: (depResult.createdIds as any) || null
+            }
+          })
+          
+          console.log(`  ✅ Bloc "${depType}" appliqué avec succès`)
+        } else if (depApp.status === 'FAILED') {
+          throw createError(400, `Bloc requis "${depType}" en échec. Veuillez le rejouer d'abord.`, 'DEPENDENCY_FAILED')
+        } else if (depApp.status === 'APPLIED') {
+          console.log(`  ✅ Bloc "${depType}" déjà appliqué`)
+        }
+      }
+      
+      console.log(`🚀 Toutes les dépendances appliquées, application du bloc "${application.blockType}"...`)
+    }
+  }
 
   const logs: string[] = []
   let success = false
@@ -285,18 +386,27 @@ router.post('/:id/apply', [
     logs.push('Validating proposal changes...')
     
     // ✅ MODE GROUPÉ : Passer proposalIds si disponibles
-    const applyOptions: any = { capturedLogs: logs }
+    const applyOptions: any = { 
+      capturedLogs: logs,
+      proposalId: application.proposalId  // ✅ Nécessaire pour récupérer les IDs des blocs précédents
+    }
     
     if (application.proposalIds && application.proposalIds.length > 0) {
       applyOptions.proposalIds = application.proposalIds
       logs.push(`📦 Mode groupé détecté: ${application.proposalIds.length} propositions`)
     }
     
+    // ✅ Passer blockType pour application par blocs (NEW_EVENT)
+    if (application.blockType) {
+      applyOptions.blockType = application.blockType
+      logs.push(`📦 Application bloc "${application.blockType}"`)
+    }
+    
     // Apply the proposal using ProposalApplicationService with log capturing
     const result = await applicationService.applyProposal(
       application.proposalId,
       application.proposal.changes as Record<string, any>, // Use all changes from the proposal
-      applyOptions // Pass options with proposalIds if grouped
+      applyOptions // Pass options with proposalIds, blockType, proposalId
     )
 
     if (result.success) {
@@ -329,7 +439,12 @@ router.post('/:id/apply', [
         appliedAt: success ? new Date() : null,
         errorMessage: errorMessage,
         logs: logs,
-        appliedChanges: success ? (result.appliedChanges as any) : null,
+        // ✅ TOUJOURS préserver appliedChanges d'origine (payload complet avec racesToDelete, etc.)
+        // Le result.appliedChanges ne contient que les champs envoyés à Miles Republic
+        // mais manque les métadonnées comme racesToDelete
+        appliedChanges: success 
+          ? (application.appliedChanges || result.appliedChanges as any)
+          : (application.appliedChanges || result.appliedChanges as any),
         rollbackData: success ? (result.createdIds as any) || null : null
       },
       include: {
@@ -449,6 +564,22 @@ router.post('/bulk/apply', [
     }
   })
 
+  // ✅ PHASE 2: Trier les applications selon les dépendances entre blocs
+  const sortedApplications = sortBlocksByDependencies(
+    applications.map((app: any) => ({
+      blockType: app.blockType,
+      id: app.id
+    }))
+  )
+  
+  // Récupérer les applications complètes dans l'ordre trié
+  const applicationsInOrder = sortedApplications
+    .map((sorted: BlockApplication) => applications.find((app: any) => app.id === sorted.id)!)
+    .filter(Boolean)
+  
+  const executionOrder = explainExecutionOrder(sortedApplications)
+  console.log(`📋 ${executionOrder}`)
+
   const foundIds = applications.map((app: any) => app.id)
   const notFoundIds = ids.filter((id: string) => !foundIds.includes(id))
 
@@ -462,13 +593,38 @@ router.post('/bulk/apply', [
     throw createError(400, `Some updates are not pending: ${nonPendingApps.map((a: any) => a.id).join(', ')}`, 'INVALID_STATUS')
   }
 
-  // Appliquer toutes les mises à jour
+  // ✅ PHASE 3: Valider que les blocs requis sont présents
+  // Pour les propositions groupées, toutes doivent avoir le même type
+  const proposalTypes = [...new Set(applications.map((app: any) => app.proposal.type))]
+  
+  if (proposalTypes.length > 1) {
+    console.warn('⚠️ Applications avec types de propositions différents:', proposalTypes)
+    // On valide quand même avec le premier type
+  }
+  
+  const proposalType = applications[0].proposal.type
+  const validation = validateRequiredBlocks(sortedApplications, proposalType)
+  
+  if (!validation.valid) {
+    const missingBlocksList = validation.missing.join(', ')
+    console.error(`❌ Blocs manquants pour ${proposalType}:`, validation.missing)
+    
+    throw createError(
+      400,
+      `Missing required blocks for ${proposalType}: ${missingBlocksList}. Cannot apply changes without these blocks.`,
+      'MISSING_REQUIRED_BLOCKS'
+    )
+  }
+  
+  console.log(`✅ Validation passed: All required blocks present for ${proposalType}`)
+
+  // Appliquer toutes les mises à jour dans l'ordre trié
   const results = {
     successful: [] as string[],
     failed: [] as { id: string; error: string | null }[]
   }
 
-  for (const application of applications) {
+  for (const application of applicationsInOrder) {
     const logs: string[] = []
     let success = false
     let errorMessage: string | null = null
