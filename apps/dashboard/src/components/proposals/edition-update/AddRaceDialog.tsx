@@ -263,8 +263,10 @@ const AddRaceDialog: React.FC<AddRaceDialogProps> = ({
 
             {/* Catégorie principale */}
             <FormControl fullWidth required error={!!errors.categoryLevel1}>
-              <InputLabel>Catégorie principale</InputLabel>
+              <InputLabel id="category-level-1-label">Catégorie principale</InputLabel>
               <Select
+                labelId="category-level-1-label"
+                label="Catégorie principale"
                 value={formData.categoryLevel1 || ''}
                 onChange={(e) => handleCategoryLevel1Change(e.target.value)}
                 disabled={isBlockValidated}
@@ -283,8 +285,10 @@ const AddRaceDialog: React.FC<AddRaceDialogProps> = ({
             {/* Sous-catégorie (conditionnelle) */}
             {formData.categoryLevel1 && (
               <FormControl fullWidth>
-                <InputLabel>Sous-catégorie (optionnel)</InputLabel>
+                <InputLabel id="category-level-2-label">Sous-catégorie (optionnel)</InputLabel>
                 <Select
+                  labelId="category-level-2-label"
+                  label="Sous-catégorie (optionnel)"
                   value={formData.categoryLevel2 || ''}
                   onChange={(e) => setFormData({ ...formData, categoryLevel2: e.target.value })}
                   disabled={isBlockValidated}
