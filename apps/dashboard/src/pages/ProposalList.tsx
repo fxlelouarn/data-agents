@@ -50,7 +50,7 @@ import {
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
 import { ProposalStatus, ProposalType } from '@/types'
-import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposalTypeStyles } from '@/constants/proposals'
+import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposalTypeStyles, categoryLevel1Labels, categoryLevel2Labels, categoryLevel2ByLevel1 } from '@/constants/proposals'
 
 const getProposalTypeStyle = (type: ProposalType) => {
   return proposalTypeStyles[type] || {
@@ -98,6 +98,16 @@ const ProposalList: React.FC = () => {
     return saved || 'ALL'
   })
 
+  const [categoryLevel1Filter, setCategoryLevel1Filter] = useState<string>(() => {
+    const saved = localStorage.getItem('proposalCategoryLevel1Filter')
+    return saved || 'ALL'
+  })
+
+  const [categoryLevel2Filter, setCategoryLevel2Filter] = useState<string>(() => {
+    const saved = localStorage.getItem('proposalCategoryLevel2Filter')
+    return saved || 'ALL'
+  })
+
   const [selectedRows, setSelectedRows] = useState<GridRowSelectionModel>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())
@@ -126,6 +136,18 @@ const ProposalList: React.FC = () => {
     localStorage.setItem('proposalAgentFilter', agentFilter)
   }, [agentFilter])
 
+  React.useEffect(() => {
+    localStorage.setItem('proposalCategoryLevel1Filter', categoryLevel1Filter)
+    // Reset categoryLevel2 si on change categoryLevel1
+    if (categoryLevel1Filter === 'ALL') {
+      setCategoryLevel2Filter('ALL')
+    }
+  }, [categoryLevel1Filter])
+
+  React.useEffect(() => {
+    localStorage.setItem('proposalCategoryLevel2Filter', categoryLevel2Filter)
+  }, [categoryLevel2Filter])
+
   // Sauvegarder l'ordre de tri dans localStorage quand il change
   React.useEffect(() => {
     localStorage.setItem('proposalGroupSort', groupSort)
@@ -135,6 +157,8 @@ const ProposalList: React.FC = () => {
     {
       status: statusFilter !== 'ALL' ? statusFilter : undefined,
       type: typeFilter !== 'ALL' ? typeFilter : undefined,
+      categoryLevel1: categoryLevel1Filter !== 'ALL' ? categoryLevel1Filter : undefined,
+      categoryLevel2: categoryLevel2Filter !== 'ALL' ? categoryLevel2Filter : undefined,
     },
     paginationModel.pageSize,
     paginationModel.page * paginationModel.pageSize,
@@ -144,7 +168,7 @@ const ProposalList: React.FC = () => {
   // Reset pagination when filters or sort change
   React.useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }))
-  }, [statusFilter, typeFilter, agentFilter, groupSort])
+  }, [statusFilter, typeFilter, agentFilter, categoryLevel1Filter, categoryLevel2Filter, groupSort])
 
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
@@ -780,6 +804,42 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
+            <Grid item xs={12} md={2}>
+              <FormControl fullWidth size="small">
+                <InputLabel>Catégorie</InputLabel>
+                <Select
+                  value={categoryLevel1Filter}
+                  label="Catégorie"
+                  onChange={(e) => setCategoryLevel1Filter(e.target.value)}
+                >
+                  <MenuItem value="ALL">Toutes catégories</MenuItem>
+                  {Object.entries(categoryLevel1Labels).map(([value, label]) => (
+                    <MenuItem key={value} value={value}>
+                      {label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
+            </Grid>
+            {categoryLevel1Filter !== 'ALL' && categoryLevel2ByLevel1[categoryLevel1Filter]?.length > 0 && (
+              <Grid item xs={12} md={2}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Sous-catégorie</InputLabel>
+                  <Select
+                    value={categoryLevel2Filter}
+                    label="Sous-catégorie"
+                    onChange={(e) => setCategoryLevel2Filter(e.target.value)}
+                  >
+                    <MenuItem value="ALL">Toutes</MenuItem>
+                    {categoryLevel2ByLevel1[categoryLevel1Filter].map((value) => (
+                      <MenuItem key={value} value={value}>
+                        {categoryLevel2Labels[value] || value}
+                      </MenuItem>
+                    ))}
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
             {viewMode === 'grouped' && (
               <Grid item xs={12} md={3}>
                 <FormControl fullWidth size="small">
