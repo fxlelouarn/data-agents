@@ -14,13 +14,13 @@ import { CheckCircle as CheckCircleIcon } from '@mui/icons-material'
 
 interface BlockChangesTableProps {
   blockType: string
-  
+
   // ✅ NOUVEAU: Payload complet depuis l'application
   appliedChanges?: any
-  
+
   // ✅ Indicateur si les changements sont déjà appliqués
   isApplied?: boolean
-  
+
   // ⚠️ LEGACY: Fallback si appliedChanges vide
   changes?: any
   userModifiedChanges?: any
@@ -31,7 +31,7 @@ const BLOCK_FIELDS: Record<string, string[]> = {
   event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'countrySubdivisionNameLevel1'],
   edition: ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate'],
   organizer: ['name', 'legalName', 'email', 'phone', 'address', 'city', 'zipCode', 'country', 'websiteUrl'],
-  races: ['races', 'racesToUpdate', 'racesToAdd', 'racesToDelete'],
+  races: ['races', 'racesToUpdate', 'racesToAdd', 'manuallyAddedRaces', 'racesToDelete'],
 }
 
 // Labels français pour les champs
@@ -57,6 +57,7 @@ const FIELD_LABELS: Record<string, string> = {
   races: 'Courses',
   racesToUpdate: 'Courses à modifier',
   racesToAdd: 'Courses à ajouter',
+  manuallyAddedRaces: 'Courses ajoutées manuellement',
   racesToDelete: 'Courses à supprimer',
   countrySubdivisionNameLevel1: 'Région',
   runDistance: 'Distance',
@@ -78,23 +79,23 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
   // ✅ Prioriser appliedChanges (nouveau système)
   const effectiveChanges = appliedChanges || changes
   const needsManualMerge = !appliedChanges && userModifiedChanges
-  
+
   console.log('🛠️ [BlockChangesTable] Source:', {
     blockType,
     hasAppliedChanges: !!appliedChanges,
     needsManualMerge,
     racesToDelete: effectiveChanges?.racesToDelete?.length || 0
   })
-  
+
   const fields = BLOCK_FIELDS[blockType] || []
 
   // ✅ Pour le bloc organizer, les données sont imbriquées dans changes.organizer
   const getOrganizerData = () => {
     if (blockType !== 'organizer') return null
-    
+
     const organizerChange = effectiveChanges.organizer
     if (!organizerChange) return null
-    
+
     // Structure nouvelle (avec old/new)
     if (organizerChange.new) {
       return {
@@ -102,7 +103,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
         proposed: organizerChange.new
       }
     }
-    
+
     // Structure ancienne (objet direct)
     return {
       current: {},
@@ -115,10 +116,10 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
   // ✅ NOUVEAU: Extraire données Edition depuis structure imbriquée (NEW_EVENT)
   const getEditionData = () => {
     if (blockType !== 'edition') return null
-    
+
     const editionChange = effectiveChanges.edition
     if (!editionChange) return null
-    
+
     // Structure imbriquée (NEW_EVENT) : edition.new
     if (editionChange.new) {
       return {
@@ -126,7 +127,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
         proposed: editionChange.new
       }
     }
-    
+
     // Structure plate (EDITION_UPDATE) : champs au niveau racine
     return null
   }
@@ -158,20 +159,41 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
       if (effectiveChanges.racesToAdd) {
         return effectiveChanges.racesToAdd
       }
-      
+
       // Priorité 2: edition.new.races (NEW_EVENT)
       if (effectiveChanges.edition?.new?.races) {
         return effectiveChanges.edition.new.races
       }
-      
+
       return null
+    }
+
+    // ✅ NOUVEAU: Extraire les courses ajoutées MANUELLEMENT depuis raceEdits
+    // Ces courses ont des clés "new-{timestamp}" (timestamp > 1000000)
+    if (blockType === 'races' && fieldName === 'manuallyAddedRaces') {
+      const raceEdits = effectiveChanges.raceEdits || {}
+      const manualRaces = Object.entries(raceEdits)
+        .filter(([key, value]: [string, any]) => {
+          if (!key.startsWith('new-')) return false
+          if (value._deleted) return false
+          const numericPart = key.replace('new-', '')
+          const num = parseInt(numericPart)
+          // Les courses manuelles ont un timestamp (> 1000000), pas un index (0, 1, 2...)
+          return !isNaN(num) && num > 1000000
+        })
+        .map(([key, raceData]: [string, any]) => ({
+          ...raceData,
+          _manualKey: key // Garder la clé pour référence
+        }))
+
+      return manualRaces.length > 0 ? manualRaces : null
     }
 
     // ✅ Si appliedChanges existe, utiliser directement
     if (appliedChanges && fieldName === 'racesToDelete') {
       return appliedChanges.racesToDelete || []
     }
-    
+
     // ⚠️ LEGACY: Extraction manuelle depuis userModifiedChanges
     if (needsManualMerge && fieldName === 'racesToDelete' && userModifiedChanges.raceEdits) {
       const deletedRaces: any[] = []
@@ -250,9 +272,9 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
   // Helper pour formatter une seule valeur (sans fieldName)
   const formatSingleValue = (val: any): string => {
     if (val === null || val === undefined) return '-'
-    
+
     if (typeof val === 'boolean') return val ? 'Oui' : 'Non'
-    
+
     // Dates
     if (typeof val === 'string' && val.match(/^\d{4}-\d{2}-\d{2}T/)) {
       try {
@@ -261,28 +283,28 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
         return val
       }
     }
-    
+
     if (typeof val === 'number') return val.toString()
-    
+
     return String(val)
   }
 
   // Formatter une valeur pour affichage (avec séparation current/proposed)
   const formatValue = (value: any, fieldName?: string, isCurrentColumn?: boolean): string => {
     if (value === null || value === undefined) return '-'
-    
+
     if (typeof value === 'object') {
       if (Array.isArray(value)) {
         // ✅ Cas spécial courses : afficher le détail
-        if (fieldName && ['racesToUpdate', 'racesToAdd', 'racesToDelete', 'races'].includes(fieldName)) {
+        if (fieldName && ['racesToUpdate', 'racesToAdd', 'racesToDelete', 'races', 'manuallyAddedRaces'].includes(fieldName)) {
           if (value.length === 0) return 'Aucune'
-          
+
           // Afficher nom + détail des changements pour chaque course
           return value.map((race: any, index: number) => {
             const raceName = race.raceName || race.name || `Course ${index + 1}`
-            
-            // Nouvelles courses : afficher tous les champs
-            if (fieldName === 'racesToAdd') {
+
+            // Nouvelles courses (agent ou manuelles) : afficher tous les champs
+            if (fieldName === 'racesToAdd' || fieldName === 'manuallyAddedRaces') {
               const details: string[] = []
               if (race.runDistance) details.push(`${race.runDistance}km`)
               if (race.categoryLevel1) details.push(race.categoryLevel1)
@@ -296,32 +318,32 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
               }
               return `• ${raceName}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
             }
-            
+
             // Courses à modifier : séparer colonne actuelle / proposée
             if (fieldName === 'racesToUpdate' && race.updates) {
               const raceId = race.raceId || race.id
               const raceTitle = raceId ? `${raceName} (ID: ${raceId})` : raceName
-              
+
               const changes = Object.entries(race.updates).map(([field, update]: [string, any]) => {
                 const label = FIELD_LABELS[field] || field
                 const val = isCurrentColumn ? update.old : update.new
                 return `  ${label}: ${formatSingleValue(val)}`
               })
-              
+
               if (changes.length === 0) return `• ${raceTitle}`
               return `• ${raceTitle}\n${changes.join('\n')}`
             }
-            
+
             // Courses à supprimer
             if (fieldName === 'racesToDelete') {
               const raceId = race.raceId || race.id
               return raceId ? `• ${raceName} (ID: ${raceId})` : `• ${raceName}`
             }
-            
+
             return `• ${raceName}`
           }).join('\n\n')
         }
-        
+
         return `${value.length} éléments`
       }
       return JSON.stringify(value, null, 2)
@@ -347,12 +369,12 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
   // Filtrer uniquement les champs vides sans intérêt
   const fieldsWithChanges = fields.filter(field => {
     const proposedValue = getProposedValue(field)
-    
+
     // ✅ Filtrer racesToDelete si vide (aucune suppression)
     if (field === 'racesToDelete') {
       return Array.isArray(proposedValue) && proposedValue.length > 0
     }
-    
+
     // ✅ Garder tous les autres champs avec des valeurs
     return proposedValue !== null && proposedValue !== undefined
   })
@@ -378,7 +400,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
           </Typography>
         </Box>
       )}
-      
+
       <Table size="small">
         <TableHead>
           <TableRow>
@@ -395,8 +417,8 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
             const proposedValue = getProposedValue(fieldName)
 
             return (
-              <TableRow 
-                key={fieldName} 
+              <TableRow
+                key={fieldName}
                 hover
                 sx={{
                   // ✅ Grisé si appliqué

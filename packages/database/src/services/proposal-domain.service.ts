@@ -8,13 +8,13 @@ type DatabaseManager = any
 
 /**
  * Domain Service - Business logic for proposal application
- * 
+ *
  * Responsibilities:
  * - Business rules and validation
  * - Orchestration of repositories
  * - Data transformation and extraction
  * - Error handling and result formatting
- * 
+ *
  * Uses Repository Pattern to separate data access from business logic
  */
 export class ProposalDomainService {
@@ -26,14 +26,14 @@ export class ProposalDomainService {
 
   /**
    * Apply a proposal's changes to Miles Republic
-   * 
+   *
    * ⚠️ MODE GROUPÉ DÉTECTION:
    * Si proposalIds est passé dans options et contient plusieurs IDs,
    * on applique les modifications UNE SEULE FOIS pour tout le groupe.
-   * 
+   *
    * ✅ NOUVEAU : Support blockType pour application partielle
    * Si options.blockType est spécifié, seuls les changements de ce bloc seront appliqués.
-   * 
+   *
    * ✅ PHASE 2.6 : Le paramètre selectedChanges a été SUPPRIMÉ.
    * selectedChanges est maintenant régénéré depuis finalChanges (après merge intelligent).
    */
@@ -43,17 +43,17 @@ export class ProposalDomainService {
   ): Promise<ProposalApplicationResult> {
     // ⚠️ Détection mode groupé
     const isGroupedMode = options.proposalIds && options.proposalIds.length > 1
-    
+
     if (isGroupedMode) {
       this.logger.info(`📦 MODE GROUPÉ détecté: ${options.proposalIds!.length} propositions`)
       this.logger.info(`✅ Application unique pour le groupe [${options.proposalIds!.join(', ')}]`)
     }
-    
+
     // ✅ Détection mode bloc partiel
     if (options.blockType) {
       this.logger.info(`📦 APPLICATION PARTIELLE - Bloc: ${options.blockType}`)
     }
-    
+
     // 1. Fetch proposal via repository
     const proposal = await this.proposalRepo.findById(proposalId)
 
@@ -70,7 +70,7 @@ export class ProposalDomainService {
         `La proposition doit être approuvée (APPROVED ou PARTIALLY_APPROVED) pour être appliquée. Statut actuel: ${proposal.status} (utilisez force: true pour outrepasser)`
       )
     }
-    
+
     // ✅ Log du mode d'application
     if (proposal.status === 'PARTIALLY_APPROVED') {
       this.logger.info(`⚠️ Application partielle: Proposition au statut PARTIALLY_APPROVED`)
@@ -93,7 +93,7 @@ export class ProposalDomainService {
     // finalChanges contient le merge intelligent (agent + user)
     // selectedChanges est la version "aplatie" utilisée pour le filtrage et l'application
     const selectedChanges = convertChangesToSelectedChanges(finalChanges)
-    
+
     this.logger.info(`🔄 [PHASE 2.6] selectedChanges régénéré depuis finalChanges`, {
       finalChangesKeys: Object.keys(finalChanges),
       selectedChangesKeys: Object.keys(selectedChanges)
@@ -104,17 +104,17 @@ export class ProposalDomainService {
     let filteredFinalChanges: Record<string, any>  // ✅ Filtrer aussi finalChanges
     let removedChanges: string[] = []  // ✅ Déclarer au bon scope
     let approvedBlocks: Record<string, boolean> = {}
-    
+
     this.logger.info(`\n🚦 [DEBUG FILTRAGE] AVANT filtrage:`, {
       finalChangesKeys: Object.keys(finalChanges),
       finalChanges: JSON.stringify(finalChanges, null, 2)
     })
-    
+
     if (options.blockType) {
       // ✅ NOUVEAU : Filtrage par blockType (application partielle d'un seul bloc)
       filteredSelectedChanges = this.filterChangesByBlock(selectedChanges, options.blockType)
       filteredFinalChanges = this.filterChangesByBlock(finalChanges, options.blockType)
-      
+
       removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
         this.logger.info(`Filtered out ${removedChanges.length} changes from other blocks: ${removedChanges.join(', ')}`)
@@ -122,17 +122,17 @@ export class ProposalDomainService {
     } else {
       // Mode legacy : filtrage par approved blocks
       approvedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
-      
+
       this.logger.info(`\n🚦 [DEBUG FILTRAGE] approvedBlocks:`, approvedBlocks)
-      
+
       filteredSelectedChanges = this.filterChangesByApprovedBlocks(selectedChanges, approvedBlocks)
       filteredFinalChanges = this.filterChangesByApprovedBlocks(finalChanges, approvedBlocks)
-      
+
       this.logger.info(`\n🚦 [DEBUG FILTRAGE] APRÈS filtrage:`, {
         filteredFinalChangesKeys: Object.keys(filteredFinalChanges),
         filteredFinalChanges: JSON.stringify(filteredFinalChanges, null, 2)
       })
-      
+
       removedChanges = Object.keys(selectedChanges).filter(key => !(key in filteredSelectedChanges))
       if (removedChanges.length > 0) {
         this.logger.info(`Filtered out ${removedChanges.length} changes from unapproved blocks: ${removedChanges.join(', ')}`)
@@ -151,7 +151,7 @@ export class ProposalDomainService {
 
       // 7. Route to appropriate handler based on proposal type
       let result: ProposalApplicationResult
-      
+
       switch (proposal.type) {
         case 'NEW_EVENT':
           result = await this.applyNewEvent(filteredFinalChanges, filteredSelectedChanges, { ...options, agentName })
@@ -181,7 +181,7 @@ export class ProposalDomainService {
         default:
           return this.errorResult('type', `Type de proposition non supporté: ${proposal.type}`)
       }
-      
+
       // 8. Add filtered changes info to result
       if (removedChanges.length > 0) {
         result.filteredChanges = {
@@ -189,7 +189,7 @@ export class ProposalDomainService {
           approvedBlocks
         }
       }
-      
+
       return result
     } catch (error) {
       return this.errorResult('application', `Erreur lors de l'application: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
@@ -198,7 +198,7 @@ export class ProposalDomainService {
 
   /**
    * Apply NEW_EVENT proposal
-   * 
+   *
    * ✅ Support application par blocs:
    * - blockType='event' : Crée Event uniquement, stocke ID dans rollbackData
    * - blockType='edition' : Récupère Event depuis rollbackData, crée Edition
@@ -214,16 +214,16 @@ export class ProposalDomainService {
 
       // Extract structured data
       const agentId = options.agentName || (await this.getAgentIdFromContext())
-      
+
       this.logger.info(`\n🔍 [DEBUG] Avant extractEventData:`, {
         changesKeys: Object.keys(changes),
         hasIdInChanges: 'id' in changes,
         changesId: changes.id,
         changesStringified: JSON.stringify(changes, null, 2).substring(0, 500)
       })
-      
+
       const eventData = this.extractEventData(changes, agentId)
-      
+
       this.logger.info(`\n🔍 [DEBUG] Après extractEventData:`, {
         eventDataKeys: Object.keys(eventData),
         hasIdInEventData: 'id' in eventData,
@@ -233,16 +233,16 @@ export class ProposalDomainService {
       const editionsData = this.extractEditionsData(changes, agentId)
       const racesData = this.extractRacesData(changes)
       const organizerData = this.extractNewValue(changes.organizer)
-      
+
       // ✅ PHASE 5: Application par blocs pour NEW_EVENT
       // Récupérer les IDs créés précédemment depuis rollbackData
       let existingEventId: number | null = null
       let existingEditionId: number | null = null
-      
+
       if (options.blockType && options.proposalId) {
         // Chercher les applications précédentes pour récupérer les IDs créés
         const previousApps = await this.proposalRepo.findApplicationsByProposalId(options.proposalId)
-        
+
         for (const app of previousApps) {
           if (app.rollbackData) {
             const rollback = app.rollbackData as any
@@ -250,7 +250,7 @@ export class ProposalDomainService {
             if (rollback.editionId) existingEditionId = parseInt(rollback.editionId)
           }
         }
-        
+
         this.logger.info(`🔍 [BLOC ${options.blockType}] IDs existants:`, {
           eventId: existingEventId,
           editionId: existingEditionId
@@ -259,7 +259,7 @@ export class ProposalDomainService {
 
       // Créer ou récupérer Event
       let event: any
-      
+
       if (existingEventId) {
         this.logger.info(`♻️  Réutilisation Event existant: ${existingEventId}`)
         event = await milesRepo.findEventById(existingEventId)
@@ -272,12 +272,12 @@ export class ProposalDomainService {
         // - blockType non spécifié (application complète)
         this.logger.info(`🆕 Création nouvel Event`)
         event = await milesRepo.createEvent(eventData)
-        
+
         // ✅ FIX 1.4 : Générer le slug avec l'ID
         const slug = this.generateEventSlug(event.name, event.id)
         await milesRepo.updateEvent(event.id, { slug })
         this.logger.info(`Slug généré pour l'événement ${event.id}: ${slug}`)
-        
+
         // ✅ FIX 1.2 : Géocoder si coordonnées manquantes
         if (!event.latitude || !event.longitude) {
           this.logger.info(`Coordonnées manquantes pour l'événement ${event.id}, tentative de géocodage...`)
@@ -318,7 +318,7 @@ export class ProposalDomainService {
           }
         }
       }
-      
+
       // Créer organizer si bloc organizer ou application complète
       if ((options.blockType === 'organizer' || !options.blockType) && organizerData && typeof organizerData === 'object') {
         const editionId = createdEditionIds[0] || existingEditionId
@@ -334,13 +334,13 @@ export class ProposalDomainService {
           })
         }
       }
-      
+
       // Créer races si bloc races ou application complète
       if (options.blockType === 'races' || !options.blockType) {
         const editionId = createdEditionIds[0] || existingEditionId
         if (editionId && racesData.length > 0) {
           this.logger.info(`🆕 Création de ${racesData.length} course(s)`)
-          
+
           for (const raceData of racesData) {
             const race = await milesRepo.createRace({
               editionId: editionId,
@@ -423,7 +423,7 @@ export class ProposalDomainService {
         racesType: typeof changes.races,
         racesKeys: changes.races && typeof changes.races === 'object' ? Object.keys(changes.races) : 'N/A'
       })
-      
+
       const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
       const numericEditionId = parseInt(editionId)
 
@@ -437,7 +437,7 @@ export class ProposalDomainService {
       let racesToDelete: number[] | undefined
       let racesToUpdate: any[] | undefined
       let organizerData: any | undefined
-      const editionUpdateData: Record<string, any> = { 
+      const editionUpdateData: Record<string, any> = {
         calendarStatus: 'CONFIRMED',
         confirmedAt: new Date() // ✅ FIX: Remplir confirmedAt lors de la confirmation
       }
@@ -445,10 +445,10 @@ export class ProposalDomainService {
 
       // ⚠️ IMPORTANT: Utiliser 'changes' (qui contient userModifiedChanges mergées)
       // pour l'édition, pas 'selectedChanges' (qui ne contient que les valeurs sélectionnées agent)
-      
+
       // Liste des champs Event (selon schéma Miles Republic)
       const eventFields = new Set([
-        'name', 'city', 'country', 
+        'name', 'city', 'country',
         'countrySubdivisionNameLevel1', 'countrySubdivisionDisplayCodeLevel1',
         'countrySubdivisionNameLevel2', 'countrySubdivisionDisplayCodeLevel2',
         'latitude', 'longitude', 'fullAddress',
@@ -456,12 +456,12 @@ export class ProposalDomainService {
         'images', 'coverImage', 'peyceReview'
         // Note: 'dataSource' existe sur Event ET Edition, mais ici on route vers Edition
       ])
-      
+
       for (const [field, value] of Object.entries(changes)) {
         // 🔍 STRUCTURE DES TESTS: races: { toUpdate: [...], toAdd: [...], toDelete: [...] }
         if (field === 'races') {
           this.logger.info(`🔍 [DEBUG] Champ 'races' détecté, type: ${typeof value}`)
-          
+
           // Cas 1: Tableau direct (ancienne structure?) - racesChanges = value
           if (Array.isArray(value)) {
             this.logger.info(`✅ [DEBUG] races est un tableau direct (${value.length} items)`)
@@ -470,7 +470,7 @@ export class ProposalDomainService {
           // Cas 2: Objet avec toUpdate/toAdd/toDelete (structure des tests)
           else if (value && typeof value === 'object') {
             this.logger.info(`🔍 [DEBUG] races est un objet, clés: ${Object.keys(value).join(', ')}`)
-            
+
             if ('toUpdate' in value && Array.isArray(value.toUpdate)) {
               racesChanges = value.toUpdate
               this.logger.info(`✅ [DEBUG] Extraction races.toUpdate: ${racesChanges.length} courses`)
@@ -486,19 +486,19 @@ export class ProposalDomainService {
           }
           continue
         }
-        
+
         if (field === 'racesToAdd') {
           racesToAdd = this.extractNewValue(value) as any[]
           this.logger.info(`✅ [DEBUG] racesToAdd extrait au niveau racine: ${racesToAdd?.length || 0} courses`)
           continue
         }
-        
+
         if (field === 'racesToDelete') {
           racesToDelete = value as number[]
           this.logger.info(`✅ [DEBUG] racesToDelete extrait au niveau racine: ${racesToDelete?.length || 0} IDs`)
           continue
         }
-        
+
         // ✅ Extraire racesToUpdate pour propagation de dates (FFA + Google)
         if (field === 'racesToUpdate') {
           racesToUpdate = this.extractNewValue(value) as any[]
@@ -511,7 +511,7 @@ export class ProposalDomainService {
           organizerData = this.extractNewValue(value)
           continue
         }
-        
+
         // ⚠️ Filtrer raceEdits et racesToAddFiltered (userModifiedChanges spécifiques aux courses)
         // Ces champs ne sont pas des champs de la table Edition
         if (field === 'raceEdits' || field === 'racesToAddFiltered') {
@@ -534,7 +534,7 @@ export class ProposalDomainService {
       if (!edition) {
         return this.errorResult('edition', `Édition ${numericEditionId} introuvable`)
       }
-      
+
       this.logger.info(`📝 Édition trouvée: Event ${edition.eventId}, Année ${edition.year}`)
 
       // Fetch current event data if we have event updates
@@ -553,13 +553,13 @@ export class ProposalDomainService {
         changed: Object.keys(editionDiff).length,
         unchanged: Object.keys(editionUpdateData).length - Object.keys(editionDiff).length
       })
-      
+
       if (Object.keys(editionDiff).length > 0) {
         this.logger.info(`📋 Changements Edition à appliquer:`, JSON.stringify(editionDiff, null, 2))
       } else {
         this.logger.info(`ℹ️ Aucun changement Edition détecté`)
       }
-      
+
       if (Object.keys(eventDiff).length > 0) {
         this.logger.info(`🔍 Analyse des changements Event:`, {
           total: Object.keys(eventUpdateData).length,
@@ -576,7 +576,7 @@ export class ProposalDomainService {
       } else {
         this.logger.info(`⏭️ Édition ${numericEditionId} - Aucun changement à appliquer`)
       }
-      
+
       // ✅ AUTO-CALCULATE: countrySubdivisionDisplayCodeLevel1 when countrySubdivisionNameLevel1 changes
       if (eventDiff.countrySubdivisionNameLevel1 && !eventDiff.countrySubdivisionDisplayCodeLevel1) {
         const regionCode = this.extractRegionCode(eventDiff.countrySubdivisionNameLevel1)
@@ -621,11 +621,11 @@ export class ProposalDomainService {
       // - blockType = 'races' (application du bloc races)
       // - blockType non spécifié (application complète)
       const shouldProcessRaces = !options.blockType || options.blockType === 'races'
-      
+
       if (!shouldProcessRaces) {
         this.logger.info(`⏭️  Blocs races ignorés (blockType=${options.blockType})`)
       }
-      
+
       // Update races if any (structure: changes.races)
       this.logger.info(`\n🔍 [DEBUG UPDATE] Avant section UPDATE:`, {
         racesChangesExists: !!racesChanges,
@@ -634,7 +634,7 @@ export class ProposalDomainService {
         racesChangesContent: racesChanges,
         shouldProcess: shouldProcessRaces
       })
-      
+
       if (shouldProcessRaces && racesChanges && Array.isArray(racesChanges)) {
         this.logger.info(`🏃 Mise à jour de ${racesChanges.length} course(s) existante(s)`)
         for (const raceChange of racesChanges) {
@@ -647,7 +647,7 @@ export class ProposalDomainService {
           // ✅ Extraire depuis raceChange.updates (structure des tests)
           const updates = raceChange.updates || raceChange
           const raceUpdateData = this.buildRaceUpdateData(updates)
-          
+
           if (Object.keys(raceUpdateData).length > 0) {
             await milesRepo.updateRace(raceId, raceUpdateData)
             this.logger.info(`  ✅ Course ${raceId} (${raceChange.raceName || 'sans nom'}) mise à jour:`, raceUpdateData)
@@ -656,15 +656,15 @@ export class ProposalDomainService {
           }
         }
       }
-      
+
       // ✅ Update races from racesToUpdate (structure: changes.racesToUpdate[].updates.field)
       // Utilisé par FFA Scraper et Google Agent pour propager les dates d'édition
       if (shouldProcessRaces && racesToUpdate && Array.isArray(racesToUpdate)) {
         // ⚠️ Récupérer les modifications utilisateur pour les courses existantes
         const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
-        
+
         this.logger.info(`📅 Propagation des dates vers ${racesToUpdate.length} course(s)`)
-        
+
         for (let i = 0; i < racesToUpdate.length; i++) {
           const raceUpdate = racesToUpdate[i]
           const raceId = parseInt(raceUpdate.raceId)
@@ -676,52 +676,52 @@ export class ProposalDomainService {
           // Extraire les updates (startDate, etc.) depuis l'agent
           const updates = raceUpdate.updates || {}
           const raceUpdateData: any = {}
-          
+
           for (const [field, value] of Object.entries(updates)) {
             const extractedValue = this.extractNewValue(value)
             if (extractedValue !== undefined && extractedValue !== null) {
               raceUpdateData[field] = extractedValue
             }
           }
-          
+
           // ✅ MERGER les modifications utilisateur (raceEdits) qui ont priorité
           // Structure : raceEdits["existing-0"] = { startDate: "...", distance: "..." }
           const editKey = `existing-${i}`
           const userEdits = raceEdits[editKey] || {}
-          
+
           if (Object.keys(userEdits).length > 0) {
             this.logger.info(`  📝 Modifications utilisateur détectées pour course index ${i}:`, userEdits)
-            
+
             // Appliquer les modifications utilisateur (priorité sur agent)
             if (userEdits.startDate) raceUpdateData.startDate = new Date(userEdits.startDate)
             if (userEdits.name) raceUpdateData.name = userEdits.name
             if (userEdits.type) raceUpdateData.type = userEdits.type
-            
+
             // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
             if (userEdits.categoryLevel1) raceUpdateData.categoryLevel1 = userEdits.categoryLevel1
             if (userEdits.categoryLevel2) raceUpdateData.categoryLevel2 = userEdits.categoryLevel2
-            
+
             // Distances : supporter distance (legacy) et tous les types spécifiques
             if (userEdits.distance) raceUpdateData.runDistance = parseFloat(userEdits.distance)
             if (userEdits.runDistance) raceUpdateData.runDistance = parseFloat(userEdits.runDistance)
             if (userEdits.bikeDistance) raceUpdateData.bikeDistance = parseFloat(userEdits.bikeDistance)
             if (userEdits.walkDistance) raceUpdateData.walkDistance = parseFloat(userEdits.walkDistance)
             if (userEdits.swimDistance) raceUpdateData.swimDistance = parseFloat(userEdits.swimDistance)
-            
+
             // Élévations : supporter elevation (legacy) et tous les types spécifiques
             if (userEdits.elevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.elevation)
             if (userEdits.runPositiveElevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.runPositiveElevation)
             if (userEdits.bikePositiveElevation) raceUpdateData.bikePositiveElevation = parseFloat(userEdits.bikePositiveElevation)
             if (userEdits.walkPositiveElevation) raceUpdateData.walkPositiveElevation = parseFloat(userEdits.walkPositiveElevation)
           }
-          
+
           if (Object.keys(raceUpdateData).length > 0) {
             await milesRepo.updateRace(raceId, raceUpdateData)
             this.logger.info(`  ✅ Course ${raceId} (${raceUpdate.raceName || 'sans nom'}) mise à jour:`, raceUpdateData)
           }
         }
       }
-      
+
       // Add races if any
       this.logger.info(`\n🔍 [DEBUG ADD] Avant section ADD:`, {
         racesToAddExists: !!racesToAdd,
@@ -730,29 +730,29 @@ export class ProposalDomainService {
         racesToAddContent: racesToAdd,
         shouldProcess: shouldProcessRaces
       })
-      
+
       if (shouldProcessRaces && racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
         // Récupérer les modifications utilisateur depuis userModifiedChanges
         const racesToAddFiltered = (proposal?.userModifiedChanges as any)?.racesToAddFiltered || []
         const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
-        
+
         // ✅ FIX: Créer un tableau avec indices originaux préservés
         const racesToAddWithIndex = racesToAdd
           .map((race, originalIndex) => ({ race, originalIndex }))
           .filter(({ originalIndex }) => !racesToAddFiltered.includes(originalIndex))
-        
+
         this.logger.info(`➥ Ajout de ${racesToAddWithIndex.length} course(s) à l'édition ${numericEditionId}`, {
           total: racesToAdd.length,
           filtered: racesToAddFiltered.length,
           toAdd: racesToAddWithIndex.length
         })
-        
+
         for (const { race: raceData, originalIndex } of racesToAddWithIndex) {
           // ✅ FIX: Utiliser originalIndex pour accéder aux raceEdits
           const editedData = raceEdits[`new-${originalIndex}`] || {}
-          
+
           this.logger.info(`  ➡️  Ajout course original index ${originalIndex}`)
-          
+
           // 🔍 LOG: Inspecter raceData AVANT nettoyage
           this.logger.info(`🔍 [RACE ${originalIndex}] Contenu AVANT nettoyage:`, {
             raceDataKeys: Object.keys(raceData),
@@ -762,7 +762,7 @@ export class ProposalDomainService {
             editedDataKeys: Object.keys(editedData),
             editedData: JSON.stringify(editedData, null, 2)
           })
-          
+
           // ⚠️ IMPORTANT: Retirer 'id' et 'raceId' de raceData car ce sont de NOUVELLES courses
           // Ces champs peuvent être présents par erreur dans appliedChanges
           if ('id' in raceData) {
@@ -781,7 +781,7 @@ export class ProposalDomainService {
             this.logger.warn(`⚠️  Champ 'raceId' détecté dans editedData[${originalIndex}]: ${editedData.raceId} - SUPPRESSION`)
             delete editedData.raceId
           }
-          
+
           // Appliquer les modifications utilisateur, sinon les valeurs proposées
           const racePayload: any = {
             editionId: numericEditionId,
@@ -793,7 +793,7 @@ export class ProposalDomainService {
             categoryLevel2: editedData.categoryLevel2 || raceData.categoryLevel2,
             timeZone: editedData.timeZone || raceData.timeZone
           }
-          
+
           // ✅ FIX: Appliquer le bon champ de distance selon le type de course
           // Distance - supporter à la fois 'distance' (legacy) et les champs spécifiques (runDistance, bikeDistance, etc.)
           if (editedData.distance) {
@@ -810,17 +810,17 @@ export class ProposalDomainService {
             // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
             if (editedData.runDistance !== undefined) racePayload.runDistance = parseFloat(editedData.runDistance)
             else if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
-            
+
             if (editedData.bikeDistance !== undefined) racePayload.bikeDistance = parseFloat(editedData.bikeDistance)
             else if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
-            
+
             if (editedData.walkDistance !== undefined) racePayload.walkDistance = parseFloat(editedData.walkDistance)
             else if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
-            
+
             if (editedData.swimDistance !== undefined) racePayload.swimDistance = parseFloat(editedData.swimDistance)
             else if (raceData.swimDistance !== undefined) racePayload.swimDistance = raceData.swimDistance
           }
-          
+
           // Élévation - supporter à la fois 'elevation' (legacy) et les champs spécifiques
           if (editedData.elevation) {
             const elevation = parseFloat(editedData.elevation)
@@ -836,20 +836,20 @@ export class ProposalDomainService {
             // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
             if (editedData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = parseFloat(editedData.runPositiveElevation)
             else if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = raceData.runPositiveElevation
-            
+
             if (editedData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = parseFloat(editedData.bikePositiveElevation)
             else if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = raceData.bikePositiveElevation
-            
+
             if (editedData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = parseFloat(editedData.walkPositiveElevation)
             else if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
-          
+
           // Type est déprécié dans le schéma mais peut être utilisé
           const finalType = editedData.type || raceData.type
           if (finalType) {
             racePayload.type = finalType
           }
-          
+
           // 🔍 LOG: Payload final AVANT création
           this.logger.info(`🔍 [RACE ${originalIndex}] Payload FINAL avant createRace:`, {
             payloadKeys: Object.keys(racePayload),
@@ -857,7 +857,7 @@ export class ProposalDomainService {
             hasRaceId: 'raceId' in racePayload,
             payload: JSON.stringify(racePayload, null, 2)
           })
-          
+
           const newRace = await milesRepo.createRace(racePayload)
           this.logger.info(`  ✅ Course créée: ${newRace.id} (${newRace.name}) - ${newRace.runDistance}km`, {
             categoryLevel1: racePayload.categoryLevel1,
@@ -865,31 +865,87 @@ export class ProposalDomainService {
           })
         }
       }
-      
+
+      // ✅ NOUVEAU: Traiter les courses ajoutées MANUELLEMENT par l'utilisateur
+      // Ces courses sont dans raceEdits avec des clés "new-{timestamp}" (timestamp > 1000000)
+      // Contrairement aux courses proposées par l'agent qui sont dans racesToAdd avec clés "new-0", "new-1", etc.
+      const manualRaceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
+      const manuallyAddedRaces = Object.entries(manualRaceEdits)
+        .filter(([key, value]: [string, any]) => {
+          if (!key.startsWith('new-')) return false
+          if (value._deleted) return false
+          const numericPart = key.replace('new-', '')
+          const num = parseInt(numericPart)
+          // Les courses manuelles ont un timestamp (> 1000000), pas un index (0, 1, 2...)
+          return !isNaN(num) && num > 1000000
+        })
+        .map(([key, raceData]) => ({ key, raceData: raceData as any }))
+
+      if (manuallyAddedRaces.length > 0) {
+        this.logger.info(`➕ Ajout de ${manuallyAddedRaces.length} course(s) ajoutée(s) MANUELLEMENT par l'utilisateur`)
+
+        for (const { key, raceData } of manuallyAddedRaces) {
+          this.logger.info(`  ➡️  Ajout course manuelle "${key}": ${raceData.name}`)
+
+          // Construire le payload pour la création
+          const racePayload: any = {
+            editionId: numericEditionId,
+            eventId: edition?.eventId,
+            name: raceData.name,
+            startDate: raceData.startDate ? new Date(raceData.startDate) : null,
+            categoryLevel1: raceData.categoryLevel1,
+            categoryLevel2: raceData.categoryLevel2,
+            timeZone: raceData.timeZone
+          }
+
+          // Distances
+          if (raceData.runDistance !== undefined) racePayload.runDistance = parseFloat(raceData.runDistance)
+          if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = parseFloat(raceData.bikeDistance)
+          if (raceData.walkDistance !== undefined) racePayload.walkDistance = parseFloat(raceData.walkDistance)
+          if (raceData.swimDistance !== undefined) racePayload.swimDistance = parseFloat(raceData.swimDistance)
+
+          // Élévations
+          if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = parseFloat(raceData.runPositiveElevation)
+          if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = parseFloat(raceData.bikePositiveElevation)
+          if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = parseFloat(raceData.walkPositiveElevation)
+
+          this.logger.info(`🔍 [MANUAL RACE ${key}] Payload FINAL avant createRace:`, {
+            payload: JSON.stringify(racePayload, null, 2)
+          })
+
+          const newRace = await milesRepo.createRace(racePayload)
+          this.logger.info(`  ✅ Course manuelle créée: ${newRace.id} (${newRace.name})`, {
+            runDistance: newRace.runDistance,
+            categoryLevel1: racePayload.categoryLevel1,
+            categoryLevel2: racePayload.categoryLevel2
+          })
+        }
+      }
+
       // Update existing races if edited
       const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
-      
+
       this.logger.info(`🔍 [RACE EDITS] Contenu complet de raceEdits:`, {
         keys: Object.keys(raceEdits),
         keysCount: Object.keys(raceEdits).length,
         raceEdits: JSON.stringify(raceEdits, null, 2)
       })
-      
+
       const existingRaceEdits = Object.keys(raceEdits)
         .filter(key => key.startsWith('existing-') && !raceEdits[key]._deleted)
         .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
-      
+
       // ✅ FIX: Construire racesToDelete depuis raceEdits._deleted
       const racesToDeleteFromEdits = Object.keys(raceEdits)
         .filter(key => key.startsWith('existing-') && raceEdits[key]._deleted === true)
         .map(key => parseInt(key.replace('existing-', '')))
-      
+
       this.logger.info(`🐞 [DEBUG] Edits+Deletes counts:`, {
         existingRaceEdits: existingRaceEdits.length,
         racesToDeleteFromEdits: racesToDeleteFromEdits.length,
         racesToDeleteIndexes: racesToDeleteFromEdits
       })
-      
+
       if (existingRaceEdits.length > 0 || racesToDeleteFromEdits.length > 0) {
         // ✅ FIX: Créer un mapping index → raceId depuis racesToUpdate
         // existing-0 fait référence à racesToUpdate[0], pas à existingRaces[0]
@@ -902,62 +958,62 @@ export class ProposalDomainService {
             }
           })
         }
-        
+
         this.logger.info(`🔗 [INDEX MAPPING] Map index → raceId:`, {
           mappingSize: indexToRaceId.size,
           mapping: Array.from(indexToRaceId.entries()).map(([idx, id]) => `${idx}→${id}`)
         })
-        
+
         // Traiter les suppressions
         if (racesToDeleteFromEdits.length > 0) {
           this.logger.info(`🗑️  Suppression de ${racesToDeleteFromEdits.length} course(s) (via raceEdits._deleted)`)
-          
+
           for (const index of racesToDeleteFromEdits) {
             const raceId = indexToRaceId.get(index)
             if (!raceId) {
               this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
               continue
             }
-            
+
             await milesRepo.deleteRace(raceId)
             this.logger.info(`  ✅ Course ${raceId} (index ${index}) supprimée`)
           }
         }
-        
+
         // Traiter les modifications
         if (existingRaceEdits.length > 0) {
           this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
-          
+
           for (const { index, edits } of existingRaceEdits) {
             const raceId = indexToRaceId.get(index)
             if (!raceId) {
               this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
               continue
             }
-          
+
             const updateData: any = {}
-            
+
             if (edits.name) updateData.name = edits.name
             if (edits.type) updateData.type = edits.type
             if (edits.startDate) updateData.startDate = new Date(edits.startDate)
-            
+
             // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
             if (edits.categoryLevel1) updateData.categoryLevel1 = edits.categoryLevel1
             if (edits.categoryLevel2) updateData.categoryLevel2 = edits.categoryLevel2
-            
+
             // Distances : supporter distance (legacy) et tous les types spécifiques
             if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
             if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
             if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
             if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
             if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
-            
+
             // Élévations : supporter elevation (legacy) et tous les types spécifiques
             if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
             if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
             if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
             if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
-            
+
             if (Object.keys(updateData).length > 0) {
               await milesRepo.updateRace(raceId, updateData)
               this.logger.info(`  ✅ Course ${raceId} (index ${index}) mise à jour via edits utilisateur:`, updateData)
@@ -965,7 +1021,7 @@ export class ProposalDomainService {
           }
         }
       }
-      
+
       // Delete races if any
       this.logger.info(`\n🔍 [DEBUG DELETE] Avant section DELETE:`, {
         racesToDeleteExists: !!racesToDelete,
@@ -973,7 +1029,7 @@ export class ProposalDomainService {
         racesToDeleteLength: racesToDelete?.length || 0,
         racesToDeleteContent: racesToDelete
       })
-      
+
       if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
         this.logger.info(`🗑️  Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
         for (const raceId of racesToDelete) {
@@ -1042,7 +1098,7 @@ export class ProposalDomainService {
   /**
    * Determine which block a field belongs to
    * Based on the GroupedProposalDetailBase logic (lines 656-694)
-   * 
+   *
    * Blocks:
    * - 'event': Event-level fields (name, city, country, websiteUrl, etc.)
    * - 'edition': Edition-level fields (year, startDate, endDate, etc.)
@@ -1058,11 +1114,11 @@ export class ProposalDomainService {
       'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
       'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'
     ]
-    
+
     if (eventFields.includes(field)) {
       return 'event'
     }
-    
+
     // ✅ Edition fields
     const editionFields = [
       'year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
@@ -1070,7 +1126,7 @@ export class ProposalDomainService {
       'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
       'volunteerCode', 'confirmedAt'
     ]
-    
+
     if (editionFields.includes(field)) {
       return 'edition'
     }
@@ -1091,17 +1147,17 @@ export class ProposalDomainService {
 
   /**
    * ✅ PHASE 2 : Merge intelligent pour userModifiedChanges
-   * 
+   *
    * Au lieu d'écraser complètement les clés de premier niveau,
    * cette fonction merge intelligemment les modifications utilisateur
    * dans la structure de changes de l'agent.
-   * 
+   *
    * Cas gérés:
    * 1. Champs simples { old, new } → Remplacer la valeur new
    * 2. races.toUpdate → Fusionner les modifications par raceId
    * 3. races.toAdd → Fusionner les modifications par index
    * 4. Autres sous-structures → Merge récursif
-   * 
+   *
    * Exemple:
    * ```
    * changes = {
@@ -1109,13 +1165,13 @@ export class ProposalDomainService {
    *     toUpdate: [{ raceId: 123, updates: { runDistance: { old: 10, new: 10 } } }]
    *   }
    * }
-   * 
+   *
    * userModifiedChanges = {
    *   races: {
    *     "123": { runDistance: 12 }
    *   }
    * }
-   * 
+   *
    * → Résultat:
    * {
    *   races: {
@@ -1168,13 +1224,13 @@ export class ProposalDomainService {
 
   /**
    * Merge spécifique pour les courses
-   * 
+   *
    * Structure agent:
    * {
    *   toUpdate: [{ raceId: 123, raceName: '10km', updates: { runDistance: { old, new } } }],
    *   toAdd: [{ name: 'Semi', runDistance: 21.1 }]
    * }
-   * 
+   *
    * Structure user:
    * {
    *   "123": { runDistance: 12 },         // Modification toUpdate (key = raceId)
@@ -1265,7 +1321,7 @@ export class ProposalDomainService {
 
     for (const [field, value] of Object.entries(selectedChanges)) {
       const block = this.getBlockForField(field)
-      
+
       // Only include this change if its block has been approved
       if (approvedBlocks[block] === true) {
         filteredChanges[field] = value
@@ -1278,7 +1334,7 @@ export class ProposalDomainService {
   /**
    * ✅ NOUVEAU : Filter changes by specific blockType
    * Only keep changes from the specified block
-   * 
+   *
    * Block fields mapping:
    * - 'event': name, city, country, websiteUrl, facebookUrl, instagramUrl, etc.
    * - 'edition': year, startDate, endDate, timeZone, registrationOpeningDate, etc.
@@ -1302,17 +1358,17 @@ export class ProposalDomainService {
       organizer: ['organizer', 'organizerId'],
       races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
     }
-    
+
     const fields = blockFields[blockType] || []
     const filtered: Record<string, any> = {}
-    
+
     // Filtrer les champs du bloc spécifié
     fields.forEach(field => {
       if (selectedChanges[field] !== undefined) {
         filtered[field] = selectedChanges[field]
       }
     })
-    
+
     // Gérer les champs avec préfixe race_* pour le bloc races
     if (blockType === 'races') {
       Object.keys(selectedChanges).forEach(key => {
@@ -1321,7 +1377,7 @@ export class ProposalDomainService {
         }
       })
     }
-    
+
     return filtered
   }
 
@@ -1362,13 +1418,13 @@ export class ProposalDomainService {
     const dept = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel2) || ''
     const region = this.extractNewValue(selectedChanges.countrySubdivision) || this.extractNewValue(selectedChanges.countrySubdivisionNameLevel1) || ''
     const country = this.extractNewValue(selectedChanges.country) || 'FR'
-    
+
     // ⚠️ CRITICAL: Log si 'id' est présent dans selectedChanges (ne devrait JAMAIS arriver)
     if ('id' in selectedChanges || this.extractNewValue(selectedChanges.id)) {
       this.logger.warn(`⚠️⚠️⚠️ ALERTE: 'id' détecté dans selectedChanges lors de la création d'Event! Valeur: ${this.extractNewValue(selectedChanges.id)}. Ce champ sera IGNORÉ.`)
       this.logger.warn(`   selectedChanges keys: ${Object.keys(selectedChanges).join(', ')}`)
     }
-    
+
     return {
       // Requis
       name: this.extractNewValue(selectedChanges.name) || '',
@@ -1377,43 +1433,43 @@ export class ProposalDomainService {
       countrySubdivisionNameLevel1: region,
       countrySubdivisionNameLevel2: dept,
       countrySubdivisionDisplayCodeLevel2: this.extractDepartmentCode(dept),
-      
+
       // ✅ FIX 1.1 : Subdivision Level 1
       countrySubdivisionDisplayCodeLevel1: this.extractRegionCode(region),
-      
+
       // ✅ FIX 1.6 : fullAddress éditable
-      fullAddress: this.extractNewValue(selectedChanges.fullAddress) || 
+      fullAddress: this.extractNewValue(selectedChanges.fullAddress) ||
                    this.buildFullAddress(city, dept, country),
-      
+
       // ✅ FIX 1.2 : Coordonnées (sera géocodé si manquant)
-      latitude: this.extractNewValue(selectedChanges.latitude) ? 
-                parseFloat(this.extractNewValue(selectedChanges.latitude)) : 
+      latitude: this.extractNewValue(selectedChanges.latitude) ?
+                parseFloat(this.extractNewValue(selectedChanges.latitude)) :
                 undefined,
-      longitude: this.extractNewValue(selectedChanges.longitude) ? 
-                 parseFloat(this.extractNewValue(selectedChanges.longitude)) : 
+      longitude: this.extractNewValue(selectedChanges.longitude) ?
+                 parseFloat(this.extractNewValue(selectedChanges.longitude)) :
                  undefined,
-      
+
       // ✅ FIX 1.3 : URLs éditables même si non proposées
       websiteUrl: this.extractNewValue(selectedChanges.websiteUrl) || null,
       facebookUrl: this.extractNewValue(selectedChanges.facebookUrl) || null,
       instagramUrl: this.extractNewValue(selectedChanges.instagramUrl) || null,
       twitterUrl: this.extractNewValue(selectedChanges.twitterUrl) || null,
-      
+
       // ✅ FIX 1.4 : Slug (sera généré après création avec l'ID)
       // Note: slug doit être généré APRÈS la création car il contient l'ID
-      
+
       coverImage: this.extractNewValue(selectedChanges.coverImage),
       images: this.extractNewValue(selectedChanges.images) || [],
       peyceReview: this.extractNewValue(selectedChanges.peyceReview),
-      
+
       // Flags
       isPrivate: this.extractNewValue(selectedChanges.isPrivate) ?? false,
       isFeatured: this.extractNewValue(selectedChanges.isFeatured) ?? false,
       isRecommended: this.extractNewValue(selectedChanges.isRecommended) ?? false,
-      
+
       // ✅ FIX 1.5 : toUpdate par défaut
       toUpdate: this.extractNewValue(selectedChanges.toUpdate) ?? true,
-      
+
       // Métadonnées
       dataSource: this.extractNewValue(selectedChanges.dataSource) || this.inferDataSource({}, agentId)
     }
@@ -1425,42 +1481,42 @@ export class ProposalDomainService {
   private extractEditionsData(selectedChanges: Record<string, any>, agentId?: string): any[] {
     // ✅ FIX: Extraire depuis edition.new si présent
     const editionData = this.extractNewValue(selectedChanges.edition)
-    
+
     if (editionData && typeof editionData === 'object') {
       // Edition imbriquée (structure FFA Scraper)
       return [{
         year: editionData.year ? editionData.year.toString() : new Date().getFullYear().toString(),
-        
+
         // Dates
         startDate: this.parseDate(editionData.startDate),
         endDate: this.parseDate(editionData.endDate),
         registrationOpeningDate: this.parseDate(editionData.registrationOpeningDate),
         registrationClosingDate: this.parseDate(editionData.registrationClosingDate),
         confirmedAt: this.parseDate(editionData.confirmedAt),
-        
+
         // Statuts
         calendarStatus: editionData.calendarStatus || 'CONFIRMED',
         clientStatus: editionData.clientStatus,
         status: editionData.status || 'DRAFT',
-        
+
         // Configuration
         currency: editionData.currency || 'EUR',
         timeZone: editionData.timeZone || 'Europe/Paris',
         medusaVersion: editionData.medusaVersion || 'V1',
         customerType: editionData.customerType,
-        
+
         // Informations
         registrantsNumber: editionData.registrantsNumber ? parseInt(editionData.registrantsNumber) : undefined,
         whatIsIncluded: editionData.whatIsIncluded,
         clientExternalUrl: editionData.clientExternalUrl,
         bibWithdrawalFullAddress: editionData.bibWithdrawalFullAddress,
         volunteerCode: editionData.volunteerCode,
-        
+
         // Flags
         isAttendeeListPublic: editionData.isAttendeeListPublic ?? true,
         publicAttendeeListColumns: editionData.publicAttendeeListColumns || [],
         hasEditedDates: editionData.hasEditedDates ?? false,
-        
+
         // Métadonnées
         federationId: editionData.federationId,
         dataSource: editionData.dataSource || this.inferDataSource(selectedChanges, agentId),
@@ -1469,42 +1525,42 @@ export class ProposalDomainService {
         organizationId: editionData.organizationId ? parseInt(editionData.organizationId) : undefined
       }]
     }
-    
+
     // Fallback: chercher au niveau racine (ancienne structure)
     if (selectedChanges.year || selectedChanges.startDate || selectedChanges.endDate) {
       return [{
         year: this.extractNewValue(selectedChanges.year)?.toString() || new Date().getFullYear().toString(),
-        
+
         // Dates
         startDate: this.extractDate(selectedChanges.startDate),
         endDate: this.extractDate(selectedChanges.endDate),
         registrationOpeningDate: this.extractDate(selectedChanges.registrationOpeningDate),
         registrationClosingDate: this.extractDate(selectedChanges.registrationClosingDate),
         confirmedAt: this.extractDate(selectedChanges.confirmedAt),
-        
+
         // Statuts
         calendarStatus: this.extractNewValue(selectedChanges.calendarStatus) || 'CONFIRMED',
         clientStatus: this.extractNewValue(selectedChanges.clientStatus),
         status: this.extractNewValue(selectedChanges.status) || 'DRAFT',
-        
+
         // Configuration
         currency: this.extractNewValue(selectedChanges.currency) || 'EUR',
         timeZone: this.extractNewValue(selectedChanges.timeZone) || 'Europe/Paris',
         medusaVersion: this.extractNewValue(selectedChanges.medusaVersion) || 'V1',
         customerType: this.extractNewValue(selectedChanges.customerType),
-        
+
         // Informations
         registrantsNumber: this.extractInt(selectedChanges.registrantsNumber),
         whatIsIncluded: this.extractNewValue(selectedChanges.whatIsIncluded),
         clientExternalUrl: this.extractNewValue(selectedChanges.clientExternalUrl),
         bibWithdrawalFullAddress: this.extractNewValue(selectedChanges.bibWithdrawalFullAddress),
         volunteerCode: this.extractNewValue(selectedChanges.volunteerCode),
-        
+
         // Flags
         isAttendeeListPublic: this.extractNewValue(selectedChanges.isAttendeeListPublic) ?? true,
         publicAttendeeListColumns: this.extractNewValue(selectedChanges.publicAttendeeListColumns) || [],
         hasEditedDates: this.extractNewValue(selectedChanges.hasEditedDates) ?? false,
-        
+
         // Métadonnées
         federationId: this.extractNewValue(selectedChanges.federationId),
         // ✅ FIX 2.3 : dataSource
@@ -1571,17 +1627,17 @@ export class ProposalDomainService {
       races.push({
         name: this.extractNewValue(selectedChanges.raceName) || 'Course principale',
         editionYear: this.extractNewValue(selectedChanges.year) || new Date().getFullYear().toString(),
-        
+
         // Dates
         startDate: this.extractDate(selectedChanges.raceStartDate),
         registrationOpeningDate: this.extractDate(selectedChanges.raceRegistrationOpeningDate),
         registrationClosingDate: this.extractDate(selectedChanges.raceRegistrationClosingDate),
-        
+
         // Prix
         price: this.extractFloat(selectedChanges.price),
         priceType: this.extractNewValue(selectedChanges.priceType) || 'PER_PERSON',
         paymentCollectionType: this.extractNewValue(selectedChanges.paymentCollectionType) || 'SINGLE',
-        
+
         // Distances
         runDistance: this.extractFloat(selectedChanges.runDistance),
         runDistance2: this.extractFloat(selectedChanges.runDistance2),
@@ -1590,7 +1646,7 @@ export class ProposalDomainService {
         walkDistance: this.extractFloat(selectedChanges.walkDistance),
         bikeRunDistance: this.extractFloat(selectedChanges.bikeRunDistance),
         swimRunDistance: this.extractFloat(selectedChanges.swimRunDistance),
-        
+
         // Dénivelés
         runPositiveElevation: this.extractFloat(selectedChanges.runPositiveElevation),
         runNegativeElevation: this.extractFloat(selectedChanges.runNegativeElevation),
@@ -1598,19 +1654,19 @@ export class ProposalDomainService {
         bikeNegativeElevation: this.extractFloat(selectedChanges.bikeNegativeElevation),
         walkPositiveElevation: this.extractFloat(selectedChanges.walkPositiveElevation),
         walkNegativeElevation: this.extractFloat(selectedChanges.walkNegativeElevation),
-        
+
         // Catégories
         categoryLevel1: this.extractNewValue(selectedChanges.categoryLevel1),
         categoryLevel2: this.extractNewValue(selectedChanges.categoryLevel2),
         distanceCategory: this.extractNewValue(selectedChanges.distanceCategory),
         distance: this.extractNewValue(selectedChanges.distance),  // @deprecated
         type: this.extractNewValue(selectedChanges.type),          // @deprecated
-        
+
         // Métadonnées
         federationId: this.extractNewValue(selectedChanges.federationId),
         licenseNumberType: this.extractNewValue(selectedChanges.licenseNumberType),
         dataSource: this.extractNewValue(selectedChanges.dataSource) || 'FEDERATION',
-        
+
         // Configuration inscription (valeurs par défaut dans createRace)
         askAttendeeGender: this.extractNewValue(selectedChanges.askAttendeeGender),
         askAttendeeBirthDate: this.extractNewValue(selectedChanges.askAttendeeBirthDate),
@@ -1619,20 +1675,20 @@ export class ProposalDomainService {
         askAttendeePostalAddress: this.extractNewValue(selectedChanges.askAttendeePostalAddress),
         showClubOrAssoInput: this.extractNewValue(selectedChanges.showClubOrAssoInput),
         showPublicationConsentCheckbox: this.extractNewValue(selectedChanges.showPublicationConsentCheckbox),
-        
+
         // Équipes
         minTeamSize: this.extractInt(selectedChanges.minTeamSize),
         maxTeamSize: this.extractInt(selectedChanges.maxTeamSize),
-        
+
         // Fonctionnalités
         isWaitingList: this.extractNewValue(selectedChanges.isWaitingList),
         resaleEnabled: this.extractNewValue(selectedChanges.resaleEnabled),
         externalFunnelURL: this.extractNewValue(selectedChanges.externalFunnelURL),
-        
+
         // Justificatifs
         adultJustificativeOptions: this.extractNewValue(selectedChanges.adultJustificativeOptions),
         minorJustificativeOptions: this.extractNewValue(selectedChanges.minorJustificativeOptions),
-        
+
         // Autres
         timeZone: this.extractNewValue(selectedChanges.timeZone)
       })
@@ -1689,7 +1745,7 @@ export class ProposalDomainService {
     }
     return value
   }
-  
+
   /**
    * Helper to extract value and parse as float
    */
@@ -1697,7 +1753,7 @@ export class ProposalDomainService {
     const extracted = this.extractNewValue(value)
     return extracted ? parseFloat(extracted) : undefined
   }
-  
+
   /**
    * Helper to extract value and parse as int
    */
@@ -1705,7 +1761,7 @@ export class ProposalDomainService {
     const extracted = this.extractNewValue(value)
     return extracted ? parseInt(extracted) : undefined
   }
-  
+
   /**
    * Helper to extract value and parse as Date
    */
@@ -1744,7 +1800,7 @@ export class ProposalDomainService {
    */
   private extractDepartmentCode(subdivisionName?: string): string {
     if (!subdivisionName) return ''
-    
+
     // Mapping départements français (101 départements)
     const departmentCodes: Record<string, string> = {
       // Métropole (01-95)
@@ -1851,7 +1907,7 @@ export class ProposalDomainService {
       'La Réunion': '974',
       'Mayotte': '976'
     }
-    
+
     return departmentCodes[subdivisionName] || ''
   }
 
@@ -1861,7 +1917,7 @@ export class ProposalDomainService {
    */
   private extractRegionCode(regionName?: string): string {
     if (!regionName) return ''
-    
+
     // Mapping régions françaises (13 régions métropolitaines + 5 DOM)
     const regionCodes: Record<string, string> = {
       // Métropole
@@ -1885,7 +1941,7 @@ export class ProposalDomainService {
       'La Réunion': 'REU',
       'Mayotte': 'MAY'
     }
-    
+
     return regionCodes[regionName] || ''
   }
 
@@ -1894,7 +1950,7 @@ export class ProposalDomainService {
    */
   private buildFullAddress(city: string, department: string, country: string): string {
     const parts = [city, department]
-    
+
     // Ajouter le pays si différent de FR
     if (country !== 'FR') {
       const countryNames: Record<string, string> = {
@@ -1908,7 +1964,7 @@ export class ProposalDomainService {
     } else {
       parts.push('France')
     }
-    
+
     return parts.filter(Boolean).join(', ')
   }
 
@@ -1925,14 +1981,14 @@ export class ProposalDomainService {
       .trim()
       .replace(/\s+/g, '-') // Remplace espaces par tirets
       .replace(/-+/g, '-') // Supprime tirets multiples
-    
+
     return `${slugifiedName}-${id}`
   }
 
   /**
    * Geocode city to get coordinates using Nominatim API (OpenStreetMap)
    * Rate limit: 1 request per second (enforced by sleep)
-   * 
+   *
    * @param city - City name
    * @param country - Country code (FR, BE, etc.)
    * @returns Coordinates or null if geocoding failed
@@ -1940,61 +1996,61 @@ export class ProposalDomainService {
   private async geocodeCity(city: string, country: string): Promise<{latitude: number, longitude: number} | null> {
     try {
       this.logger.info(`Tentative de géocodage pour: ${city}, ${country}`)
-      
+
       // Construire la requête pour Nominatim
       const countryName = this.getCountryName(country)
       const query = `${city}, ${countryName}`
-      const url = `https://nominatim.openstreetmap.org/search?` + 
+      const url = `https://nominatim.openstreetmap.org/search?` +
                   `q=${encodeURIComponent(query)}&` +
                   `format=json&` +
                   `limit=1&` +
                   `addressdetails=1`
-      
+
       this.logger.debug(`Requête Nominatim: ${url}`)
-      
+
       // Respect rate limiting Nominatim (max 1 req/sec)
       await this.sleep(1100) // 1.1 sec pour être sûr
-      
+
       const response = await fetch(url, {
         headers: {
           'User-Agent': 'Miles-Republic-Data-Agents/1.0 (contact@milesrepublic.com)'
         }
       })
-      
+
       if (!response.ok) {
         this.logger.warn(`Erreur Nominatim HTTP ${response.status} pour ${city}`)
         return null
       }
-      
+
       const data = await response.json() as Array<{
         lat: string
         lon: string
         display_name?: string
       }>
-      
+
       if (!data || !Array.isArray(data) || data.length === 0) {
         this.logger.warn(`Aucun résultat Nominatim pour ${city}, ${country}`)
         return null
       }
-      
+
       const result = data[0]
       const latitude = parseFloat(result.lat)
       const longitude = parseFloat(result.lon)
-      
+
       if (isNaN(latitude) || isNaN(longitude)) {
         this.logger.warn(`Coordonnées invalides pour ${city}: lat=${result.lat}, lon=${result.lon}`)
         return null
       }
-      
+
       this.logger.info(`✅ Géocodage réussi pour ${city}: ${latitude}, ${longitude}`)
       return { latitude, longitude }
-      
+
     } catch (error) {
       this.logger.error(`Erreur lors du géocodage de ${city}:`, error)
       return null
     }
   }
-  
+
   /**
    * Get full country name from country code
    */
@@ -2013,14 +2069,14 @@ export class ProposalDomainService {
     }
     return countryNames[countryCode] || countryCode
   }
-  
+
   /**
    * Sleep for specified milliseconds (for rate limiting)
    */
   private sleep(ms: number): Promise<void> {
     return new Promise(resolve => setTimeout(resolve, ms))
   }
-  
+
   /**
    * Get agent ID from current context (for tests)
    */
@@ -2035,42 +2091,42 @@ export class ProposalDomainService {
   private inferDataSource(selectedChanges: Record<string, any>, agentId?: string): string {
     // Vérifier si la proposition vient d'un agent fédération
     const agentName = agentId || selectedChanges._agentName || ''
-    
-    if (agentName.toLowerCase().includes('ffa') || 
+
+    if (agentName.toLowerCase().includes('ffa') ||
         agentName.toLowerCase().includes('federation')) {
       return 'FEDERATION'
     }
-    
-    if (agentName.toLowerCase().includes('timer') || 
+
+    if (agentName.toLowerCase().includes('timer') ||
         agentName.toLowerCase().includes('chronometeur') ||
         agentName.toLowerCase().includes('livetrail')) {
       return 'TIMER'
     }
-    
+
     return 'OTHER'
   }
 
   /**
    * Filter update data to keep only changed fields
    * Compares proposed values with current DB values
-   * 
+   *
    * @param updateData - Proposed changes
    * @param currentData - Current values from database
    * @returns Object with only changed fields
    */
   private filterChangedFields(
-    updateData: Record<string, any>, 
+    updateData: Record<string, any>,
     currentData: Record<string, any>
   ): Record<string, any> {
     const diff: Record<string, any> = {}
-    
+
     for (const [key, newValue] of Object.entries(updateData)) {
       const currentValue = currentData[key]
-      
+
       // Normaliser les valeurs pour comparaison
       const normalizedNew = this.normalizeValue(newValue)
       const normalizedCurrent = this.normalizeValue(currentValue)
-      
+
       // Comparer les valeurs normalisées
       if (!this.valuesAreEqual(normalizedNew, normalizedCurrent)) {
         diff[key] = newValue // Garder la valeur originale (pas normalisée)
@@ -2080,7 +2136,7 @@ export class ProposalDomainService {
         })
       }
     }
-    
+
     return diff
   }
 
@@ -2093,27 +2149,27 @@ export class ProposalDomainService {
     if (value === null || value === undefined || value === '') {
       return null
     }
-    
+
     // Dates → ISO string
     if (value instanceof Date) {
       return value.toISOString()
     }
-    
+
     // String dates → ISO string
     if (typeof value === 'string' && !isNaN(Date.parse(value))) {
       return new Date(value).toISOString()
     }
-    
+
     // Arrays → JSON string for comparison
     if (Array.isArray(value)) {
       return JSON.stringify(value.sort())
     }
-    
+
     // Objects → JSON string for comparison
     if (typeof value === 'object') {
       return JSON.stringify(value)
     }
-    
+
     // Numbers, booleans, strings → as is
     return value
   }
@@ -2126,12 +2182,12 @@ export class ProposalDomainService {
     if ((a === null || a === undefined) && (b === null || b === undefined)) {
       return true
     }
-    
+
     // One null, other not → different
     if ((a === null || a === undefined) !== (b === null || b === undefined)) {
       return false
     }
-    
+
     // Simple comparison
     return a === b
   }

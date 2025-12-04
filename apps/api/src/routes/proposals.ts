@@ -984,6 +984,45 @@ router.put('/:id', requireAuth, [
   })
 }))
 
+// ✅ Utility function to filter changes by block type
+// This ensures each ProposalApplication only stores changes relevant to its block
+function filterChangesByBlock(changes: Record<string, any>, blockType: string): Record<string, any> {
+  const blockFields: Record<string, string[]> = {
+    event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
+            'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
+            'countrySubdivisionDisplayCodeLevel1', 'countrySubdivisionDisplayCodeLevel2',
+            'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
+            'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'],
+    edition: ['year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
+              'calendarStatus', 'clientStatus', 'status', 'currency', 'medusaVersion', 'customerType',
+              'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
+              'volunteerCode', 'confirmedAt'],
+    organizer: ['organizer', 'organizerId'],
+    races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered', 'consolidatedRaces']
+  }
+
+  const fields = blockFields[blockType] || []
+  const filtered: Record<string, any> = {}
+
+  // Filter fields for the specified block
+  fields.forEach(field => {
+    if (changes[field] !== undefined) {
+      filtered[field] = changes[field]
+    }
+  })
+
+  // Handle race_* prefixed fields for the races block
+  if (blockType === 'races') {
+    Object.keys(changes).forEach(key => {
+      if (key.startsWith('race_')) {
+        filtered[key] = changes[key]
+      }
+    })
+  }
+
+  return filtered
+}
+
 // POST /api/proposals/validate-block-group - Validate a block for multiple proposals (grouped mode)
 router.post('/validate-block-group', [
   body('proposalIds').isArray().withMessage('proposalIds must be an array'),
@@ -1249,16 +1288,23 @@ router.post('/validate-block-group', [
       block
     })
 
-    // ✅ Mettre à jour appliedChanges avec le nouveau payload
+    // ✅ Mettre à jour appliedChanges avec le payload FILTRÉ par bloc
+    const filteredPayload = filterChangesByBlock(finalPayload, block)
+
+    console.log(`🔍 Filtrage appliedChanges pour bloc "${block}":`, {
+      originalKeys: Object.keys(finalPayload),
+      filteredKeys: Object.keys(filteredPayload)
+    })
+
     await db.prisma.proposalApplication.update({
       where: { id: existingAppForBlock.id },
       data: {
-        appliedChanges: finalPayload,
+        appliedChanges: filteredPayload,
         updatedAt: new Date()
       }
     })
 
-    console.log('✅ appliedChanges mis à jour avec payload final')
+    console.log('✅ appliedChanges mis à jour avec payload filtré')
 
     await db.createLog({
       agentId: firstProposal.agentId,
@@ -1275,6 +1321,14 @@ router.post('/validate-block-group', [
     // ✅ Créer une nouvelle application pour CE bloc uniquement
     const applicationId = `cmapp${Date.now()}${Math.random().toString(36).substr(2, 9)}`
 
+    // ✅ Filtrer le payload pour ne garder que les champs du bloc
+    const filteredPayload = filterChangesByBlock(finalPayload, block)
+
+    console.log(`🔍 Filtrage appliedChanges pour bloc "${block}":`, {
+      originalKeys: Object.keys(finalPayload),
+      filteredKeys: Object.keys(filteredPayload)
+    })
+
     // Utiliser Prisma create au lieu de executeRaw pour pouvoir passer appliedChanges (JSONB)
     await db.prisma.proposalApplication.create({
       data: {
@@ -1283,7 +1337,7 @@ router.post('/validate-block-group', [
         proposalIds: proposalIds,
         blockType: block,
         status: 'PENDING',
-        appliedChanges: finalPayload,  // ✅ Payload complet
+        appliedChanges: filteredPayload,  // ✅ Payload FILTRÉ par bloc
         logs: []
       }
     })
