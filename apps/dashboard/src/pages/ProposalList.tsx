@@ -736,6 +736,7 @@ const ProposalList: React.FC = () => {
       {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
+          {/* Ligne 1: Recherche + Filtres principaux */}
           <Grid container spacing={2} alignItems="center">
             <Grid item xs={12} md={3}>
               <TextField
@@ -753,7 +754,7 @@ const ProposalList: React.FC = () => {
                 size="small"
               />
             </Grid>
-            <Grid item xs={12} md={2}>
+            <Grid item xs={6} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Statut</InputLabel>
                 <Select
@@ -770,7 +771,7 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} md={2}>
+            <Grid item xs={6} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Type</InputLabel>
                 <Select
@@ -787,7 +788,7 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} md={2}>
+            <Grid item xs={6} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Agent</InputLabel>
                 <Select
@@ -804,7 +805,27 @@ const ProposalList: React.FC = () => {
                 </Select>
               </FormControl>
             </Grid>
-            <Grid item xs={12} md={2}>
+            {viewMode === 'grouped' && (
+              <Grid item xs={6} md={3}>
+                <FormControl fullWidth size="small">
+                  <InputLabel>Tri</InputLabel>
+                  <Select
+                    value={groupSort}
+                    label="Tri"
+                    onChange={(e) => setGroupSort(e.target.value as 'date-asc' | 'date-desc' | 'created-desc')}
+                  >
+                    <MenuItem value="date-asc">startDate proche en premier</MenuItem>
+                    <MenuItem value="date-desc">startDate éloignée en premier</MenuItem>
+                    <MenuItem value="created-desc">createdAt récent en premier</MenuItem>
+                  </Select>
+                </FormControl>
+              </Grid>
+            )}
+          </Grid>
+
+          {/* Ligne 2: Filtres par catégorie */}
+          <Grid container spacing={2} alignItems="center" sx={{ mt: 1 }}>
+            <Grid item xs={6} md={2}>
               <FormControl fullWidth size="small">
                 <InputLabel>Catégorie</InputLabel>
                 <Select
@@ -822,7 +843,7 @@ const ProposalList: React.FC = () => {
               </FormControl>
             </Grid>
             {categoryLevel1Filter !== 'ALL' && categoryLevel2ByLevel1[categoryLevel1Filter]?.length > 0 && (
-              <Grid item xs={12} md={2}>
+              <Grid item xs={6} md={2}>
                 <FormControl fullWidth size="small">
                   <InputLabel>Sous-catégorie</InputLabel>
                   <Select
@@ -836,22 +857,6 @@ const ProposalList: React.FC = () => {
                         {categoryLevel2Labels[value] || value}
                       </MenuItem>
                     ))}
-                  </Select>
-                </FormControl>
-              </Grid>
-            )}
-            {viewMode === 'grouped' && (
-              <Grid item xs={12} md={3}>
-                <FormControl fullWidth size="small">
-                  <InputLabel>Tri</InputLabel>
-                  <Select
-                    value={groupSort}
-                    label="Tri"
-                    onChange={(e) => setGroupSort(e.target.value as 'date-asc' | 'date-desc' | 'created-desc')}
-                  >
-                    <MenuItem value="date-asc">startDate proche en premier</MenuItem>
-                    <MenuItem value="date-desc">startDate éloignée en premier</MenuItem>
-                    <MenuItem value="created-desc">createdAt récent en premier</MenuItem>
                   </Select>
                 </FormControl>
               </Grid>
