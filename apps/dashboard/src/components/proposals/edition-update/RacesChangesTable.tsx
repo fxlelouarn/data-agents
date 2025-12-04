@@ -13,7 +13,10 @@ import {
   IconButton,
   Tooltip,
   TextField,
-  Button
+  Button,
+  Select,
+  MenuItem,
+  FormControl
 } from '@mui/material'
 import {
   Add as AddIcon,
@@ -54,6 +57,87 @@ type RaceField = {
   key: string
   label: string
   format?: (value: any) => string
+}
+
+// ✅ Options pour categoryLevel1
+const CATEGORY_LEVEL_1_OPTIONS = [
+  { value: 'RUNNING', label: 'Course à pied' },
+  { value: 'TRAIL', label: 'Trail' },
+  { value: 'TRIATHLON', label: 'Triathlon' },
+  { value: 'FUN', label: 'Fun' },
+  { value: 'CYCLING', label: 'Cyclisme' },
+  { value: 'WALK', label: 'Marche' },
+  { value: 'OTHER', label: 'Autre' }
+]
+
+// ✅ Options pour categoryLevel2 (groupées par categoryLevel1)
+const CATEGORY_LEVEL_2_OPTIONS: Record<string, { value: string, label: string }[]> = {
+  RUNNING: [
+    { value: 'LESS_THAN_5_KM', label: 'Moins de 5 km' },
+    { value: 'KM5', label: '5 km' },
+    { value: 'KM10', label: '10 km' },
+    { value: 'HALF_MARATHON', label: 'Semi-marathon' },
+    { value: 'MARATHON', label: 'Marathon' },
+    { value: 'EKIDEN', label: 'Ekiden' },
+    { value: 'ULTRA_RUNNING', label: 'Ultra running' },
+    { value: 'CROSS', label: 'Cross' },
+    { value: 'VERTICAL_KILOMETER', label: 'Kilomètre vertical' }
+  ],
+  TRAIL: [
+    { value: 'DISCOVERY_TRAIL', label: 'Trail découverte' },
+    { value: 'SHORT_TRAIL', label: 'Trail court' },
+    { value: 'LONG_TRAIL', label: 'Trail long' },
+    { value: 'ULTRA_TRAIL', label: 'Ultra trail' },
+    { value: 'VERTICAL_KILOMETER', label: 'Kilomètre vertical' },
+    { value: 'BACKYARD', label: 'Backyard' }
+  ],
+  TRIATHLON: [
+    { value: 'TRIATHLON_KIDS', label: 'Triathlon enfants' },
+    { value: 'TRIATHLON_XS', label: 'Triathlon XS' },
+    { value: 'TRIATHLON_S', label: 'Triathlon S' },
+    { value: 'TRIATHLON_M', label: 'Triathlon M' },
+    { value: 'TRIATHLON_L', label: 'Triathlon L' },
+    { value: 'TRIATHLON_XXL', label: 'Triathlon XXL' },
+    { value: 'ULTRA_TRIATHLON', label: 'Ultra triathlon' },
+    { value: 'CROSS_TRIATHLON', label: 'Cross triathlon' },
+    { value: 'AQUATHLON', label: 'Aquathlon' },
+    { value: 'DUATHLON', label: 'Duathlon' },
+    { value: 'RUN_BIKE', label: 'Run & Bike' },
+    { value: 'SWIM_RUN', label: 'Swim Run' },
+    { value: 'SWIM_BIKE', label: 'Swim Bike' }
+  ],
+  FUN: [
+    { value: 'OBSTACLE_RACE', label: 'Course à obstacles' },
+    { value: 'SPARTAN_RACE', label: 'Spartan Race' },
+    { value: 'COLOR_RUN', label: 'Color Run' },
+    { value: 'MUD_DAY', label: 'Mud Day' }
+  ],
+  CYCLING: [
+    { value: 'XC_MOUNTAIN_BIKE', label: 'VTT cross-country' },
+    { value: 'ENDURO_MOUNTAIN_BIKE', label: 'VTT enduro' },
+    { value: 'GRAVEL_RACE', label: 'Gravel race' },
+    { value: 'GRAVEL_RIDE', label: 'Gravel ride' },
+    { value: 'MOUNTAIN_BIKE_RIDE', label: 'Sortie VTT' },
+    { value: 'GRAN_FONDO', label: 'Gran Fondo' },
+    { value: 'ROAD_CYCLING_TOUR', label: 'Cyclisme sur route' },
+    { value: 'CYCLE_TOURING', label: 'Cyclo-tourisme' },
+    { value: 'TIME_TRIAL', label: 'Contre-la-montre' },
+    { value: 'BIKEPACKING', label: 'Bikepacking' },
+    { value: 'ULTRA_CYCLING', label: 'Ultra cyclisme' }
+  ],
+  WALK: [
+    { value: 'NORDIC_WALK', label: 'Marche nordique' },
+    { value: 'HIKING', label: 'Randonnée' }
+  ],
+  OTHER: [
+    { value: 'FREE_FLIGHT', label: 'Vol libre' },
+    { value: 'RAID', label: 'Raid' },
+    { value: 'ORIENTEERING', label: 'Course d\'orientation' },
+    { value: 'BIATHLON', label: 'Biathlon' },
+    { value: 'CROSS_COUNTRY_SKIING', label: 'Ski de fond' },
+    { value: 'YOGA', label: 'Yoga' },
+    { value: 'HYROX', label: 'Hyrox' }
+  ]
 }
 
 const RACE_FIELDS: RaceField[] = [
@@ -216,10 +300,24 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
     value: any,
     isModified: boolean, // ✅ Badge Modifié
     hasChange: boolean,  // ✅ NOUVEAU: changement proposé par agent
-    format?: (v: any) => string
+    format?: (v: any) => string,
+    race?: ConsolidatedRaceChange // ✅ Passer race pour categoryLevel2
   ) => {
     const isEditing = editingRace?.raceId === raceId && editingRace?.field === field
-    const displayValue = format ? format(value) : value
+    
+    // ✅ Formatter les valeurs des catégories avec labels lisibles
+    let displayValue: string
+    if (field === 'categoryLevel1') {
+      const option = CATEGORY_LEVEL_1_OPTIONS.find(opt => opt.value === value)
+      displayValue = option ? option.label : value
+    } else if (field === 'categoryLevel2') {
+      const categoryLevel1 = race ? getDisplayValue(race, 'categoryLevel1') : null
+      const options = categoryLevel1 ? CATEGORY_LEVEL_2_OPTIONS[categoryLevel1] || [] : []
+      const option = options.find(opt => opt.value === value)
+      displayValue = option ? option.label : value
+    } else {
+      displayValue = format ? format(value) : value
+    }
     
     if (isEditing) {
       // Éditeur spécial pour les dates
@@ -248,6 +346,66 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
               </IconButton>
             </Box>
           </LocalizationProvider>
+        )
+      }
+      
+      // ✅ Éditeur select pour categoryLevel1
+      if (field === 'categoryLevel1') {
+        return (
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <FormControl size="small" sx={{ flexGrow: 1, minWidth: 200 }}>
+              <Select
+                value={editValue || ''}
+                onChange={(e) => setEditValue(e.target.value)}
+                autoFocus
+              >
+                <MenuItem value="">-</MenuItem>
+                {CATEGORY_LEVEL_1_OPTIONS.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <IconButton size="small" onClick={saveEdit} color="primary">
+              <CheckIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={cancelEdit}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
+        )
+      }
+      
+      // ✅ Éditeur select pour categoryLevel2
+      if (field === 'categoryLevel2') {
+        // Récupérer le categoryLevel1 actuel pour filtrer les options
+        const currentCategoryLevel1 = getDisplayValue(race, 'categoryLevel1') || 'OTHER'
+        const options = CATEGORY_LEVEL_2_OPTIONS[currentCategoryLevel1] || []
+        
+        return (
+          <Box sx={{ display: 'flex', gap: 0.5, alignItems: 'center' }}>
+            <FormControl size="small" sx={{ flexGrow: 1, minWidth: 200 }}>
+              <Select
+                value={editValue || ''}
+                onChange={(e) => setEditValue(e.target.value)}
+                autoFocus
+              >
+                <MenuItem value="">-</MenuItem>
+                {options.map(opt => (
+                  <MenuItem key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </MenuItem>
+                ))}
+              </Select>
+            </FormControl>
+            <IconButton size="small" onClick={saveEdit} color="primary">
+              <CheckIcon fontSize="small" />
+            </IconButton>
+            <IconButton size="small" onClick={cancelEdit}>
+              <CloseIcon fontSize="small" />
+            </IconButton>
+          </Box>
         )
       }
       
@@ -414,7 +572,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                           Aucun changement
                         </Typography>
                       ) : (
-                        renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format)
+                        renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format, race)
                       )}
                     </TableCell>
                     {showDeleteAction && isFirstRow && (
