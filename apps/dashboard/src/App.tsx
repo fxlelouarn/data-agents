@@ -24,6 +24,7 @@ import CreateProposalForExistingEvent from '@/pages/CreateProposalForExistingEve
 import CreateProposalForEdition from '@/pages/CreateProposalForEdition'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
+import UpdateGroupDetail from '@/pages/UpdateGroupDetail'
 import Settings from '@/pages/Settings'
 import TestDynamicForm from '@/pages/TestDynamicForm'
 import Users from '@/pages/Users'
@@ -118,7 +119,7 @@ function App() {
           <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
             <CssBaseline />
             <SnackbarProvider
-              maxSnack={3}
+              maxSnack={5} // ✅ Phase 4: Augmenté pour validation en cascade (jusqu'à 4 dépendances + 1 final)
               anchorOrigin={{
                 vertical: 'top',
                 horizontal: 'right',
@@ -205,6 +206,14 @@ function App() {
                                 element={
                                   <ProtectedRoute requiredRoles={['EXECUTOR', 'ADMIN']}>
                                     <UpdateList />
+                                  </ProtectedRoute>
+                                }
+                              />
+                              <Route
+                                path="/updates/group/:groupId"
+                                element={
+                                  <ProtectedRoute requiredRoles={['EXECUTOR', 'ADMIN']}>
+                                    <UpdateGroupDetail />
                                   </ProtectedRoute>
                                 }
                               />

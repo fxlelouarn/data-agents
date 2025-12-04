@@ -48,16 +48,19 @@ export interface GenericChangesTableProps {
   timezone?: string
   isFieldDisabledFn?: (fieldName: string) => boolean
   renderCustomEditor?: (
-    fieldName: string, 
-    selectedValue: any, 
-    onSave: (fieldName: string, newValue: any) => void, 
+    fieldName: string,
+    selectedValue: any,
+    onSave: (fieldName: string, newValue: any) => void,
     onCancel: () => void
   ) => React.ReactNode | null
   entityType?: 'EVENT' | 'EDITION' | 'RACE'
   variant?: 'base' | 'categorized'
   // Validation par bloc
   isBlockValidated?: boolean
+  isBlockApplied?: boolean  // ✅ Nouveau : true si le bloc a déjà été appliqué en base (non annulable)
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
+  blockKey?: string  // ✅ Clé du bloc pour validation en cascade
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean
@@ -69,10 +72,10 @@ export interface GenericChangesTableProps {
 
 /**
  * GenericChangesTable - Composant générique pour afficher les changements
- * 
+ *
  * Remplace BaseChangesTable et CategorizedChangesTable en unifiant la logique.
  * Utilise le hook useChangesTable pour toute la logique métier.
- * 
+ *
  * @example
  * ```tsx
  * // Variante base (comme BaseChangesTable)
@@ -82,7 +85,7 @@ export interface GenericChangesTableProps {
  *   changes={changes}
  *   // ...
  * />
- * 
+ *
  * // Variante catégorisée (comme CategorizedChangesTable)
  * <GenericChangesTable
  *   variant="categorized"
@@ -113,7 +116,10 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
   entityType,
   variant = 'base',
   isBlockValidated = false,
+  isBlockApplied = false,  // ✅ Nouveau
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
+  blockKey,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
@@ -145,16 +151,16 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
   const renderEditMode = (fieldName: string, selectedValue: any) => {
     // Custom editor si fourni
     const customEditor = renderCustomEditor?.(
-      fieldName, 
-      selectedValue, 
-      table.handleSaveEdit, 
+      fieldName,
+      selectedValue,
+      table.handleSaveEdit,
       table.handleCancelEdit
     )
-    
+
     if (customEditor) {
       return customEditor
     }
-    
+
     // Editeur par défaut
     return (
       <FieldEditor
@@ -189,8 +195,8 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         ) : isMultiple ? (
           <FormControl size="small" sx={{ minWidth: 200, maxWidth: '100%', width: '100%' }}>
             <Select
-              value={selectedChanges[fieldName] !== undefined 
-                ? JSON.stringify(selectedChanges[fieldName]) 
+              value={selectedChanges[fieldName] !== undefined
+                ? JSON.stringify(selectedChanges[fieldName])
                 : JSON.stringify(sortedOptions[0]?.value ?? '')}
               onChange={(e) => table.handleFieldSelect(fieldName, e.target.value as string)}
               disabled={fieldDisabled}
@@ -222,7 +228,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
           </FormControl>
         ) : (
           <Box
-            sx={{ 
+            sx={{
               color: selectedValue !== change.currentValue ? 'primary.main' : 'text.secondary',
               fontWeight: selectedValue !== change.currentValue ? 500 : 400,
               maxWidth: '100%'
@@ -231,7 +237,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
             {formatValue(selectedValue, false, timezone)}
           </Box>
         )}
-        
+
         {userModifiedChanges[fieldName] && (
           <Chip
             icon={<EditNoteIcon />}
@@ -241,7 +247,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
             variant="outlined"
           />
         )}
-        
+
         {showActions && onFieldModify && !fieldDisabled && (
           <Tooltip title="Modifier manuellement">
             <IconButton
@@ -266,9 +272,9 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
     const isMultiple = table.hasMultipleValues(change)
     const fieldDisabled = table.isFieldDisabled(fieldName)
     const isEditing = table.editingField === fieldName
-    
+
     return (
-      <TableRow 
+      <TableRow
         key={fieldName}
         sx={{
           backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
@@ -279,9 +285,9 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         <TableCell sx={{ width: '15%', minWidth: 120 }}>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap' }}>
             {table.getFieldIcon(fieldName)}
-            <Typography 
-              variant="body2" 
-              fontWeight={selectedValue !== change.currentValue ? 'bold' : 500} 
+            <Typography
+              variant="body2"
+              fontWeight={selectedValue !== change.currentValue ? 'bold' : 500}
               noWrap
             >
               {fieldName}
@@ -293,7 +299,7 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
             )}
           </Box>
         </TableCell>
-        
+
         {/* Colonne: Valeur actuelle (si pas nouveau ET si showCurrentValue) */}
         {!isNewEvent && showCurrentValue && (
           <TableCell sx={{ width: '20%', minWidth: 120 }}>
@@ -302,23 +308,23 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
             )}
           </TableCell>
         )}
-        
+
         {/* Colonne: Valeur proposée */}
-        <TableCell sx={{ 
-          width: !showConfidence 
-            ? (isNewEvent || !showCurrentValue ? '70%' : '65%') 
-            : (isNewEvent || !showCurrentValue ? '50%' : '45%'), 
-          minWidth: 200 
+        <TableCell sx={{
+          width: !showConfidence
+            ? (isNewEvent || !showCurrentValue ? '70%' : '65%')
+            : (isNewEvent || !showCurrentValue ? '50%' : '45%'),
+          minWidth: 200
         }}>
           {isEditing ? renderEditMode(fieldName, selectedValue) : renderReadMode(change)}
         </TableCell>
-        
+
         {/* Colonne: Confiance */}
         {showConfidence && (
           <TableCell sx={{ width: (isNewEvent || !showCurrentValue) ? '20%' : '15%', minWidth: 100 }}>
-            <Typography 
-              variant="body2" 
-              color={table.getSortedOptions(change).find(opt => 
+            <Typography
+              variant="body2"
+              color={table.getSortedOptions(change).find(opt =>
                 JSON.stringify(opt.value) === JSON.stringify(selectedValue)
               )?.hasConsensus ? 'success.main' : 'text.primary'}
             >
@@ -335,23 +341,23 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
   // ─────────────────────────────────────────────────────────────────
 
   const displayedChanges = table.filteredChanges
-  
+
   // Grouper par catégorie si entityType est défini (pour les séparateurs)
   const groupedByCategory = entityType && variant === 'categorized'
     ? groupChangesByCategory(displayedChanges, entityType)
     : null
-  
+
   // Aucun changement à afficher
   if (displayedChanges.length === 0) return null
 
   return (
     <Paper sx={{ mb: variant === 'categorized' ? 3 : 0 }}>
       {/* Header */}
-      <Box 
-        sx={{ 
-          p: 2, 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
           ...(variant === 'categorized' && { borderBottom: 1, borderColor: 'divider' }),
           ...(isBlockValidated && { bgcolor: 'action.hover', opacity: 0.7 })
@@ -366,33 +372,37 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
           {onValidateBlock && onUnvalidateBlock && (
             <BlockValidationButton
+              blockKey={blockKey}  // ✅ Nouveau
               blockName={entityType === 'EDITION' ? 'Édition' : entityType === 'EVENT' ? 'Event' : entityType === 'RACE' ? 'Courses' : title}
               isValidated={isBlockValidated}
+              isApplied={isBlockApplied}  // ✅ Nouveau : désactive l'annulation si appliqué
               onValidate={onValidateBlock}
+              onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
               onUnvalidate={onUnvalidateBlock}
               disabled={validationDisabled}
               isPending={isBlockPending}
+              useCascadeValidation={true}  // ✅ Activé par défaut
             />
           )}
           {actions}
         </Box>
       </Box>
-      
+
       {/* Table */}
       <TableContainer sx={{ overflowX: 'auto' }}>
-        <Table 
-          sx={{ minWidth: 650 }} 
+        <Table
+          sx={{ minWidth: 650 }}
           size={variant === 'categorized' ? 'small' : 'medium'}
         >
           <TableHead>
             <TableRow>
               <TableCell sx={{ width: '15%', minWidth: 120 }}>Champ</TableCell>
               {!isNewEvent && showCurrentValue && <TableCell sx={{ width: '20%', minWidth: 120 }}>Valeur actuelle</TableCell>}
-              <TableCell sx={{ 
-                width: !showConfidence 
-                  ? (isNewEvent || !showCurrentValue ? '70%' : '65%') 
-                  : (isNewEvent || !showCurrentValue ? '50%' : '45%'), 
-                minWidth: 200 
+              <TableCell sx={{
+                width: !showConfidence
+                  ? (isNewEvent || !showCurrentValue ? '70%' : '65%')
+                  : (isNewEvent || !showCurrentValue ? '50%' : '45%'),
+                minWidth: 200
               }}>Valeur proposée</TableCell>
               {showConfidence && <TableCell sx={{ width: (isNewEvent || !showCurrentValue) ? '20%' : '15%', minWidth: 100 }}>Confiance</TableCell>}
             </TableRow>
@@ -405,13 +415,13 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
                   {categoryIndex > 0 && (
                     // Séparateur visuel entre catégories
                     <TableRow>
-                      <TableCell 
+                      <TableCell
                         colSpan={
-                          !showConfidence 
+                          !showConfidence
                             ? ((isNewEvent || !showCurrentValue) ? 2 : 3)
                             : ((isNewEvent || !showCurrentValue) ? 3 : 4)
                         }
-                        sx={{ 
+                        sx={{
                           height: '1px',
                           padding: 0,
                           borderBottom: '3px solid',

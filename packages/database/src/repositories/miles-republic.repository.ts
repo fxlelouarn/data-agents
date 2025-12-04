@@ -51,48 +51,65 @@ export class MilesRepublicRepository {
     dataSource?: string  // 'ORGANIZER' | 'TIMER' | 'FEDERATION' | 'PEYCE' | 'OTHER'
     slug?: string
   }) {
+    // 🔍 Déboggage : afficher data reçu AVANT l'appel Prisma
+    console.log('🔍 [REPO] createEvent - data reçu:', {
+      dataKeys: Object.keys(data),
+      hasIdInData: 'id' in data,
+      dataId: (data as any).id,
+      name: data.name,
+      city: data.city
+    })
+    
+    const prismaData = {
+      // Champs obligatoires
+      name: data.name,
+      city: data.city,
+      country: data.country || 'France',
+      countrySubdivisionNameLevel1: data.countrySubdivisionNameLevel1 || '',
+      countrySubdivisionNameLevel2: data.countrySubdivisionNameLevel2 || '',
+      countrySubdivisionDisplayCodeLevel2: data.countrySubdivisionDisplayCodeLevel2 || '',
+      
+      // Champs optionnels
+      countrySubdivisionDisplayCodeLevel1: data.countrySubdivisionDisplayCodeLevel1,
+      longitude: data.longitude,
+      latitude: data.latitude,
+      peyceReview: data.peyceReview,
+      websiteUrl: data.websiteUrl,
+      facebookUrl: data.facebookUrl,
+      twitterUrl: data.twitterUrl,
+      instagramUrl: data.instagramUrl,
+      images: data.images || [],
+      coverImage: data.coverImage,
+      fullAddress: data.fullAddress,
+      slug: data.slug,
+      
+      // Flags
+      isPrivate: data.isPrivate ?? false,
+      isFeatured: data.isFeatured ?? false,
+      isRecommended: data.isRecommended ?? false,
+      
+      // Métadonnées
+      status: data.status || 'LIVE',
+      dataSource: data.dataSource,
+      
+      // Flags Algolia
+      toUpdate: true,
+      algoliaObjectToUpdate: true,
+      algoliaObjectToDelete: false,
+      
+      // Audit
+      createdBy: this.auditUser,
+      updatedBy: this.auditUser
+    }
+    
+    console.log('🔍 [REPO] createEvent - prismaData construct:', {
+      prismaDataKeys: Object.keys(prismaData),
+      hasIdInPrismaData: 'id' in prismaData,
+      prismaDataId: (prismaData as any).id
+    })
+    
     return this.milesDb.event.create({
-      data: {
-        // Champs obligatoires
-        name: data.name,
-        city: data.city,
-        country: data.country || 'France',
-        countrySubdivisionNameLevel1: data.countrySubdivisionNameLevel1 || '',
-        countrySubdivisionNameLevel2: data.countrySubdivisionNameLevel2 || '',
-        countrySubdivisionDisplayCodeLevel2: data.countrySubdivisionDisplayCodeLevel2 || '',
-        
-        // Champs optionnels
-        countrySubdivisionDisplayCodeLevel1: data.countrySubdivisionDisplayCodeLevel1,
-        longitude: data.longitude,
-        latitude: data.latitude,
-        peyceReview: data.peyceReview,
-        websiteUrl: data.websiteUrl,
-        facebookUrl: data.facebookUrl,
-        twitterUrl: data.twitterUrl,
-        instagramUrl: data.instagramUrl,
-        images: data.images || [],
-        coverImage: data.coverImage,
-        fullAddress: data.fullAddress,
-        slug: data.slug,
-        
-        // Flags
-        isPrivate: data.isPrivate ?? false,
-        isFeatured: data.isFeatured ?? false,
-        isRecommended: data.isRecommended ?? false,
-        
-        // Métadonnées
-        status: data.status || 'DRAFT',
-        dataSource: data.dataSource,
-        
-        // Flags Algolia
-        toUpdate: false,
-        algoliaObjectToUpdate: true,
-        algoliaObjectToDelete: false,
-        
-        // Audit
-        createdBy: this.auditUser,
-        updatedBy: this.auditUser
-      }
+      data: prismaData
     })
   }
 
@@ -172,6 +189,7 @@ export class MilesRepublicRepository {
     airtableId?: string
     organizerStripeConnectedAccountId?: string
     organizationId?: number
+    currentEditionEventId?: number
     slug?: string
   }) {
     return this.milesDb.edition.create({
@@ -189,8 +207,8 @@ export class MilesRepublicRepository {
         
         // Statuts
         calendarStatus: data.calendarStatus || 'TO_BE_CONFIRMED',
-        clientStatus: data.clientStatus,
-        status: data.status || 'DRAFT',
+        clientStatus: data.clientStatus || 'NEW_SALES_FUNNEL',
+        status: data.status || 'LIVE',
         
         // Configuration
         currency: data.currency || 'EUR',
@@ -218,6 +236,7 @@ export class MilesRepublicRepository {
         airtableId: data.airtableId,
         organizerStripeConnectedAccountId: data.organizerStripeConnectedAccountId,
         organizationId: data.organizationId,
+        currentEditionEventId: data.currentEditionEventId,
         
         // Audit
         createdBy: this.auditUser,
@@ -513,11 +532,28 @@ export class MilesRepublicRepository {
   }
   
   /**
-   * Delete a race
+   * Find all races by edition ID
+   */
+  async findRacesByEditionId(editionId: number) {
+    return this.milesDb.race.findMany({
+      where: { editionId },
+      orderBy: { name: 'asc' }
+    })
+  }
+  
+  /**
+   * Delete a race (soft delete)
+   * ✅ V2: Utilise isArchived au lieu de archivedAt
    */
   async deleteRace(raceId: number) {
-    return this.milesDb.race.delete({
-      where: { id: raceId }
+    return this.milesDb.race.update({
+      where: { id: raceId },
+      data: {
+        isArchived: true,
+        isActive: false,
+        updatedBy: this.auditUser,
+        updatedAt: new Date()
+      }
     })
   }
 

@@ -106,6 +106,7 @@ model ProposalApplication {
   id           String                  @id @default(cuid())
   proposalId   String
   proposalIds  String[]                @default([])  // IDs des propositions du groupe (mode groupé)
+  blockType    String?                              // Type de bloc : 'edition', 'organizer', 'races', 'event', ou null (legacy/complet)
   status       ApplicationStatus       @default(PENDING)
   scheduledAt  DateTime?
   appliedAt    DateTime?
@@ -213,6 +214,7 @@ enum ProposalType {
 
 enum ProposalStatus {
   PENDING
+  PARTIALLY_APPROVED  // Au moins un bloc validé, mais pas tous
   APPROVED
   REJECTED
   ARCHIVED

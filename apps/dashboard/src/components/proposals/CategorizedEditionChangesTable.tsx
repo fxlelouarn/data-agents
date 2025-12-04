@@ -9,10 +9,12 @@ interface CategorizedEditionChangesTableProps extends Omit<BaseChangesTableProps
   // Props de validation par bloc
   isBlockValidated?: boolean
   onValidateBlock?: () => Promise<void>
+  onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
   validationDisabled?: boolean // Désactiver le bouton de validation (séparé de disabled)
-  isFeaturedEvent?: boolean // Indicateur si l'événement est mis en avant
+  // ✅ Note: isFeaturedEvent retiré temporairement (non utilisé)
+  // Peut être ré-ajouté pour affichage warning si Event.isFeatured = true
   // Handler spécifique pour Edition.startDate (avec logique de propagation aux courses)
   onEditionStartDateChange?: (fieldName: string, newValue: any) => void
   // Affichage colonnes
@@ -30,10 +32,10 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   isEditionCanceled = false,
   isBlockValidated = false,
   onValidateBlock,
+  onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false,
-  isFeaturedEvent = false,
   onEditionStartDateChange,
   showCurrentValue = true,
   showConfidence = true,
@@ -94,14 +96,15 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
       {...props}
       onFieldModify={handleFieldModifyWithStartDateLogic}
       entityType="EDITION"
+      blockKey="edition"  // ✅ Nouveau
       isFieldDisabledFn={isFieldDisabledFn}
       renderCustomEditor={renderCustomEditor}
       isBlockValidated={isBlockValidated}
       onValidateBlock={onValidateBlock}
+      onValidateBlockWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
       onUnvalidateBlock={onUnvalidateBlock}
       isBlockPending={isBlockPending}
       validationDisabled={validationDisabled}
-      isFeaturedEvent={isFeaturedEvent}
       showCurrentValue={showCurrentValue}
       showConfidence={showConfidence}
       showActions={showActions}

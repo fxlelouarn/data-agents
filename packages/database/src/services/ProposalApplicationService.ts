@@ -50,10 +50,16 @@ export class ProposalApplicationService implements IProposalApplicationService {
   /**
    * Apply a proposal's changes to Miles Republic
    * Main entry point - delegates to domain service
+   * 
+   * ✅ PHASE 2.6: Le paramètre selectedChanges est conservé pour compatibilité backward,
+   * mais il est maintenant IGNORÉ car ProposalDomainService le régénère depuis finalChanges.
+   * 
+   * @deprecated Le paramètre selectedChanges sera supprimé dans une version future.
+   * Passer uniquement proposalId et options.
    */
   async applyProposal(
     proposalId: string, 
-    selectedChanges: Record<string, any>, 
+    selectedChanges?: Record<string, any>,  // ✅ Optionnel pour backward compatibility
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     // If capturedLogs is provided, override logger to capture logs
@@ -105,10 +111,12 @@ export class ProposalApplicationService implements IProposalApplicationService {
       // Create a temporary domain service with captured logger
       const proposalRepo = new ProposalRepository(this.prisma)
       const tempDomainService = new ProposalDomainService(proposalRepo, this.dbManager, capturedLogger)
-      return tempDomainService.applyProposal(proposalId, selectedChanges, options)
+      // ✅ PHASE 2.6: Ne plus passer selectedChanges (régénéré en interne)
+      return tempDomainService.applyProposal(proposalId, options)
     }
     
-    return this.domainService.applyProposal(proposalId, selectedChanges, options)
+    // ✅ PHASE 2.6: Ne plus passer selectedChanges (régénéré en interne)
+    return this.domainService.applyProposal(proposalId, options)
   }
 
   /**

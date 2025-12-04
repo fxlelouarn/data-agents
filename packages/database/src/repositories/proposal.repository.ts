@@ -162,4 +162,18 @@ export class ProposalRepository {
       return acc
     }, {} as Record<string, number>)
   }
+  
+  /**
+   * Find all applications for a proposal
+   * Utile pour récupérer les IDs créés dans les blocs précédents (NEW_EVENT)
+   */
+  async findApplicationsByProposalId(proposalId: string) {
+    return this.prisma.proposalApplication.findMany({
+      where: {
+        proposalId,
+        status: 'APPLIED'
+      },
+      orderBy: { appliedAt: 'asc' }
+    })
+  }
 }
