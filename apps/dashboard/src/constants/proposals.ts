@@ -3,6 +3,7 @@ import { ProposalStatus, ProposalType } from '@/types'
 // Labels des statuts de propositions
 export const proposalStatusLabels: Record<ProposalStatus, string> = {
   PENDING: 'En attente',
+  PARTIALLY_APPROVED: 'Partiellement approuvé',
   APPROVED: 'Approuvé',
   REJECTED: 'Rejeté',
   ARCHIVED: 'Archivé',
@@ -11,6 +12,7 @@ export const proposalStatusLabels: Record<ProposalStatus, string> = {
 // Couleurs des statuts de propositions
 export const proposalStatusColors: Record<ProposalStatus, 'default' | 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'> = {
   PENDING: 'warning',
+  PARTIALLY_APPROVED: 'info',
   APPROVED: 'success',
   REJECTED: 'error', 
   ARCHIVED: 'default',

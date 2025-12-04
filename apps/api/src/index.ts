@@ -23,7 +23,7 @@ import { errorHandler } from './middleware/error-handler'
 import { APP_VERSION } from './version'
 
 // Load environment variables
-dotenv.config()
+dotenv.config({ path: '../../.env' })
 
 const app = express()
 const PORT = process.env.PORT || 4001

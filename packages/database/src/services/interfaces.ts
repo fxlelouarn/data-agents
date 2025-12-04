@@ -209,6 +209,8 @@ export interface ApplyOptions {
   capturedLogs?: string[]  // Tableau pour capturer les logs (pour l'interface utilisateur)
   agentName?: string       // Nom de l'agent pour l'audit trail (createdBy/updatedBy)
   proposalIds?: string[]   // IDs des propositions du groupe (mode groupé)
+  proposalId?: string      // ✅ ID de la proposition (pour récupérer les IDs des blocs précédents)
+  blockType?: string       // ✅ Type de bloc pour application partielle ('edition', 'organizer', 'races', 'event')
 }
 
 export interface ProposalApplicationResult {

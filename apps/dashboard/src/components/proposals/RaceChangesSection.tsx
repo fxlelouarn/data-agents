@@ -65,6 +65,7 @@ interface RaceChangesSectionProps {
   isEditionCanceled?: boolean // Désactiver tous les champs si l'édition est annulée
   // Props de validation par bloc
   isBlockValidated?: boolean
+  isBlockApplied?: boolean  // ✅ Nouveau : true si le bloc a déjà été appliqué en base (non annulable)
   onValidateBlock?: () => Promise<void>
   onUnvalidateBlock?: () => Promise<void>
   isBlockPending?: boolean
@@ -83,37 +84,38 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
   timezone = 'Europe/Paris',
   isEditionCanceled = false,
   isBlockValidated = false,
+  isBlockApplied = false,  // ✅ Nouveau
   onValidateBlock,
   onUnvalidateBlock,
   isBlockPending = false,
   validationDisabled = false
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
-  
+
   const handleStartEdit = (raceIndex: number, fieldName: string) => {
     // Ne pas permettre d'éditer si désactivé globalement, si l'édition est annulée, ou si le bloc est validé
     if (!disabled && !isEditionCanceled && !isBlockValidated && onFieldModify) {
       setEditingField(`${raceIndex}-${fieldName}`)
     }
   }
-  
+
   const handleSaveEdit = (raceIndex: number, fieldName: string, newValue: any) => {
     if (onFieldModify) {
       onFieldModify(raceIndex, fieldName, newValue)
     }
     setEditingField(null)
   }
-  
+
   const handleCancelEdit = () => {
     setEditingField(null)
   }
-  
+
   const getFieldType = (fieldName: string): 'text' | 'number' | 'date' | 'datetime-local' => {
     if (fieldName.includes('Date')) return 'datetime-local'
     if (fieldName.includes('Distance') || fieldName.includes('Elevation') || fieldName.includes('price')) return 'number'
     return 'text'
   }
-  
+
   if (raceChanges.length === 0) return null
 
   return (
@@ -128,6 +130,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
             <BlockValidationButton
               blockName="Courses"
               isValidated={isBlockValidated}
+              isApplied={isBlockApplied}  // ✅ Nouveau : désactive l'annulation si appliqué
               onValidate={onValidateBlock}
               onUnvalidate={onUnvalidateBlock}
               disabled={validationDisabled}
@@ -135,7 +138,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
             />
           )}
         </Box>
-        
+
         {raceChanges.map((raceData, index) => (
           <Accordion key={index} sx={{ mb: 1 }} defaultExpanded>
             <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -144,8 +147,8 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
               </Typography>
             </AccordionSummary>
             <AccordionDetails>
-              
-              
+
+
               <TableContainer component={Paper}>
                 <Table size="small">
                   <TableHead>
@@ -159,9 +162,9 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                     {Object.entries(raceData.fields)
                       .filter(([fieldName]) => fieldName !== 'raceId') // Filtrer raceId
                       .map(([fieldName, fieldData]: [string, RaceChangeField]) => {
-                      
+
                       return (
-                        <TableRow 
+                        <TableRow
                           key={fieldName}
                           sx={{
                             backgroundColor: (isEditionCanceled || isBlockValidated) ? 'action.hover' : 'inherit',
@@ -192,7 +195,7 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                                 <Typography variant="body2">
                                   {formatValue(userModifiedRaceChanges[raceData.raceIndex]?.[fieldName] || fieldData.options[0].proposedValue, false, timezone)}
                                 </Typography>
-                                
+
                                 {/* Bouton modifier pour les dates */}
                                 {fieldName === 'startDate' && onFieldModify && !disabled && !isEditionCanceled && !isBlockValidated && (
                                   <Tooltip title="Modifier manuellement">

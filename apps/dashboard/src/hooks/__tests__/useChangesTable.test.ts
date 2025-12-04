@@ -61,7 +61,7 @@ describe('useChangesTable', () => {
     })
 
     it('should set editingField when handleStartEdit is called', () => {
-      const onFieldModify = vi.fn()
+      const onFieldModify = jest.fn()
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
@@ -78,8 +78,8 @@ describe('useChangesTable', () => {
     })
 
     it('should not set editingField when field is disabled', () => {
-      const onFieldModify = vi.fn()
-      const isFieldDisabledFn = vi.fn().mockReturnValue(true)
+      const onFieldModify = jest.fn()
+      const isFieldDisabledFn = jest.fn().mockReturnValue(true)
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
@@ -98,7 +98,7 @@ describe('useChangesTable', () => {
     })
 
     it('should clear editingField when handleCancelEdit is called', () => {
-      const onFieldModify = vi.fn()
+      const onFieldModify = jest.fn()
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
@@ -119,7 +119,7 @@ describe('useChangesTable', () => {
     })
 
     it('should call onFieldModify and clear editingField when handleSaveEdit is called', () => {
-      const onFieldModify = vi.fn()
+      const onFieldModify = jest.fn()
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
@@ -196,7 +196,7 @@ describe('useChangesTable', () => {
     })
 
     it('should correctly determine if field is disabled', () => {
-      const isFieldDisabledFn = vi.fn((field) => field === 'location')
+      const isFieldDisabledFn = jest.fn((field) => field === 'location')
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [],
@@ -259,7 +259,7 @@ describe('useChangesTable', () => {
       // Paris (0.9, consensus) should be first
       expect(sorted[0].value).toBe('Paris')
       expect(sorted[0].maxConfidence).toBe(0.9)
-      
+
       // Marseille (0.75, no consensus) should be second
       expect(sorted[1].value).toBe('Marseille')
       expect(sorted[1].maxConfidence).toBe(0.75)
@@ -349,7 +349,7 @@ describe('useChangesTable', () => {
 
   describe('Field selection', () => {
     it('should parse and call onFieldSelect with correct value', () => {
-      const onFieldSelect = vi.fn()
+      const onFieldSelect = jest.fn()
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
@@ -366,9 +366,9 @@ describe('useChangesTable', () => {
     })
 
     it('should handle JSON parse errors gracefully', () => {
-      const onFieldSelect = vi.fn()
-      const consoleError = vi.spyOn(console, 'error').mockImplementation(() => {})
-      
+      const onFieldSelect = jest.fn()
+      const consoleError = jest.spyOn(console, 'error').mockImplementation(() => {})
+
       const { result } = renderHook(() =>
         useChangesTable({
           changes: [mockChange],
