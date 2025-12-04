@@ -592,17 +592,23 @@ export class ProposalDomainService {
         this.logger.info(`✅ Event ${edition.eventId} mis à jour avec ${Object.keys(eventDiff).length} champ(s)`)
       }
 
-      // Update organizer if provided
+      // ✅ FIX: Update organizer SEULEMENT si:
+      // - blockType = 'organizer' (application du bloc organizer)
+      // - blockType non spécifié (application complète)
       if (organizerData && typeof organizerData === 'object') {
-        this.logger.info(`Mise à jour de l'organisateur pour l'édition ${numericEditionId}`)
-        await milesRepo.upsertOrganizerPartner(numericEditionId, {
-          name: organizerData.name,
-          websiteUrl: organizerData.websiteUrl,
-          email: organizerData.email,
-          phone: organizerData.phone,
-          facebookUrl: organizerData.facebookUrl,
-          instagramUrl: organizerData.instagramUrl
-        })
+        if (!options.blockType || options.blockType === 'organizer') {
+          this.logger.info(`Mise à jour de l'organisateur pour l'édition ${numericEditionId}`)
+          await milesRepo.upsertOrganizerPartner(numericEditionId, {
+            name: organizerData.name,
+            websiteUrl: organizerData.websiteUrl,
+            email: organizerData.email,
+            phone: organizerData.phone,
+            facebookUrl: organizerData.facebookUrl,
+            instagramUrl: organizerData.instagramUrl
+          })
+        } else {
+          this.logger.info(`⏭️  Bloc organizer ignoré (blockType=${options.blockType})`)
+        }
       }
 
       // Update parent event
@@ -611,15 +617,25 @@ export class ProposalDomainService {
         this.logger.info(`✅ Événement parent ${edition.eventId} mis à jour (toUpdate=true)`)
       }
 
+      // ✅ FIX: Update races SEULEMENT si:
+      // - blockType = 'races' (application du bloc races)
+      // - blockType non spécifié (application complète)
+      const shouldProcessRaces = !options.blockType || options.blockType === 'races'
+      
+      if (!shouldProcessRaces) {
+        this.logger.info(`⏭️  Blocs races ignorés (blockType=${options.blockType})`)
+      }
+      
       // Update races if any (structure: changes.races)
       this.logger.info(`\n🔍 [DEBUG UPDATE] Avant section UPDATE:`, {
         racesChangesExists: !!racesChanges,
         racesChangesIsArray: Array.isArray(racesChanges),
         racesChangesLength: racesChanges?.length || 0,
-        racesChangesContent: racesChanges
+        racesChangesContent: racesChanges,
+        shouldProcess: shouldProcessRaces
       })
       
-      if (racesChanges && Array.isArray(racesChanges)) {
+      if (shouldProcessRaces && racesChanges && Array.isArray(racesChanges)) {
         this.logger.info(`🏃 Mise à jour de ${racesChanges.length} course(s) existante(s)`)
         for (const raceChange of racesChanges) {
           const raceId = parseInt(raceChange.raceId)
@@ -643,7 +659,7 @@ export class ProposalDomainService {
       
       // ✅ Update races from racesToUpdate (structure: changes.racesToUpdate[].updates.field)
       // Utilisé par FFA Scraper et Google Agent pour propager les dates d'édition
-      if (racesToUpdate && Array.isArray(racesToUpdate)) {
+      if (shouldProcessRaces && racesToUpdate && Array.isArray(racesToUpdate)) {
         // ⚠️ Récupérer les modifications utilisateur pour les courses existantes
         const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
         
@@ -681,6 +697,10 @@ export class ProposalDomainService {
             if (userEdits.name) raceUpdateData.name = userEdits.name
             if (userEdits.type) raceUpdateData.type = userEdits.type
             
+            // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
+            if (userEdits.categoryLevel1) raceUpdateData.categoryLevel1 = userEdits.categoryLevel1
+            if (userEdits.categoryLevel2) raceUpdateData.categoryLevel2 = userEdits.categoryLevel2
+            
             // Distances : supporter distance (legacy) et tous les types spécifiques
             if (userEdits.distance) raceUpdateData.runDistance = parseFloat(userEdits.distance)
             if (userEdits.runDistance) raceUpdateData.runDistance = parseFloat(userEdits.runDistance)
@@ -707,10 +727,11 @@ export class ProposalDomainService {
         racesToAddExists: !!racesToAdd,
         racesToAddIsArray: Array.isArray(racesToAdd),
         racesToAddLength: racesToAdd?.length || 0,
-        racesToAddContent: racesToAdd
+        racesToAddContent: racesToAdd,
+        shouldProcess: shouldProcessRaces
       })
       
-      if (racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
+      if (shouldProcessRaces && racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
         // Récupérer les modifications utilisateur depuis userModifiedChanges
         const racesToAddFiltered = (proposal?.userModifiedChanges as any)?.racesToAddFiltered || []
         const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
@@ -919,6 +940,10 @@ export class ProposalDomainService {
             if (edits.name) updateData.name = edits.name
             if (edits.type) updateData.type = edits.type
             if (edits.startDate) updateData.startDate = new Date(edits.startDate)
+            
+            // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
+            if (edits.categoryLevel1) updateData.categoryLevel1 = edits.categoryLevel1
+            if (edits.categoryLevel2) updateData.categoryLevel2 = edits.categoryLevel2
             
             // Distances : supporter distance (legacy) et tous les types spécifiques
             if (edits.distance) updateData.runDistance = parseFloat(edits.distance)

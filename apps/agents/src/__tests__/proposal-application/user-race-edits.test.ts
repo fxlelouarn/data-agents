@@ -316,6 +316,48 @@ describe('User Race Edits - Existing Races', () => {
       })
       expect(updated?.startDate).toEqual(new Date('2026-03-15T10:30:00.000Z'))
     })
+
+    it('should handle existing race categoryLevel1 and categoryLevel2 modification', async () => {
+      // Given - BUG FIX: Cas réel de cmapp1764785014526uo570sww7
+      const event = await createExistingEvent({ name: 'Course de Noël' })
+      const edition = await createExistingEdition(event.id, { year: 2025 })
+      const race = await createExistingRace({
+        editionId: edition.id,
+        eventId: event.id,
+        name: 'Course 7,5 km',
+        runDistance: 7.5,
+        categoryLevel1: 'RUNNING',
+        categoryLevel2: 'KM10'
+      })
+      
+      const proposal = await createEditionUpdateProposal(event.id, edition.id, {
+        racesToUpdate: [
+          { raceId: race.id, raceName: race.name, updates: {} }
+        ]
+      })
+      
+      // User modifie les catégories
+      proposal.userModifiedChanges = {
+        raceEdits: {
+          'existing-0': {
+            categoryLevel1: 'FUN',
+            categoryLevel2: 'COLOR_RUN'
+          }
+        }
+      }
+      
+      await updateProposalUserModifications(proposal.id, proposal.userModifiedChanges)
+      
+      // When
+      await domainService.applyProposal(proposal.id, { milesRepublicDatabaseId: 'miles-republic-test' })
+      
+      // Then
+      const updated = await testMilesRepublicDb.race.findUnique({
+        where: { id: race.id }
+      })
+      expect(updated?.categoryLevel1).toBe('FUN')
+      expect(updated?.categoryLevel2).toBe('COLOR_RUN')
+    })
   })
 
   describe('Suppression de courses existantes', () => {
