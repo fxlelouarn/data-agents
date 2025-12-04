@@ -1,6 +1,6 @@
 /**
  * Agent de scraping du calendrier FFA (Fédération Française d'Athlétisme)
- * 
+ *
  * Cet agent scrape automatiquement le calendrier FFA pour:
  * - Extraire les compétitions de course à pied par ligues et par mois
  * - Matcher les compétitions avec les événements existants dans Miles Republic
@@ -14,9 +14,9 @@ import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, Ag
 export const FFA_SCRAPER_AGENT_VERSION = AGENT_VERSIONS.FFA_SCRAPER_AGENT
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import { FFAScraperAgentConfigSchema } from './FFAScraperAgent.configSchema'
-import { 
-  FFAScraperConfig, 
-  FFACompetition, 
+import {
+  FFAScraperConfig,
+  FFACompetition,
   FFACompetitionDetails,
   FFARace,
   ScrapingProgress,
@@ -26,14 +26,14 @@ import {
   convertFFALigueToRegionName,
   convertFFALigueToDisplayCode
 } from './ffa/types'
-import { 
-  fetchAllCompetitionsForPeriod, 
-  fetchCompetitionDetails, 
-  getMonthBounds, 
+import {
+  fetchAllCompetitionsForPeriod,
+  fetchCompetitionDetails,
+  getMonthBounds,
   generateMonthsToScrape,
-  humanDelay 
+  humanDelay
 } from './ffa/scraper'
-import { parseCompetitionsList, parseCompetitionDetails, normalizeFFARaceName } from './ffa/parser'
+import { parseCompetitionsList, parseCompetitionDetails, normalizeFFARaceName, classifyOrganizerUrl } from './ffa/parser'
 import { matchCompetition, calculateAdjustedConfidence, calculateNewEventConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
 import { hasIdenticalPendingProposal, hasNewInformation, filterNewChanges } from './ffa/deduplication'
@@ -84,11 +84,11 @@ export class FFAScraperAgent extends BaseAgent {
       hasSourceDb: !!this.sourceDb,
       sourceDatabase: config.sourceDatabase
     })
-    
+
     if (!this.sourceDb) {
       this.logger.debug('🔍 [DEBUG] Appel de connectToSource...')
       this.sourceDb = await this.connectToSource(config.sourceDatabase)
-      
+
       this.logger.debug('🔍 [DEBUG] Résultat de connectToSource', {
         sourceDbDefined: !!this.sourceDb,
         sourceDbType: typeof this.sourceDb,
@@ -140,53 +140,53 @@ export class FFAScraperAgent extends BaseAgent {
   ): { ligues: string[], months: string[] } {
     // Générer la liste des mois dans la fenêtre
     const allMonths = generateMonthsToScrape(config.scrapingWindowMonths)
-    
+
     // Vérifier si on a terminé un cycle complet (toutes les ligues)
     const allLiguesCompleted = FFA_LIGUES.every(ligue => {
       const completedMonthsForLigue = progress.completedMonths[ligue] || []
       // Une ligue est complète si elle a scanné tous les mois de la fenêtre
       return allMonths.every(month => completedMonthsForLigue.includes(month))
     })
-    
+
     if (allLiguesCompleted && progress.lastCompletedAt) {
       // Calculer le temps écoulé depuis le dernier cycle complet
-      const daysSinceLastComplete = 
+      const daysSinceLastComplete =
         (Date.now() - new Date(progress.lastCompletedAt).getTime()) / (1000 * 60 * 60 * 24)
-      
+
       if (daysSinceLastComplete < config.rescanDelayDays) {
         this.logger.info(`⏸️  Cooldown actif: ${Math.ceil(daysSinceLastComplete)}/${config.rescanDelayDays} jours écoulés depuis le dernier cycle complet`)
         this.logger.info(`⏭️  Prochain scan dans ${Math.ceil(config.rescanDelayDays - daysSinceLastComplete)} jours`)
         // Retourner des listes vides pour indiquer qu'il faut attendre
         return { ligues: [], months: [] }
       }
-      
+
       // Le cooldown est écoulé, recommencer un nouveau cycle
       this.logger.info(`🔄 Cooldown terminé (${Math.ceil(daysSinceLastComplete)} jours), redémarrage d'un nouveau cycle complet`)
       progress.completedMonths = {}
       progress.currentLigue = FFA_LIGUES[0]
       progress.currentMonth = allMonths[0]
     }
-    
+
     // Déterminer les ligues à traiter
     const currentLigueIndex = FFA_LIGUES.indexOf(progress.currentLigue as any)
     const ligues: string[] = []
-    
+
     for (let i = 0; i < config.liguesPerRun && currentLigueIndex + i < FFA_LIGUES.length; i++) {
       ligues.push(FFA_LIGUES[currentLigueIndex + i])
     }
 
     // Déterminer les mois à traiter
     let currentMonthIndex = allMonths.indexOf(progress.currentMonth)
-    
+
     // Si le mois actuel n'est plus dans la fenêtre (expiré), recommencer au premier mois
     if (currentMonthIndex === -1) {
       this.logger.info(`⚠️  Mois actuel ${progress.currentMonth} expiré, redémarrage au mois: ${allMonths[0]}`)
       currentMonthIndex = 0
       progress.currentMonth = allMonths[0]
     }
-    
+
     const months: string[] = []
-    
+
     for (let i = 0; i < config.monthsPerRun && currentMonthIndex + i < allMonths.length; i++) {
       months.push(allMonths[currentMonthIndex + i])
     }
@@ -204,9 +204,9 @@ export class FFAScraperAgent extends BaseAgent {
     context: AgentContext
   ): Promise<FFACompetitionDetails[]> {
     const { startDate, endDate } = getMonthBounds(month)
-    
+
     context.logger.info(`🔍 Scraping ${ligue} - ${month}...`)
-    
+
     // Récupérer les compétitions
     const competitions = await fetchAllCompetitionsForPeriod(
       ligue,
@@ -216,21 +216,21 @@ export class FFAScraperAgent extends BaseAgent {
       config.humanDelayMs,
       50 // Max 50 pages
     )
-    
+
     context.logger.info(`📊 ${competitions.length} compétitions trouvées pour ${ligue} - ${month}`)
-    
+
     // Limiter au max par mois si configuré
     const limitedCompetitions = config.maxCompetitionsPerMonth
       ? competitions.slice(0, config.maxCompetitionsPerMonth)
       : competitions
-    
+
     // Récupérer les détails de chaque compétition
     const detailsPromises = limitedCompetitions.map(comp =>
       fetchCompetitionDetails(comp.detailUrl, comp, config.humanDelayMs)
     )
-    
+
     const details = await Promise.all(detailsPromises)
-    
+
     return details.filter(d => d !== null) as FFACompetitionDetails[]
   }
 
@@ -264,7 +264,7 @@ export class FFAScraperAgent extends BaseAgent {
         dateDiff = ffaDay === dbDay ? 0 : 86400000 // 0 ou 1 jour en ms
       }
     }
-    
+
     if (dateDiff > 21600000) { // 6 heures en ms
       changes.startDate = {
         old: edition.startDate,
@@ -281,7 +281,7 @@ export class FFAScraperAgent extends BaseAgent {
       justifications.push({
         type: 'text',
         content: `Date FFA différente: ${ffaStartDate.toISOString()} vs ${edition.startDate?.toISOString()}`,
-        metadata: { 
+        metadata: {
           ffaDate: ffaStartDate.toISOString(),
           dbDate: edition.startDate?.toISOString(),
           diffHours: Math.round(dateDiff / 3600000),
@@ -289,7 +289,7 @@ export class FFAScraperAgent extends BaseAgent {
         }
       })
     }
-    
+
     // 2. TimeZone selon la ligue (DOM-TOM vs Métropole)
     const ffaTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
     if (edition.timeZone !== ffaTimeZone) {
@@ -301,15 +301,15 @@ export class FFAScraperAgent extends BaseAgent {
       justifications.push({
         type: 'text',
         content: `TimeZone FFA: ${ffaTimeZone} (ligue ${ffaData.competition.ligue})`,
-        metadata: { 
+        metadata: {
           oldTimeZone: edition.timeZone,
           newTimeZone: ffaTimeZone,
           ligue: ffaData.competition.ligue,
-          source: ffaData.competition.detailUrl 
+          source: ffaData.competition.detailUrl
         }
       })
     }
-    
+
     // 3. Statut calendrier (toujours confirmer depuis la FFA)
     if (edition.calendarStatus !== 'CONFIRMED') {
       changes.calendarStatus = {
@@ -320,9 +320,9 @@ export class FFAScraperAgent extends BaseAgent {
       justifications.push({
         type: 'text',
         content: `Confirmation depuis FFA (source officielle)`,
-        metadata: { 
+        metadata: {
           oldStatus: edition.calendarStatus,
-          source: ffaData.competition.detailUrl 
+          source: ffaData.competition.detailUrl
         }
       })
     }
@@ -331,8 +331,8 @@ export class FFAScraperAgent extends BaseAgent {
     if (ffaData.registrationClosingDate) {
       const existingClosingDate = edition.registrationClosingDate
       const newClosingDate = ffaData.registrationClosingDate
-      
-      if (!existingClosingDate || 
+
+      if (!existingClosingDate ||
           Math.abs(newClosingDate.getTime() - existingClosingDate.getTime()) > 3600000) { // 1h de diff
         changes.registrationClosingDate = {
           old: existingClosingDate,
@@ -342,7 +342,7 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `Date de clôture FFA: ${newClosingDate.toISOString()}`,
-          metadata: { 
+          metadata: {
             oldDate: existingClosingDate?.toISOString(),
             newDate: newClosingDate.toISOString(),
             source: ffaData.competition.detailUrl
@@ -357,40 +357,50 @@ export class FFAScraperAgent extends BaseAgent {
       const existingOrganizer = (edition.editionPartners || []).find(
         (p: any) => p.role === 'ORGANIZER'
       )
-      
+
       const existingOrgName = existingOrganizer?.name
       const existingOrgWebsite = existingOrganizer?.websiteUrl
-      
+      const existingOrgFacebook = existingOrganizer?.facebookUrl
+      const existingOrgInstagram = existingOrganizer?.instagramUrl
+
+      // Classifier le lien extrait selon son type (facebook, instagram, ou website)
+      const classifiedUrls = classifyOrganizerUrl(ffaData.organizerWebsite)
+
       // Proposer si:
       // 1. Aucun organisateur n'existe
       // 2. Le nom a changé
-      // 3. Un nouveau site web est disponible
-      const shouldUpdate = !existingOrganizer || 
+      // 3. Une nouvelle URL est disponible (dans le bon champ)
+      const shouldUpdate = !existingOrganizer ||
                            existingOrgName !== ffaData.organizerName ||
-                           (ffaData.organizerWebsite && ffaData.organizerWebsite !== existingOrgWebsite)
-      
+                           (classifiedUrls.websiteUrl && classifiedUrls.websiteUrl !== existingOrgWebsite) ||
+                           (classifiedUrls.facebookUrl && classifiedUrls.facebookUrl !== existingOrgFacebook) ||
+                           (classifiedUrls.instagramUrl && classifiedUrls.instagramUrl !== existingOrgInstagram)
+
       if (shouldUpdate) {
         changes.organizer = {
           old: existingOrganizer ? {
             name: existingOrgName,
-            websiteUrl: existingOrgWebsite
+            websiteUrl: existingOrgWebsite,
+            facebookUrl: existingOrgFacebook,
+            instagramUrl: existingOrgInstagram
           } : null,
           new: {
             name: ffaData.organizerName,
-            websiteUrl: ffaData.organizerWebsite,
-            facebookUrl: ffaData.organizerWebsite?.includes('facebook.com') ? ffaData.organizerWebsite : undefined,
-            instagramUrl: ffaData.organizerWebsite?.includes('instagram.com') ? ffaData.organizerWebsite : undefined,
+            // Utiliser les URLs classifiées (un seul champ sera défini selon le type de lien)
+            ...classifiedUrls,
             email: ffaData.organizerEmail,
             phone: ffaData.organizerPhone
           },
           confidence: confidence * 0.85
         }
-        
+
         const reasons = []
         if (!existingOrganizer) reasons.push('organisateur manquant')
         if (existingOrgName && existingOrgName !== ffaData.organizerName) reasons.push('nom différent')
-        if (ffaData.organizerWebsite && ffaData.organizerWebsite !== existingOrgWebsite) reasons.push('nouveau site web')
-        
+        if (classifiedUrls.websiteUrl && classifiedUrls.websiteUrl !== existingOrgWebsite) reasons.push('nouveau site web')
+        if (classifiedUrls.facebookUrl && classifiedUrls.facebookUrl !== existingOrgFacebook) reasons.push('nouveau lien Facebook')
+        if (classifiedUrls.instagramUrl && classifiedUrls.instagramUrl !== existingOrgInstagram) reasons.push('nouveau lien Instagram')
+
         justifications.push({
           type: 'text',
           content: `Organisateur FFA: ${ffaData.organizerName}${reasons.length > 0 ? ` (${reasons.join(', ')})` : ''}`,
@@ -400,7 +410,8 @@ export class FFAScraperAgent extends BaseAgent {
             contact: {
               email: ffaData.organizerEmail,
               phone: ffaData.organizerPhone,
-              website: ffaData.organizerWebsite
+              website: ffaData.organizerWebsite,
+              classifiedAs: Object.keys(classifiedUrls)[0] || 'none'
             },
             reasons,
             source: ffaData.competition.detailUrl
@@ -421,7 +432,7 @@ export class FFAScraperAgent extends BaseAgent {
         bikeDistanceMeters: (r.bikeDistance || 0) * 1000,
         totalDistanceMeters: ((r.runDistance || 0) + (r.walkDistance || 0) + (r.swimDistance || 0) + (r.bikeDistance || 0)) * 1000
       }))
-      
+
       this.logger.info(`📋 Édition ${edition.id} : ${existingRaces.length} course(s) existante(s)`, {
         races: existingRacesWithMeters.map((r: any) => ({
           name: r.name,
@@ -432,7 +443,7 @@ export class FFAScraperAgent extends BaseAgent {
       this.logger.info(`📋 FFA : ${ffaData.races.length} course(s) à comparer`, {
         races: ffaData.races.map(r => ({ name: r.name, distance: r.distance }))
       })
-      
+
       const racesToAdd: any[] = []
       const racesToUpdate: any[] = []
 
@@ -440,18 +451,18 @@ export class FFAScraperAgent extends BaseAgent {
         const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
           // Utiliser la distance totale déjà convertie en mètres
           const totalDistance = dbRace.totalDistanceMeters
-          
+
           // Si la course FFA a une distance, matcher principalement sur la distance
           if (ffaRace.distance && ffaRace.distance > 0) {
             // Utiliser la tolérance configurée (config.distanceTolerancePercent)
             const tolerancePercent = (this.config.config as FFAScraperConfig).distanceTolerancePercent
             const tolerance = ffaRace.distance * tolerancePercent
             const distanceDiff = Math.abs(totalDistance - ffaRace.distance)
-            
+
             // Match si la distance est dans la tolérance
             return distanceDiff <= tolerance
           }
-          
+
           // Si pas de distance FFA, fallback sur le matching de nom
           const nameMatch = dbRace.name?.toLowerCase().includes(ffaRace.name.toLowerCase()) ||
                             ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
@@ -460,13 +471,13 @@ export class FFAScraperAgent extends BaseAgent {
 
         if (!matchingRace) {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
-          
+
           // Inférer les catégories à partir du nom et des distances
           const [categoryLevel1, categoryLevel2] = this.inferRaceCategories(
             ffaRace.name,
             ffaRace.distance ? ffaRace.distance / 1000 : undefined  // runDistance en km
           )
-          
+
           // Normaliser le nom selon le format standard
           const normalizedName = normalizeFFARaceName(
             ffaRace.name,
@@ -474,14 +485,14 @@ export class FFAScraperAgent extends BaseAgent {
             categoryLevel2,
             ffaRace.distance ? ffaRace.distance / 1000 : undefined
           )
-          
+
           // Calculer la startDate complète (date + heure + timezone)
           const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
-          
+
           // ✅ Définir le bon champ de distance selon la catégorie
           const distanceKm = ffaRace.distance ? ffaRace.distance / 1000 : undefined
           const elevationM = ffaRace.positiveElevation
-          
+
           const raceData: any = {
             name: normalizedName,  // ✅ Nom normalisé au lieu du nom brut
             distance: distanceKm,  // Pour l'affichage frontend
@@ -492,7 +503,7 @@ export class FFAScraperAgent extends BaseAgent {
             categories: ffaRace.categories,
             timeZone: this.getTimezoneIANA(ffaData.competition.ligue)
           }
-          
+
           // Ajouter le bon champ de distance selon la catégorie (pour l'application)
           if (categoryLevel1 === 'WALK') {
             raceData.walkDistance = distanceKm
@@ -505,26 +516,26 @@ export class FFAScraperAgent extends BaseAgent {
             raceData.runDistance = distanceKm
             raceData.runPositiveElevation = elevationM
           }
-          
+
           racesToAdd.push(raceData)
         } else {
           this.logger.info(`✅ Course FFA matchée: ${ffaRace.name} (${ffaRace.distance}m) ↔ ${matchingRace.name} (${matchingRace.totalDistanceMeters}m)`)
           const raceUpdates: any = {}
-          
+
           // Vérifier l'élévation
-          if (ffaRace.positiveElevation && 
-              (!matchingRace.runPositiveElevation || 
+          if (ffaRace.positiveElevation &&
+              (!matchingRace.runPositiveElevation ||
                Math.abs(matchingRace.runPositiveElevation - ffaRace.positiveElevation) > 10)) {
             raceUpdates.runPositiveElevation = {
               old: matchingRace.runPositiveElevation,
               new: ffaRace.positiveElevation
             }
           }
-          
+
           // Vérifier la date/heure de départ de la course
           const expectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
           const raceStartDate = this.calculateRaceStartDate(ffaData, ffaRace)
-          
+
           // CAS 1: FFA donne une heure
           if (ffaRace.startTime) {
             // Comparer avec la startDate existante de la course (si elle existe)
@@ -532,7 +543,7 @@ export class FFAScraperAgent extends BaseAgent {
               // CAS 1a: DB à minuit local -> Toujours proposer l'heure précise
               const dbTimeZone = matchingRace.timeZone || expectedTimeZone
               const isDbMidnight = this.isMidnightInTimezone(matchingRace.startDate, dbTimeZone)
-              
+
               if (isDbMidnight) {
                 this.logger.info(`🕓 Course à minuit détectée, ajout heure précise: ${matchingRace.name}`, {
                   dbDate: matchingRace.startDate.toISOString(),
@@ -545,7 +556,7 @@ export class FFAScraperAgent extends BaseAgent {
               } else {
                 // CAS 1b: DB avec heure -> Proposer si différence
                 const timeDiff = Math.abs(raceStartDate.getTime() - matchingRace.startDate.getTime())
-                
+
                 if (timeDiff > 0) {
                   this.logger.info(`⏰ Différence horaire détectée: ${matchingRace.name}`, {
                     dbDate: matchingRace.startDate.toISOString(),
@@ -558,7 +569,7 @@ export class FFAScraperAgent extends BaseAgent {
                   }
                 }
               }
-              
+
               // Mettre à jour le timeZone si nécessaire
               if (matchingRace.timeZone !== expectedTimeZone && Object.keys(raceUpdates).length > 0) {
                 raceUpdates.timeZone = {
@@ -588,7 +599,7 @@ export class FFAScraperAgent extends BaseAgent {
             if (matchingRace.startDate) {
               const dbTimeZone = matchingRace.timeZone || expectedTimeZone
               const isDbMidnight = this.isMidnightInTimezone(matchingRace.startDate, dbTimeZone)
-              
+
               if (isDbMidnight) {
                 // CAS 2a: DB à minuit -> Comparer les dates uniquement
                 const isSameDate = this.isSameDateInTimezone(
@@ -596,7 +607,7 @@ export class FFAScraperAgent extends BaseAgent {
                   raceStartDate,
                   dbTimeZone
                 )
-                
+
                 if (!isSameDate) {
                   // Date différente, proposer mise à jour
                   this.logger.info(`📅 Date changée (sans heure): ${matchingRace.name}`, {
@@ -666,7 +677,7 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `${racesToAdd.length} nouvelle(s) course(s) FFA détectée(s)`,
-          metadata: { 
+          metadata: {
             races: racesToAdd.map(r => r.name),
             source: ffaData.competition.detailUrl
           }
@@ -682,29 +693,29 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `${racesToUpdate.length} course(s) à mettre à jour`,
-          metadata: { 
+          metadata: {
             races: racesToUpdate.map(r => ({ name: r.raceName, updates: r.updates })),
             source: ffaData.competition.detailUrl
           }
         })
       }
-      
+
       // 6bis. Mettre à jour les courses existantes non matchées avec la FFA
       // Si on a déjà proposé un changement de startDate pour l'édition, on doit aussi
       // mettre à jour les courses existantes qui n'ont pas été matchées
       const matchedRaceIds = new Set(racesToUpdate.map(r => r.raceId))
       const unmatchedExistingRaces = existingRaces.filter((r: any) => !matchedRaceIds.has(r.id))
-      
+
       if (unmatchedExistingRaces.length > 0) {
         const ffaStartDate = this.calculateEditionStartDate(ffaData)
-        
+
         // Proposer de mettre à jour la startDate de chaque course non matchée vers la nouvelle date d'édition
         unmatchedExistingRaces.forEach((race: any) => {
           // Vérifier si la course a vraiment besoin d'être mise à jour
-          const raceDateDiff = race.startDate 
+          const raceDateDiff = race.startDate
             ? Math.abs(ffaStartDate.getTime() - race.startDate.getTime())
             : Infinity
-          
+
           // Mettre à jour si différence > 30 minutes
           if (raceDateDiff > 1800000) { // 30 min en ms
             racesToUpdate.push({
@@ -732,7 +743,7 @@ export class FFAScraperAgent extends BaseAgent {
             })
           }
         })
-        
+
         // Mettre à jour les changements racesToUpdate si des courses ont été ajoutées
         if (racesToUpdate.length > 0) {
           changes.racesToUpdate = {
@@ -740,12 +751,12 @@ export class FFAScraperAgent extends BaseAgent {
             new: racesToUpdate,
             confidence: confidence * 0.9
           }
-          
+
           // Ajouter/mettre à jour la justification
-          const unmatchedRacesUpdated = racesToUpdate.filter(r => 
+          const unmatchedRacesUpdated = racesToUpdate.filter(r =>
             unmatchedExistingRaces.some((ur: any) => ur.id === r.raceId)
           )
-          
+
           if (unmatchedRacesUpdated.length > 0) {
             justifications.push({
               type: 'text',
@@ -776,7 +787,7 @@ export class FFAScraperAgent extends BaseAgent {
       justifications.push({
         type: 'text',
         content: `Services FFA: ${ffaData.services.join(', ')}`,
-        metadata: { 
+        metadata: {
           services: ffaData.services,
           source: ffaData.competition.detailUrl
         }
@@ -795,7 +806,7 @@ export class FFAScraperAgent extends BaseAgent {
         justifications.push({
           type: 'text',
           content: `Informations additionnelles FFA disponibles`,
-          metadata: { 
+          metadata: {
             preview: ffaData.additionalInfo.substring(0, 200),
             source: ffaData.competition.detailUrl
           }
@@ -817,7 +828,7 @@ export class FFAScraperAgent extends BaseAgent {
       second: '2-digit',
       hour12: false
     })
-    
+
     const timeStr = formatter.format(date)
     return timeStr === '00:00:00'
   }
@@ -832,7 +843,7 @@ export class FFAScraperAgent extends BaseAgent {
       month: '2-digit',
       day: '2-digit'
     })
-    
+
     return formatter.format(date1) === formatter.format(date2)
   }
 
@@ -851,12 +862,12 @@ export class FFAScraperAgent extends BaseAgent {
       'REU': 'Indian/Reunion',
       'W-F': 'Pacific/Wallis'
     }
-    
+
     // Si c'est un DOM-TOM, retourner sa timezone spécifique
     if (ligue in ligueTimezones) {
       return ligueTimezones[ligue]
     }
-    
+
     // Sinon, c'est la métropole
     return 'Europe/Paris'
   }
@@ -868,14 +879,14 @@ export class FFAScraperAgent extends BaseAgent {
    */
   private getTimezoneOffsetForDate(ligue: string, date: Date): number {
     const timeZone = this.getTimezoneIANA(ligue)
-    
+
     // Utiliser date-fns-tz pour obtenir l'offset réel à cette date précise
     // getTzOffset retourne l'offset en millisecondes
     const offsetMs = getTzOffset(timeZone, date)
     const offsetHours = offsetMs / (1000 * 60 * 60)
-    
+
     this.logger.debug(`🕐 Offset timezone pour ${ligue} (${timeZone}) le ${date.toISOString().split('T')[0]}: ${offsetHours}h`)
-    
+
     return offsetHours
   }
 
@@ -897,7 +908,7 @@ export class FFAScraperAgent extends BaseAgent {
     walkDistance?: number
   ): [string, string | undefined] {
     const lowerName = this.normalizeRaceName(raceName)
-    
+
     // 1. TRIATHLON ET VARIANTS - Prioritaire car très distinctifs
     if (lowerName.includes('swim') && lowerName.includes('run')) return ['TRIATHLON', 'SWIM_RUN']
     if (lowerName.includes('swim') && lowerName.includes('bike')) return ['TRIATHLON', 'SWIM_BIKE']
@@ -925,7 +936,7 @@ export class FFAScraperAgent extends BaseAgent {
       }
       return ['TRIATHLON', undefined]
     }
-    
+
     // 2. CYCLING - Vélo
     if (lowerName.includes('gravel')) {
       return lowerName.includes('race') ? ['CYCLING', 'GRAVEL_RACE'] : ['CYCLING', 'GRAVEL_RIDE']
@@ -953,7 +964,7 @@ export class FFAScraperAgent extends BaseAgent {
       if (bikeDistance && bikeDistance > 100) return ['CYCLING', 'GRAN_FONDO']
       return ['CYCLING', 'ROAD_CYCLING_TOUR']
     }
-    
+
     // 3. TRAIL - Trails pédestres
     if (lowerName.includes('trail')) {
       // Classifier par distance
@@ -976,7 +987,7 @@ export class FFAScraperAgent extends BaseAgent {
       }
       return ['TRAIL', 'DISCOVERY_TRAIL']  // Défaut trail
     }
-    
+
     // 4. WALK - Marches et randonnées
     if (lowerName.includes('marche nordique') || lowerName.includes('nordic walk')) return ['WALK', 'NORDIC_WALK']
     if (lowerName.includes('ski de fond') || lowerName.includes('cross country skiing')) return ['WALK', 'CROSS_COUNTRY_SKIING']
@@ -984,13 +995,13 @@ export class FFAScraperAgent extends BaseAgent {
       return ['WALK', 'HIKING']
     }
     if (lowerName.includes('marche')) return ['WALK', 'HIKING']  // Défaut marche
-    
+
     // 5. FUN - Courses fun
     if (lowerName.includes('color')) return ['FUN', 'COLOR_RUN']
     if (lowerName.includes('obstacle')) return ['FUN', 'OBSTACLE_RACE']
     if (lowerName.includes('spartan')) return ['FUN', 'SPARTAN_RACE']
     if (lowerName.includes('mud')) return ['FUN', 'MUD_DAY']
-    
+
     // 6. OTHER - Autres sports
     if (lowerName.includes('canicross')) return ['OTHER', 'CANICROSS']
     if (lowerName.includes('orienteering') || lowerName.includes('orientation')) return ['OTHER', 'ORIENTEERING']
@@ -999,7 +1010,7 @@ export class FFAScraperAgent extends BaseAgent {
     if (lowerName.includes('natation') || lowerName.includes('swimming')) return ['OTHER', 'SWIMMING']
     if (lowerName.includes('vol libre') || lowerName.includes('free flight')) return ['OTHER', 'FREE_FLIGHT']
     if (lowerName.includes('yoga')) return ['OTHER', 'YOGA']
-    
+
     // 7. RUNNING - Courses à pied (fallback par défaut)
     if (lowerName.includes('vertical') || lowerName.includes('vertical km')) return ['RUNNING', 'VERTICAL_KILOMETER']
     if (lowerName.includes('cross')) return ['RUNNING', 'CROSS']
@@ -1011,7 +1022,7 @@ export class FFAScraperAgent extends BaseAgent {
       return ['RUNNING', 'MARATHON']
     }
     if (lowerName.includes('corrida')) return ['RUNNING', undefined]
-    
+
     // Classifier par distance si fournie (RUNNING)
     if (runDistance) {
       if (runDistance < 5) return ['RUNNING', 'LESS_THAN_5_KM']
@@ -1023,11 +1034,11 @@ export class FFAScraperAgent extends BaseAgent {
       if (runDistance < 50) return ['RUNNING', 'MARATHON']
       if (runDistance >= 50) return ['RUNNING', 'ULTRA_RUNNING']
     }
-    
+
     // Par défaut : RUNNING
     return ['RUNNING', undefined]
   }
-  
+
   /**
    * Normalise le nom d'une course pour comparaison
    * Supprime accents, met en minuscules, normalise les espaces
@@ -1048,60 +1059,60 @@ export class FFAScraperAgent extends BaseAgent {
   private calculateRaceStartDate(ffaData: FFACompetitionDetails, race: FFARace): Date {
     // Déterminer la date de base
     let baseDate: Date
-    
+
     // Si la course a une date spécifique (format "28/02" pour événements multi-jours)
     if (race.raceDate) {
       // Parser le format "DD/MM"
       const [dayStr, monthStr] = race.raceDate.split('/')
       const raceDay = parseInt(dayStr, 10)
       const raceMonth = parseInt(monthStr, 10) - 1 // JavaScript months are 0-indexed
-      
+
       // Déterminer l'année : utiliser startDate de l'événement
       const year = ffaData.startDate.getUTCFullYear()
-      
+
       // Vérifier si c'est un changement d'année (décembre -> janvier)
       // Si le mois de la course est janvier (0) et que startDate est en décembre,
       // alors la course est l'année suivante
       const startMonth = ffaData.startDate.getUTCMonth()
       const adjustedYear = (raceMonth === 0 && startMonth === 11) ? year + 1 : year
-      
+
       baseDate = new Date(Date.UTC(adjustedYear, raceMonth, raceDay, 0, 0, 0, 0))
-      
+
       this.logger.debug(`📅 Course avec date spécifique: ${race.raceDate} -> ${baseDate.toISOString().split('T')[0]}`)
     } else {
       // Utiliser la date de début de l'événement (startDate)
       baseDate = ffaData.startDate
     }
-    
+
     const year = baseDate.getUTCFullYear()
     const month = baseDate.getUTCMonth()
     const day = baseDate.getUTCDate()
-    
+
     // Récupérer le timezone IANA de la ligue
     const ligue = ffaData.competition.ligue
     const timeZone = this.getTimezoneIANA(ligue)
-    
+
     if (race.startTime) {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = race.startTime.split(':').map(Number)
-      
+
       // Créer une date en heure locale (pas UTC !)
       const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-      
+
       // Convertir en UTC en tenant compte du DST
       const utcDate = fromZonedTime(localDateStr, timeZone)
-      
+
       this.logger.info(`🕐 Conversion timezone: ${localDateStr} ${timeZone} -> ${utcDate.toISOString()} (course: ${race.name})`)
-      
+
       return utcDate
     }
-    
+
     // Sinon, minuit heure locale (00:00 local time)
     const localMidnight = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
     const utcDate = fromZonedTime(localMidnight, timeZone)
-    
+
     this.logger.info(`🕐 Minuit locale ${localMidnight} ${timeZone} -> ${utcDate.toISOString()}`)
-    
+
     return utcDate
   }
 
@@ -1109,7 +1120,7 @@ export class FFAScraperAgent extends BaseAgent {
    * Calcule la date de début d'une édition en utilisant la première heure réelle (non-minuit)
    * de la date chronologique la plus précoce
    * Convertit l'heure locale (selon la ligue) en UTC avec date-fns-tz
-   * 
+   *
    * Stratégie:
    * 1. Déterminer le premier jour chronologique (startDate ou plus ancien raceDate)
    * 2. Chercher la première heure >= 01:00 de ce jour
@@ -1119,20 +1130,20 @@ export class FFAScraperAgent extends BaseAgent {
     // Timezone IANA de la ligue
     const ligue = ffaData.competition.ligue
     const timeZone = this.getTimezoneIANA(ligue)
-    
+
     // 1️⃣ Déterminer la date chronologique la plus précoce
     let earliestDate = ffaData.startDate // Par défaut, date de l'événement
     let earliestDay = earliestDate.getUTCDate()
     let earliestMonth = earliestDate.getUTCMonth()
     let earliestYear = earliestDate.getUTCFullYear()
-    
+
     // Vérifier si une course a une date antérieure
     for (const race of ffaData.races) {
       if (race.raceDate) {
         const [dayStr, monthStr] = race.raceDate.split('/')
         const raceDay = parseInt(dayStr, 10)
         const raceMonth = parseInt(monthStr, 10) - 1
-        
+
         const raceDate = new Date(Date.UTC(earliestYear, raceMonth, raceDay))
         if (raceDate < earliestDate) {
           earliestDate = raceDate
@@ -1141,17 +1152,17 @@ export class FFAScraperAgent extends BaseAgent {
         }
       }
     }
-    
+
     this.logger.info(`🕒 Date chronologique la plus précoce: ${earliestDate.toISOString().split('T')[0]}`)
-    
+
     // 2️⃣ Chercher la première heure RÉELLE (non 00:00) de ce jour
     let firstRealStartTime: string | undefined
     let raceWithFirstTime: string | undefined
-    
+
     for (const race of ffaData.races) {
       // Vérifier si cette course est le jour le plus précoce
       let isEarliestDay = false
-      
+
       if (race.raceDate) {
         const [dayStr, monthStr] = race.raceDate.split('/')
         const raceDay = parseInt(dayStr, 10)
@@ -1159,10 +1170,10 @@ export class FFAScraperAgent extends BaseAgent {
         isEarliestDay = (raceDay === earliestDay && raceMonth === earliestMonth)
       } else {
         // Pas de date spécifique = jour de l'événement
-        isEarliestDay = (earliestDay === ffaData.startDate.getUTCDate() && 
+        isEarliestDay = (earliestDay === ffaData.startDate.getUTCDate() &&
                         earliestMonth === ffaData.startDate.getUTCMonth())
       }
-      
+
       // Si cette course est du jour le plus précoce et a une heure
       if (isEarliestDay && race.startTime) {
         const [hours] = race.startTime.split(':').map(Number)
@@ -1175,25 +1186,25 @@ export class FFAScraperAgent extends BaseAgent {
         }
       }
     }
-    
+
     if (firstRealStartTime) {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = firstRealStartTime.split(':').map(Number)
-      
+
       // Créer la date en heure locale (pas UTC !)
       const localDateStr = `${earliestYear}-${String(earliestMonth + 1).padStart(2, '0')}-${String(earliestDay).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-      
+
       // Convertir en UTC en tenant compte du DST
       const startDateUTC = fromZonedTime(localDateStr, timeZone)
-      
+
       this.logger.info(`🕒 Édition: première heure réelle ${localDateStr} ${timeZone} -> ${startDateUTC.toISOString()} UTC`)
       return startDateUTC
     }
-    
+
     // ⚠️ Aucune course n'a d'heure vraie → minuit locale du jour le plus précoce
     const localMidnight = `${earliestYear}-${String(earliestMonth + 1).padStart(2, '0')}-${String(earliestDay).padStart(2, '0')}T00:00:00`
     const midnightLocalUTC = fromZonedTime(localMidnight, timeZone)
-    
+
     this.logger.info(`🕒 Aucune heure réelle du jour le plus précoce → minuit locale ${localMidnight} ${timeZone} -> ${midnightLocalUTC.toISOString()}`)
     return midnightLocalUTC
   }
@@ -1209,10 +1220,10 @@ export class FFAScraperAgent extends BaseAgent {
     if (ffaData.races.length === 0) {
       return this.calculateEditionStartDate(ffaData)
     }
-    
+
     // Récupérer la dernière course (selon raceDate ou ordre dans le tableau)
     const lastRace = ffaData.races[ffaData.races.length - 1]
-    
+
     // Calculer la date de la dernière course
     return this.calculateRaceStartDate(ffaData, lastRace)
   }
@@ -1228,7 +1239,7 @@ export class FFAScraperAgent extends BaseAgent {
     proposalsCache?: Map<string, Set<string>> // FIX 1: Cache optionnel pour déduplication intra-run
   ): Promise<ProposalData[]> {
     const proposals: ProposalData[] = []
-    
+
     // Calculer la confiance selon le type de proposition
     // Pour NEW_EVENT: logique inversée (pas de match = confiance haute)
     // Pour UPDATE: logique classique (bon match = confiance haute)
@@ -1306,7 +1317,7 @@ export class FFAScraperAgent extends BaseAgent {
                   undefined,  // swimDistance
                   undefined   // walkDistance
                 )
-                
+
                 // Normaliser le nom selon le format standard
                 const normalizedName = normalizeFFARaceName(
                   race.name,
@@ -1314,11 +1325,11 @@ export class FFAScraperAgent extends BaseAgent {
                   categoryLevel2,
                   race.distance ? race.distance / 1000 : undefined
                 )
-                
+
                 // ✅ Définir le bon champ de distance selon la catégorie
                 const distanceKm = race.distance ? race.distance / 1000 : undefined
                 const distanceFields: any = {}
-                
+
                 if (categoryLevel1 === 'WALK') {
                   distanceFields.walkDistance = distanceKm
                   distanceFields.walkPositiveElevation = race.positiveElevation
@@ -1330,7 +1341,7 @@ export class FFAScraperAgent extends BaseAgent {
                   distanceFields.runDistance = distanceKm
                   distanceFields.runPositiveElevation = race.positiveElevation
                 }
-                
+
                 return {
                   name: normalizedName,  // ✅ Nom normalisé au lieu du nom brut
                   startDate: raceStartDate,
@@ -1368,12 +1379,12 @@ export class FFAScraperAgent extends BaseAgent {
         where: { id: matchResult.event!.id },
         select: { isFeatured: true }
       })
-      
+
       if (eventData?.isFeatured) {
         context.logger.info(`⚠️  Événement featured ignoré: ${matchResult.event!.name} (${matchResult.event!.id})`)
         return proposals
       }
-      
+
       // Proposer des mises à jour pour l'édition existante
       if (matchResult.edition) {
         // Charger les données complètes de l'édition depuis la base
@@ -1410,7 +1421,7 @@ export class FFAScraperAgent extends BaseAgent {
             matchResult.event!,
             confidence
           )
-          
+
           // Log pour comprendre pourquoi aucun changement
           if (Object.keys(changes).length === 0) {
             context.logger.info(`✓ Édition ${fullEdition.id} (${matchResult.event!.name}) déjà à jour`, {
@@ -1422,7 +1433,7 @@ export class FFAScraperAgent extends BaseAgent {
               ffaRacesCount: competition.races.length
             })
           }
-          
+
           // Si on a des changements, vérifier la déduplication
           if (Object.keys(changes).length > 0) {
             // Récupérer les propositions en attente pour cette édition
@@ -1443,7 +1454,7 @@ export class FFAScraperAgent extends BaseAgent {
                 createdAt: true
               }
             })
-            
+
             // Vérifier si une proposition identique existe déjà en DB
             if (hasIdenticalPendingProposal(changes, pendingProposals)) {
               context.logger.info(`⏭️  Proposition identique déjà en attente pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
@@ -1452,32 +1463,32 @@ export class FFAScraperAgent extends BaseAgent {
               })
               return proposals // Ne pas créer de nouvelle proposition
             }
-            
+
             // FIX 1: Vérifier si une proposition identique a déjà été créée dans ce run
             if (proposalsCache) {
               const changeHash = require('crypto').createHash('sha256')
                 .update(JSON.stringify(changes))
                 .digest('hex')
               const cacheKey = matchResult.edition.id.toString()
-              
+
               if (!proposalsCache.has(cacheKey)) {
                 proposalsCache.set(cacheKey, new Set())
               }
-              
+
               if (proposalsCache.get(cacheKey)!.has(changeHash)) {
                 context.logger.info(`⏭️  Proposition identique déjà créée dans ce run pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
                   changeHash: changeHash.substring(0, 8)
                 })
                 return proposals
               }
-              
+
               // Ajouter ce hash au cache
               proposalsCache.get(cacheKey)!.add(changeHash)
             }
-            
+
             // Filtrer pour ne garder que les nouvelles informations
             const filteredChanges = filterNewChanges(changes, fullEdition, pendingProposals)
-            
+
             if (Object.keys(filteredChanges).length === 0) {
               context.logger.info(`⏭️  Aucune nouvelle information pour édition ${matchResult.edition.id} (${matchResult.event!.name}), skip`, {
                 originalChangesCount: Object.keys(changes).length,
@@ -1485,7 +1496,7 @@ export class FFAScraperAgent extends BaseAgent {
               })
               return proposals
             }
-            
+
             // Log si on a filtré des changements
             if (Object.keys(filteredChanges).length < Object.keys(changes).length) {
               context.logger.info(`🔍 Filtrage des changements pour ${matchResult.event!.name}:`, {
@@ -1494,13 +1505,13 @@ export class FFAScraperAgent extends BaseAgent {
                 removed: Object.keys(changes).filter(k => !filteredChanges[k])
               })
             }
-            
+
             context.logger.info(`📝 Proposition EDITION_UPDATE pour ${matchResult.event!.name} (édition ${matchResult.edition.id})`, {
               changesCount: Object.keys(filteredChanges).length,
               changeTypes: Object.keys(filteredChanges),
               pendingProposalsChecked: pendingProposals.length
             })
-            
+
             // Ajouter les métadonnées de contexte dans la justification
             const enrichedJustifications = justifications.map((justif, index) => {
               if (index === 0) {
@@ -1516,7 +1527,7 @@ export class FFAScraperAgent extends BaseAgent {
               }
               return justif
             })
-            
+
             proposals.push({
               type: ProposalType.EDITION_UPDATE,
               eventId: matchResult.event!.id.toString(),
@@ -1537,7 +1548,7 @@ export class FFAScraperAgent extends BaseAgent {
    */
   async run(context: AgentContext): Promise<AgentRunResult> {
     const config = this.config.config as FFAScraperConfig
-    
+
     try {
       context.logger.info(`🚀 Démarrage FFA Scraper Agent v${FFA_SCRAPER_AGENT_VERSION}`, {
         version: FFA_SCRAPER_AGENT_VERSION,
@@ -1550,16 +1561,16 @@ export class FFAScraperAgent extends BaseAgent {
 
       // Initialiser la connexion source
       await this.initializeSourceConnection(config)
-      
+
       // Vérifier que la connexion a été établie
       if (!this.sourceDb) {
         throw new Error(`Échec de la connexion à la base de données source: ${config.sourceDatabase}`)
       }
-      
+
       context.logger.info('✅ Connexion à la base source établie', {
         sourceDatabase: config.sourceDatabase
       })
-      
+
       // Charger la progression
       const progress = await this.loadProgress()
       context.logger.info('📊 Progression chargée', { progress })
@@ -1570,7 +1581,7 @@ export class FFAScraperAgent extends BaseAgent {
 
       const allProposals: ProposalData[] = []
       let totalCompetitions = 0
-      
+
       // FIX 1: Cache en mémoire pour déduplication intra-run
       // Map<editionId, Set<changeHash>> pour éviter les propositions identiques dans le même run
       const proposalsCache = new Map<string, Set<string>>()
@@ -1584,7 +1595,7 @@ export class FFAScraperAgent extends BaseAgent {
           // Matcher et créer des propositions
           let matchedCount = 0
           let proposalsFromMatches = 0
-          
+
           for (const competition of competitions) {
             const matchResult = await matchCompetition(
               competition,
@@ -1610,7 +1621,7 @@ export class FFAScraperAgent extends BaseAgent {
 
             allProposals.push(...proposals)
           }
-          
+
           context.logger.info(`📊 Stats: ${matchedCount} matches (${proposalsFromMatches} avec propositions)`)
 
           // Marquer le mois comme complété pour cette ligue
@@ -1620,7 +1631,7 @@ export class FFAScraperAgent extends BaseAgent {
           if (!progress.completedMonths[ligue].includes(month)) {
             progress.completedMonths[ligue].push(month)
           }
-          
+
           // FIX 2: Sauvegarder la progression après chaque mois complété
           // Évite de refaire la dernière combinaison en cas de crash
           await this.saveProgress(progress)
@@ -1634,10 +1645,10 @@ export class FFAScraperAgent extends BaseAgent {
       const allMonths = generateMonthsToScrape(config.scrapingWindowMonths)
       const lastProcessedMonth = months[months.length - 1]
       const lastProcessedLigue = ligues[ligues.length - 1]
-      
+
       const lastMonthIndex = allMonths.indexOf(lastProcessedMonth)
       const lastLigueIndex = FFA_LIGUES.indexOf(lastProcessedLigue as any)
-      
+
       // Avancer au mois suivant ou à la ligue suivante si tous les mois sont traités
       // FIX: Lorsqu'on traite plusieurs ligues par run (liguesPerRun > 1),
       // on doit revenir à la première ligue traitée au mois suivant
@@ -1677,7 +1688,7 @@ export class FFAScraperAgent extends BaseAgent {
         try {
           // Extraire la confiance de la proposition
           const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
-          
+
           await this.createProposal(
             proposal.type,
             proposal.changes,
@@ -1688,13 +1699,13 @@ export class FFAScraperAgent extends BaseAgent {
             proposalConfidence
           )
         } catch (error) {
-          context.logger.error(`Erreur lors de la création d'une proposition`, { 
+          context.logger.error(`Erreur lors de la création d'une proposition`, {
             type: proposal.type,
-            error: String(error) 
+            error: String(error)
           })
         }
       }
-      
+
       context.logger.info(`✅ Scraping terminé: ${totalCompetitions} compétitions, ${allProposals.length} propositions sauvegardées`)
 
       return {
@@ -1713,7 +1724,7 @@ export class FFAScraperAgent extends BaseAgent {
    */
   async validate(): Promise<boolean> {
     const config = this.config.config as FFAScraperConfig
-    
+
     if (!config.sourceDatabase) {
       this.logger.error('sourceDatabase est requis dans la configuration')
       return false

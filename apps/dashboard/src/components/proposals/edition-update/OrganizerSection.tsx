@@ -125,8 +125,21 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
     { key: 'name', label: 'Nom', currentValue: currentOrganizer?.name, proposedValue: organizer?.name },
     { key: 'email', label: 'Email', currentValue: currentOrganizer?.email, proposedValue: organizer?.email },
     { key: 'phone', label: 'Téléphone', currentValue: currentOrganizer?.phone, proposedValue: organizer?.phone },
-    { key: 'websiteUrl', label: 'Site web', currentValue: currentOrganizer?.websiteUrl, proposedValue: organizer?.websiteUrl }
+    { key: 'websiteUrl', label: 'Site web', currentValue: currentOrganizer?.websiteUrl, proposedValue: organizer?.websiteUrl },
+    { key: 'facebookUrl', label: 'Facebook', currentValue: currentOrganizer?.facebookUrl, proposedValue: organizer?.facebookUrl },
+    { key: 'instagramUrl', label: 'Instagram', currentValue: currentOrganizer?.instagramUrl, proposedValue: organizer?.instagramUrl }
   ].filter(f => f.proposedValue || f.currentValue) // Afficher seulement les champs qui ont une valeur
+
+  // Détermine si un champ va réellement être modifié
+  // Un champ est modifié seulement si la proposition a une valeur ET elle est différente de l'actuelle
+  const willBeChanged = (field: OrganizerField): boolean => {
+    // Si pas de valeur proposée (undefined ou null), pas de changement
+    if (field.proposedValue === undefined || field.proposedValue === null) {
+      return false
+    }
+    // Si valeur proposée différente de l'actuelle, c'est un changement
+    return field.proposedValue !== field.currentValue
+  }
 
   const handleStartEdit = (fieldKey: string) => {
     if (!disabled && !isBlockValidated && onFieldModify) {
@@ -161,7 +174,10 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
 
     const isModified = userModifiedChanges[`organizer.${fieldKey}`] !== undefined
 
-    if (key === 'websiteUrl') {
+    // Champs URL : websiteUrl, facebookUrl, instagramUrl
+    const isUrlField = ['websiteUrl', 'facebookUrl', 'instagramUrl'].includes(key)
+
+    if (isUrlField) {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           <Link href={value} target="_blank" rel="noopener">
@@ -256,7 +272,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                 <TableCell>
                   <Typography
                     variant="body2"
-                    fontWeight={field.proposedValue !== field.currentValue ? 'bold' : 500}
+                    fontWeight={willBeChanged(field) ? 'bold' : 500}
                   >
                     {field.label}
                   </Typography>

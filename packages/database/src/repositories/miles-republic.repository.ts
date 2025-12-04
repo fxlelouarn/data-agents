@@ -1,11 +1,11 @@
 /**
  * Repository Pattern - Data access for Miles Republic database
- * 
+ *
  * Responsibilities:
  * - CRUD operations on Events, Editions, and Races in Miles Republic
  * - Connection management
  * - NO business logic (extracted data, validation rules, etc.)
- * 
+ *
  * Note: Uses Prisma client instance for Miles Republic DB
  */
 export class MilesRepublicRepository {
@@ -27,7 +27,7 @@ export class MilesRepublicRepository {
     countrySubdivisionNameLevel1: string
     countrySubdivisionNameLevel2: string
     countrySubdivisionDisplayCodeLevel2: string
-    
+
     // Optionnels
     countrySubdivisionDisplayCodeLevel1?: string
     longitude?: number
@@ -40,12 +40,12 @@ export class MilesRepublicRepository {
     images?: string[]
     coverImage?: string
     fullAddress?: string
-    
+
     // Flags
     isFeatured?: boolean
     isPrivate?: boolean
     isRecommended?: boolean
-    
+
     // Métadonnées
     status?: string  // 'DRAFT' | 'REVIEW' | 'LIVE' | 'DELETED' | 'DEAD'
     dataSource?: string  // 'ORGANIZER' | 'TIMER' | 'FEDERATION' | 'PEYCE' | 'OTHER'
@@ -59,7 +59,7 @@ export class MilesRepublicRepository {
       name: data.name,
       city: data.city
     })
-    
+
     const prismaData = {
       // Champs obligatoires
       name: data.name,
@@ -68,7 +68,7 @@ export class MilesRepublicRepository {
       countrySubdivisionNameLevel1: data.countrySubdivisionNameLevel1 || '',
       countrySubdivisionNameLevel2: data.countrySubdivisionNameLevel2 || '',
       countrySubdivisionDisplayCodeLevel2: data.countrySubdivisionDisplayCodeLevel2 || '',
-      
+
       // Champs optionnels
       countrySubdivisionDisplayCodeLevel1: data.countrySubdivisionDisplayCodeLevel1,
       longitude: data.longitude,
@@ -82,32 +82,32 @@ export class MilesRepublicRepository {
       coverImage: data.coverImage,
       fullAddress: data.fullAddress,
       slug: data.slug,
-      
+
       // Flags
       isPrivate: data.isPrivate ?? false,
       isFeatured: data.isFeatured ?? false,
       isRecommended: data.isRecommended ?? false,
-      
+
       // Métadonnées
       status: data.status || 'LIVE',
       dataSource: data.dataSource,
-      
+
       // Flags Algolia
       toUpdate: true,
       algoliaObjectToUpdate: true,
       algoliaObjectToDelete: false,
-      
+
       // Audit
       createdBy: this.auditUser,
       updatedBy: this.auditUser
     }
-    
+
     console.log('🔍 [REPO] createEvent - prismaData construct:', {
       prismaDataKeys: Object.keys(prismaData),
       hasIdInPrismaData: 'id' in prismaData,
       prismaDataId: (prismaData as any).id
     })
-    
+
     return this.milesDb.event.create({
       data: prismaData
     })
@@ -151,38 +151,38 @@ export class MilesRepublicRepository {
     // Requis
     eventId: number
     year: string
-    
+
     // Dates
     startDate?: Date | null
     endDate?: Date | null
     registrationOpeningDate?: Date | null
     registrationClosingDate?: Date | null
     confirmedAt?: Date | null
-    
+
     // Statuts
     calendarStatus?: string  // 'CONFIRMED' | 'CANCELED' | 'TO_BE_CONFIRMED'
     clientStatus?: string  // 'EXTERNAL_SALES_FUNNEL' | 'INTERNAL_SALES_FUNNEL' | 'NEW_SALES_FUNNEL'
     status?: string  // 'DRAFT' | 'LIVE'
-    
+
     // Configuration
     currency?: string
     timeZone?: string
     medusaVersion?: string  // 'V1' | 'V2'
     customerType?: string  // 'BASIC' | 'PREMIUM' | 'ESSENTIAL' | 'MEDIA' | 'LEAD_INT' | 'LEAD_EXT'
-    
+
     // Informations
     registrantsNumber?: number
     whatIsIncluded?: string
     clientExternalUrl?: string
     bibWithdrawalFullAddress?: string
     volunteerCode?: string
-    
+
     // Flags
     isAttendeeListPublic?: boolean
     publicAttendeeListColumns?: string[]
     hasEditedDates?: boolean
     toUpdate?: boolean
-    
+
     // Métadonnées
     federationId?: string
     dataSource?: string  // 'ORGANIZER' | 'TIMER' | 'FEDERATION' | 'PEYCE' | 'OTHER'
@@ -197,25 +197,25 @@ export class MilesRepublicRepository {
         // Champs obligatoires
         eventId: data.eventId,
         year: data.year,
-        
+
         // Dates
         startDate: data.startDate,
         endDate: data.endDate,
         registrationOpeningDate: data.registrationOpeningDate,
         registrationClosingDate: data.registrationClosingDate,
         confirmedAt: data.confirmedAt,
-        
+
         // Statuts
         calendarStatus: data.calendarStatus || 'TO_BE_CONFIRMED',
         clientStatus: data.clientStatus || 'NEW_SALES_FUNNEL',
         status: data.status || 'LIVE',
-        
+
         // Configuration
         currency: data.currency || 'EUR',
         timeZone: data.timeZone || 'Europe/Paris',
         medusaVersion: data.medusaVersion || 'V1',
         customerType: data.customerType,
-        
+
         // Informations
         registrantsNumber: data.registrantsNumber,
         whatIsIncluded: data.whatIsIncluded,
@@ -223,13 +223,13 @@ export class MilesRepublicRepository {
         bibWithdrawalFullAddress: data.bibWithdrawalFullAddress,
         volunteerCode: data.volunteerCode,
         slug: data.slug,
-        
+
         // Flags
         isAttendeeListPublic: data.isAttendeeListPublic ?? true,
         publicAttendeeListColumns: data.publicAttendeeListColumns || [],
         hasEditedDates: data.hasEditedDates ?? false,
         toUpdate: data.toUpdate ?? false,
-        
+
         // Métadonnées
         federationId: data.federationId,
         dataSource: data.dataSource,
@@ -237,7 +237,7 @@ export class MilesRepublicRepository {
         organizerStripeConnectedAccountId: data.organizerStripeConnectedAccountId,
         organizationId: data.organizationId,
         currentEditionEventId: data.currentEditionEventId,
-        
+
         // Audit
         createdBy: this.auditUser,
         updatedBy: this.auditUser
@@ -295,24 +295,36 @@ export class MilesRepublicRepository {
       }
     })
 
-    const partnerData = {
-      role: 'ORGANIZER',
-      name: organizerData.name || null,
-      websiteUrl: organizerData.websiteUrl || null,
-      facebookUrl: organizerData.facebookUrl || null,
-      instagramUrl: organizerData.instagramUrl || null,
-      // Note: email et phone ne sont pas dans le schéma EditionPartner
-      // Ils seraient dans une autre table (Organization ou Contact)
-    }
-
     if (existingOrganizer) {
-      // Update existing
+      // Update existing - SEULEMENT les champs qui ont une nouvelle valeur
+      // Ne pas écraser les valeurs existantes si pas de nouvelle valeur
+      const updateData: Record<string, any> = {}
+
+      if (organizerData.name !== undefined) updateData.name = organizerData.name
+      if (organizerData.websiteUrl !== undefined) updateData.websiteUrl = organizerData.websiteUrl
+      if (organizerData.facebookUrl !== undefined) updateData.facebookUrl = organizerData.facebookUrl
+      if (organizerData.instagramUrl !== undefined) updateData.instagramUrl = organizerData.instagramUrl
+      // Note: email et phone ne sont pas dans le schéma EditionPartner
+
+      // Si aucun champ à mettre à jour, retourner l'existant
+      if (Object.keys(updateData).length === 0) {
+        return existingOrganizer
+      }
+
       return this.milesDb.editionPartner.update({
         where: { id: existingOrganizer.id },
-        data: partnerData
+        data: updateData
       })
     } else {
-      // Create new
+      // Create new - utiliser les valeurs fournies ou null
+      const partnerData = {
+        role: 'ORGANIZER',
+        name: organizerData.name || null,
+        websiteUrl: organizerData.websiteUrl || null,
+        facebookUrl: organizerData.facebookUrl || null,
+        instagramUrl: organizerData.instagramUrl || null,
+      }
+
       return this.milesDb.editionPartner.create({
         data: {
           ...partnerData,
@@ -341,17 +353,17 @@ export class MilesRepublicRepository {
     editionId: number
     eventId: number
     name: string
-    
+
     // Dates
     startDate?: Date | null
     registrationOpeningDate?: Date | null
     registrationClosingDate?: Date | null
-    
+
     // Prix
     price?: number
     priceType?: string  // 'PER_TEAM' | 'PER_PERSON'
     paymentCollectionType?: string  // 'SINGLE' | 'MULTIPLE'
-    
+
     // Distances (Float)
     runDistance?: number
     runDistance2?: number
@@ -360,7 +372,7 @@ export class MilesRepublicRepository {
     walkDistance?: number
     bikeRunDistance?: number
     swimRunDistance?: number
-    
+
     // Dénivelés (Float)
     runPositiveElevation?: number
     runNegativeElevation?: number
@@ -368,14 +380,14 @@ export class MilesRepublicRepository {
     bikeNegativeElevation?: number
     walkPositiveElevation?: number
     walkNegativeElevation?: number
-    
+
     // Catégories
     categoryLevel1?: string
     categoryLevel2?: string
     distanceCategory?: string  // 'XXS' | 'XS' | 'S' | 'M' | 'L' | 'XL' | 'XXL'
     distance?: string  // @deprecated RaceDistance enum
     type?: any  // @deprecated RaceType enum
-    
+
     // Configuration inscription
     askAttendeeGender?: boolean
     askAttendeeBirthDate?: boolean
@@ -384,33 +396,33 @@ export class MilesRepublicRepository {
     askAttendeePostalAddress?: boolean
     showClubOrAssoInput?: boolean
     showPublicationConsentCheckbox?: boolean
-    
+
     // Équipes
     minTeamSize?: number
     maxTeamSize?: number
-    
+
     // Fonctionnalités
     isWaitingList?: boolean
     resaleEnabled?: boolean
     externalFunnelURL?: string
-    
+
     // Stock
     stockDisplayThreshold?: string  // 'BELOW' | 'ALWAYS' | 'NEVER'
     stockDisplayThresholdValue?: number
-    
+
     // Métadonnées
     federationId?: string
     licenseNumberType?: string  // 'FFA' | 'FFTRI' | 'FFS' | 'NONE'
     dataSource?: string  // 'ORGANIZER' | 'TIMER' | 'FEDERATION' | 'PEYCE' | 'OTHER'
     adultJustificativeOptions?: string  // 'MEDICAL_CERTIFICATE' | 'NONE'
     minorJustificativeOptions?: string  // 'HEALTH_QUESTIONNAIRE' | 'PARENTAL_AUTHORIZATION' | 'CHECKBOX_AUTHORIZATION' | 'NONE'
-    
+
     // Flags
     isActive?: boolean
     isArchived?: boolean
     toUpdate?: boolean
     displayOrder?: number
-    
+
     // Produits Medusa
     products?: string[]
     timeZone?: string
@@ -422,17 +434,17 @@ export class MilesRepublicRepository {
         editionId: data.editionId,
         eventId: data.eventId,
         name: data.name,
-        
+
         // Dates
         startDate: data.startDate,
         registrationOpeningDate: data.registrationOpeningDate,
         registrationClosingDate: data.registrationClosingDate,
-        
+
         // Prix
         price: data.price,
         priceType: data.priceType || 'PER_PERSON',
         paymentCollectionType: data.paymentCollectionType || 'SINGLE',
-        
+
         // Distances par défaut 0
         runDistance: data.runDistance ?? 0,
         runDistance2: data.runDistance2 ?? 0,
@@ -441,7 +453,7 @@ export class MilesRepublicRepository {
         walkDistance: data.walkDistance ?? 0,
         bikeRunDistance: data.bikeRunDistance ?? 0,
         swimRunDistance: data.swimRunDistance ?? 0,
-        
+
         // Dénivelés
         runPositiveElevation: data.runPositiveElevation,
         runNegativeElevation: data.runNegativeElevation,
@@ -449,14 +461,14 @@ export class MilesRepublicRepository {
         bikeNegativeElevation: data.bikeNegativeElevation,
         walkPositiveElevation: data.walkPositiveElevation,
         walkNegativeElevation: data.walkNegativeElevation,
-        
+
         // Catégories
         categoryLevel1: data.categoryLevel1,
         categoryLevel2: data.categoryLevel2,
         distanceCategory: data.distanceCategory,
         distance: data.distance,  // @deprecated
         type: data.type,          // @deprecated
-        
+
         // Champs inscription par défaut true
         askAttendeeGender: data.askAttendeeGender ?? true,
         askAttendeeBirthDate: data.askAttendeeBirthDate ?? true,
@@ -465,20 +477,20 @@ export class MilesRepublicRepository {
         askAttendeePostalAddress: data.askAttendeePostalAddress ?? true,
         showClubOrAssoInput: data.showClubOrAssoInput ?? true,
         showPublicationConsentCheckbox: data.showPublicationConsentCheckbox ?? true,
-        
+
         // Équipes
         minTeamSize: data.minTeamSize,
         maxTeamSize: data.maxTeamSize,
-        
+
         // Fonctionnalités par défaut false
         isWaitingList: data.isWaitingList ?? false,
         resaleEnabled: data.resaleEnabled ?? false,
         externalFunnelURL: data.externalFunnelURL,
-        
+
         // Stock par défaut
         stockDisplayThreshold: data.stockDisplayThreshold || 'BELOW',
         stockDisplayThresholdValue: data.stockDisplayThresholdValue ?? 10,
-        
+
         // Métadonnées
         federationId: data.federationId,
         licenseNumberType: data.licenseNumberType,
@@ -487,16 +499,16 @@ export class MilesRepublicRepository {
         minorJustificativeOptions: data.minorJustificativeOptions,
         timeZone: data.timeZone,
         slug: data.slug,
-        
+
         // Flags
         isActive: data.isActive !== false,
         isArchived: data.isArchived ?? false,
         toUpdate: data.toUpdate ?? false,
         displayOrder: data.displayOrder,
-        
+
         // Produits
         products: data.products || [],
-        
+
         // Audit
         createdBy: this.auditUser,
         updatedBy: this.auditUser
@@ -530,7 +542,7 @@ export class MilesRepublicRepository {
       }
     })
   }
-  
+
   /**
    * Find all races by edition ID
    */
@@ -540,7 +552,7 @@ export class MilesRepublicRepository {
       orderBy: { name: 'asc' }
     })
   }
-  
+
   /**
    * Delete a race (soft delete)
    * ✅ V2: Utilise isArchived au lieu de archivedAt
