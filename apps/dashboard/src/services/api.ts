@@ -1,11 +1,11 @@
 import axios from 'axios'
-import { 
-  Agent, 
-  AgentRun, 
-  AgentLog, 
-  Proposal, 
+import {
+  Agent,
+  AgentRun,
+  AgentLog,
+  Proposal,
   AgentStatus,
-  ApiResponse, 
+  ApiResponse,
   PaginatedResponse,
   CreateAgentForm,
   UpdateAgentForm,
@@ -47,7 +47,7 @@ api.interceptors.response.use(
   (response) => response,
   async (error) => {
     const config = error.config
-    
+
     // Handle authentication error
     if (error.response?.status === 401) {
       // Token expiré ou invalide, nettoyer et rediriger
@@ -55,24 +55,24 @@ api.interceptors.response.use(
       window.location.href = '/login'
       return Promise.reject(error)
     }
-    
+
     // Handle rate limiting with exponential backoff
     if (error.response?.status === 429) {
       config._retryCount = config._retryCount || 0
-      
+
       // Maximum 3 retries
       if (config._retryCount < 3) {
         config._retryCount += 1
-        
+
         // Backoff exponentiel : 1s, 2s, 4s
         const delayMs = Math.pow(2, config._retryCount - 1) * 1000
         console.warn(`Rate limited. Retrying in ${delayMs}ms (attempt ${config._retryCount}/3)...`)
-        
+
         await delay(delayMs)
         return api.request(config)
       }
     }
-    
+
     return Promise.reject(error)
   }
 )
@@ -187,10 +187,10 @@ export const proposalsApi = {
     api.post('/proposals/edition-update-complete', data).then(res => res.data),
 
   update: (
-    id: string, 
-    data: { 
-      status?: string; 
-      reviewedBy?: string; 
+    id: string,
+    data: {
+      status?: string;
+      reviewedBy?: string;
       appliedChanges?: Record<string, any>;
       userModifiedChanges?: Record<string, any>;
       modificationReason?: string;
@@ -231,7 +231,7 @@ export const proposalsApi = {
     api.post(`/proposals/${id}/unapprove-block`, { block }).then(res => res.data),
 
   convertToEditionUpdate: (
-    id: string, 
+    id: string,
     data: {
       eventId: number
       editionId: number
@@ -457,6 +457,32 @@ export const settingsApi = {
     message?: string
   }>> =>
     api.get(`/settings/agent/${agentId}/failures`).then(res => res.data),
+
+  getAutoApplyStatus: (): Promise<ApiResponse<{
+    enabled: boolean
+    intervalMinutes: number
+    lastRunAt: string | null
+    nextRunAt: string | null
+    lastRunResult: {
+      success: number
+      failed: number
+      errors: string[]
+      appliedIds: string[]
+      failedIds: string[]
+    } | null
+    isSchedulerRunning: boolean
+    isCurrentlyApplying: boolean
+  }>> =>
+    api.get('/settings/auto-apply-status').then(res => res.data),
+
+  runAutoApply: (): Promise<ApiResponse<{
+    success: number
+    failed: number
+    errors: string[]
+    appliedIds: string[]
+    failedIds: string[]
+  }>> =>
+    api.post('/settings/run-auto-apply').then(res => res.data),
 }
 
 // Updates API

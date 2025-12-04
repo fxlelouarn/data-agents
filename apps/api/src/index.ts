@@ -19,6 +19,7 @@ import { statsRouter } from './routes/stats'
 import { versionRouter } from './routes/version'
 import authRouter from './routes/auth'
 import { AgentScheduler } from './services/scheduler'
+import { updateAutoApplyScheduler } from './services/update-auto-apply-scheduler'
 import { errorHandler } from './middleware/error-handler'
 import { APP_VERSION } from './version'
 
@@ -49,19 +50,19 @@ app.use('/api', limiter) // Appliquer uniquement sur /api, pas sur /health
 app.use((req, res, next) => {
   const start = Date.now()
   const originalSend = res.send
-  
+
   // Override res.send to log timing
   res.send = function(data) {
     const duration = Date.now() - start
     console.log(`[TIMING] ${req.method} ${req.path} - completed in ${duration}ms (status: ${res.statusCode})`)
-    
+
     if (duration > 1000) {
       console.warn(`⚠️  SLOW REQUEST: ${req.method} ${req.path} took ${duration}ms (> 1s)`)
     }
-    
+
     return originalSend.call(this, data)
   }
-  
+
   next()
 })
 
@@ -69,7 +70,7 @@ app.use((req, res, next) => {
 app.use((req, res, next) => {
   const start = Date.now()
   const originalSend = res.send
-  
+
   res.send = function(data) {
     const duration = Date.now() - start
     console.log(`[TIMING] ${req.method} ${req.path} - completed in ${duration}ms (status: ${res.statusCode})`)
@@ -119,12 +120,14 @@ const scheduler = new AgentScheduler()
 process.on('SIGTERM', async () => {
   console.log('SIGTERM received. Shutting down gracefully...')
   await scheduler.stop()
+  updateAutoApplyScheduler.stop()
   process.exit(0)
 })
 
 process.on('SIGINT', async () => {
   console.log('SIGINT received. Shutting down gracefully...')
   await scheduler.stop()
+  updateAutoApplyScheduler.stop()
   process.exit(0)
 })
 
@@ -134,21 +137,26 @@ app.listen(PORT, async () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🐝 Node version: ${process.version}`)
   console.log(`📡 Version endpoint: http://localhost:${PORT}/api/version`)
-  
+
   // Synchroniser les agents avec le code
   try {
     console.log('🔄 Synchronisation des agents avec le code...')
     const { execSync } = await import('child_process')
-    execSync('npm run sync-agents', { 
+    execSync('npm run sync-agents', {
       stdio: 'inherit',
       cwd: process.cwd().replace('/apps/api', '')
     })
   } catch (error) {
     console.warn('⚠️  Erreur lors de la synchronisation des agents (non-bloquant):', error)
   }
-  
+
   // Start scheduler
   scheduler.start().catch(console.error)
+
+  // Start auto-apply scheduler if enabled
+  updateAutoApplyScheduler.start().catch(error => {
+    console.warn('⚠️  Error starting auto-apply scheduler:', error)
+  })
 })
 
 export default app

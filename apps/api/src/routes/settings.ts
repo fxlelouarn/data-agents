@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { settingsService } from '../config/settings'
 import { AgentFailureMonitor } from '../services/agent-failure-monitor'
+import { updateAutoApplyScheduler } from '../services/update-auto-apply-scheduler'
 
 const router = Router()
 const failureMonitor = new AgentFailureMonitor()
@@ -12,7 +13,7 @@ const failureMonitor = new AgentFailureMonitor()
 router.get('/', async (req: Request, res: Response) => {
   try {
     const settings = await settingsService.getSettings()
-    
+
     res.json({
       success: true,
       data: settings
@@ -86,6 +87,42 @@ router.put('/', async (req: Request, res: Response) => {
       await settingsService.updateSetting('meilisearchApiKey', meilisearchApiKey)
     }
 
+    // Auto-apply settings
+    const { enableAutoApplyUpdates, autoApplyIntervalMinutes } = req.body
+
+    if (enableAutoApplyUpdates !== undefined) {
+      if (typeof enableAutoApplyUpdates !== 'boolean') {
+        return res.status(400).json({
+          success: false,
+          message: 'enableAutoApplyUpdates must be a boolean'
+        })
+      }
+      await settingsService.updateSetting('enableAutoApplyUpdates', enableAutoApplyUpdates)
+
+      // Restart scheduler with new settings
+      if (enableAutoApplyUpdates) {
+        await updateAutoApplyScheduler.start()
+      } else {
+        updateAutoApplyScheduler.stop()
+      }
+    }
+
+    if (autoApplyIntervalMinutes !== undefined) {
+      if (typeof autoApplyIntervalMinutes !== 'number' || autoApplyIntervalMinutes < 5 || autoApplyIntervalMinutes > 1440) {
+        return res.status(400).json({
+          success: false,
+          message: 'autoApplyIntervalMinutes must be a number between 5 and 1440'
+        })
+      }
+      await settingsService.updateSetting('autoApplyIntervalMinutes', autoApplyIntervalMinutes)
+
+      // Restart scheduler with new interval if enabled
+      const settings = await settingsService.getSettings()
+      if (settings.enableAutoApplyUpdates) {
+        await updateAutoApplyScheduler.restart()
+      }
+    }
+
     const updatedSettings = await settingsService.getSettings()
 
     res.json({
@@ -112,7 +149,7 @@ router.get('/failure-report', async (req: Request, res: Response) => {
     const report = await failureMonitor.getFailureReport()
     const maxConsecutiveFailures = await settingsService.getMaxConsecutiveFailures()
     const enableAutoDisabling = await settingsService.isAutoDisablingEnabled()
-    
+
     res.json({
       success: true,
       data: {
@@ -124,8 +161,8 @@ router.get('/failure-report', async (req: Request, res: Response) => {
         summary: {
           totalAgentsWithFailures: report.length,
           agentsAtRisk: report.filter(agent => agent.shouldDisable).length,
-          agentsWithWarnings: report.filter(agent => 
-            agent.consecutiveFailures >= maxConsecutiveFailures / 2 && 
+          agentsWithWarnings: report.filter(agent =>
+            agent.consecutiveFailures >= maxConsecutiveFailures / 2 &&
             !agent.shouldDisable
           ).length
         }
@@ -148,7 +185,7 @@ router.get('/failure-report', async (req: Request, res: Response) => {
 router.post('/check-failures', async (req: Request, res: Response) => {
   try {
     const result = await failureMonitor.checkAllAgentsForAutoDisable()
-    
+
     res.json({
       success: true,
       message: 'Failure check completed',
@@ -172,7 +209,7 @@ router.get('/agent/:agentId/failures', async (req: Request, res: Response) => {
   try {
     const { agentId } = req.params
     const failureCheck = await failureMonitor.checkAgentConsecutiveFailures(agentId)
-    
+
     if (!failureCheck) {
       return res.json({
         success: true,
@@ -200,6 +237,63 @@ router.get('/agent/:agentId/failures', async (req: Request, res: Response) => {
     res.status(500).json({
       success: false,
       message: 'Failed to check agent failures',
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
+})
+
+/**
+ * GET /api/settings/auto-apply-status
+ * Récupère le statut de l'auto-apply
+ */
+router.get('/auto-apply-status', async (req: Request, res: Response) => {
+  try {
+    const autoApplySettings = await settingsService.getAutoApplySettings()
+    const isRunning = updateAutoApplyScheduler.isRunning()
+
+    res.json({
+      success: true,
+      data: {
+        ...autoApplySettings,
+        isSchedulerRunning: isRunning,
+        isCurrentlyApplying: updateAutoApplyScheduler.isCurrentlyApplying()
+      }
+    })
+  } catch (error) {
+    console.error('Error fetching auto-apply status:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch auto-apply status',
+      error: error instanceof Error ? error.message : String(error)
+    })
+  }
+})
+
+/**
+ * POST /api/settings/run-auto-apply
+ * Lance manuellement une exécution de l'auto-apply
+ */
+router.post('/run-auto-apply', async (req: Request, res: Response) => {
+  try {
+    if (updateAutoApplyScheduler.isCurrentlyApplying()) {
+      return res.status(409).json({
+        success: false,
+        message: 'Auto-apply is already running'
+      })
+    }
+
+    const result = await updateAutoApplyScheduler.runNow()
+
+    res.json({
+      success: true,
+      message: 'Auto-apply completed',
+      data: result
+    })
+  } catch (error) {
+    console.error('Error during manual auto-apply:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to run auto-apply',
       error: error instanceof Error ? error.message : String(error)
     })
   }

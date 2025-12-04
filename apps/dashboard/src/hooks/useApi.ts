@@ -1,10 +1,10 @@
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { useSnackbar } from 'notistack'
-import { 
-  agentsApi, 
-  proposalsApi, 
-  runsApi, 
-  logsApi, 
+import {
+  agentsApi,
+  proposalsApi,
+  runsApi,
+  logsApi,
   healthApi,
   databasesApi,
   settingsApi,
@@ -13,10 +13,10 @@ import {
   eventsApi,
   statsApi
 } from '@/services/api'
-import { 
-  AgentFilters, 
-  ProposalFilters, 
-  RunFilters, 
+import {
+  AgentFilters,
+  ProposalFilters,
+  RunFilters,
   LogFilters,
   CreateAgentForm,
   UpdateAgentForm,
@@ -82,7 +82,7 @@ export const useUpdateAgent = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: ({ id, data }: { id: string; data: UpdateAgentForm }) => 
+    mutationFn: ({ id, data }: { id: string; data: UpdateAgentForm }) =>
       agentsApi.update(id, data),
     onSuccess: (response, { id }) => {
       queryClient.invalidateQueries({ queryKey: ['agents'] })
@@ -251,11 +251,11 @@ export const useUpdateProposal = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: async ({ 
+    mutationFn: async ({
       id,
       proposalIds,  // 📦 MODE GROUPÉ
-      status, 
-      reviewedBy, 
+      status,
+      reviewedBy,
       appliedChanges,
       userModifiedChanges,
       modificationReason,
@@ -263,7 +263,7 @@ export const useUpdateProposal = () => {
       block,
       killEvent,
       changes  // 📦 MODE GROUPÉ : payload consolidé
-    }: { 
+    }: {
       id?: string
       proposalIds?: string[]  // 📦 MODE GROUPÉ
       status?: string
@@ -281,7 +281,7 @@ export const useUpdateProposal = () => {
         console.log(`📦 useUpdateProposal MODE GROUPÉ: ${proposalIds.length} propositions, bloc "${block}"`)
         return proposalsApi.validateBlockGroup(proposalIds, block, changes || {})
       }
-      
+
       // Mode simple (1 proposition) - retourner un tableau pour uniformiser le type
       if (!id) {
         throw new Error('id ou proposalIds requis')
@@ -292,7 +292,7 @@ export const useUpdateProposal = () => {
     },
     onSuccess: (response, { id, proposalIds }) => {
       queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      
+
       // Invalider les propositions concernées
       if (proposalIds && proposalIds.length > 0) {
         proposalIds.forEach(proposalId => {
@@ -377,10 +377,10 @@ export const useBulkArchiveProposals = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: ({ proposalIds, reviewedBy, archiveReason }: { 
-      proposalIds: string[]; 
-      reviewedBy?: string; 
-      archiveReason?: string 
+    mutationFn: ({ proposalIds, reviewedBy, archiveReason }: {
+      proposalIds: string[];
+      reviewedBy?: string;
+      archiveReason?: string
     }) =>
       proposalsApi.bulkArchive(proposalIds, reviewedBy, archiveReason),
     onSuccess: (response) => {
@@ -518,8 +518,8 @@ export const useBulkDeleteProposals = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: ({ proposalIds, reviewedBy }: { 
-      proposalIds: string[]; 
+    mutationFn: ({ proposalIds, reviewedBy }: {
+      proposalIds: string[];
       reviewedBy?: string;
     }) =>
       proposalsApi.bulkDelete(proposalIds, reviewedBy),
@@ -553,7 +553,7 @@ export const useRun = (id: string) => {
   })
 }
 
-// Logs hooks  
+// Logs hooks
 export const useLogs = (filters: LogFilters = {}, limit = 100, offset = 0) => {
   return useQuery({
     queryKey: ['logs', filters, limit, offset],
@@ -643,11 +643,11 @@ export const useTestDatabase = () => {
   return useMutation({
     mutationFn: databasesApi.test,
     onSuccess: (response) => {
-      const message = response.data.isHealthy 
+      const message = response.data.isHealthy
         ? `Test de connexion réussi (${response.data.responseTime}ms)`
         : `Test de connexion échoué: ${response.data.error || 'Erreur inconnue'}`
-      enqueueSnackbar(message, { 
-        variant: response.data.isHealthy ? 'success' : 'error' 
+      enqueueSnackbar(message, {
+        variant: response.data.isHealthy ? 'success' : 'error'
       })
     },
     onError: (error: any) => {
@@ -724,16 +724,16 @@ export const useCheckFailures = () => {
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['settings', 'failure-report'] })
       queryClient.invalidateQueries({ queryKey: ['agents'] })
-      
+
       const { disabledAgents, checkedAgents } = response.data
       if (disabledAgents.length > 0) {
         enqueueSnackbar(
-          `Vérification terminée : ${disabledAgents.length} agents désactivés sur ${checkedAgents} vérifiés`, 
+          `Vérification terminée : ${disabledAgents.length} agents désactivés sur ${checkedAgents} vérifiés`,
           { variant: 'warning' }
         )
       } else {
         enqueueSnackbar(
-          `Vérification terminée : ${checkedAgents} agents vérifiés, aucune désactivation nécessaire`, 
+          `Vérification terminée : ${checkedAgents} agents vérifiés, aucune désactivation nécessaire`,
           { variant: 'success' }
         )
       }
@@ -753,6 +753,52 @@ export const useAgentFailures = (agentId: string) => {
     queryFn: () => settingsApi.getAgentFailures(agentId),
     enabled: !!agentId,
     staleTime: 30000, // 30 seconds
+  })
+}
+
+export const useAutoApplyStatus = () => {
+  return useQuery({
+    queryKey: ['settings', 'auto-apply-status'],
+    queryFn: () => settingsApi.getAutoApplyStatus(),
+    staleTime: 30000, // 30 seconds
+    refetchInterval: 60000, // Auto-refresh every minute
+  })
+}
+
+export const useRunAutoApply = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: settingsApi.runAutoApply,
+    onSuccess: (response) => {
+      queryClient.invalidateQueries({ queryKey: ['settings', 'auto-apply-status'] })
+      queryClient.invalidateQueries({ queryKey: ['updates'] })
+
+      const { success, failed } = response.data
+      if (failed > 0) {
+        enqueueSnackbar(
+          `Application terminée : ${success} réussie(s), ${failed} échec(s)`,
+          { variant: 'warning' }
+        )
+      } else if (success > 0) {
+        enqueueSnackbar(
+          `${success} mise(s) à jour appliquée(s) avec succès`,
+          { variant: 'success' }
+        )
+      } else {
+        enqueueSnackbar(
+          'Aucune mise à jour en attente à appliquer',
+          { variant: 'info' }
+        )
+      }
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.message || 'Erreur lors de l\'application automatique',
+        { variant: 'error' }
+      )
+    },
   })
 }
 
@@ -788,7 +834,7 @@ export const useCreateUpdate = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: ({ proposalId, scheduledAt }: { proposalId: string; scheduledAt?: string }) => 
+    mutationFn: ({ proposalId, scheduledAt }: { proposalId: string; scheduledAt?: string }) =>
       updatesApi.create(proposalId, scheduledAt),
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['updates'] })
