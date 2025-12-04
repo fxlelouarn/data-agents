@@ -112,6 +112,12 @@ export interface Proposal {
   previousEditionStartDate?: string
   eventStatus?: 'DEAD' | 'DRAFT' | 'REVIEW' | 'LIVE' | 'DELETED'
   isFeatured?: boolean  // ✅ Enrichi depuis Event.isFeatured (Miles Republic)
+  // Applications liées (pour savoir quels blocs sont déjà appliqués)
+  applications?: Array<{
+    id: string
+    blockType: string | null
+    status: 'PENDING' | 'APPLIED' | 'FAILED'
+  }>
 }
 
 export interface AgentStatus {
@@ -246,10 +252,10 @@ export interface DataUpdate {
   proposalIds?: string[]  // ✅ Pour applications groupées
   blockType?: string | null  // ✅ Type de bloc ('event', 'edition', 'organizer', 'races', ou null)
   status: UpdateStatus | 'PENDING' | 'APPLIED' | 'FAILED'  // ✅ Support legacy
-  
+
   // ✅ NOUVEAU: Payload complet (agent + user merged)
   appliedChanges?: Record<string, any>
-  
+
   scheduledAt?: string
   appliedAt?: string
   errorMessage?: string

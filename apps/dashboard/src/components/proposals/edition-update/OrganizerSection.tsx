@@ -33,6 +33,7 @@ interface OrganizerSectionProps {
   disabled: boolean
   // Props de validation par bloc
   isBlockValidated?: boolean
+  isBlockApplied?: boolean  // ✅ Nouveau : true si le bloc a déjà été appliqué en base (non annulable)
   onValidateBlock?: () => Promise<void>
   onValidateBlockWithDependencies?: (blockKey: string) => Promise<void>  // ✅ Nouveau
   onUnvalidateBlock?: () => Promise<void>
@@ -51,13 +52,14 @@ interface OrganizerField {
   proposedValue: any
 }
 
-const OrganizerSection: React.FC<OrganizerSectionProps> = ({ 
-  change, 
-  onApprove, 
+const OrganizerSection: React.FC<OrganizerSectionProps> = ({
+  change,
+  onApprove,
   onFieldModify,
   userModifiedChanges = {},
   disabled,
   isBlockValidated = false,
+  isBlockApplied = false,  // ✅ Nouveau
   onValidateBlock,
   onValidateBlockWithDependencies,  // ✅ Nouveau
   onUnvalidateBlock,
@@ -68,16 +70,16 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
   showActions = true
 }) => {
   const [editingField, setEditingField] = useState<string | null>(null)
-  
+
   // Si change est undefined ET que le bloc est validé, afficher juste le bouton d'annulation
   if (!change && isBlockValidated) {
     return (
       <Paper sx={{ mb: 3 }}>
-        <Box 
-          sx={{ 
-            p: 2, 
-            display: 'flex', 
-            alignItems: 'center', 
+        <Box
+          sx={{
+            p: 2,
+            display: 'flex',
+            alignItems: 'center',
             justifyContent: 'space-between',
             borderBottom: 1,
             borderColor: 'divider',
@@ -95,6 +97,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
               blockKey="organizer"
               blockName="Organisateur"
               isValidated={isBlockValidated}
+              isApplied={isBlockApplied}  // ✅ Nouveau : désactive l'annulation si appliqué
               onValidate={onValidateBlock}
               onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
               onUnvalidate={onUnvalidateBlock}
@@ -107,16 +110,16 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
       </Paper>
     )
   }
-  
+
   if (!change) return null
-  
+
   const organizer = change.options[0]?.proposedValue
   const currentOrganizer = change.currentValue
   const confidence = change.options[0]?.confidence || 0
   const hasConsensus = change.options.length > 1
-  
+
   if (!organizer) return null
-  
+
   // Construire les lignes du tableau
   const fields: OrganizerField[] = [
     { key: 'name', label: 'Nom', currentValue: currentOrganizer?.name, proposedValue: organizer?.name },
@@ -124,13 +127,13 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
     { key: 'phone', label: 'Téléphone', currentValue: currentOrganizer?.phone, proposedValue: organizer?.phone },
     { key: 'websiteUrl', label: 'Site web', currentValue: currentOrganizer?.websiteUrl, proposedValue: organizer?.websiteUrl }
   ].filter(f => f.proposedValue || f.currentValue) // Afficher seulement les champs qui ont une valeur
-  
+
   const handleStartEdit = (fieldKey: string) => {
     if (!disabled && !isBlockValidated && onFieldModify) {
       setEditingField(fieldKey)
     }
   }
-  
+
   const handleSaveEdit = (fieldKey: string, newValue: any) => {
     if (onFieldModify) {
       // Pour les champs d'organisateur, on doit mettre à jour le champ 'organizer.fieldKey'
@@ -139,11 +142,11 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
     }
     setEditingField(null)
   }
-  
+
   const handleCancelEdit = () => {
     setEditingField(null)
   }
-  
+
   const getFieldValue = (fieldKey: string) => {
     // Vérifier si l'utilisateur a modifié cette valeur
     const modifiedKey = `organizer.${fieldKey}`
@@ -152,12 +155,12 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
     }
     return organizer?.[fieldKey]
   }
-  
+
   const formatFieldValue = (value: any, key: string, fieldKey: string) => {
     if (!value) return <Typography color="textSecondary">-</Typography>
-    
+
     const isModified = userModifiedChanges[`organizer.${fieldKey}`] !== undefined
-    
+
     if (key === 'websiteUrl') {
       return (
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
@@ -176,7 +179,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
         </Box>
       )
     }
-    
+
     return (
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
         <Typography variant="body2">{value}</Typography>
@@ -192,14 +195,14 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
       </Box>
     )
   }
-  
+
   return (
     <Paper sx={{ mb: 3 }}>
-      <Box 
-        sx={{ 
-          p: 2, 
-          display: 'flex', 
-          alignItems: 'center', 
+      <Box
+        sx={{
+          p: 2,
+          display: 'flex',
+          alignItems: 'center',
           justifyContent: 'space-between',
           borderBottom: 1,
           borderColor: 'divider',
@@ -215,6 +218,7 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
             blockKey="organizer"
             blockName="Organisateur"
             isValidated={isBlockValidated}
+            isApplied={isBlockApplied}  // ✅ Nouveau : désactive l'annulation si appliqué
             onValidate={onValidateBlock}
             onValidateWithDependencies={onValidateBlockWithDependencies}  // ✅ Nouveau
             onUnvalidate={onUnvalidateBlock}
@@ -224,25 +228,25 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
           />
         )}
       </Box>
-      
+
       <TableContainer>
         <Table size="small">
           <TableHead sx={{ bgcolor: 'background.paper' }}>
             <TableRow>
               <TableCell sx={{ width: '20%', minWidth: 120 }}>Champ</TableCell>
               {showCurrentValue && <TableCell sx={{ width: '35%', minWidth: 150 }}>Valeur actuelle</TableCell>}
-              <TableCell sx={{ 
-                width: showConfidence 
-                  ? (showCurrentValue ? '35%' : '60%') 
-                  : (showCurrentValue ? '70%' : '80%'), 
-                minWidth: 150 
+              <TableCell sx={{
+                width: showConfidence
+                  ? (showCurrentValue ? '35%' : '60%')
+                  : (showCurrentValue ? '70%' : '80%'),
+                minWidth: 150
               }}>Valeur proposée</TableCell>
               {showConfidence && <TableCell sx={{ width: '10%', minWidth: 80 }}>Confiance</TableCell>}
             </TableRow>
           </TableHead>
           <TableBody>
             {fields.map((field, index) => (
-              <TableRow 
+              <TableRow
                 key={field.key}
                 sx={{
                   backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
@@ -250,8 +254,8 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                 }}
               >
                 <TableCell>
-                  <Typography 
-                    variant="body2" 
+                  <Typography
+                    variant="body2"
                     fontWeight={field.proposedValue !== field.currentValue ? 'bold' : 500}
                   >
                     {field.label}

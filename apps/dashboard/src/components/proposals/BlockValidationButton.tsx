@@ -1,11 +1,12 @@
 import React from 'react'
-import { Button, CircularProgress } from '@mui/material'
-import { CheckCircle as ValidateIcon, Cancel as CancelIcon } from '@mui/icons-material'
+import { Button, CircularProgress, Tooltip } from '@mui/material'
+import { CheckCircle as ValidateIcon, Cancel as CancelIcon, Lock as LockIcon } from '@mui/icons-material'
 import { BlockType } from '@data-agents/types'
 
 interface BlockValidationButtonProps {
   blockKey?: string // Optionnel, pour compatibilité
   isValidated: boolean
+  isApplied?: boolean // ✅ Nouveau : true si le bloc a déjà été appliqué en base (non annulable)
   onValidate: () => Promise<void>
   onUnvalidate: () => Promise<void>
   disabled?: boolean
@@ -18,23 +19,24 @@ interface BlockValidationButtonProps {
 
 /**
  * Bouton de validation/annulation pour un bloc de changements
- * 
+ *
  * Affiche "Valider" quand le bloc n'est pas validé
  * Affiche "Annuler" quand le bloc est validé
- * 
+ *
  * Quand validé :
  * - Les changements du bloc sont approuvés
  * - Une ProposalApplication est créée
  * - Le bloc devient non-éditable (grisé)
- * 
+ *
  * Quand annulé :
  * - L'approbation est annulée
- * - La ProposalApplication est supprimée  
+ * - La ProposalApplication est supprimée
  * - Le bloc redevient éditable
  */
 const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
   blockKey,
   isValidated,
+  isApplied = false,
   onValidate,
   onUnvalidate,
   disabled = false,
@@ -57,7 +59,26 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
   }
 
   const label = blockName || (blockKey ? blockKey : 'bloc')
-  
+
+  // ✅ Si le bloc est appliqué, afficher un bouton désactivé avec tooltip explicatif
+  if (isApplied && isValidated) {
+    return (
+      <Tooltip title="Ce bloc a déjà été appliqué en base de données et ne peut plus être annulé">
+        <span>
+          <Button
+            variant="outlined"
+            color="info"
+            startIcon={<LockIcon />}
+            disabled
+            size="small"
+          >
+            {label} appliqué
+          </Button>
+        </span>
+      </Tooltip>
+    )
+  }
+
   return (
     <Button
       variant={isValidated ? 'outlined' : 'contained'}
