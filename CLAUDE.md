@@ -712,11 +712,30 @@ const utcDate = new Date(localDateStr + 'Z') // Suppose UTC+0
 
 ### Tests unitaires
 
+**Framework** : Jest 30 + React Testing Library
+
 **Lancer les tests** :
 ```bash
-npm run test              # Tous les tests
-npm run test:watch        # Mode watch
+npm run test              # Tous les tests (mode watch)
+npm run test:run          # Tous les tests (une seule fois)
 npm run test:coverage     # Avec coverage
+
+# Lancer un test spécifique (Jest 30 syntax)
+npx jest --testPathPatterns="nomDuFichier"
+
+# Dans le dashboard uniquement
+cd apps/dashboard && npx jest --testPathPatterns="useProposalEditor"
+```
+
+**Structure des tests** :
+```
+apps/dashboard/src/
+├── hooks/__tests__/           # Tests des hooks React
+│   ├── useChangesTable.test.ts
+│   └── useProposalEditor.addRace.test.ts
+├── components/updates/__tests__/  # Tests des composants
+└── test/
+    └── setup.ts               # Configuration Jest (mocks globaux)
 ```
 
 **Écrire des tests** :
@@ -724,6 +743,40 @@ npm run test:coverage     # Avec coverage
 - Utiliser Jest pour le backend
 - Couvrir les cas limites et les erreurs
 - Mocker les appels API et base de données
+
+**Pattern pour tester les hooks React** :
+```typescript
+import { renderHook, act, waitFor } from '@testing-library/react'
+import { QueryClient, QueryClientProvider } from '@tanstack/react-query'
+import { SnackbarProvider } from 'notistack'
+
+// Créer un wrapper avec les providers nécessaires
+const createWrapper = () => {
+  const queryClient = new QueryClient({
+    defaultOptions: { queries: { retry: false } }
+  })
+  return ({ children }) => (
+    <QueryClientProvider client={queryClient}>
+      <SnackbarProvider>{children}</SnackbarProvider>
+    </QueryClientProvider>
+  )
+}
+
+// Tester le hook
+const { result } = renderHook(() => useMyHook(), { wrapper: createWrapper() })
+
+await waitFor(() => {
+  expect(result.current.isLoading).toBe(false)
+}, { timeout: 5000 })
+
+act(() => {
+  result.current.someAction()
+})
+```
+
+**⚠️ Attention Jest 30** :
+- L'option `--testPathPattern` est remplacée par `--testPathPatterns`
+- Utiliser `jest.fn()` (pas `vi.fn()` qui est Vitest)
 
 ### Linting et Formatting
 

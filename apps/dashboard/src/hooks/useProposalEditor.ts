@@ -11,18 +11,18 @@ import { Proposal, RaceData } from '@/types'
 export interface WorkingProposal {
   id: string
   originalProposal: Proposal // Proposition backend (immuable)
-  
+
   // État proposé (SANS modifications utilisateur)
   changes: Record<string, any> // Changements proposés par l'agent (extracted from proposal.changes)
   races: Record<string, RaceData> // Courses proposées par l'agent
-  
+
   // Modifications utilisateur (stockées séparément)
   userModifiedChanges: Record<string, any>
   userModifiedRaceChanges: Record<string, any>
-  
+
   // Blocs validés
   approvedBlocks: Record<string, boolean>
-  
+
   // Métadonnées
   isDirty: boolean // Y a-t-il des modifications non sauvegardées ?
   lastSaved: Date | null
@@ -36,18 +36,18 @@ export interface WorkingProposalGroup {
   ids: string[] // IDs de toutes les propositions (PENDING + historiques)
   originalProposals: Proposal[] // ✅ Propositions PENDING uniquement (éditables)
   historicalProposals: Proposal[] // ✅ Propositions déjà traitées (APPROVED/REJECTED/ARCHIVED)
-  
+
   // État consolidé de toutes les propositions PENDING
   consolidatedChanges: ConsolidatedChange[]
   consolidatedRaces: ConsolidatedRaceChange[]
-  
+
   // Modifications utilisateur (s'appliquent à toutes les propositions du groupe)
   userModifiedChanges: Record<string, any>
   userModifiedRaceChanges: Record<string, any>
-  
+
   // Blocs validés (agrégés de toutes les propositions PENDING)
   approvedBlocks: Record<string, boolean>
-  
+
   // Métadonnées
   isDirty: boolean
   lastSaved: Date | null
@@ -98,23 +98,23 @@ export interface UseProposalEditorReturn {
   isLoading: boolean
   isSaving: boolean
   error: Error | null
-  
+
   // Actions d'édition
   updateField: (field: string, value: any) => void
   updateRace: (raceId: string, field: string, value: any) => void
   deleteRace: (raceId: string) => void
   addRace: (race: RaceData) => void
-  
+
   // Actions de validation
   validateBlock: (blockKey: string) => Promise<void>
   unvalidateBlock: (blockKey: string) => Promise<void>
-  
+
   // Sauvegarde
   save: () => Promise<void>
-  
+
   // Export
   getPayload: () => Record<string, any>
-  
+
   // Utilitaires
   reset: () => void // Réinitialiser aux valeurs backend
   hasUnsavedChanges: () => boolean
@@ -130,25 +130,25 @@ export interface UseProposalEditorGroupReturn {
   isSaving: boolean
   error: Error | null
   isDirty: boolean
-  
+
   // Actions d'édition
   updateField: (field: string, value: any) => void
   selectOption: (field: string, proposalId: string) => void // Sélectionner une option parmi les propositions
   updateRace: (raceId: string, field: string, value: any) => void
   deleteRace: (raceId: string) => void
   addRace: (race: RaceData) => void
-  
+
   // Actions de validation
   validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
   unvalidateBlock: (blockKey: string) => Promise<void>
   validateAllBlocks: () => Promise<void>
-  
+
   // Sauvegarde
   save: () => Promise<void>
-  
+
   // Export
   getPayload: () => Record<string, any>
-  
+
   // Utilitaires
   reset: () => void
   hasUnsavedChanges: () => boolean
@@ -165,7 +165,7 @@ export function isGroupReturn(result: UseProposalEditorReturn | UseProposalEdito
 /**
  * Hook pour éditer une ou plusieurs propositions
  * Gère l'état consolidé, la sauvegarde automatique et la validation
- * 
+ *
  * @param proposalId - ID unique (mode simple) ou array d'IDs (mode groupé)
  * @param options - Options de configuration
  * @returns Interface différente selon le mode (simple vs groupé)
@@ -175,46 +175,46 @@ export function useProposalEditor(
   options: UseProposalEditorOptions = {}
 ): UseProposalEditorReturn | UseProposalEditorGroupReturn {
   const { autosave = true, autosaveDelay = 2000 } = options
-  
+
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()
-  
+
   // Déterminer le mode (simple ou groupé)
   const isGroupMode = Array.isArray(proposalId)
-  
+
   // États pour mode simple
   const [workingProposal, setWorkingProposal] = useState<WorkingProposal | null>(null)
-  
+
   // États pour mode groupé
   const [workingGroup, setWorkingGroup] = useState<WorkingProposalGroup | null>(null)
-  
+
   // États communs
   const [isLoading, setIsLoading] = useState(true)
   const [isSaving, setIsSaving] = useState(false)
   const [error, setError] = useState<Error | null>(null)
-  
+
   const autosaveTimerRef = useRef<NodeJS.Timeout | null>(null)
-  
+
   // Refs pour toujours avoir les dernières valeurs dans save()
   const workingGroupRef = useRef<WorkingProposalGroup | null>(null)
   const workingProposalRef = useRef<WorkingProposal | null>(null)
-  
+
   // Synchroniser les refs avec les états
   useEffect(() => {
     workingGroupRef.current = workingGroup
   }, [workingGroup])
-  
+
   useEffect(() => {
     workingProposalRef.current = workingProposal
   }, [workingProposal])
-  
+
   /**
    * Charger la(les) proposition(s) depuis le backend et initialiser l'état
    */
   const loadProposal = useCallback(async () => {
     setIsLoading(true)
     setError(null)
-    
+
     try {
       if (isGroupMode) {
         // Mode groupé: charger plusieurs propositions
@@ -223,7 +223,7 @@ export function useProposalEditor(
           ids.map(id => proposalsApi.getById(id))
         )
         const proposals = responses.map(r => r.data)
-        
+
         // Initialiser l'état consolidé du groupe
         const group = initializeWorkingGroup(proposals)
         setWorkingGroup(group)
@@ -231,7 +231,7 @@ export function useProposalEditor(
         // Mode simple: charger une seule proposition
         const response = await proposalsApi.getById(proposalId as string)
         const proposal = response.data
-        
+
         // Initialiser l'état consolidé
         const working = initializeWorkingProposal(proposal)
         setWorkingProposal(working)
@@ -243,7 +243,7 @@ export function useProposalEditor(
       setIsLoading(false)
     }
   }, [proposalId, isGroupMode, enqueueSnackbar])
-  
+
   /**
    * Construire l'état groupé initial à partir de plusieurs propositions
    * ✅ Filtre PENDING vs historiques pour éviter pollution de l'état
@@ -253,7 +253,7 @@ export function useProposalEditor(
     const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
     const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
     const approvedProposals = proposals.filter(p => p.status === 'APPROVED' || p.status === 'PARTIALLY_APPROVED')
-    
+
     const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation
 
     // ✅ MODE LECTURE SEULE : Si aucune PENDING mais des APPROVED, afficher en lecture seule
@@ -275,7 +275,7 @@ export function useProposalEditor(
     // Extraire userModifiedChanges depuis la première proposition (PENDING ou APPROVED)
     const firstProposal = proposalsToConsolidate[0]
     const userModifiedRaceChanges = firstProposal?.userModifiedChanges?.raceEdits || {}
-    
+
     // Extraire les autres modifications utilisateur (hors raceEdits)
     const userModifiedChanges: Record<string, any> = {}
     if (firstProposal?.userModifiedChanges) {
@@ -296,7 +296,7 @@ export function useProposalEditor(
       userModifiedRaceChanges, // ✅ Préserver les modifs de courses sauvegardées
       approvedBlocks,
       isDirty: false,
-      lastSaved: pendingProposals.length > 0 
+      lastSaved: pendingProposals.length > 0
         ? new Date(Math.max(...pendingProposals.map(p => new Date(p.updatedAt).getTime())))
         : null // Pas de PENDING = pas de lastSaved
     }
@@ -312,10 +312,10 @@ export function useProposalEditor(
     Object.entries(proposal.changes).forEach(([field, value]) => {
       proposedChanges[field] = extractNewValue(value)
     })
-    
+
     // 2. Extraire les courses PROPOSEES (sans userModifiedChanges)
     const proposedRaces = extractRaces(proposedChanges, proposal)
-    
+
     // 3. Retirer les courses des changes (elles sont dans races)
     const cleanedChanges = { ...proposedChanges }
     delete cleanedChanges.races
@@ -326,11 +326,11 @@ export function useProposalEditor(
         delete cleanedChanges[key]
       }
     })
-    
+
     // 4. ✅ Extraire userModifiedChanges SÉPARÉMENT (comme WorkingProposalGroup)
     const userModifiedChanges: Record<string, any> = {}
     const userModifiedRaceChanges: Record<string, any> = {}
-    
+
     if (proposal.userModifiedChanges) {
       Object.entries(proposal.userModifiedChanges).forEach(([key, value]) => {
         if (key === 'raceEdits') {
@@ -341,7 +341,7 @@ export function useProposalEditor(
         }
       })
     }
-    
+
     return {
       id: proposal.id,
       originalProposal: proposal,
@@ -354,7 +354,7 @@ export function useProposalEditor(
       lastSaved: new Date(proposal.updatedAt)
     }
   }
-  
+
   /**
    * Merger les changements proposés avec les modifications utilisateur
    */
@@ -363,20 +363,20 @@ export function useProposalEditor(
     userModifications: Record<string, any>
   ): Record<string, any> => {
     const result: Record<string, any> = {}
-    
+
     // 1. Ajouter tous les changements proposés
     Object.entries(proposedChanges).forEach(([field, value]) => {
       result[field] = extractNewValue(value)
     })
-    
+
     // 2. Écraser avec les modifications utilisateur
     Object.entries(userModifications).forEach(([field, value]) => {
       result[field] = value
     })
-    
+
     return result
   }
-  
+
   /**
    * Consolider les changements de plusieurs propositions
    */
@@ -385,7 +385,7 @@ export function useProposalEditor(
 
     proposals.forEach(p => {
       const merged = mergeChanges(p.changes, p.userModifiedChanges || {})
-      
+
       // ✅ NOUVEAU : Aplatir la structure edition.new pour NEW_EVENT
       const flattenedMerged: Record<string, any> = {}
       Object.entries(merged).forEach(([key, value]) => {
@@ -404,13 +404,13 @@ export function useProposalEditor(
           flattenedMerged[key] = value
         }
       })
-      
+
       Object.entries(flattenedMerged).forEach(([field, value]) => {
         if (!map.has(field)) {
           // ✅ Extraire currentValue depuis p.changes[field]
           const originalValue = p.changes[field]
           let currentValue: any = undefined
-          
+
           // Extraire la valeur "old" ou "current" selon le format
           if (originalValue && typeof originalValue === 'object') {
             if ('old' in originalValue) {
@@ -419,7 +419,7 @@ export function useProposalEditor(
               currentValue = originalValue.current
             }
           }
-          
+
           map.set(field, {
             field,
             options: [],
@@ -445,7 +445,7 @@ export function useProposalEditor(
    */
   const extractRacesOriginalData = (proposal: Proposal): Record<string, RaceData> => {
     const races: Record<string, RaceData> = {}
-    
+
     // ✅ NOUVEAU: Chercher racesToUpdate.new[].currentData
     const changes = proposal.changes
     if (changes.racesToUpdate && typeof changes.racesToUpdate === 'object') {
@@ -454,7 +454,7 @@ export function useProposalEditor(
         racesToUpdateObj.forEach((raceUpdate: any, index: number) => {
           // ✅ FIX 2025-11-18: Utiliser existing-{index} pour matcher avec extractRaces()
           const raceId = `existing-${index}`
-          
+
           // ✅ Utiliser currentData si disponible (FFA Scraper enrichi + Google Agent)
           if (raceUpdate.currentData && typeof raceUpdate.currentData === 'object') {
             races[raceId] = {
@@ -483,7 +483,7 @@ export function useProposalEditor(
         })
       }
     }
-    
+
     // ✅ Chercher racesExisting (courses sans changement)
     if (changes.racesExisting && typeof changes.racesExisting === 'object') {
       const racesExistingObj = extractNewValue(changes.racesExisting)
@@ -507,15 +507,15 @@ export function useProposalEditor(
         })
       }
     }
-    
+
     // Fallback: utiliser extractRaces avec extractOld=true pour les autres structures
     if (Object.keys(races).length === 0) {
       return extractRaces(proposal.changes, proposal, true)
     }
-    
+
     return races
   }
-  
+
   /**
    * Consolider les courses de plusieurs propositions
    */
@@ -525,11 +525,11 @@ export function useProposalEditor(
     proposals.forEach(p => {
       // ✅ Extraire les valeurs ORIGINALES depuis currentData ou old values
       const originalRaces = extractRacesOriginalData(p)
-      
+
       // Extraire les valeurs PROPOSÉES (avec userModifiedChanges)
       const merged = mergeChanges(p.changes, p.userModifiedChanges || {})
       const races = extractRaces(merged, p, false) // false = extractNew
-      
+
       Object.entries(races).forEach(([raceId, raceData]) => {
         if (!raceMap.has(raceId)) {
           raceMap.set(raceId, {
@@ -556,41 +556,41 @@ export function useProposalEditor(
    */
   const extractNewValue = (value: any): any => {
     if (value === null || value === undefined) return value
-    
+
     if (typeof value === 'object') {
       // Format agent: { old: ..., new: ..., confidence: ... }
       if ('new' in value) return value.new
-      
+
       // Format alternatif: { proposed: ... }
       if ('proposed' in value) return value.proposed
-      
+
       // Format GoogleSearchDateAgent: { new: ..., confidence: ... }
       if ('confidence' in value && Object.keys(value).length === 2) {
         return value.new
       }
     }
-    
+
     return value
   }
-  
+
   /**
    * Extraire la valeur "old" d'un changement (pour originalFields)
    * Gère les formats: { old: value }, { current: value }, ou valeur directe
    */
   const extractOldValue = (value: any): any => {
     if (value === null || value === undefined) return value
-    
+
     if (typeof value === 'object') {
       // Format agent: { old: ..., new: ..., confidence: ... }
       if ('old' in value) return value.old
-      
+
       // Format alternatif: { current: ... }
       if ('current' in value) return value.current
     }
-    
+
     return value
   }
-  
+
   /**
    * Extraire et normaliser les courses
    * Convertit les structures race_0, race_1... en { raceId: RaceData }
@@ -602,7 +602,7 @@ export function useProposalEditor(
     extractOld: boolean = false
   ): Record<string, RaceData> => {
     const races: Record<string, RaceData> = {}
-    
+
     // 0. Chercher structure NEW_EVENT: changes.edition.new.races
     if (changes.edition && typeof changes.edition === 'object') {
       const editionData = extractNewValue(changes.edition)
@@ -617,11 +617,11 @@ export function useProposalEditor(
         }
       }
     }
-    
+
     // 1. Chercher structure imbriquée: changes.races (FFA Scraper - NEW_EVENT)
     if (changes.races && typeof changes.races === 'object') {
       const racesObj = extractNewValue(changes.races)
-      
+
       if (Array.isArray(racesObj)) {
         // Races à créer (NEW_EVENT)
         racesObj.forEach((race, index) => {
@@ -635,7 +635,7 @@ export function useProposalEditor(
         })
       }
     }
-    
+
     // 1b. Chercher changes.racesToAdd (FFA Scraper - EDITION_UPDATE)
     if (changes.racesToAdd && typeof changes.racesToAdd === 'object') {
       const racesToAddObj = extractNewValue(changes.racesToAdd)
@@ -646,7 +646,7 @@ export function useProposalEditor(
         })
       }
     }
-    
+
     // 1c. Chercher changes.racesToUpdate (FFA Scraper - EDITION_UPDATE)
     if (changes.racesToUpdate && typeof changes.racesToUpdate === 'object') {
       const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
@@ -657,23 +657,23 @@ export function useProposalEditor(
           const raceId = `existing-${index}`
           // ✅ NOUVEAU: Ne mettre dans raceData QUE les champs qui ont des updates
           // Les autres champs (currentData) seront dans originalFields
-          const raceData: any = { 
+          const raceData: any = {
             id: raceId,
             name: raceUpdate.raceName || 'Course'
           }
-          
+
           // ✅ Appliquer UNIQUEMENT les updates (champs qui changent)
           if (raceUpdate.updates && typeof raceUpdate.updates === 'object') {
             Object.entries(raceUpdate.updates).forEach(([field, value]: [string, any]) => {
               raceData[field] = extractOld ? extractOldValue(value) : extractNewValue(value)
             })
           }
-          
+
           races[raceId] = normalizeRace(raceData, raceId, extractOld)
         })
       }
     }
-    
+
     // 1d. ✅ Chercher changes.racesExisting (FFA Scraper - EDITION_UPDATE)
     // Courses existantes sans changement (affichage informatif uniquement)
     if (changes.racesExisting && typeof changes.racesExisting === 'object') {
@@ -683,7 +683,7 @@ export function useProposalEditor(
           const raceId = raceInfo.raceId ? raceInfo.raceId.toString() : `existing-${Math.random()}`
           // Pour les courses existantes sans changement, on met tout dans raceData
           // car il n'y a pas de distinction old/new
-          const raceData: any = { 
+          const raceData: any = {
             id: raceId,
             name: raceInfo.raceName || 'Course',
             runDistance: raceInfo.runDistance,
@@ -696,12 +696,12 @@ export function useProposalEditor(
             startDate: raceInfo.startDate,
             _isExistingUnchanged: true // ✅ Marqueur pour l'affichage
           }
-          
+
           races[raceId] = normalizeRace(raceData, raceId, extractOld)
         })
       }
     }
-    
+
     // 2. Chercher structure plate: race_0, race_1... (legacy)
     Object.entries(changes).forEach(([key, value]) => {
       if (key.startsWith('race_')) {
@@ -711,7 +711,7 @@ export function useProposalEditor(
         races[raceId] = normalizeRace(value, raceId, extractOld)
       }
     })
-    
+
     // 3. Chercher dans changes.raceEdits (déjà mergé depuis userModifiedChanges)
     if (changes.raceEdits) {
       Object.entries(changes.raceEdits).forEach(([key, edits]) => {
@@ -721,15 +721,15 @@ export function useProposalEditor(
           // Ne pas créer de course fantôme, ignorer silencieusement
           return
         }
-        
+
         // Merger les éditions
         Object.assign(races[key], edits)
       })
     }
-    
+
     return races
   }
-  
+
   /**
    * Normaliser une course en RaceData
    * @param extractOld - Si true, extrait les valeurs "old" au lieu de "new"
@@ -738,22 +738,22 @@ export function useProposalEditor(
     if (!race || typeof race !== 'object') {
       return { id: raceId, name: 'Course sans nom' }
     }
-    
+
     // ✅ Préserver le marqueur _isExistingUnchanged AVANT extraction
     const isExistingUnchanged = race._isExistingUnchanged === true
-    
+
     // ✅ Extraire TOUTES les valeurs new/old selon le paramètre
     const normalized: any = { id: raceId }
-    
+
     Object.entries(race).forEach(([key, value]) => {
       normalized[key] = extractOld ? extractOldValue(value) : extractNewValue(value)
     })
-    
+
     // S'assurer qu'il y a un nom
     if (!normalized.name && !normalized.raceName) {
       normalized.name = 'Course sans nom'
     }
-    
+
     return {
       id: raceId,
       name: normalized.name || normalized.raceName || 'Course sans nom',
@@ -768,7 +768,7 @@ export function useProposalEditor(
       ...(isExistingUnchanged && { _isExistingUnchanged: true })
     }
   }
-  
+
   /**
    * Sauvegarder les modifications en backend
    */
@@ -802,7 +802,7 @@ export function useProposalEditor(
         // Mettre à jour l'état
         setWorkingProposal(prev => {
           if (!prev) return prev
-          
+
           return {
             ...prev,
             isDirty: false,
@@ -824,7 +824,7 @@ export function useProposalEditor(
       setIsSaving(false)
     }
   }, [isGroupMode, isSaving, enqueueSnackbar])
-  
+
   /**
    * Planifier une sauvegarde automatique (debounced)
    */
@@ -832,12 +832,12 @@ export function useProposalEditor(
     if (autosaveTimerRef.current) {
       clearTimeout(autosaveTimerRef.current)
     }
-    
+
     autosaveTimerRef.current = setTimeout(() => {
       save()
     }, autosaveDelay)
   }, [save, autosaveDelay])
-  
+
   /**
    * Mettre à jour un champ
    */
@@ -859,7 +859,7 @@ export function useProposalEditor(
     } else {
       setWorkingProposal(prev => {
         if (!prev) return prev
-        
+
         // ✅ Aligné sur mode groupé : mettre à jour userModifiedChanges, pas changes
         return {
           ...prev,
@@ -871,13 +871,13 @@ export function useProposalEditor(
         }
       })
     }
-    
+
     // Déclencher autosave si activé
     if (autosave) {
       scheduleAutosave()
     }
   }, [autosave, scheduleAutosave])
-  
+
   /**
    * Mettre à jour une course
    */
@@ -894,7 +894,7 @@ export function useProposalEditor(
     } else {
       setWorkingProposal(prev => {
         if (!prev) return prev
-        
+
         // ✅ Aligné sur mode groupé : mettre à jour userModifiedRaceChanges, pas races
         const current = prev.userModifiedRaceChanges[raceId] || {}
         return {
@@ -907,12 +907,12 @@ export function useProposalEditor(
         }
       })
     }
-    
+
     if (autosave) {
       scheduleAutosave()
     }
   }, [autosave, scheduleAutosave])
-  
+
   /**
    * Supprimer une course (soft delete avec toggle)
    * Marque la course comme _deleted ou annule le marquage
@@ -922,11 +922,11 @@ export function useProposalEditor(
       setWorkingGroup(prev => {
         if (!prev) return prev
         const next = { ...prev }
-        
+
         // Toggle du marqueur _deleted
         const current = next.userModifiedRaceChanges[raceId] || {}
         const isCurrentlyDeleted = current._deleted === true
-        
+
         if (isCurrentlyDeleted) {
           // Annuler la suppression : retirer le marqueur
           const { _deleted, ...rest } = current
@@ -949,18 +949,18 @@ export function useProposalEditor(
             [raceId]: { ...current, _deleted: true }
           }
         }
-        
+
         next.isDirty = true
         return next
       })
     } else {
       setWorkingProposal(prev => {
         if (!prev) return prev
-        
+
         // Toggle du marqueur _deleted
         const current = prev.userModifiedRaceChanges[raceId] || {}
         const isCurrentlyDeleted = current._deleted === true
-        
+
         if (isCurrentlyDeleted) {
           // Annuler la suppression
           const { _deleted, ...rest } = current
@@ -995,12 +995,12 @@ export function useProposalEditor(
         }
       })
     }
-    
+
     if (autosave) {
       scheduleAutosave()
     }
   }, [autosave, scheduleAutosave])
-  
+
   /**
    * Ajouter une nouvelle course
    */
@@ -1010,37 +1010,61 @@ export function useProposalEditor(
         if (!prev) return prev
         const tempId = `new-${Date.now()}`
         const next = { ...prev }
+
+        // 1. Ajouter à userModifiedRaceChanges (pour le diff/save)
         next.userModifiedRaceChanges = {
           ...next.userModifiedRaceChanges,
           [tempId]: { ...race, id: tempId }
         }
+
+        // 2. Ajouter à consolidatedRaces (pour l'affichage dans RacesChangesTable)
+        next.consolidatedRaces = [
+          ...next.consolidatedRaces,
+          {
+            raceId: tempId,
+            raceName: race.name || 'Nouvelle course',
+            proposalIds: [],  // Pas de proposition source (course manuelle)
+            originalFields: {},  // Pas de valeur originale (nouvelle course)
+            fields: { ...race, id: tempId }  // Les champs saisis par l'utilisateur
+          }
+        ]
+
         next.isDirty = true
         return next
       })
     } else {
       setWorkingProposal(prev => {
         if (!prev) return prev
-        
+
         // Générer un ID temporaire
         const tempId = `new-${Date.now()}`
-        
-        // ✅ Aligné sur mode groupé : ajouter à userModifiedRaceChanges
+
+        // 1. Ajouter à userModifiedRaceChanges (pour le diff/save)
+        const nextUserModifiedRaceChanges = {
+          ...prev.userModifiedRaceChanges,
+          [tempId]: { ...race, id: tempId }
+        }
+
+        // 2. Ajouter à races (pour l'affichage)
+        const nextRaces = {
+          ...prev.races,
+          [tempId]: { ...race, id: tempId }
+        }
+
         return {
           ...prev,
-          userModifiedRaceChanges: {
-            ...prev.userModifiedRaceChanges,
-            [tempId]: { ...race, id: tempId }
-          },
+          userModifiedRaceChanges: nextUserModifiedRaceChanges,
+          races: nextRaces,
           isDirty: true
         }
       })
     }
-    
+
     if (autosave) {
       scheduleAutosave()
     }
   }, [autosave, scheduleAutosave])
-  
+
   /**
    * Construire le diff groupé à appliquer à chaque proposition
    * IMPORTANT : Ne renvoie QUE les modifications utilisateur, pas les valeurs proposées
@@ -1056,7 +1080,7 @@ export function useProposalEditor(
     if (working.userModifiedRaceChanges && Object.keys(working.userModifiedRaceChanges).length > 0) {
       const raceEdits: Record<string, any> = {}
       const racesToDelete: number[] = []
-      
+
       Object.entries(working.userModifiedRaceChanges).forEach(([raceId, changes]) => {
         if (changes._deleted) {
           // Course marquée pour suppression
@@ -1071,7 +1095,7 @@ export function useProposalEditor(
           raceEdits[raceId] = changes
         }
       })
-      
+
       if (Object.keys(raceEdits).length > 0) {
         diff.raceEdits = raceEdits
       }
@@ -1089,15 +1113,15 @@ export function useProposalEditor(
    */
   const calculateDiff = (working: WorkingProposal): Record<string, any> => {
     const diff: Record<string, any> = {}
-    
+
     // 1. Modifications utilisateur uniquement (champs édités manuellement)
     Object.assign(diff, working.userModifiedChanges)
-    
+
     // 2. Construire raceEdits et racesToDelete depuis userModifiedRaceChanges
     if (working.userModifiedRaceChanges && Object.keys(working.userModifiedRaceChanges).length > 0) {
       const raceEdits: Record<string, any> = {}
       const racesToDelete: number[] = []
-      
+
       Object.entries(working.userModifiedRaceChanges).forEach(([raceId, changes]) => {
         if (changes._deleted) {
           // Course marquée pour suppression
@@ -1112,7 +1136,7 @@ export function useProposalEditor(
           raceEdits[raceId] = changes
         }
       })
-      
+
       if (Object.keys(raceEdits).length > 0) {
         diff.raceEdits = raceEdits
       }
@@ -1120,10 +1144,10 @@ export function useProposalEditor(
         diff.racesToDelete = racesToDelete
       }
     }
-    
+
     return diff
   }
-  
+
   /**
    * Valider un bloc
    */
@@ -1167,7 +1191,7 @@ export function useProposalEditor(
       throw err
     }
   }, [isGroupMode, workingGroup, workingProposal, queryClient, enqueueSnackbar, save])
-  
+
   /**
    * Annuler la validation d'un bloc
    */
@@ -1175,44 +1199,44 @@ export function useProposalEditor(
     try {
       if (isGroupMode) {
         if (!workingGroup) return
-        
+
         // Annuler pour toutes les propositions du groupe
         await Promise.all(
           workingGroup.ids.map(id => proposalsApi.unvalidateBlock(id, blockKey))
         )
-        
+
         setWorkingGroup(prev => {
           if (!prev) return prev
-          
+
           const newApprovedBlocks = { ...prev.approvedBlocks }
           delete newApprovedBlocks[blockKey]
-          
+
           return {
             ...prev,
             approvedBlocks: newApprovedBlocks
           }
         })
-        
+
         enqueueSnackbar(`Bloc "${blockKey}" dévalidé pour ${workingGroup.ids.length} proposition(s)`, { variant: 'success' })
       } else {
         if (!workingProposal) return
-        
+
         await proposalsApi.unvalidateBlock(workingProposal.id, blockKey)
-        
+
         setWorkingProposal(prev => {
           if (!prev) return prev
-          
+
           const newApprovedBlocks = { ...prev.approvedBlocks }
           delete newApprovedBlocks[blockKey]
-          
+
           return {
             ...prev,
             approvedBlocks: newApprovedBlocks
           }
         })
-        
+
         queryClient.invalidateQueries({ queryKey: ['proposals', workingProposal.id] })
-        
+
         enqueueSnackbar(`Bloc "${blockKey}" dévalidé`, { variant: 'success' })
       }
     } catch (err) {
@@ -1220,7 +1244,7 @@ export function useProposalEditor(
       throw err
     }
   }, [isGroupMode, workingGroup, workingProposal, queryClient, enqueueSnackbar])
-  
+
   /**
    * Construire le payload pour un bloc spécifique
    */
@@ -1261,17 +1285,17 @@ export function useProposalEditor(
     })
     return payload
   }
-  
+
   /**
    * Obtenir les champs d'un bloc
    */
   const getFieldsForBlock = (blockKey: string, changes: Record<string, any>): string[] => {
     // Import dynamique pour éviter la dépendance circulaire
     const { getBlockForField } = require('@/utils/blockFieldMapping')
-    
+
     return Object.keys(changes).filter(field => getBlockForField(field) === blockKey)
   }
-  
+
   /**
    * Obtenir le payload complet pour l'application
    */
@@ -1295,7 +1319,7 @@ export function useProposalEditor(
       races: workingProposal.races
     }
   }, [isGroupMode, workingGroup, workingProposal])
-  
+
   /**
    * Réinitialiser aux valeurs backend
    */
@@ -1311,7 +1335,7 @@ export function useProposalEditor(
     }
     enqueueSnackbar('Modifications annulées', { variant: 'info' })
   }, [isGroupMode, workingGroup, workingProposal, enqueueSnackbar])
-  
+
   /**
    * Vérifier s'il y a des modifications non sauvegardées
    */
@@ -1319,12 +1343,12 @@ export function useProposalEditor(
     if (isGroupMode) return workingGroup?.isDirty || false
     return workingProposal?.isDirty || false
   }, [isGroupMode, workingGroup, workingProposal])
-  
+
   // Charger la proposition au montage
   useEffect(() => {
     loadProposal()
   }, [loadProposal])
-  
+
   // Nettoyer le timer au démontage
   useEffect(() => {
     return () => {
@@ -1333,7 +1357,7 @@ export function useProposalEditor(
       }
     }
   }, [])
-  
+
   if (isGroupMode) {
     const isBlockValidated = (blockKey: string) => !!workingGroup?.approvedBlocks?.[blockKey]
     const selectOption = (field: string, proposalId: string) => {

@@ -1,5 +1,77 @@
 # Changelog - Feature "Ajout manuel de courses"
 
+## 2025-12-04 - v1.1.0 - Fix affichage + Tests ✅
+
+### 🐛 Bug corrigé
+
+**Problème** : Les courses ajoutées manuellement n'apparaissaient pas dans `RacesChangesTable` après validation du dialog.
+
+**Cause** : La fonction `addRace` dans `useProposalEditor.ts` ajoutait la course uniquement à `userModifiedRaceChanges` (pour la persistance), mais pas à `consolidatedRaces` (pour l'affichage).
+
+**Solution** : Modifier `addRace` pour ajouter la course aux deux endroits :
+
+```typescript
+// useProposalEditor.ts - addRace()
+const addRace = useCallback((race: RaceData) => {
+  setWorkingGroup(prev => {
+    const tempId = `new-${Date.now()}`
+    
+    // 1. Ajouter à userModifiedRaceChanges (pour le diff/save)
+    next.userModifiedRaceChanges = {
+      ...next.userModifiedRaceChanges,
+      [tempId]: { ...race, id: tempId }
+    }
+    
+    // 2. Ajouter à consolidatedRaces (pour l'affichage)
+    next.consolidatedRaces = [
+      ...next.consolidatedRaces,
+      {
+        raceId: tempId,
+        raceName: race.name || 'Nouvelle course',
+        proposalIds: [],
+        originalFields: {},
+        fields: { ...race, id: tempId }
+      }
+    ]
+    
+    return next
+  })
+}, [])
+```
+
+### 🧪 Tests ajoutés
+
+**Nouveau fichier** : `apps/dashboard/src/hooks/__tests__/useProposalEditor.addRace.test.ts`
+
+**Tests couverts** (7 tests) :
+- ✅ Ajout de course aux deux locations (userModifiedRaceChanges + races)
+- ✅ Génération d'IDs uniques pour plusieurs courses
+- ✅ Marquage de l'état comme dirty après ajout
+- ✅ Inclusion des courses dans le payload de sauvegarde
+- ✅ Structure correcte de ConsolidatedRaceChange
+- ✅ Fallback "Nouvelle course" quand le nom est vide
+- ✅ Transformation d'état pour le mode groupé
+
+**Lancer les tests** :
+```bash
+cd apps/dashboard && npx jest --testPathPatterns="useProposalEditor.addRace"
+```
+
+### 📝 Fichiers modifiés
+
+| Fichier | Changements |
+|---------|------------|
+| `apps/dashboard/src/hooks/useProposalEditor.ts` | Fix addRace pour ajouter à consolidatedRaces |
+| `CLAUDE.md` | Documentation Jest 30 + patterns de test |
+
+### 📝 Fichiers créés
+
+| Fichier | Description |
+|---------|-------------|
+| `apps/dashboard/src/hooks/__tests__/useProposalEditor.addRace.test.ts` | Tests unitaires pour addRace |
+
+---
+
 ## 2025-12-04 - v1.0.0 - Release initial ✅
 
 ### 🎉 Nouvelles fonctionnalités
