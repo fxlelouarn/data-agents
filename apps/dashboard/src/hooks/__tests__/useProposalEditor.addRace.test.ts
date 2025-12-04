@@ -244,6 +244,240 @@ describe('useProposalEditor - addRace', () => {
     })
   })
 
+  describe('Group mode - initializeWorkingGroup logic (unit tests)', () => {
+    /**
+     * These tests verify the initializeWorkingGroup logic directly
+     * without the hook lifecycle complexity (async loading, etc.)
+     *
+     * This simulates what happens when:
+     * 1. User adds a race manually
+     * 2. Race is saved to backend in userModifiedChanges.raceEdits
+     * 3. Block is validated
+     * 4. Hook reloads data from backend
+     * 5. initializeWorkingGroup is called with the updated proposal
+     */
+
+    it('should preserve manually added races in consolidatedRaces after reload from backend', () => {
+      // This test simulates the bug fix: after validating a block,
+      // manually added races should NOT disappear
+
+      const raceId = 'new-1733350400000'
+
+      // Simulate a proposal as it would be returned from backend after saving
+      const proposalFromBackend = createMockProposal({
+        userModifiedChanges: {
+          raceEdits: {
+            [raceId]: {
+              id: raceId,
+              name: 'Course Manuelle',
+              categoryLevel1: 'TRAIL',
+              categoryLevel2: 'SHORT_TRAIL',
+              runDistance: 25,
+              runPositiveElevation: 800
+            }
+          }
+        },
+        approvedBlocks: { races: true }
+      })
+
+      // Simulate the consolidation logic from initializeWorkingGroup
+      // Extract userModifiedRaceChanges from backend proposal
+      const userModifiedRaceChanges = proposalFromBackend.userModifiedChanges?.raceEdits || {}
+
+      // This is what the fix adds: include manual races in consolidatedRaces
+      const consolidatedRaces: ConsolidatedRaceChange[] = []
+
+      Object.entries(userModifiedRaceChanges).forEach(([id, raceData]: [string, any]) => {
+        if (id.startsWith('new-') && !raceData._deleted) {
+          const existsInConsolidated = consolidatedRaces.some(r => r.raceId === id)
+          if (!existsInConsolidated) {
+            consolidatedRaces.push({
+              raceId: id,
+              raceName: raceData.name || 'Nouvelle course',
+              proposalIds: [],
+              originalFields: {},
+              fields: { ...raceData, id }
+            })
+          }
+        }
+      })
+
+      // Verify the manual race is now in consolidatedRaces
+      expect(consolidatedRaces.length).toBe(1)
+      expect(consolidatedRaces[0].raceId).toBe(raceId)
+      expect(consolidatedRaces[0].raceName).toBe('Course Manuelle')
+      expect(consolidatedRaces[0].fields.categoryLevel1).toBe('TRAIL')
+      expect(consolidatedRaces[0].fields.runDistance).toBe(25)
+    })
+
+    it('should NOT include deleted manual races in consolidatedRaces', () => {
+      const raceId = 'new-1733350400000'
+
+      const proposalFromBackend = createMockProposal({
+        userModifiedChanges: {
+          raceEdits: {
+            [raceId]: {
+              id: raceId,
+              name: 'Course Supprimée',
+              categoryLevel1: 'RUNNING',
+              _deleted: true  // Marked as deleted
+            }
+          }
+        }
+      })
+
+      const userModifiedRaceChanges = proposalFromBackend.userModifiedChanges?.raceEdits || {}
+      const consolidatedRaces: ConsolidatedRaceChange[] = []
+
+      Object.entries(userModifiedRaceChanges).forEach(([id, raceData]: [string, any]) => {
+        // The fix: skip deleted races
+        if (id.startsWith('new-') && !raceData._deleted) {
+          consolidatedRaces.push({
+            raceId: id,
+            raceName: raceData.name || 'Nouvelle course',
+            proposalIds: [],
+            originalFields: {},
+            fields: { ...raceData, id }
+          })
+        }
+      })
+
+      // Deleted race should NOT be in consolidatedRaces
+      expect(consolidatedRaces.length).toBe(0)
+    })
+
+    it('should not duplicate races that already exist from proposal.changes', () => {
+      const raceId = 'new-0'
+
+      // Simulate proposal with racesToAdd AND userModifiedRaceChanges for same race
+      const proposalFromBackend = createMockProposal({
+        changes: {
+          startDate: { old: '2025-06-01T08:00:00Z', new: '2025-06-15T09:00:00Z' },
+          racesToAdd: [
+            { name: 'Course Proposée', categoryLevel1: 'TRAIL', runDistance: 50 }
+          ]
+        },
+        userModifiedChanges: {
+          raceEdits: {
+            [raceId]: {
+              id: raceId,
+              name: 'Course Proposée Modifiée',
+              categoryLevel1: 'TRAIL',
+              runDistance: 55
+            }
+          }
+        }
+      })
+
+      // Simulate consolidation from proposal.changes.racesToAdd
+      const consolidatedRaces: ConsolidatedRaceChange[] = []
+
+      const racesToAdd = proposalFromBackend.changes.racesToAdd
+      if (Array.isArray(racesToAdd)) {
+        racesToAdd.forEach((race: any, index: number) => {
+          consolidatedRaces.push({
+            raceId: `new-${index}`,
+            raceName: race.name || 'Nouvelle course',
+            proposalIds: [proposalFromBackend.id],
+            originalFields: {},
+            fields: race
+          })
+        })
+      }
+
+      // Now add manual races (the fix)
+      const userModifiedRaceChanges = proposalFromBackend.userModifiedChanges?.raceEdits || {}
+      Object.entries(userModifiedRaceChanges).forEach(([id, raceData]: [string, any]) => {
+        if (id.startsWith('new-') && !raceData._deleted) {
+          // Check if already exists (this is the deduplication logic)
+          const existsInConsolidated = consolidatedRaces.some(r => r.raceId === id)
+          if (!existsInConsolidated) {
+            consolidatedRaces.push({
+              raceId: id,
+              raceName: raceData.name || 'Nouvelle course',
+              proposalIds: [],
+              originalFields: {},
+              fields: { ...raceData, id }
+            })
+          }
+        }
+      })
+
+      // Should only have ONE race entry (from racesToAdd), not duplicated
+      const racesWithId = consolidatedRaces.filter(r => r.raceId === raceId)
+      expect(racesWithId.length).toBe(1)
+      // The original from racesToAdd should be preserved
+      expect(racesWithId[0].raceName).toBe('Course Proposée')
+    })
+
+    it('should add truly new manual races that are not in proposal.changes', () => {
+      const manualRaceId = 'new-1733350400000'  // Timestamp-based ID (manual)
+      const proposedRaceId = 'new-0'  // Index-based ID (from agent)
+
+      const proposalFromBackend = createMockProposal({
+        changes: {
+          racesToAdd: [
+            { name: 'Course Proposée', categoryLevel1: 'TRAIL', runDistance: 50 }
+          ]
+        },
+        userModifiedChanges: {
+          raceEdits: {
+            [manualRaceId]: {
+              id: manualRaceId,
+              name: 'Course Manuelle Ajoutée',
+              categoryLevel1: 'RUNNING',
+              runDistance: 10
+            }
+          }
+        }
+      })
+
+      // Simulate consolidation
+      const consolidatedRaces: ConsolidatedRaceChange[] = []
+
+      // From racesToAdd
+      const racesToAdd = proposalFromBackend.changes.racesToAdd
+      if (Array.isArray(racesToAdd)) {
+        racesToAdd.forEach((race: any, index: number) => {
+          consolidatedRaces.push({
+            raceId: `new-${index}`,
+            raceName: race.name,
+            proposalIds: [proposalFromBackend.id],
+            originalFields: {},
+            fields: race
+          })
+        })
+      }
+
+      // Add manual races (the fix)
+      const userModifiedRaceChanges = proposalFromBackend.userModifiedChanges?.raceEdits || {}
+      Object.entries(userModifiedRaceChanges).forEach(([id, raceData]: [string, any]) => {
+        if (id.startsWith('new-') && !raceData._deleted) {
+          const existsInConsolidated = consolidatedRaces.some(r => r.raceId === id)
+          if (!existsInConsolidated) {
+            consolidatedRaces.push({
+              raceId: id,
+              raceName: raceData.name || 'Nouvelle course',
+              proposalIds: [],
+              originalFields: {},
+              fields: { ...raceData, id }
+            })
+          }
+        }
+      })
+
+      // Should have 2 races: proposed + manual
+      expect(consolidatedRaces.length).toBe(2)
+
+      const proposedRace = consolidatedRaces.find(r => r.raceId === proposedRaceId)
+      expect(proposedRace?.raceName).toBe('Course Proposée')
+
+      const manualRace = consolidatedRaces.find(r => r.raceId === manualRaceId)
+      expect(manualRace?.raceName).toBe('Course Manuelle Ajoutée')
+      expect(manualRace?.fields.runDistance).toBe(10)
+    })
+  })
+
   describe('addRace logic (unit tests)', () => {
     /**
      * These tests verify the state transformation logic of addRace

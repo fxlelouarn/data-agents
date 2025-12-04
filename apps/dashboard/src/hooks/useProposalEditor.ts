@@ -286,12 +286,32 @@ export function useProposalEditor(
       })
     }
 
+    // ✅ FIX: Ajouter les courses manuellement ajoutées (new-{timestamp}) à consolidatedRaces
+    // Ces courses sont dans userModifiedRaceChanges mais pas dans proposal.changes
+    const finalConsolidatedRaces = [...consolidatedRaces]
+    Object.entries(userModifiedRaceChanges).forEach(([raceId, raceData]: [string, any]) => {
+      // Vérifier si c'est une course manuellement ajoutée (ID format new-{timestamp})
+      // et qu'elle n'existe pas déjà dans consolidatedRaces
+      if (raceId.startsWith('new-') && !raceData._deleted) {
+        const existsInConsolidated = consolidatedRaces.some(r => r.raceId === raceId)
+        if (!existsInConsolidated) {
+          finalConsolidatedRaces.push({
+            raceId,
+            raceName: raceData.name || 'Nouvelle course',
+            proposalIds: [],  // Pas de proposition source (course manuelle)
+            originalFields: {},  // Pas de valeur originale (nouvelle course)
+            fields: { ...raceData, id: raceId }
+          })
+        }
+      }
+    })
+
     return {
       ids,
       originalProposals: pendingProposals, // ✅ Seules les PENDING pour l'édition
       historicalProposals, // ✅ Propositions déjà traitées (historique)
       consolidatedChanges,
-      consolidatedRaces,
+      consolidatedRaces: finalConsolidatedRaces,  // ✅ Inclut les courses manuelles
       userModifiedChanges, // ✅ Préserver les modifs édition sauvegardées
       userModifiedRaceChanges, // ✅ Préserver les modifs de courses sauvegardées
       approvedBlocks,
