@@ -99,12 +99,17 @@ class UpdateAutoApplyScheduler {
    * Exécution planifiée (appelée par setInterval)
    */
   private async runScheduledApply(): Promise<void> {
-    // Mettre à jour la prochaine exécution
-    const settings = await settingsService.getAutoApplySettings()
-    const nextRunAt = new Date(Date.now() + settings.intervalMinutes * 60 * 1000)
-    await settingsService.updateAutoApplyNextRunAt(nextRunAt)
+    try {
+      // Mettre à jour la prochaine exécution
+      const settings = await settingsService.getAutoApplySettings()
+      const nextRunAt = new Date(Date.now() + settings.intervalMinutes * 60 * 1000)
+      await settingsService.updateAutoApplyNextRunAt(nextRunAt)
 
-    await this.applyAllPendingUpdates()
+      await this.applyAllPendingUpdates()
+    } catch (error) {
+      console.error('❌ Scheduled auto-apply failed:', error instanceof Error ? error.message : error)
+      // Ne pas re-throw pour éviter de casser le setInterval
+    }
   }
 
   /**
@@ -166,20 +171,37 @@ class UpdateAutoApplyScheduler {
 
       console.log(`📋 Found ${pendingApplications.length} pending updates`)
 
-      // Trier par dépendances
-      const sortedApplications = sortBlocksByDependencies(
-        pendingApplications.map((app) => ({
-          blockType: app.blockType as BlockApplication['blockType'],
-          id: app.id
-        }))
-      )
+      // Grouper les applications par proposalId pour trier CHAQUE proposition séparément
+      const applicationsByProposal = new Map<string, typeof pendingApplications>()
+      for (const app of pendingApplications) {
+        const proposalId = app.proposalId
+        if (!applicationsByProposal.has(proposalId)) {
+          applicationsByProposal.set(proposalId, [])
+        }
+        applicationsByProposal.get(proposalId)!.push(app)
+      }
 
-      // Récupérer les applications complètes dans l'ordre trié
-      const applicationsInOrder = sortedApplications
-        .map((sorted: BlockApplication) => pendingApplications.find((app) => app.id === sorted.id)!)
-        .filter(Boolean)
+      // Trier les blocs au sein de chaque proposition, puis concaténer
+      const applicationsInOrder: typeof pendingApplications = []
+      for (const [_proposalId, apps] of applicationsByProposal) {
+        // Trier par dépendances au sein de cette proposition
+        const sortedBlocks = sortBlocksByDependencies(
+          apps.map((app) => ({
+            blockType: app.blockType as BlockApplication['blockType'],
+            id: app.id
+          }))
+        )
 
-      console.log(`📋 Execution order: ${sortedApplications.map((a: BlockApplication) => a.blockType || 'full').join(' → ')}`)
+        // Récupérer les applications complètes dans l'ordre trié
+        const sortedApps = sortedBlocks
+          .map((sorted: BlockApplication) => apps.find((app) => app.id === sorted.id)!)
+          .filter(Boolean)
+
+        applicationsInOrder.push(...sortedApps)
+      }
+
+      console.log(`📋 Processing ${applicationsByProposal.size} proposal(s) with ${applicationsInOrder.length} application(s)`)
+      console.log(`📋 Execution order: ${applicationsInOrder.map((a) => `${a.proposal.eventName}:${a.blockType || 'full'}`).join(' → ')}`)
 
       // Appliquer chaque mise à jour
       for (const application of applicationsInOrder) {
@@ -249,13 +271,18 @@ class UpdateAutoApplyScheduler {
       if (applyResult.success) {
         logs.push('✅ Successfully applied changes')
 
+        // ✅ FIX: Utiliser applyResult.appliedChanges si application.appliedChanges est vide
+        // Un objet vide {} est truthy en JS, donc on vérifie explicitement
+        const hasExistingChanges = application.appliedChanges && Object.keys(application.appliedChanges).length > 0
+        const finalAppliedChanges = hasExistingChanges ? application.appliedChanges : applyResult.appliedChanges
+
         await this.prisma.proposalApplication.update({
           where: { id: application.id },
           data: {
             status: 'APPLIED',
             appliedAt: new Date(),
             logs: logs,
-            appliedChanges: application.appliedChanges || applyResult.appliedChanges,
+            appliedChanges: finalAppliedChanges,
             rollbackData: applyResult.createdIds || null
           }
         })

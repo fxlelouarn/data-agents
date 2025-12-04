@@ -153,14 +153,21 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     }
 
     // ✅ NOUVEAU: Cas spécial races pour NEW_EVENT
-    // Les courses sont dans edition.new.races, pas dans racesToAdd au niveau racine
-    if (blockType === 'races' && fieldName === 'racesToAdd') {
+    // Les courses peuvent être dans plusieurs endroits selon la source
+    if (blockType === 'races' && (fieldName === 'racesToAdd' || fieldName === 'races')) {
       // Priorité 1: racesToAdd au niveau racine (EDITION_UPDATE)
       if (effectiveChanges.racesToAdd) {
-        return effectiveChanges.racesToAdd
+        const racesToAdd = effectiveChanges.racesToAdd
+        return racesToAdd.new || racesToAdd
       }
 
-      // Priorité 2: edition.new.races (NEW_EVENT)
+      // Priorité 2: races au niveau racine (nouveau format appliedChanges)
+      if (effectiveChanges.races) {
+        const races = effectiveChanges.races
+        return races.new || races
+      }
+
+      // Priorité 3: edition.new.races (NEW_EVENT - structure originale)
       if (effectiveChanges.edition?.new?.races) {
         return effectiveChanges.edition.new.races
       }
@@ -373,6 +380,15 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     // ✅ Filtrer racesToDelete si vide (aucune suppression)
     if (field === 'racesToDelete') {
       return Array.isArray(proposedValue) && proposedValue.length > 0
+    }
+
+    // ✅ Éviter doublon : ne pas afficher 'races' si 'racesToAdd' a des données
+    // Les deux pointent vers les mêmes données pour NEW_EVENT
+    if (field === 'races') {
+      const racesToAddValue = getProposedValue('racesToAdd')
+      if (racesToAddValue && Array.isArray(racesToAddValue) && racesToAddValue.length > 0) {
+        return false // racesToAdd sera affiché, pas besoin de races
+      }
     }
 
     // ✅ Garder tous les autres champs avec des valeurs
