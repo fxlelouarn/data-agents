@@ -31,20 +31,25 @@ import {
   Add as AddIcon,
   Edit as EditIcon,
   ExpandMore as ExpandMoreIcon,
-  Warning as WarningIcon
+  Warning as WarningIcon,
+  PlayArrow as PlayArrowIcon,
+  Schedule as ScheduleIcon,
+  Sync as SyncIcon
 } from '@mui/icons-material'
 // import { useSnackbar } from 'notistack' // Unused for now
-import { 
-  useDatabases, 
-  useCreateDatabase, 
-  useUpdateDatabase, 
-  useToggleDatabase, 
-  useTestDatabase, 
+import {
+  useDatabases,
+  useCreateDatabase,
+  useUpdateDatabase,
+  useToggleDatabase,
+  useTestDatabase,
   useDeleteDatabase,
   useSettings,
   useUpdateSettings,
   useFailureReport,
-  useCheckFailures
+  useCheckFailures,
+  useAutoApplyStatus,
+  useRunAutoApply
 } from '@/hooks/useApi'
 import DatabaseForm from '@/components/DatabaseForm'
 
@@ -56,34 +61,39 @@ const Settings: React.FC = () => {
   const toggleDatabaseMutation = useToggleDatabase()
   const testDatabaseMutation = useTestDatabase()
   const deleteDatabaseMutation = useDeleteDatabase()
-  
+
   // Settings hooks
   const { data: settingsData, isLoading: settingsLoading } = useSettings()
   const updateSettingsMutation = useUpdateSettings()
   const { data: failureReportData } = useFailureReport()
   const checkFailuresMutation = useCheckFailures()
-  
+
+  // Auto-apply hooks
+  const { data: autoApplyStatusData, isLoading: autoApplyLoading } = useAutoApplyStatus()
+  const runAutoApplyMutation = useRunAutoApply()
+  const autoApplyStatus = autoApplyStatusData?.data
+
   const databases = databasesData?.data || []
   const systemSettings = settingsData?.data
   const failureReport = failureReportData?.data
-  
+
   const [testResults, setTestResults] = useState<Record<string, 'success' | 'error' | 'testing'>>({})
-  
+
   const [editingDatabase, setEditingDatabase] = useState<any>(null)
   const [databaseFormOpen, setDatabaseFormOpen] = useState(false)
-  
+
   // Handlers pour Meilisearch avec débounce
   const [meilisearchTimeouts, setMeilisearchTimeouts] = useState<{
     url?: NodeJS.Timeout,
     apiKey?: NodeJS.Timeout
   }>({})
-  
+
   // État local pour les paramètres Meilisearch
   const [meilisearchSettings, setMeilisearchSettings] = useState({
     url: (systemSettings as any)?.meilisearchUrl || '',
     apiKey: (systemSettings as any)?.meilisearchApiKey || ''
   })
-  
+
   // Synchroniser avec les settings du serveur
   useEffect(() => {
     if (systemSettings) {
@@ -108,13 +118,13 @@ const Settings: React.FC = () => {
   /*
   const handleSaveSystemSettings = async () => {
     if (!systemSettings) return
-    
+
     const updatedSettings = {
       maxConsecutiveFailures: systemSettings.maxConsecutiveFailures,
       enableAutoDisabling: systemSettings.enableAutoDisabling,
       checkIntervalMinutes: systemSettings.checkIntervalMinutes
     }
-    
+
     updateSettingsMutation.mutate(updatedSettings)
   }
 
@@ -130,34 +140,34 @@ const Settings: React.FC = () => {
   const handleMeilisearchUrlChange = (value: string) => {
     const trimmedValue = value.trim() || null
     setMeilisearchSettings(prev => ({ ...prev, url: value }))
-    
+
     // Clear existing timeout
     if (meilisearchTimeouts.url) {
       clearTimeout(meilisearchTimeouts.url)
     }
-    
+
     // Set new timeout
     const timeout = setTimeout(() => {
       updateSettingsMutation.mutate({ meilisearchUrl: trimmedValue } as any)
     }, 500) // Débounce de 500ms
-    
+
     setMeilisearchTimeouts(prev => ({ ...prev, url: timeout }))
   }
 
   const handleMeilisearchApiKeyChange = (value: string) => {
     const trimmedValue = value.trim() || null
     setMeilisearchSettings(prev => ({ ...prev, apiKey: value }))
-    
+
     // Clear existing timeout
     if (meilisearchTimeouts.apiKey) {
       clearTimeout(meilisearchTimeouts.apiKey)
     }
-    
+
     // Set new timeout
     const timeout = setTimeout(() => {
       updateSettingsMutation.mutate({ meilisearchApiKey: trimmedValue } as any)
     }, 500) // Débounce de 500ms
-    
+
     setMeilisearchTimeouts(prev => ({ ...prev, apiKey: timeout }))
   }
 
@@ -189,20 +199,20 @@ const Settings: React.FC = () => {
   const handleToggleDatabase = (database: any) => {
     toggleDatabaseMutation.mutate(database.id)
   }
-  
+
   const handleTestDatabase = async (database: any) => {
     setTestResults(prev => ({ ...prev, [database.id]: 'testing' }))
     try {
       const result = await testDatabaseMutation.mutateAsync(database.id)
-      setTestResults(prev => ({ 
-        ...prev, 
-        [database.id]: result.data.isHealthy ? 'success' : 'error' 
+      setTestResults(prev => ({
+        ...prev,
+        [database.id]: result.data.isHealthy ? 'success' : 'error'
       }))
     } catch (error) {
       setTestResults(prev => ({ ...prev, [database.id]: 'error' }))
     }
   }
-  
+
   const handleDeleteDatabase = (database: any) => {
     if (window.confirm(`Êtes-vous sûr de vouloir supprimer la base de données "${database.name}" ?`)) {
       deleteDatabaseMutation.mutate(database.id)
@@ -240,11 +250,11 @@ const Settings: React.FC = () => {
               <Typography variant="h6" sx={{ mb: 2 }}>
                 🛑 Fiabilité des agents
               </Typography>
-              
+
               <Alert severity="info" sx={{ mb: 2 }}>
                 Configuration de la désactivation automatique des agents en échec répété.
               </Alert>
-              
+
               {settingsLoading ? (
                 <Typography>Chargement des paramètres...</Typography>
               ) : systemSettings ? (
@@ -254,7 +264,7 @@ const Settings: React.FC = () => {
                       control={
                         <Switch
                           checked={systemSettings.enableAutoDisabling}
-                          onChange={(e) => 
+                          onChange={(e) =>
                             updateSettingsMutation.mutate({ enableAutoDisabling: e.target.checked })
                           }
                         />
@@ -262,7 +272,7 @@ const Settings: React.FC = () => {
                       label="Activer la désactivation automatique des agents"
                     />
                   </Grid>
-                  
+
                   <Grid item xs={6}>
                     <TextField
                       fullWidth
@@ -277,7 +287,7 @@ const Settings: React.FC = () => {
                       helperText="Nombre d'échecs avant désactivation"
                     />
                   </Grid>
-                  
+
                   <Grid item xs={6}>
                     <TextField
                       fullWidth
@@ -292,7 +302,7 @@ const Settings: React.FC = () => {
                       helperText="Fréquence de vérification périodique"
                     />
                   </Grid>
-                  
+
                   <Grid item xs={12}>
                     <Button
                       variant="outlined"
@@ -303,7 +313,7 @@ const Settings: React.FC = () => {
                       {checkFailuresMutation.isPending ? 'Vérification...' : 'Vérifier les agents maintenant'}
                     </Button>
                   </Grid>
-                  
+
                   {failureReport && (
                     <Grid item xs={12}>
                       <Box sx={{ mt: 2 }}>
@@ -361,11 +371,11 @@ const Settings: React.FC = () => {
               <Typography variant="h6" sx={{ mb: 2 }}>
                 🔍 Configuration Meilisearch
               </Typography>
-              
+
               <Alert severity="info" sx={{ mb: 2 }}>
                 Configurez Meilisearch pour la recherche d'événements dans l'autocomplétion des propositions.
               </Alert>
-              
+
               {settingsLoading ? (
                 <Typography>Chargement des paramètres...</Typography>
               ) : systemSettings ? (
@@ -380,7 +390,7 @@ const Settings: React.FC = () => {
                       helperText="URL de votre instance Meilisearch"
                     />
                   </Grid>
-                  
+
                   <Grid item xs={12}>
                     <TextField
                       fullWidth
@@ -392,7 +402,7 @@ const Settings: React.FC = () => {
                       helperText="Clé API pour accéder à Meilisearch"
                     />
                   </Grid>
-                  
+
                   <Grid item xs={12}>
                     <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
                       <Chip
@@ -408,7 +418,7 @@ const Settings: React.FC = () => {
                           try {
                             const response = await fetch('/api/events/test-meilisearch', { method: 'POST' })
                             const data = await response.json()
-                            
+
                             if (data.success) {
                               alert(`✅ Connexion réussie: ${data.data.message}`)
                             } else {
@@ -429,6 +439,176 @@ const Settings: React.FC = () => {
                 </Grid>
               ) : (
                 <Typography color="error">Impossible de charger les paramètres Meilisearch</Typography>
+              )}
+            </CardContent>
+          </Card>
+        </Grid>
+
+        {/* Application automatique des mises à jour */}
+        <Grid item xs={12} lg={6}>
+          <Card>
+            <CardContent>
+              <Typography variant="h6" sx={{ mb: 2 }}>
+                <SyncIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
+                Application automatique des mises à jour
+              </Typography>
+
+              <Alert severity="info" sx={{ mb: 2 }}>
+                Configure l'application automatique périodique des mises à jour en attente (PENDING).
+              </Alert>
+
+              {autoApplyLoading || settingsLoading ? (
+                <Typography>Chargement des paramètres...</Typography>
+              ) : (
+                <Grid container spacing={2}>
+                  <Grid item xs={12}>
+                    <FormControlLabel
+                      control={
+                        <Switch
+                          checked={(systemSettings as any)?.enableAutoApplyUpdates || false}
+                          onChange={(e) =>
+                            updateSettingsMutation.mutate({ enableAutoApplyUpdates: e.target.checked } as any)
+                          }
+                        />
+                      }
+                      label="Activer l'application automatique"
+                    />
+                  </Grid>
+
+                  <Grid item xs={12}>
+                    <TextField
+                      fullWidth
+                      label="Intervalle d'exécution (minutes)"
+                      type="number"
+                      value={(systemSettings as any)?.autoApplyIntervalMinutes || 60}
+                      onChange={(e) => {
+                        const value = parseInt(e.target.value) || 60
+                        if (value >= 5 && value <= 1440) {
+                          updateSettingsMutation.mutate({ autoApplyIntervalMinutes: value } as any)
+                        }
+                      }}
+                      InputProps={{ inputProps: { min: 5, max: 1440 } }}
+                      helperText="Entre 5 minutes et 24 heures (1440 min)"
+                      disabled={!(systemSettings as any)?.enableAutoApplyUpdates}
+                    />
+                  </Grid>
+
+                  {autoApplyStatus && (
+                    <>
+                      <Grid item xs={12}>
+                        <Paper sx={{ p: 2, bgcolor: 'background.default' }}>
+                          <Grid container spacing={1}>
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                Statut du scheduler
+                              </Typography>
+                              <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                <Chip
+                                  size="small"
+                                  icon={autoApplyStatus.isSchedulerRunning ? <ScheduleIcon /> : undefined}
+                                  label={autoApplyStatus.isSchedulerRunning ? 'Actif' : 'Inactif'}
+                                  color={autoApplyStatus.isSchedulerRunning ? 'success' : 'default'}
+                                />
+                                {autoApplyStatus.isCurrentlyApplying && (
+                                  <Chip size="small" label="En cours..." color="warning" />
+                                )}
+                              </Box>
+                            </Grid>
+
+                            <Grid item xs={6}>
+                              <Typography variant="caption" color="text.secondary">
+                                Prochaine exécution
+                              </Typography>
+                              <Typography variant="body2">
+                                {autoApplyStatus.nextRunAt
+                                  ? new Date(autoApplyStatus.nextRunAt).toLocaleString()
+                                  : '-'}
+                              </Typography>
+                            </Grid>
+
+                            {autoApplyStatus.lastRunAt && (
+                              <>
+                                <Grid item xs={6}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Dernière exécution
+                                  </Typography>
+                                  <Typography variant="body2">
+                                    {new Date(autoApplyStatus.lastRunAt).toLocaleString()}
+                                  </Typography>
+                                </Grid>
+
+                                <Grid item xs={6}>
+                                  <Typography variant="caption" color="text.secondary">
+                                    Résultat
+                                  </Typography>
+                                  {autoApplyStatus.lastRunResult && (
+                                    <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mt: 0.5 }}>
+                                      <Chip
+                                        size="small"
+                                        icon={<SuccessIcon />}
+                                        label={`${autoApplyStatus.lastRunResult.success} OK`}
+                                        color="success"
+                                        variant="outlined"
+                                      />
+                                      {autoApplyStatus.lastRunResult.failed > 0 && (
+                                        <Chip
+                                          size="small"
+                                          icon={<ErrorIcon />}
+                                          label={`${autoApplyStatus.lastRunResult.failed} échec`}
+                                          color="error"
+                                          variant="outlined"
+                                        />
+                                      )}
+                                    </Box>
+                                  )}
+                                </Grid>
+                              </>
+                            )}
+                          </Grid>
+                        </Paper>
+                      </Grid>
+
+                      {autoApplyStatus.lastRunResult && autoApplyStatus.lastRunResult.errors.length > 0 && (
+                        <Grid item xs={12}>
+                          <Accordion>
+                            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+                              <Typography variant="body2" color="error">
+                                <WarningIcon sx={{ fontSize: 16, mr: 1, verticalAlign: 'middle' }} />
+                                {autoApplyStatus.lastRunResult.errors.length} erreur(s) lors de la dernière exécution
+                              </Typography>
+                            </AccordionSummary>
+                            <AccordionDetails>
+                              <List dense>
+                                {autoApplyStatus.lastRunResult.errors.slice(0, 5).map((error, index) => (
+                                  <ListItem key={index}>
+                                    <ListItemText
+                                      primary={error}
+                                      primaryTypographyProps={{ variant: 'caption', color: 'error' }}
+                                    />
+                                  </ListItem>
+                                ))}
+                              </List>
+                            </AccordionDetails>
+                          </Accordion>
+                        </Grid>
+                      )}
+                    </>
+                  )}
+
+                  <Grid item xs={12}>
+                    <Button
+                      variant="outlined"
+                      startIcon={<PlayArrowIcon />}
+                      onClick={() => runAutoApplyMutation.mutate()}
+                      disabled={runAutoApplyMutation.isPending || autoApplyStatus?.isCurrentlyApplying}
+                      fullWidth
+                    >
+                      {runAutoApplyMutation.isPending || autoApplyStatus?.isCurrentlyApplying
+                        ? 'Application en cours...'
+                        : 'Exécuter maintenant'}
+                    </Button>
+                  </Grid>
+                </Grid>
               )}
             </CardContent>
           </Card>
@@ -525,7 +705,7 @@ const Settings: React.FC = () => {
           </Card>
         </Grid>
 
-        
+
         {/* Rapport détaillé des échecs */}
         {failureReport && failureReport.agents.length > 0 && (
           <Grid item xs={12}>
@@ -534,11 +714,11 @@ const Settings: React.FC = () => {
                 <Typography variant="h6" sx={{ mb: 2 }}>
                   🚨 Agents en échec
                 </Typography>
-                
+
                 <Alert severity="warning" sx={{ mb: 2 }}>
                   {failureReport.summary.agentsAtRisk} agent(s) risque(nt) d'être désactivé(s) automatiquement.
                 </Alert>
-                
+
                 {failureReport.agents.map((agent) => (
                   <Accordion key={agent.agentId} sx={{ mb: 1 }}>
                     <AccordionSummary expandIcon={<ExpandMoreIcon />}>
@@ -551,16 +731,16 @@ const Settings: React.FC = () => {
                             ID: {agent.agentId}
                           </Typography>
                         </Box>
-                        
+
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                          <Chip 
+                          <Chip
                             icon={agent.shouldDisable ? <ErrorIcon /> : <WarningIcon />}
                             label={`${agent.consecutiveFailures} échec(s)`}
                             color={agent.shouldDisable ? 'error' : 'warning'}
                             size="small"
                           />
                           {agent.shouldDisable && (
-                            <Chip 
+                            <Chip
                               label="À désactiver"
                               color="error"
                               variant="outlined"
@@ -570,7 +750,7 @@ const Settings: React.FC = () => {
                         </Box>
                       </Box>
                     </AccordionSummary>
-                    
+
                     <AccordionDetails>
                       <Grid container spacing={2}>
                         <Grid item xs={12} md={6}>
@@ -579,30 +759,30 @@ const Settings: React.FC = () => {
                           </Typography>
                           <List dense>
                             <ListItem>
-                              <ListItemText 
+                              <ListItemText
                                 primary="Échecs consécutifs"
                                 secondary={`${agent.consecutiveFailures} / ${failureReport.settings.maxConsecutiveFailures}`}
                               />
                             </ListItem>
                             <ListItem>
-                              <ListItemText 
+                              <ListItemText
                                 primary="Dernier échec"
                                 secondary={new Date(agent.lastFailureAt).toLocaleString()}
                               />
                             </ListItem>
                             <ListItem>
-                              <ListItemText 
+                              <ListItemText
                                 primary="Statut"
                                 secondary={
-                                  agent.shouldDisable 
-                                    ? "🔴 Sera désactivé automatiquement" 
+                                  agent.shouldDisable
+                                    ? "🔴 Sera désactivé automatiquement"
                                     : "🟡 Surveillé"
                                 }
                               />
                             </ListItem>
                           </List>
                         </Grid>
-                        
+
                         <Grid item xs={12} md={6}>
                           <Typography variant="subtitle2" gutterBottom>
                             📅 Derniers échecs
@@ -610,7 +790,7 @@ const Settings: React.FC = () => {
                           <List dense>
                             {agent.recentRuns.slice(0, 3).map((run) => (
                               <ListItem key={run.id}>
-                                <ListItemText 
+                                <ListItemText
                                   primary={new Date(run.startedAt).toLocaleString()}
                                   secondary={
                                     <Box>
@@ -634,7 +814,7 @@ const Settings: React.FC = () => {
           </Grid>
         )}
       </Grid>
-      
+
       {/* Formulaire d'ajout/modification de base de données */}
       <DatabaseForm
         open={databaseFormOpen}

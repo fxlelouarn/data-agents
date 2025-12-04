@@ -112,7 +112,7 @@ model ProposalApplication {
   appliedAt    DateTime?
   errorMessage String?
   logs         String[]                @default([])
-  appliedChanges Json?                
+  appliedChanges Json?
   rollbackData Json?
   createdAt    DateTime                @default(now())
   updatedAt    DateTime                @updatedAt
@@ -153,6 +153,12 @@ model Settings {
   checkIntervalMinutes    Int      @default(5)
   meilisearchUrl          String?
   meilisearchApiKey       String?
+  // Application automatique des mises à jour PENDING
+  enableAutoApplyUpdates     Boolean   @default(false)
+  autoApplyIntervalMinutes   Int       @default(60)
+  autoApplyLastRunAt         DateTime?
+  autoApplyNextRunAt         DateTime?
+  autoApplyLastRunResult     Json?     // { success: number, failed: number, errors: string[] }
   createdAt               DateTime @default(now())
   updatedAt               DateTime @updatedAt
 
