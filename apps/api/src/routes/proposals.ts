@@ -663,43 +663,178 @@ router.get('/', [
   query('type').optional().isIn(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE']),
   query('eventId').optional().isString(),
   query('editionId').optional().isString(),
+  query('categoryLevel1').optional().isString(),
+  query('categoryLevel2').optional().isString(),
+  query('sort').optional().isIn(['date-asc', 'date-desc', 'created-desc']),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
 
-  const findStart = Date.now()
-  const proposals = await db.prisma.proposal.findMany({
-    where: {
-      status: (status as string | undefined) ? (status as any) : undefined,
-      type: (type as string | undefined) ? (type as any) : undefined,
-      eventId: (eventId as string | undefined) || undefined,
-      editionId: (editionId as string | undefined) || undefined
-    },
-    include: {
-      agent: {
-        select: { name: true, type: true }
-      }
-    },
-    orderBy: { createdAt: 'desc' },
-    take: parseInt(String(limit)),
-    skip: parseInt(String(offset))
-  })
-  console.log(`[PROPOSALS] Prisma findMany took ${Date.now() - findStart}ms (returned ${proposals.length})`)
+  // Déterminer l'ordre de tri selon le paramètre
+  let orderBy: any
+  switch (sort) {
+    case 'date-asc':
+      // proposedStartDate croissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' }  // Secondaire pour départager
+      ]
+      break
+    case 'date-desc':
+      // proposedStartDate décroissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' }
+      ]
+      break
+    case 'created-desc':
+    default:
+      orderBy = { createdAt: 'desc' }
+      break
+  }
 
-  const countStart = Date.now()
-  const total = await db.prisma.proposal.count({
-    where: {
-      status: (status as string | undefined) ? (status as any) : undefined,
-      type: (type as string | undefined) ? (type as any) : undefined,
-      eventId: (eventId as string | undefined) || undefined,
-      editionId: (editionId as string | undefined) || undefined
+  // Construire le filtre de base Prisma
+  const baseWhere = {
+    status: (status as string | undefined) ? (status as any) : undefined,
+    type: (type as string | undefined) ? (type as any) : undefined,
+    eventId: (eventId as string | undefined) || undefined,
+    editionId: (editionId as string | undefined) || undefined
+  }
+
+  // Si on filtre par catégorie, on doit utiliser une requête SQL brute
+  // car Prisma ne supporte pas les requêtes JSONB imbriquées
+  const hasCategoryFilter = categoryLevel1 || categoryLevel2
+
+  let proposals: any[]
+  let total: number
+
+  const findStart = Date.now()
+
+  if (hasCategoryFilter) {
+    // Requête SQL brute pour filtrer par catégorie dans le JSONB
+    // Les catégories peuvent être dans plusieurs emplacements :
+    // - NEW_EVENT: changes->'edition'->'new'->'races'
+    // - EDITION_UPDATE: changes->'racesToAdd'->'new' ou changes->'racesToUpdate'->'new'
+
+    const categoryConditions: string[] = []
+    const params: any[] = []
+    let paramIndex = 1
+
+    // Conditions de base
+    const baseConditions: string[] = []
+    if (status) {
+      baseConditions.push(`status = $${paramIndex}`)
+      params.push(status)
+      paramIndex++
     }
-  })
-  console.log(`[PROPOSALS] Prisma count took ${Date.now() - countStart}ms`)
+    if (type) {
+      baseConditions.push(`type = $${paramIndex}`)
+      params.push(type)
+      paramIndex++
+    }
+    if (eventId) {
+      baseConditions.push(`"eventId" = $${paramIndex}`)
+      params.push(eventId)
+      paramIndex++
+    }
+    if (editionId) {
+      baseConditions.push(`"editionId" = $${paramIndex}`)
+      params.push(editionId)
+      paramIndex++
+    }
+
+    // Condition pour categoryLevel1
+    if (categoryLevel1) {
+      categoryConditions.push(`(
+        EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'edition'->'new'->'races') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToAdd'->'new') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToUpdate'->'new') AS race WHERE race->'updates'->'categoryLevel1'->>'new' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'races'->'new') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+      )`)
+      params.push(categoryLevel1)
+      paramIndex++
+    }
+
+    // Condition pour categoryLevel2
+    if (categoryLevel2) {
+      categoryConditions.push(`(
+        EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'edition'->'new'->'races') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToAdd'->'new') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToUpdate'->'new') AS race WHERE race->'updates'->'categoryLevel2'->>'new' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'races'->'new') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+      )`)
+      params.push(categoryLevel2)
+      paramIndex++
+    }
+
+    const allConditions = [...baseConditions, ...categoryConditions]
+    const whereClause = allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : ''
+
+    // Déterminer ORDER BY pour SQL
+    let orderByClause: string
+    switch (sort) {
+      case 'date-asc':
+        orderByClause = 'ORDER BY "proposedStartDate" ASC NULLS LAST, "createdAt" DESC'
+        break
+      case 'date-desc':
+        orderByClause = 'ORDER BY "proposedStartDate" DESC NULLS LAST, "createdAt" DESC'
+        break
+      case 'created-desc':
+      default:
+        orderByClause = 'ORDER BY "createdAt" DESC'
+        break
+    }
+
+    // Ajouter limit et offset
+    params.push(parseInt(String(limit)))
+    const limitParam = paramIndex++
+    params.push(parseInt(String(offset)))
+    const offsetParam = paramIndex++
+
+    const query = `
+      SELECT p.*,
+             json_build_object('name', a.name, 'type', a.type) as agent
+      FROM proposals p
+      LEFT JOIN agents a ON p."agentId" = a.id
+      ${whereClause}
+      ${orderByClause}
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `
+
+    const countQuery = `
+      SELECT COUNT(*) as count
+      FROM proposals
+      ${whereClause}
+    `
+
+    console.log(`[PROPOSALS] Executing raw SQL with category filter: ${categoryLevel1 || ''} / ${categoryLevel2 || ''}`)
+
+    proposals = await db.prisma.$queryRawUnsafe(query, ...params)
+    const countResult = await db.prisma.$queryRawUnsafe(countQuery, ...params.slice(0, -2)) as any[]
+    total = parseInt(countResult[0].count)
+
+  } else {
+    // Requête Prisma standard (sans filtre catégorie)
+    proposals = await db.prisma.proposal.findMany({
+      where: baseWhere,
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        }
+      },
+      orderBy,
+      take: parseInt(String(limit)),
+      skip: parseInt(String(offset))
+    })
+
+    total = await db.prisma.proposal.count({ where: baseWhere })
+  }
+
+  console.log(`[PROPOSALS] Prisma findMany took ${Date.now() - findStart}ms (returned ${proposals.length})`)
 
   // Enrichir chaque proposition avec les infos contextuelles (concurrence limitée)
   const enrichStart = Date.now()

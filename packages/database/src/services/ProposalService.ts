@@ -4,7 +4,7 @@ import { ProposalRepository } from '../repositories/proposal.repository'
 
 /**
  * Proposal Service - Business logic layer
- * 
+ *
  * Uses ProposalRepository for data access (Repository Pattern)
  */
 export class ProposalService implements IProposalService {
@@ -37,7 +37,8 @@ export class ProposalService implements IProposalService {
     let eventCity: string | undefined
     let editionYear: number | undefined
     let raceName: string | undefined
-    
+    let proposedStartDate: Date | undefined
+
     // La justification peut être un tableau ou un objet
     if (Array.isArray(data.justification) && data.justification.length > 0) {
       const firstJustification = data.justification[0]
@@ -57,14 +58,66 @@ export class ProposalService implements IProposalService {
       editionYear = yearValue ? (typeof yearValue === 'string' ? parseInt(yearValue) : yearValue) : undefined
       raceName = data.justification.raceName
     }
-    
+
+    // Extraire proposedStartDate depuis changes
+    proposedStartDate = this.extractStartDate(data.changes)
+
     return this.repository.create({
       ...data,
       eventName,
       eventCity,
       editionYear,
-      raceName
+      raceName,
+      proposedStartDate
     })
+  }
+
+  /**
+   * Extrait la startDate depuis l'objet changes d'une proposition
+   */
+  private extractStartDate(changes: Record<string, any>): Date | undefined {
+    if (!changes) return undefined
+
+    // Cas 1: changes.startDate directement (format { old, new } ou valeur directe)
+    if (changes.startDate) {
+      const startDate = typeof changes.startDate === 'object' && changes.startDate.new
+        ? changes.startDate.new
+        : changes.startDate
+
+      if (startDate && typeof startDate === 'string') {
+        const parsed = new Date(startDate)
+        if (!isNaN(parsed.getTime())) {
+          return parsed
+        }
+      }
+    }
+
+    // Cas 2: changes.edition.new.startDate (structure NEW_EVENT)
+    if (changes.edition?.new?.startDate) {
+      const startDate = changes.edition.new.startDate
+      if (typeof startDate === 'string') {
+        const parsed = new Date(startDate)
+        if (!isNaN(parsed.getTime())) {
+          return parsed
+        }
+      }
+    }
+
+    // Cas 3: changes.edition.startDate (autre variante)
+    if (changes.edition?.startDate) {
+      const startDate = typeof changes.edition.startDate === 'object' && changes.edition.startDate.new
+        ? changes.edition.startDate.new
+        : changes.edition.startDate
+
+      if (startDate && typeof startDate === 'string') {
+        const parsed = new Date(startDate)
+        if (!isNaN(parsed.getTime())) {
+          return parsed
+        }
+      }
+    }
+
+    return undefined
   }
 
   async updateProposal(id: string, data: {

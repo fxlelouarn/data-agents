@@ -211,10 +211,10 @@ export const useDeleteAgent = () => {
 }
 
 // Proposals hooks
-export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset = 0) => {
+export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset = 0, sort = 'created-desc') => {
   return useQuery({
-    queryKey: ['proposals', filters, limit, offset],
-    queryFn: () => proposalsApi.getAll(filters, limit, offset),
+    queryKey: ['proposals', filters, limit, offset, sort],
+    queryFn: () => proposalsApi.getAll(filters, limit, offset, sort),
     staleTime: 60000, // ⏱️ 60s - éviter refetch inutiles au rafraîchissement
     gcTime: 300000, // 5 minutes (garde le cache plus longtemps)
     refetchInterval: 120000, // Auto-refresh toutes les 2 minutes
