@@ -18,13 +18,15 @@ import { Help as HelpIcon, Settings as SettingsIcon } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useDatabases } from '@/hooks/useApi'
 
-// Interface pour le schema de configuration
-interface ConfigFieldSchema {
-  type: 'text' | 'number' | 'boolean' | 'password' | 'select' | 'textarea' | 'database_select' | 'multiselect'
+// Interface pour le schema de configuration (ancien format)
+interface ConfigFieldSchemaLegacy {
+  type: 'text' | 'number' | 'boolean' | 'password' | 'select' | 'textarea' | 'database_select' | 'multiselect' | 'switch' | 'slider'
   label: string
   description?: string
+  helpText?: string
   required?: boolean
   default?: any
+  defaultValue?: any
   min?: number
   max?: number
   step?: number
@@ -34,15 +36,53 @@ interface ConfigFieldSchema {
   validation?: {
     pattern?: string
     message?: string
+    required?: boolean
+    min?: number
+    max?: number
+    step?: number
   }
   category?: string
   advanced?: boolean
   order?: number
 }
 
-interface ConfigSchema {
-  [fieldName: string]: ConfigFieldSchema
+// Interface pour le nouveau format de champ
+interface ConfigField {
+  name: string
+  type: string
+  label: string
+  description?: string
+  helpText?: string
+  required?: boolean
+  defaultValue?: any
+  options?: Array<{ value: any; label: string }>
+  validation?: {
+    required?: boolean
+    min?: number
+    max?: number
+    step?: number
+    pattern?: string
+  }
+  category?: string
 }
+
+// Interface pour les catégories
+interface ConfigCategory {
+  id: string
+  label: string
+  description?: string
+}
+
+// Interface pour le nouveau format de schéma
+interface NewConfigSchema {
+  title?: string
+  description?: string
+  fields: ConfigField[]
+  categories?: ConfigCategory[]
+}
+
+// Type unifié pour le schéma
+type ConfigSchema = { [fieldName: string]: ConfigFieldSchemaLegacy } | NewConfigSchema
 
 interface DynamicConfigFormProps {
   configSchema?: ConfigSchema
@@ -50,6 +90,24 @@ interface DynamicConfigFormProps {
   onChange: (field: string, value: any) => void
   errors?: { [field: string]: string }
   touched?: { [field: string]: boolean }
+}
+
+// Normalise un champ du nouveau format vers l'ancien format interne
+function normalizeFieldToLegacy(field: ConfigField): ConfigFieldSchemaLegacy {
+  return {
+    type: field.type as any,
+    label: field.label,
+    description: field.description || field.helpText,
+    required: field.required ?? field.validation?.required,
+    default: field.defaultValue,
+    defaultValue: field.defaultValue,
+    min: field.validation?.min,
+    max: field.validation?.max,
+    step: field.validation?.step,
+    options: field.options,
+    validation: field.validation,
+    category: field.category
+  }
 }
 
 const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
@@ -62,17 +120,38 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
   const navigate = useNavigate()
   // Récupérer les bases de données disponibles
   const { data: databasesData, isLoading: databasesLoading, error: databasesError } = useDatabases()
+
+  // Normaliser le schéma pour supporter les deux formats
+  const normalizedSchema = React.useMemo(() => {
+    // Vérifier si c'est le nouveau format (avec fields array)
+    if ('fields' in configSchema && Array.isArray((configSchema as NewConfigSchema).fields)) {
+      const newSchema = configSchema as NewConfigSchema
+      const result: { [fieldName: string]: ConfigFieldSchemaLegacy } = {}
+
+      newSchema.fields.forEach((field) => {
+        result[field.name] = normalizeFieldToLegacy(field)
+      })
+
+      return result
+    }
+
+    // Sinon, c'est l'ancien format - le retourner tel quel
+    // Filtrer les propriétés non-champ (title, description, categories)
+    const { title, description, categories, fields, ...fieldConfigs } = configSchema as any
+    return fieldConfigs as { [fieldName: string]: ConfigFieldSchemaLegacy }
+  }, [configSchema])
+
   // Grouper les champs par catégorie et les trier par ordre
   const groupedFields = React.useMemo(() => {
-    const groups: { [category: string]: Array<[string, ConfigFieldSchema]> } = {}
-    
+    const groups: { [category: string]: Array<[string, ConfigFieldSchemaLegacy]> } = {}
+
     // Convertir en array et trier par ordre si défini
-    const sortedEntries = Object.entries(configSchema).sort(([, a], [, b]) => {
+    const sortedEntries = Object.entries(normalizedSchema).sort(([, a], [, b]) => {
       const orderA = a.order ?? 1000 // Valeurs sans order en fin
       const orderB = b.order ?? 1000
       return orderA - orderB
     })
-    
+
     sortedEntries.forEach(([fieldName, fieldConfig]) => {
       const category = fieldConfig.category || 'Configuration'
       if (!groups[category]) {
@@ -80,12 +159,12 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       }
       groups[category].push([fieldName, fieldConfig])
     })
-    
-    return groups
-  }, [configSchema])
 
-  const renderField = (fieldName: string, fieldConfig: ConfigFieldSchema) => {
-    const value = values[fieldName] ?? fieldConfig.default ?? ''
+    return groups
+  }, [normalizedSchema])
+
+  const renderField = (fieldName: string, fieldConfig: ConfigFieldSchemaLegacy) => {
+    const value = values[fieldName] ?? fieldConfig.default ?? fieldConfig.defaultValue ?? ''
     const hasError = touched[fieldName] && Boolean(errors[fieldName])
     const errorMessage = hasError ? errors[fieldName] : undefined
 
@@ -98,19 +177,20 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       value,
       onChange: (e: any) => {
         let newValue = e.target.value
-        
+
         // Conversion de types
-        if (fieldConfig.type === 'number') {
+        if (fieldConfig.type === 'number' || fieldConfig.type === 'slider') {
           newValue = newValue === '' ? undefined : Number(newValue)
-        } else if (fieldConfig.type === 'boolean') {
+        } else if (fieldConfig.type === 'boolean' || fieldConfig.type === 'switch') {
           newValue = e.target.checked
         }
-        
+
         onChange(fieldName, newValue)
       }
     }
 
     switch (fieldConfig.type) {
+      case 'switch':
       case 'boolean':
         return (
           <FormControlLabel
@@ -218,17 +298,52 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
           />
         )
 
+      case 'slider':
+        // Slider explicite (nouveau format de schéma)
+        return (
+          <Box key={fieldName} sx={{ mt: 2, mb: 3 }}>
+            <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              {fieldConfig.label}
+              {fieldConfig.description && (
+                <Tooltip title={fieldConfig.description}>
+                  <IconButton size="small">
+                    <HelpIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+              )}
+            </Typography>
+            <Box sx={{ px: 2, mt: 4 }}>
+              <Slider
+                value={Number(value) || fieldConfig.default || fieldConfig.defaultValue || fieldConfig.min || 0}
+                onChange={(_, newValue) => onChange(fieldName, newValue)}
+                min={fieldConfig.min}
+                max={fieldConfig.max}
+                step={fieldConfig.step || 0.05}
+                marks
+                valueLabelDisplay="on"
+                color={hasError ? 'error' : 'primary'}
+              />
+            </Box>
+            {hasError && (
+              <Typography variant="caption" color="error" sx={{ ml: 2 }}>
+                {errorMessage}
+              </Typography>
+            )}
+          </Box>
+        )
+
       case 'select':
-        // Pour les champs database_select, peupler les options avec les bases de données
+        // Pour les champs database, peupler les options avec les bases de données
         let selectOptions = fieldConfig.options || []
-        if (fieldName === 'sourceDatabase' && databasesData?.data) {
+        const isDatabaseField = fieldName === 'sourceDatabase' || fieldName === 'milesRepublicDatabase'
+        if (isDatabaseField && databasesData?.data) {
           const databases = databasesData.data.filter(db => db.isActive)
           selectOptions = databases.map(db => ({
             value: db.id,
             label: `${db.name} (${db.type})`
           }))
         }
-        
+
         return (
           <TextField
             key={fieldName}
@@ -256,18 +371,18 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       case 'database_select':
         const databases = databasesData?.data || []
         const activeDatabases = databases.filter(db => db.isActive)
-        
+
         if (databasesError) {
           // Analyser le type d'erreur pour afficher le bon message
-          const isApiNotImplemented = (databasesError as any)?.response?.status === 404 || 
+          const isApiNotImplemented = (databasesError as any)?.response?.status === 404 ||
                                      (databasesError as any)?.response?.status === 501 ||
                                      (databasesError as any)?.message?.includes('404')
-          
+
           if (isApiNotImplemented) {
             return (
               <Box key={fieldName}>
-                <Alert 
-                  severity="info" 
+                <Alert
+                  severity="info"
                   sx={{ mb: 2 }}
                 >
                   <Typography variant="subtitle2" gutterBottom>
@@ -310,20 +425,20 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
             )
           }
         }
-        
+
         if (activeDatabases.length === 0 && !databasesLoading) {
           // Distinguer entre "aucune base configurée" et "bases configurées mais inactives"
           const hasInactiveDatabases = databases.length > 0
-          
+
           return (
             <Box key={fieldName}>
-              <Alert 
-                severity="warning" 
+              <Alert
+                severity="warning"
                 sx={{ mb: 2 }}
                 action={
-                  <Button 
-                    color="inherit" 
-                    size="small" 
+                  <Button
+                    color="inherit"
+                    size="small"
                     startIcon={<SettingsIcon />}
                     onClick={() => {
                       // Navigation vers la page des paramètres
@@ -335,13 +450,13 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
                 }
               >
                 <Typography variant="subtitle2" gutterBottom>
-                  {hasInactiveDatabases 
+                  {hasInactiveDatabases
                     ? '⚠️ Bases de données configurées mais inactives'
                     : '📊 Aucune base de données configurée'
                   }
                 </Typography>
                 <Typography variant="body2">
-                  {hasInactiveDatabases 
+                  {hasInactiveDatabases
                     ? `Vous avez ${databases.length} base${databases.length > 1 ? 's' : ''} de données configurée${databases.length > 1 ? 's' : ''} mais aucune n'est activée. Activez-en au moins une pour utiliser cet agent.`
                     : 'Pour utiliser cet agent, vous devez d\'abord configurer une connexion à une base de données contenant les événements à traiter.'
                   }
@@ -349,7 +464,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
                 {!hasInactiveDatabases && (
                   <Typography component="ul" variant="body2" sx={{ mt: 1, pl: 2 }}>
                     <li>Allez dans les paramètres du gestionnaire d'agents</li>
-                    <li>Ajoutez une nouvelle connexion de base de données</li> 
+                    <li>Ajoutez une nouvelle connexion de base de données</li>
                     <li>Activez-la pour qu'elle soit disponible ici</li>
                   </Typography>
                 )}
@@ -358,8 +473,8 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
                 {...commonProps}
                 disabled
                 label={fieldConfig.label}
-                placeholder={hasInactiveDatabases 
-                  ? 'Activez d\'abord une base de données' 
+                placeholder={hasInactiveDatabases
+                  ? 'Activez d\'abord une base de données'
                   : 'Configurez d\'abord une base de données'
                 }
                 helperText={hasInactiveDatabases
@@ -370,7 +485,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
             </Box>
           )
         }
-        
+
         return (
           <TextField
             key={fieldName}
@@ -403,7 +518,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       case 'multiselect':
         const selectedValues = Array.isArray(value) ? value : []
         const multiselectOptions = fieldConfig.options || []
-        
+
         return (
           <Box key={fieldName} sx={{ mb: 2 }}>
             <Typography gutterBottom sx={{ display: 'flex', alignItems: 'center', gap: 1, fontWeight: 500 }}>
@@ -434,7 +549,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
                     />
                   }
                   label={option.label}
-                  sx={{ 
+                  sx={{
                     border: '1px solid',
                     borderColor: selectedValues.includes(option.value) ? 'primary.main' : 'divider',
                     borderRadius: 1,
@@ -519,7 +634,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
   }
 
   // Fonction pour normaliser un type de champ
-  const normalizeFieldType = (type: string, fieldConfig?: ConfigFieldSchema) => {
+  const normalizeFieldType = (type: string, fieldConfig?: ConfigFieldSchemaLegacy) => {
     // Pour les nombres avec min/max qui forment une petite plage, c'est un slider
     if (type === 'number' && fieldConfig?.min !== undefined && fieldConfig?.max !== undefined && (fieldConfig.max - fieldConfig.min) <= 100) {
       return 'slider'
@@ -534,10 +649,10 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
 
   // Fonction pour regrouper les champs de façon intelligente
   // Les champs du même type normalisé sont groupés ensemble sur une ou deux colonnes
-  const groupFieldsByType = (fields: Array<[string, ConfigFieldSchema]>) => {
+  const groupFieldsByType = (fields: Array<[string, ConfigFieldSchemaLegacy]>) => {
     // Regrouper les champs par type normalisé
-    const typeGroups: { [type: string]: Array<[string, ConfigFieldSchema]> } = {}
-    
+    const typeGroups: { [type: string]: Array<[string, ConfigFieldSchemaLegacy]> } = {}
+
     fields.forEach(([fieldName, fieldConfig]) => {
       const normalizedType = normalizeFieldType(fieldConfig.type || 'text', fieldConfig)
       if (!typeGroups[normalizedType]) {
@@ -545,16 +660,16 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
       }
     typeGroups[normalizedType].push([fieldName, fieldConfig])
     })
-    
+
     return typeGroups
   }
 
   // Fonction pour créer des paires de champs (pour layout 2 colonnes)
-  const createFieldPairs = (fields: Array<[string, ConfigFieldSchema]>, fieldType: string) => {
+  const createFieldPairs = (fields: Array<[string, ConfigFieldSchemaLegacy]>, fieldType: string) => {
     // Pour les champs simples (input) et sliders, on peut les mettre 2 par 2
     // Pour les autres types (select, switch), chacun prend une ligne complète
     if (fieldType === 'input' || fieldType === 'slider') {
-      const pairs: Array<Array<[string, ConfigFieldSchema]>> = []
+      const pairs: Array<Array<[string, ConfigFieldSchemaLegacy]>> = []
       for (let i = 0; i < fields.length; i += 2) {
         pairs.push(fields.slice(i, i + 2))
       }
@@ -570,15 +685,15 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
     <Box>
       {Object.entries(groupedFields).map(([category, fields]) => {
         const fieldsByType = groupFieldsByType(fields)
-        
+
         return (
           <Box key={category} sx={{ mb: 4 }}>
             <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
               <Typography variant="h6" color="primary">
                 {capitalizeCategory(category)}
               </Typography>
-              <Chip 
-                size="small" 
+              <Chip
+                size="small"
                 label={`${fields.length} paramètre${fields.length > 1 ? 's' : ''}`}
                 variant="outlined"
               />
@@ -588,7 +703,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
               {Object.entries(fieldsByType).map(([fieldType, typeFields]) => {
                 // Créer des paires de champs intelligentes
                 const fieldPairs = createFieldPairs(typeFields, fieldType)
-                
+
                 return (
                   <Box key={fieldType} sx={{ mb: 3 }}>
                     {fieldPairs.map((pair, pairIndex) => (
@@ -601,7 +716,7 @@ const DynamicConfigForm: React.FC<DynamicConfigFormProps> = ({
                             gridSize = 6
                           }
                           // Pour les autres types, toujours 12 (pleine largeur)
-                          
+
                           return (
                             <Grid item xs={12} md={gridSize} key={fieldName}>
                               {renderField(fieldName, fieldConfig)}

@@ -28,6 +28,7 @@ import { AgentType } from '@/types'
 const agentTypeLabels: Record<string, string> = {
   GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
   FFA_SCRAPER: 'FFA Scraper Agent',
+  AUTO_VALIDATOR: 'Auto Validator Agent',
 }
 
 // Schémas de configuration par type d'agent
@@ -111,12 +112,81 @@ const agentConfigSchemas: Record<string, any> = {
       order: 4,
     },
   },
+  AUTO_VALIDATOR: {
+    milesRepublicDatabase: {
+      type: 'database_select',
+      label: 'Base Miles Republic',
+      description: 'Connexion à Miles Republic pour vérifier isFeatured et customerType',
+      required: true,
+      category: 'Validation',
+      order: 1,
+    },
+    minConfidence: {
+      type: 'number',
+      label: 'Confiance minimale',
+      description: 'Confiance minimale requise pour auto-valider (0.5 à 1.0)',
+      required: true,
+      default: 0.7,
+      min: 0.5,
+      max: 1.0,
+      category: 'Validation',
+      order: 2,
+    },
+    maxProposalsPerRun: {
+      type: 'number',
+      label: 'Propositions max par run',
+      description: 'Nombre maximum de propositions à traiter par exécution',
+      required: false,
+      default: 100,
+      min: 10,
+      max: 500,
+      category: 'Validation',
+      order: 3,
+    },
+    enableEditionBlock: {
+      type: 'switch',
+      label: 'Valider bloc Edition',
+      description: 'Valider automatiquement les modifications d\'édition (dates, URLs)',
+      required: false,
+      default: true,
+      category: 'Blocs',
+      order: 4,
+    },
+    enableOrganizerBlock: {
+      type: 'switch',
+      label: 'Valider bloc Organisateur',
+      description: 'Valider automatiquement les modifications d\'organisateur',
+      required: false,
+      default: true,
+      category: 'Blocs',
+      order: 5,
+    },
+    enableRacesBlock: {
+      type: 'switch',
+      label: 'Valider bloc Courses',
+      description: 'Valider les modifications de courses existantes (jamais de nouvelles courses)',
+      required: false,
+      default: true,
+      category: 'Blocs',
+      order: 6,
+    },
+    dryRun: {
+      type: 'switch',
+      label: 'Mode simulation',
+      description: 'Simuler sans appliquer les validations (pour tester)',
+      required: false,
+      default: false,
+      category: 'Avancé',
+      order: 7,
+    },
+  },
 }
 
 // Mapping des types d'agents registrés vers les types AgentType
 const agentTypeMapping: Record<string, AgentType> = {
   GOOGLE_SEARCH_DATE: 'EXTRACTOR',
   FFA_SCRAPER: 'EXTRACTOR',
+  AUTO_VALIDATOR: 'VALIDATOR',
 }
 
 interface TabPanelProps {
@@ -158,11 +228,11 @@ const AgentCreate: React.FC = () => {
 
   const handleAgentTypeChange = (agentType: string) => {
     setSelectedAgentType(agentType)
-    
+
     // Initialiser la config avec les valeurs par défaut du schéma
     const schema = agentConfigSchemas[agentType]
     const defaultConfig: Record<string, any> = {}
-    
+
     if (schema) {
       Object.entries(schema).forEach(([fieldName, fieldConfig]: [string, any]) => {
         if (fieldConfig.default !== undefined) {
@@ -170,9 +240,9 @@ const AgentCreate: React.FC = () => {
         }
       })
     }
-    
+
     console.log('🔧 Initializing config with defaults:', defaultConfig)
-    
+
     setFormData({
       ...formData,
       config: defaultConfig,
@@ -244,7 +314,7 @@ const AgentCreate: React.FC = () => {
 
   const handleSubmit = async () => {
     console.log('🚀 handleSubmit called')
-    
+
     if (!validateForm()) {
       console.log('❌ Validation failed')
       return
