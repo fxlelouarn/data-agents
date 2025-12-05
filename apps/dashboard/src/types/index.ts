@@ -198,7 +198,7 @@ export interface CreateAgentForm {
   name: string
   description?: string
   type: AgentType
-  frequency: string
+  frequency: any  // FrequencyConfig JSON
   config: Record<string, any>
 }
 
