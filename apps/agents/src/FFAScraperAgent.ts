@@ -447,20 +447,86 @@ export class FFAScraperAgent extends BaseAgent {
       const racesToAdd: any[] = []
       const racesToUpdate: any[] = []
 
+      // FIX: Set pour tracker les courses DB déjà matchées
+      // Évite qu'une même course DB soit matchée par plusieurs courses FFA de même distance
+      const matchedDbRaceIds = new Set<number>()
+
       for (const ffaRace of ffaData.races) {
+        // Inférer la catégorie de la course FFA pour un meilleur matching
+        const [ffaCategoryLevel1] = this.inferRaceCategories(
+          ffaRace.name,
+          ffaRace.distance ? ffaRace.distance / 1000 : undefined
+        )
+
+        // Calculer la date de la course FFA (pour événements multi-jours)
+        const ffaRaceDate = this.calculateRaceStartDate(ffaData, ffaRace)
+        const ffaRaceDayStr = ffaRaceDate.toISOString().split('T')[0]
+
         const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
+          // FIX: Ignorer les courses déjà matchées
+          if (matchedDbRaceIds.has(dbRace.id)) {
+            return false
+          }
+
           // Utiliser la distance totale déjà convertie en mètres
           const totalDistance = dbRace.totalDistanceMeters
 
-          // Si la course FFA a une distance, matcher principalement sur la distance
+          // Si la course FFA a une distance, matcher sur distance + catégorie + date
           if (ffaRace.distance && ffaRace.distance > 0) {
             // Utiliser la tolérance configurée (config.distanceTolerancePercent)
             const tolerancePercent = (this.config.config as FFAScraperConfig).distanceTolerancePercent
             const tolerance = ffaRace.distance * tolerancePercent
             const distanceDiff = Math.abs(totalDistance - ffaRace.distance)
 
-            // Match si la distance est dans la tolérance
-            return distanceDiff <= tolerance
+            // La distance doit être dans la tolérance
+            if (distanceDiff > tolerance) {
+              return false
+            }
+
+            // FIX: Pour les événements multi-jours, vérifier aussi la catégorie
+            // Ex: "Marche nordique 9km" (WALK) ne doit pas matcher "Trail 9km" (TRAIL)
+            if (dbRace.categoryLevel1 && ffaCategoryLevel1) {
+              const categoryMatch = dbRace.categoryLevel1 === ffaCategoryLevel1
+              if (!categoryMatch) {
+                // Catégories différentes - vérifier si la date correspond
+                // Si même jour, c'est probablement la même course malgré catégorie différente
+                // Si jour différent, ce sont des courses distinctes
+                if (dbRace.startDate) {
+                  const dbRaceDayStr = dbRace.startDate.toISOString().split('T')[0]
+                  if (dbRaceDayStr !== ffaRaceDayStr) {
+                    // Jour différent + catégorie différente = courses distinctes
+                    return false
+                  }
+                }
+              }
+            }
+
+            // FIX: Pour les événements multi-jours, vérifier la date
+            // Si plusieurs courses ont la même distance, privilégier celle du même jour
+            if (dbRace.startDate) {
+              const dbRaceDayStr = dbRace.startDate.toISOString().split('T')[0]
+              // Si jour différent et qu'il existe une autre course de même distance le bon jour,
+              // ce n'est pas un match
+              const sameDayRaceExists = existingRacesWithMeters.some((otherRace: any) => {
+                if (otherRace.id === dbRace.id || matchedDbRaceIds.has(otherRace.id)) return false
+                const otherDistanceDiff = Math.abs(otherRace.totalDistanceMeters - (ffaRace.distance || 0))
+                if (otherDistanceDiff > tolerance) return false
+                if (!otherRace.startDate) return false
+                const otherDayStr = otherRace.startDate.toISOString().split('T')[0]
+                // Vérifier aussi la catégorie si disponible
+                if (otherRace.categoryLevel1 && ffaCategoryLevel1 && otherRace.categoryLevel1 !== ffaCategoryLevel1) {
+                  return false
+                }
+                return otherDayStr === ffaRaceDayStr
+              })
+
+              if (dbRaceDayStr !== ffaRaceDayStr && sameDayRaceExists) {
+                // Il existe une meilleure correspondance le même jour
+                return false
+              }
+            }
+
+            return true
           }
 
           // Si pas de distance FFA, fallback sur le matching de nom
@@ -468,6 +534,11 @@ export class FFAScraperAgent extends BaseAgent {
                             ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
           return nameMatch
         })
+
+        // FIX: Marquer cette course DB comme matchée pour éviter les doublons
+        if (matchingRace) {
+          matchedDbRaceIds.add(matchingRace.id)
+        }
 
         if (!matchingRace) {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)

@@ -193,9 +193,23 @@ const ProposalList: React.FC = () => {
         return false
       }
 
-      const searchLower = searchTerm.toLowerCase()
+      // Si pas de terme de recherche, inclure la proposition
+      if (!searchTerm.trim()) {
+        return true
+      }
 
-      // Recherche dans les champs de base
+      const searchLower = searchTerm.toLowerCase().trim()
+
+      // PRIORITÉ 1: Recherche dans les champs enrichis par l'API (eventName, eventCity)
+      if (
+        (proposal.eventName && proposal.eventName.toLowerCase().includes(searchLower)) ||
+        (proposal.eventCity && proposal.eventCity.toLowerCase().includes(searchLower)) ||
+        (proposal.editionYear && proposal.editionYear.toString().includes(searchLower))
+      ) {
+        return true
+      }
+
+      // PRIORITÉ 2: Recherche dans les champs de base
       if (
         proposal.agent.name.toLowerCase().includes(searchLower) ||
         JSON.stringify(proposal.changes).toLowerCase().includes(searchLower)
@@ -203,7 +217,7 @@ const ProposalList: React.FC = () => {
         return true
       }
 
-      // Recherche dans les métadonnées d'événements
+      // PRIORITÉ 3: Recherche dans les métadonnées d'événements (justification)
       if (proposal.justification && Array.isArray(proposal.justification)) {
         for (const justif of proposal.justification) {
           if (justif.metadata) {
@@ -219,7 +233,7 @@ const ProposalList: React.FC = () => {
         }
       }
 
-      // Fallback: recherche dans les IDs (conservé pour compatibilité)
+      // PRIORITÉ 4: Recherche dans les IDs (conservé pour compatibilité)
       if (
         (proposal.eventId && proposal.eventId.toString().toLowerCase().includes(searchLower)) ||
         (proposal.editionId && proposal.editionId.toString().toLowerCase().includes(searchLower))
