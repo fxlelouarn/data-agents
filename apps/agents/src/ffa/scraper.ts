@@ -1,6 +1,6 @@
 /**
  * Utilitaires de scraping HTTP pour le calendrier FFA
- * 
+ *
  * Ce module gère les requêtes HTTP vers le site FFA avec :
  * - Construction des URLs de listing
  * - Gestion de la pagination
@@ -10,11 +10,11 @@
 
 import axios, { AxiosError } from 'axios'
 import { FFACompetition, FFACompetitionDetails } from './types'
-import { 
-  parseCompetitionsList, 
+import {
+  parseCompetitionsList,
   parseCompetitionDetails,
   extractTotalPages,
-  extractTotalResults 
+  extractTotalResults
 } from './parser'
 
 /**
@@ -30,13 +30,13 @@ const USER_AGENT = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 export function calculateFFASeason(date: Date): string {
   const year = date.getFullYear()
   const month = date.getMonth()
-  
+
   // Si on est entre septembre (mois 8) et décembre (mois 11), la saison est l'année suivante
   // Sinon, la saison est l'année en cours
   if (month >= 8) {
     return (year + 1).toString()
   }
-  
+
   return year.toString()
 }
 
@@ -51,7 +51,7 @@ export function buildListingURL(
   page: number = 0
 ): string {
   const baseUrl = 'https://www.athle.fr/bases/liste.aspx'
-  
+
   // Formater les dates en YYYY-MM-DD
   const formatDate = (d: Date) => {
     const year = d.getFullYear()
@@ -59,7 +59,7 @@ export function buildListingURL(
     const day = String(d.getDate()).padStart(2, '0')
     return `${year}-${month}-${day}`
   }
-  
+
   const params = new URLSearchParams({
     frmpostback: 'true',
     frmbase: 'calendrier',
@@ -83,7 +83,7 @@ export function buildListingURL(
   if (page > 0) {
     params.append('frmpage', page.toString())
   }
-  
+
   return `${baseUrl}?${params.toString()}`
 }
 
@@ -97,24 +97,32 @@ export async function fetchCompetitionsList(
   levels: string[],
   page: number = 0,
   humanDelayMs: number = 2000
-): Promise<{ 
-  competitions: FFACompetition[], 
-  hasNextPage: boolean, 
+): Promise<{
+  competitions: FFACompetition[],
+  hasNextPage: boolean,
   totalResults: number,
   totalPages: number
 }> {
   try {
     // Calculer la saison FFA
     const season = calculateFFASeason(startDate)
-    
+
     // Construire l'URL
     const url = buildListingURL(ligue, startDate, endDate, season, page)
-    
+
+    // Log pour debug
+    console.log(`[FFA Scraper] URL construite: ${url.substring(0, 100)}...`)
+
+    // Vérifier que l'URL est valide
+    if (!url.startsWith('https://')) {
+      throw new Error(`URL invalide (ne commence pas par https://): ${url}`)
+    }
+
     // Attendre le délai humain (sauf pour la première page de la première requête)
     if (page > 0) {
       await humanDelay(humanDelayMs)
     }
-    
+
     // Effectuer la requête
     const response = await axios.get(url, {
       headers: {
@@ -125,24 +133,29 @@ export async function fetchCompetitionsList(
         'Connection': 'keep-alive',
         'Upgrade-Insecure-Requests': '1'
       },
-      timeout: 60000 // 60 secondes timeout
+      timeout: 60000, // 60 secondes timeout
+      maxRedirects: 5,
+      // Gérer les redirections relatives en les convertissant en absolues
+      beforeRedirect: (options: any, responseDetails: any) => {
+        console.log(`[FFA Scraper] Redirection détectée: ${responseDetails.headers.location}`)
+      }
     })
-    
+
     const html = response.data
-    
+
     // Parser les compétitions en passant la date de référence (mois scrapé)
     let competitions = parseCompetitionsList(html, startDate)
-    
+
     // Filtrer par niveaux si spécifié
     if (levels && levels.length > 0) {
       competitions = competitions.filter(comp => levels.includes(comp.level))
     }
-    
+
     // Extraire infos pagination
     const totalPages = extractTotalPages(html)
     const totalResults = extractTotalResults(html)
     const hasNextPage = page < totalPages - 1
-    
+
     return {
       competitions,
       hasNextPage,
@@ -173,7 +186,7 @@ export async function fetchCompetitionDetails(
   try {
     // Attendre le délai humain
     await humanDelay(humanDelayMs)
-    
+
     // Effectuer la requête
     const response = await axios.get(detailUrl, {
       headers: {
@@ -184,12 +197,12 @@ export async function fetchCompetitionDetails(
       },
       timeout: 60000
     })
-    
+
     const html = response.data
-    
+
     // Parser les détails
     const details = parseCompetitionDetails(html, competition)
-    
+
     return details
   } catch (error) {
     if (axios.isAxiosError(error)) {
@@ -214,7 +227,7 @@ export async function humanDelay(ms: number): Promise<void> {
   // Ajouter une variation aléatoire de ±20%
   const variation = ms * 0.2
   const actualDelay = ms + (Math.random() * variation * 2 - variation)
-  
+
   return new Promise(resolve => setTimeout(resolve, actualDelay))
 }
 
@@ -232,7 +245,7 @@ export async function fetchAllCompetitionsForPeriod(
   const allCompetitions: FFACompetition[] = []
   let currentPage = 0
   let hasNextPage = true
-  
+
   while (hasNextPage && currentPage < maxPages) {
     const result = await fetchCompetitionsList(
       ligue,
@@ -242,11 +255,11 @@ export async function fetchAllCompetitionsForPeriod(
       currentPage,
       humanDelayMs
     )
-    
+
     allCompetitions.push(...result.competitions)
     hasNextPage = result.hasNextPage
     currentPage++
-    
+
     // Log de progression
     if (result.totalResults > 0) {
       console.log(
@@ -254,7 +267,7 @@ export async function fetchAllCompetitionsForPeriod(
       )
     }
   }
-  
+
   return allCompetitions
 }
 
@@ -263,10 +276,10 @@ export async function fetchAllCompetitionsForPeriod(
  */
 export function getMonthBounds(yearMonth: string): { startDate: Date, endDate: Date } {
   const [year, month] = yearMonth.split('-').map(Number)
-  
+
   const startDate = new Date(year, month - 1, 1)
   const endDate = new Date(year, month, 0) // Dernier jour du mois
-  
+
   return { startDate, endDate }
 }
 
@@ -276,13 +289,13 @@ export function getMonthBounds(yearMonth: string): { startDate: Date, endDate: D
 export function generateMonthsToScrape(windowMonths: number): string[] {
   const months: string[] = []
   const now = new Date()
-  
+
   for (let i = 0; i < windowMonths; i++) {
     const date = new Date(now.getFullYear(), now.getMonth() + i, 1)
     const year = date.getFullYear()
     const month = String(date.getMonth() + 1).padStart(2, '0')
     months.push(`${year}-${month}`)
   }
-  
+
   return months
 }
