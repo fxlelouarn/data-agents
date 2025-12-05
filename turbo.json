@@ -3,10 +3,11 @@
   "globalDependencies": ["**/.env.*local"],
   "pipeline": {
     "prisma:generate": {
-      "cache": false
+      "cache": false,
+      "outputs": ["node_modules/.prisma/**", "node_modules/@prisma/client/**"]
     },
     "build": {
-      "dependsOn": ["^build", "prisma:generate"],
+      "dependsOn": ["^build", "^prisma:generate", "prisma:generate"],
       "outputs": [".next/**", "!.next/cache/**", "dist/**"]
     },
     "dev": {
