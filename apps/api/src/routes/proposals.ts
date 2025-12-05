@@ -4,6 +4,7 @@ import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
 import pLimit from 'p-limit'
+import type { Proposal, ProposalApplication, Prisma } from '@data-agents/database'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -1055,7 +1056,7 @@ router.put('/:id', requireAuth, [
         include: { proposal: true }
       })
 
-      const duplicateApp = allPendingApplications.find(app => {
+      const duplicateApp = allPendingApplications.find((app: ProposalApplication & { proposal: Proposal }) => {
         // Check if same type and same target (event/edition/race)
         if (app.proposal.type !== proposal.type) return false
         if (app.proposal.eventId !== proposal.eventId) return false
@@ -1199,7 +1200,7 @@ router.post('/validate-block-group', [
   }
 
   // Vérifier la cohérence du groupe selon le type
-  const proposalTypes = [...new Set(proposals.map(p => p.type))]
+  const proposalTypes = [...new Set(proposals.map((p: Proposal) => p.type))]
 
   // NEW_EVENT : Pas besoin d'editionId (pas encore créée)
   if (proposalTypes.includes('NEW_EVENT')) {
@@ -1208,7 +1209,7 @@ router.post('/validate-block-group', [
     console.log('✅ NEW_EVENT détecté - Pas de validation editionId requise')
   } else {
     // EDITION_UPDATE, EVENT_UPDATE, RACE_UPDATE : Doivent cibler la même édition
-    const editionIds = [...new Set(proposals.map(p => p.editionId).filter(Boolean))]
+    const editionIds = [...new Set(proposals.map((p: Proposal) => p.editionId).filter(Boolean))]
     if (editionIds.length !== 1) {
       throw createError(400, 'Proposals must target the same edition', 'INVALID_PROPOSAL_GROUP')
     }
@@ -1361,7 +1362,7 @@ router.post('/validate-block-group', [
   // Mettre à jour TOUTES les propositions avec le même payload
   const updatedProposals = await Promise.all(
     proposalIds.map(async (proposalId: string) => {
-      const proposal = proposals.find(p => p.id === proposalId)!
+      const proposal = proposals.find((p: Proposal) => p.id === proposalId)!
       const existingApprovedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
       const existingUserModifiedChanges = (proposal.userModifiedChanges as Record<string, any>) || {}
 
@@ -1552,7 +1553,7 @@ router.post('/validate-block-group', [
     where: { id: { in: proposalIds } }
   })
 
-  console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
+  console.log('✅ Propositions mises à jour:', finalProposals.map((p: Proposal) => ({ id: p.id, status: p.status })))
 
   res.json({
     success: true,
@@ -1708,14 +1709,14 @@ router.post('/:id/unapprove', requireAuth, [
   }
 
   // Supprimer les applications PENDING
-  const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+  const pendingApplications = proposal.applications.filter((app: ProposalApplication) => app.status === 'PENDING')
 
-  await db.prisma.$transaction(async (tx) => {
+  await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Supprimer les applications en attente
     if (pendingApplications.length > 0) {
       await tx.proposalApplication.deleteMany({
         where: {
-          id: { in: pendingApplications.map(app => app.id) }
+          id: { in: pendingApplications.map((app: ProposalApplication) => app.id) }
         }
       })
     }
@@ -2358,7 +2359,7 @@ router.post('/:id/unapprove-block', [
   // Vérifier si CE BLOC SPÉCIFIQUE a déjà été appliqué
   // Un bloc appliqué ne peut plus être annulé (les changements sont déjà en base)
   const appliedBlockApplication = proposal.applications.find(
-    app => app.status === 'APPLIED' && app.blockType === block
+    (app: ProposalApplication) => app.status === 'APPLIED' && app.blockType === block
   )
   if (appliedBlockApplication) {
     throw createError(400, `Cannot unapprove block "${block}" that has already been applied`, 'BLOCK_ALREADY_APPLIED')
@@ -2388,15 +2389,15 @@ router.post('/:id/unapprove-block', [
   const hasRemainingApprovedBlocks = Object.values(approvedBlocks).some(v => v === true)
   const newStatus = hasRemainingApprovedBlocks ? 'APPROVED' : 'PENDING'
 
-  await db.prisma.$transaction(async (tx) => {
+  await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Si on repasse à PENDING, supprimer les applications en attente
     if (newStatus === 'PENDING') {
-      const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+      const pendingApplications = proposal.applications.filter((app: ProposalApplication) => app.status === 'PENDING')
 
       if (pendingApplications.length > 0) {
         await tx.proposalApplication.deleteMany({
           where: {
-            id: { in: pendingApplications.map(app => app.id) }
+            id: { in: pendingApplications.map((app: ProposalApplication) => app.id) }
           }
         })
       }
@@ -2561,7 +2562,7 @@ router.post('/bulk-approve', [
   const { proposalIds, reviewedBy, block } = req.body
 
   // Use transaction to approve proposals and create applications atomically
-  const result = await db.prisma.$transaction(async (tx) => {
+  const result = await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // First, get all pending proposals that will be approved
     const pendingProposals = await tx.proposal.findMany({
       where: {
@@ -2590,7 +2591,7 @@ router.post('/bulk-approve', [
       // Approbation globale standard
       await tx.proposal.updateMany({
         where: {
-          id: { in: pendingProposals.map(p => p.id) }
+          id: { in: pendingProposals.map((p: Proposal) => p.id) }
         },
         data: {
           status: 'APPROVED',
@@ -2632,7 +2633,7 @@ router.post('/bulk-approve', [
         include: { proposal: true }
       })
 
-      const duplicateApp = allPendingApplications.find(app => {
+      const duplicateApp = allPendingApplications.find((app: ProposalApplication & { proposal: Proposal }) => {
         if (app.proposal.type !== proposal.type) return false
         if (app.proposal.eventId !== proposal.eventId) return false
         if (app.proposal.editionId !== proposal.editionId) return false

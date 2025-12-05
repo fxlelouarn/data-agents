@@ -12,27 +12,27 @@ const scheduler = new AgentScheduler()
 // Function to validate cron expressions with support for intervals
 const isValidCronExpression = (expression: string): boolean => {
   if (!expression) return false
-  
+
   // Vérification de base : 5 champs séparés par des espaces
   const fields = expression.trim().split(/\s+/)
   if (fields.length !== 5) return false
-  
+
   // Vérification que chaque champ contient uniquement des caractères valides pour cron
   const cronFieldPattern = /^[*\/\d,-]+$|^[A-Z]{3}$|^[A-Z]{3}-[A-Z]{3}$|^[A-Z]{3},[A-Z]{3}$/
   const monthDayPattern = /^[*\/\d,-]+$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/
   const weekDayPattern = /^[*\/\d,-]+$|^(SUN|MON|TUE|WED|THU|FRI|SAT)$|^(SUN|MON|TUE|WED|THU|FRI|SAT)-(SUN|MON|TUE|WED|THU|FRI|SAT)$/
-  
+
   // Vérifier minute, heure, jour du mois
   for (let i = 0; i < 3; i++) {
     if (!cronFieldPattern.test(fields[i])) return false
   }
-  
+
   // Vérifier mois (peut avoir des noms)
   if (!monthDayPattern.test(fields[3])) return false
-  
+
   // Vérifier jour de la semaine (peut avoir des noms)
   if (!weekDayPattern.test(fields[4])) return false
-  
+
   return true
 }
 
@@ -52,9 +52,9 @@ router.get('/', [
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { includeInactive = 'false', type } = req.query
-  
+
   let agents = await db.getAgents(includeInactive === 'true')
-  
+
   if (type) {
     agents = agents.filter((agent: any) => agent.type === type)
   }
@@ -71,7 +71,7 @@ router.get('/:id', [
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
-  
+
   const agent = await db.getAgent(id)
   if (!agent) {
     throw createError(404, 'Agent not found', 'AGENT_NOT_FOUND')
@@ -144,7 +144,7 @@ router.put('/:id', [
   }
 
   const agent = await db.updateAgent(id, updates)
-  
+
   // Update scheduler if frequency changed
   if (updates.frequency || updates.isActive !== undefined) {
     await scheduler.updateAgent(id)
@@ -231,7 +231,7 @@ router.get('/:id/validate', [
   const { id } = req.params
 
   const validation = await db.validateAgentConfiguration(id)
-  
+
   res.json({
     success: true,
     data: validation
@@ -246,7 +246,7 @@ router.post('/:id/reinstall', [
   const { id } = req.params
 
   const agent = await db.reinstallAgent(id)
-  
+
   // Update scheduler with new configuration
   await scheduler.updateAgent(id)
 
@@ -279,7 +279,7 @@ router.get('/:id/state', [
         key: key as string
       }
     })
-    
+
     res.json({
       success: true,
       data: state ? state.value : null
@@ -289,12 +289,12 @@ router.get('/:id/state', [
     const states = await db.prisma.agentState.findMany({
       where: { agentId: id }
     })
-    
-    const stateMap = states.reduce((acc, s) => {
+
+    const stateMap = states.reduce((acc: Record<string, unknown>, s: { key: string; value: unknown }) => {
       acc[s.key] = s.value
       return acc
-    }, {} as Record<string, any>)
-    
+    }, {} as Record<string, unknown>)
+
     res.json({
       success: true,
       data: stateMap
