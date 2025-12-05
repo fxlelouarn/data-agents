@@ -666,12 +666,13 @@ router.get('/', [
   query('editionId').optional().isString(),
   query('categoryLevel1').optional().isString(),
   query('categoryLevel2').optional().isString(),
+  query('search').optional().isString(),
   query('sort').optional().isIn(['date-asc', 'date-desc', 'created-desc']),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, sort = 'created-desc', limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, search, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
 
@@ -699,16 +700,31 @@ const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, sort =
   }
 
   // Construire le filtre de base Prisma
-  const baseWhere = {
+  const searchTerm = (search as string | undefined)?.trim()
+  const baseWhere: any = {
     status: (status as string | undefined) ? (status as any) : undefined,
     type: (type as string | undefined) ? (type as any) : undefined,
     eventId: (eventId as string | undefined) || undefined,
     editionId: (editionId as string | undefined) || undefined
   }
 
-  // Si on filtre par catégorie, on doit utiliser une requête SQL brute
+  // Ajouter la recherche textuelle si présente (Prisma)
+  if (searchTerm) {
+    baseWhere.OR = [
+      { eventName: { contains: searchTerm, mode: 'insensitive' } },
+      { eventCity: { contains: searchTerm, mode: 'insensitive' } },
+      { editionYear: !isNaN(parseInt(searchTerm)) ? parseInt(searchTerm) : undefined }
+    ].filter(condition => {
+      // Filtrer les conditions invalides (editionYear undefined)
+      const values = Object.values(condition)
+      return values.every(v => v !== undefined)
+    })
+  }
+
+  // Si on filtre par catégorie ou recherche, on doit utiliser une requête SQL brute
   // car Prisma ne supporte pas les requêtes JSONB imbriquées
   const hasCategoryFilter = categoryLevel1 || categoryLevel2
+  const hasSearchFilter = !!searchTerm
 
   let proposals: any[]
   let total: number
@@ -771,6 +787,18 @@ const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, sort =
         OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'races'->'new') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
       )`)
       params.push(categoryLevel2)
+      paramIndex++
+    }
+
+    // Condition pour la recherche textuelle
+    if (searchTerm) {
+      const searchConditions = [`"eventName" ILIKE $${paramIndex}`, `"eventCity" ILIKE $${paramIndex}`]
+      // Ajouter la recherche par année si c'est un nombre
+      if (!isNaN(parseInt(searchTerm))) {
+        searchConditions.push(`"editionYear" = ${parseInt(searchTerm)}`)
+      }
+      categoryConditions.push(`(${searchConditions.join(' OR ')})`)
+      params.push(`%${searchTerm}%`)
       paramIndex++
     }
 

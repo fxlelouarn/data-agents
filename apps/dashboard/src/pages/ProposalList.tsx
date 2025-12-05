@@ -153,12 +153,23 @@ const ProposalList: React.FC = () => {
     localStorage.setItem('proposalGroupSort', groupSort)
   }, [groupSort])
 
+  // Debounce du terme de recherche pour éviter trop de requêtes API
+  const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm)
+
+  React.useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchTerm(searchTerm)
+    }, 300) // 300ms de debounce
+    return () => clearTimeout(timer)
+  }, [searchTerm])
+
   const { data: proposalsData, isLoading, refetch } = useProposals(
     {
       status: statusFilter !== 'ALL' ? statusFilter : undefined,
       type: typeFilter !== 'ALL' ? typeFilter : undefined,
       categoryLevel1: categoryLevel1Filter !== 'ALL' ? categoryLevel1Filter : undefined,
       categoryLevel2: categoryLevel2Filter !== 'ALL' ? categoryLevel2Filter : undefined,
+      search: debouncedSearchTerm.trim() || undefined,
     },
     paginationModel.pageSize,
     paginationModel.page * paginationModel.pageSize,
@@ -168,7 +179,7 @@ const ProposalList: React.FC = () => {
   // Reset pagination when filters or sort change
   React.useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }))
-  }, [statusFilter, typeFilter, agentFilter, categoryLevel1Filter, categoryLevel2Filter, groupSort])
+  }, [statusFilter, typeFilter, agentFilter, categoryLevel1Filter, categoryLevel2Filter, groupSort, debouncedSearchTerm])
 
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
@@ -183,67 +194,21 @@ const ProposalList: React.FC = () => {
     return agentNames.sort()
   }, [proposalsData?.data])
 
-  // Filter proposals based on search term and agent
+  // Filter proposals by agent (côté client uniquement)
+  // La recherche textuelle est maintenant côté serveur
   const filteredProposals = useMemo(() => {
     if (!proposalsData?.data) return []
 
+    // Si pas de filtre agent, retourner toutes les propositions
+    if (agentFilter === 'ALL') {
+      return proposalsData.data
+    }
+
+    // Filtrer par agent (côté client car pas encore supporté côté serveur)
     return proposalsData.data.filter(proposal => {
-      // Filter by agent
-      if (agentFilter !== 'ALL' && proposal.agent.name !== agentFilter) {
-        return false
-      }
-
-      // Si pas de terme de recherche, inclure la proposition
-      if (!searchTerm.trim()) {
-        return true
-      }
-
-      const searchLower = searchTerm.toLowerCase().trim()
-
-      // PRIORITÉ 1: Recherche dans les champs enrichis par l'API (eventName, eventCity)
-      if (
-        (proposal.eventName && proposal.eventName.toLowerCase().includes(searchLower)) ||
-        (proposal.eventCity && proposal.eventCity.toLowerCase().includes(searchLower)) ||
-        (proposal.editionYear && proposal.editionYear.toString().includes(searchLower))
-      ) {
-        return true
-      }
-
-      // PRIORITÉ 2: Recherche dans les champs de base
-      if (
-        proposal.agent.name.toLowerCase().includes(searchLower) ||
-        JSON.stringify(proposal.changes).toLowerCase().includes(searchLower)
-      ) {
-        return true
-      }
-
-      // PRIORITÉ 3: Recherche dans les métadonnées d'événements (justification)
-      if (proposal.justification && Array.isArray(proposal.justification)) {
-        for (const justif of proposal.justification) {
-          if (justif.metadata) {
-            const metadata = justif.metadata
-            if (
-              (metadata.eventName && metadata.eventName.toLowerCase().includes(searchLower)) ||
-              (metadata.eventCity && metadata.eventCity.toLowerCase().includes(searchLower)) ||
-              (metadata.editionYear && metadata.editionYear.toString().includes(searchLower))
-            ) {
-              return true
-            }
-          }
-        }
-      }
-
-      // PRIORITÉ 4: Recherche dans les IDs (conservé pour compatibilité)
-      if (
-        (proposal.eventId && proposal.eventId.toString().toLowerCase().includes(searchLower)) ||
-        (proposal.editionId && proposal.editionId.toString().toLowerCase().includes(searchLower))
-      ) {
-        return true
-      }
-
-      return false
+      return proposal.agent.name === agentFilter
     })
-  }, [proposalsData?.data, searchTerm, agentFilter])
+  }, [proposalsData?.data, agentFilter])
 
   // Group proposals by event/edition
   const groupedProposals = useMemo(() => {
