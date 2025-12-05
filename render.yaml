@@ -69,4 +69,4 @@ databases:
     region: frankfurt
     databaseName: data_agents
     user: data_agents_user
-    plan: free
+    plan: basic-256mb
