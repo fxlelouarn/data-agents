@@ -9,18 +9,34 @@ export const DatabaseTypeSchema = z.enum(['POSTGRESQL', 'MYSQL', 'SQLITE', 'MONG
 export const RunStatusSchema = z.enum(['PENDING', 'RUNNING', 'SUCCESS', 'FAILED', 'CANCELLED'])
 export const LogLevelSchema = z.enum(['DEBUG', 'INFO', 'WARN', 'ERROR'])
 
-// Cron expression validation (simplified)
-const CronExpressionSchema = z
-  .string()
-  .min(1, 'Expression cron requise')
-  .refine(
-    (val) => {
-      // Simple validation - check if it has 5 parts separated by spaces
-      const parts = val.trim().split(/\s+/)
-      return parts.length === 5
-    },
-    { message: 'Expression cron invalide (doit avoir 5 parties séparées par des espaces)' }
-  )
+// FrequencyConfig validation schema
+const FrequencyConfigSchema = z.object({
+  type: z.enum(['interval', 'daily', 'weekly']),
+  intervalMinutes: z.number().min(1).optional(),
+  jitterMinutes: z.number().min(0).optional(),
+  windowStart: z.string().regex(/^\d{2}:\d{2}$/, 'Format HH:mm requis').optional(),
+  windowEnd: z.string().regex(/^\d{2}:\d{2}$/, 'Format HH:mm requis').optional(),
+  daysOfWeek: z.array(z.number().min(0).max(6)).optional(),
+}).refine(
+  (data) => {
+    // Validation rules based on type
+    if (data.type === 'interval' && !data.intervalMinutes) {
+      return false
+    }
+    if ((data.type === 'daily' || data.type === 'weekly') && (!data.windowStart || !data.windowEnd)) {
+      return false
+    }
+    if (data.type === 'weekly' && (!data.daysOfWeek || data.daysOfWeek.length === 0)) {
+      return false
+    }
+    // Jitter cannot exceed half of interval
+    if (data.jitterMinutes && data.intervalMinutes && data.jitterMinutes > data.intervalMinutes / 2) {
+      return false
+    }
+    return true
+  },
+  { message: 'Configuration de fréquence invalide' }
+)
 
 // Agent Configuration Schemas
 export const GoogleSearchConfigSchema = z.object({
@@ -49,7 +65,7 @@ export const CreateAgentSchema = z.object({
   name: z.string().min(1, 'Le nom de l\'agent est requis').max(255),
   description: z.string().max(1000).optional(),
   type: AgentTypeSchema,
-  frequency: CronExpressionSchema,
+  frequency: FrequencyConfigSchema,
   config: z.record(z.string(), z.any()).default({}),
 })
 
@@ -57,7 +73,8 @@ export const UpdateAgentSchema = z.object({
   name: z.string().min(1).max(255).optional(),
   description: z.string().max(1000).optional(),
   isActive: z.boolean().optional(),
-  frequency: CronExpressionSchema.optional(),
+  frequency: FrequencyConfigSchema.optional(),
+  nextRunAt: z.date().nullable().optional(),
   config: z.record(z.string(), z.any()).optional(),
 })
 
@@ -165,7 +182,7 @@ export function validateWithSchema<T>(schema: z.ZodSchema<T>, data: unknown): T 
     return schema.parse(data)
   } catch (error) {
     if (error instanceof z.ZodError) {
-      const formattedErrors = error.issues.map((err: any) => 
+      const formattedErrors = error.issues.map((err: any) =>
         `${err.path.join('.')}: ${err.message}`
       ).join(', ')
       throw new Error(`Erreur de validation: ${formattedErrors}`)

@@ -30,7 +30,7 @@ export class DatabaseService {
     this.connectionService = new ConnectionService(this.db)
     this.agentService = new AgentService(this.db, this.connectionService)
     this.proposalService = new ProposalService(this.db)
-    
+
     // ProposalApplicationService needs DatabaseManager - lazy load it
     if (dbManager) {
       this.proposalApplicationService = new ProposalApplicationService(this.db, dbManager)
@@ -38,12 +38,12 @@ export class DatabaseService {
       // Lazy initialization - will be set when DatabaseManager is available
       this.proposalApplicationService = null as any
     }
-    
+
     this.runService = new RunService(this.db)
     this.logService = new LogService(this.db)
     this.stateService = new AgentStateService(this.db)
   }
-  
+
   // Method to set DatabaseManager after initialization
   setDatabaseManager(dbManager: any) {
     this.proposalApplicationService = new ProposalApplicationService(this.db, dbManager)
@@ -98,7 +98,7 @@ export class DatabaseService {
     name: string
     description?: string
     type: string
-    frequency: string
+    frequency: any  // FrequencyConfig JSON
     config: any
   }) {
     return this.agentService.createAgent(data)
@@ -108,7 +108,8 @@ export class DatabaseService {
     name: string
     description: string
     isActive: boolean
-    frequency: string
+    frequency: any  // FrequencyConfig JSON
+    nextRunAt: Date | null
     config: any
   }>) {
     return this.agentService.updateAgent(id, data)

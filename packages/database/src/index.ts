@@ -38,12 +38,20 @@ export * from './logging'
 export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
 
 // Export block execution order utilities
-export { 
-  sortBlocksByDependencies, 
-  validateRequiredBlocks, 
+export {
+  sortBlocksByDependencies,
+  validateRequiredBlocks,
   getAllDependencies,
   explainExecutionOrder,
   BLOCK_DEPENDENCIES,
   type BlockType,
   type BlockApplication
 } from './services/block-execution-order'
+
+// Export frequency calculator utilities
+export {
+  calculateNextRun,
+  validateFrequencyConfig,
+  formatFrequencyConfig,
+  areFrequencyConfigsEqual,
+} from './services/frequency-calculator'

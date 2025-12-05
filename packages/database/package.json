@@ -20,12 +20,13 @@
   "dependencies": {
     "@data-agents/types": "*",
     "@prisma/client": "^6.17.1",
+    "@types/bcrypt": "^5.0.2",
+    "bcrypt": "^5.1.1",
+    "date-fns-tz": "^3.2.0",
     "meilisearch": "^0.53.0",
     "prisma": "^6.17.1",
-    "zod": "^4.1.12",
-    "bcrypt": "^5.1.1",
     "ts-node": "^10.9.2",
-    "@types/bcrypt": "^5.0.2"
+    "zod": "^4.1.12"
   },
   "devDependencies": {
     "tsx": "^4.0.0",
