@@ -728,12 +728,14 @@ const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, sort =
     // Conditions de base
     const baseConditions: string[] = []
     if (status) {
-      baseConditions.push(`status = $${paramIndex}`)
+      // Cast explicite pour l'enum PostgreSQL
+      baseConditions.push(`status = $${paramIndex}::"ProposalStatus"`)
       params.push(status)
       paramIndex++
     }
     if (type) {
-      baseConditions.push(`type = $${paramIndex}`)
+      // Cast explicite pour l'enum PostgreSQL
+      baseConditions.push(`type = $${paramIndex}::"ProposalType"`)
       params.push(type)
       paramIndex++
     }
