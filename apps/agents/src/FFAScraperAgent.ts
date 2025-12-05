@@ -175,7 +175,7 @@ export class FFAScraperAgent extends BaseAgent {
       ligues.push(FFA_LIGUES[currentLigueIndex + i])
     }
 
-    // Déterminer les mois à traiter
+    // Déterminer les mois à traiter en évitant ceux déjà complétés
     let currentMonthIndex = allMonths.indexOf(progress.currentMonth)
 
     // Si le mois actuel n'est plus dans la fenêtre (expiré), recommencer au premier mois
@@ -185,10 +185,42 @@ export class FFAScraperAgent extends BaseAgent {
       progress.currentMonth = allMonths[0]
     }
 
+    // Trouver les mois non complétés pour les ligues sélectionnées
+    // On cherche les mois qui n'ont pas été complétés pour AU MOINS une des ligues
     const months: string[] = []
 
-    for (let i = 0; i < config.monthsPerRun && currentMonthIndex + i < allMonths.length; i++) {
-      months.push(allMonths[currentMonthIndex + i])
+    for (let i = currentMonthIndex; i < allMonths.length && months.length < config.monthsPerRun; i++) {
+      const month = allMonths[i]
+      // Vérifier si ce mois n'est pas complété pour au moins une des ligues sélectionnées
+      const needsProcessing = ligues.some(ligue => {
+        const completedForLigue = progress.completedMonths[ligue] || []
+        return !completedForLigue.includes(month)
+      })
+
+      if (needsProcessing) {
+        months.push(month)
+      } else {
+        this.logger.debug?.(`⏭️  Mois ${month} déjà complété pour toutes les ligues [${ligues.join(', ')}], skip`)
+      }
+    }
+
+    // Si tous les mois sont complétés pour ces ligues, passer aux ligues suivantes
+    if (months.length === 0 && ligues.length > 0) {
+      const lastLigueIndex = FFA_LIGUES.indexOf(ligues[ligues.length - 1] as any)
+      if (lastLigueIndex + 1 < FFA_LIGUES.length) {
+        // Avancer aux prochaines ligues
+        this.logger.info(`✅ Toutes les ligues [${ligues.join(', ')}] ont complété tous les mois, passage aux suivantes`)
+        progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
+        progress.currentMonth = allMonths[0]
+        // Récursion pour obtenir les vraies prochaines cibles
+        return this.getNextTargets(progress, config)
+      }
+    }
+
+    // Mettre à jour currentMonth si on a sauté des mois déjà complétés
+    if (months.length > 0 && months[0] !== progress.currentMonth) {
+      this.logger.info(`⏭️  Avance au mois ${months[0]} (${progress.currentMonth} déjà complété)`)
+      progress.currentMonth = months[0]
     }
 
     return { ligues, months }
