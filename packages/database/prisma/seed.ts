@@ -1,5 +1,4 @@
-// Import explicite du client généré pour ce schéma
-import { PrismaClient } from '../../../node_modules/.prisma/client'
+import { PrismaClient } from '@prisma/client'
 import bcrypt from 'bcrypt'
 
 const prisma = new PrismaClient()
