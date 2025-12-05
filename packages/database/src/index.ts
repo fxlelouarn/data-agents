@@ -1,9 +1,11 @@
 // Export Prisma client and types
 export { prisma } from './prisma'
 export * from '@prisma/client'
+export { Prisma } from '@prisma/client'
 
-// Re-export Prisma enums explicitly for better IDE support
-export { AgentType, LogLevel, ProposalType, ProposalStatus } from '@prisma/client'
+// Re-export Prisma types and enums explicitly for better IDE support
+export type { Proposal, ProposalApplication, Agent, AgentRun, AgentLog, AgentState, DatabaseConnection, Settings, User } from '@prisma/client'
+export { AgentType, LogLevel, ProposalType, ProposalStatus, ApplicationStatus, RunStatus, DatabaseType, UserRole } from '@prisma/client'
 
 // Export the refactored DatabaseService
 export { DatabaseService } from './DatabaseService'
@@ -38,9 +40,9 @@ export * from './logging'
 export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
 
 // Export block execution order utilities
-export { 
-  sortBlocksByDependencies, 
-  validateRequiredBlocks, 
+export {
+  sortBlocksByDependencies,
+  validateRequiredBlocks,
   getAllDependencies,
   explainExecutionOrder,
   BLOCK_DEPENDENCIES,
