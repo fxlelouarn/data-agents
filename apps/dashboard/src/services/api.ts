@@ -280,6 +280,10 @@ export const proposalsApi = {
     changes: Record<string, any>
   ): Promise<ApiResponse<Proposal[]>> =>
     api.post('/proposals/validate-block-group', { proposalIds, block: blockKey, changes }).then(res => res.data),
+
+  // Compte les propositions éligibles pour l'auto-validation
+  getEligibleCount: (): Promise<ApiResponse<{ count: number }>> =>
+    api.get('/proposals/eligible-count').then(res => res.data),
 }
 
 // Runs API

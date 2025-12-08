@@ -224,6 +224,15 @@ export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset =
   })
 }
 
+export const useEligibleProposalsCount = () => {
+  return useQuery({
+    queryKey: ['proposals', 'eligible-count'],
+    queryFn: () => proposalsApi.getEligibleCount(),
+    staleTime: 30000, // 30 secondes
+    refetchInterval: 60000, // Rafraîchir toutes les minutes
+  })
+}
+
 export const useProposal = (id: string) => {
   return useQuery({
     queryKey: ['proposals', id],
