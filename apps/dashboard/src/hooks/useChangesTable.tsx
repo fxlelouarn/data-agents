@@ -14,6 +14,7 @@ import { isFieldOfEntityType } from '@/constants/fieldCategories'
 export interface ChangeOption {
   proposalId: string
   agentName: string
+  agentType?: string
   proposedValue: any
   confidence: number
   createdAt: string
@@ -39,6 +40,7 @@ export interface SortedOption {
   consensusCount: number
   maxConfidence: number
   isManual: boolean
+  hasFFAScraperSupport: boolean
 }
 
 /**
@@ -62,13 +64,13 @@ export interface UseChangesTableResult {
   // State
   editingField: string | null
   filteredChanges: ConsolidatedChange[]
-  
+
   // Handlers
   handleStartEdit: (fieldName: string) => void
   handleSaveEdit: (fieldName: string, newValue: any) => void
   handleCancelEdit: () => void
   handleFieldSelect: (fieldName: string, valueStr: string) => void
-  
+
   // Utilities
   getFieldType: (fieldName: string) => 'text' | 'number' | 'date' | 'datetime-local'
   getFieldIcon: (fieldName: string) => React.ReactElement
@@ -81,13 +83,13 @@ export interface UseChangesTableResult {
 
 /**
  * Hook réutilisable pour la logique des tables de changements
- * 
+ *
  * Centralise :
  * - State management (editingField)
  * - Handlers (edit, save, cancel, select)
  * - Field utilities (type, icon)
  * - Options sorting et filtering
- * 
+ *
  * @example
  * ```tsx
  * const table = useChangesTable({
@@ -96,7 +98,7 @@ export interface UseChangesTableResult {
  *   onFieldSelect: handleSelect,
  *   onFieldModify: handleModify
  * })
- * 
+ *
  * // Use in component
  * <button onClick={() => table.handleStartEdit('fieldName')}>Edit</button>
  * ```
@@ -121,7 +123,7 @@ export function useChangesTable({
   // ─────────────────────────────────────────────────────────────
   const filteredChanges = useMemo(() => {
     if (!entityType) return changes
-    
+
     // Filtrer les champs selon l'entityType
     return changes.filter(change => isFieldOfEntityType(change.field, entityType))
   }, [changes, entityType])
@@ -129,7 +131,7 @@ export function useChangesTable({
   // ─────────────────────────────────────────────────────────────
   // HANDLERS
   // ─────────────────────────────────────────────────────────────
-  
+
   /**
    * Commence l'édition d'un champ
    */
@@ -208,32 +210,41 @@ export function useChangesTable({
 
   /**
    * Retourne les options triées pour un changement
-   * Tri par: manual > confidence > consensus
+   * Tri par: manual > FFA Scraper > confidence > consensus
+   *
+   * Note: Les valeurs proposées par le FFA Scraper sont prioritaires car
+   * elles proviennent directement de la source officielle (FFA)
    */
   const getSortedOptions = useCallback((change: ConsolidatedChange): SortedOption[] => {
     const { field: fieldName } = change
     const uniqueValues = [...new Set(change.options.map(opt => JSON.stringify(opt.proposedValue)))]
-    
+
     // Ajouter la valeur manuelle si elle existe
     const manualValue = userModifiedChanges[fieldName]
     const manualValueStr = manualValue !== undefined ? JSON.stringify(manualValue) : null
     const hasManualValue = manualValueStr && !uniqueValues.includes(manualValueStr)
-    
+
     if (hasManualValue) {
       uniqueValues.unshift(manualValueStr!)
     }
-    
+
     // Calculer métadonnées pour chaque option
     const sortedOptions = (uniqueValues as string[])
       .map((valueStr) => {
         const value = JSON.parse(valueStr)
         const isManual = valueStr === manualValueStr
-        const supportingAgents = isManual ? [] : change.options.filter(opt => 
+        const supportingAgents = isManual ? [] : change.options.filter(opt =>
           JSON.stringify(opt.proposedValue) === valueStr
         )
         const hasConsensus = supportingAgents.length > 1
         const maxConfidence = isManual ? 1 : Math.max(...supportingAgents.map(agent => agent.confidence))
-        
+
+        // Vérifie si au moins un agent FFA Scraper supporte cette valeur
+        // Utilise agentType (identifiant technique unique) pour une détection fiable
+        const hasFFAScraperSupport = supportingAgents.some(agent =>
+          agent.agentType === 'FFA_SCRAPER'
+        )
+
         return {
           valueStr,
           value,
@@ -241,19 +252,24 @@ export function useChangesTable({
           hasConsensus,
           consensusCount: supportingAgents.length,
           maxConfidence,
-          isManual
+          isManual,
+          hasFFAScraperSupport
         }
       })
       .sort((a, b) => {
         // Manuel d'abord
         if (a.isManual && !b.isManual) return -1
         if (!a.isManual && b.isManual) return 1
-        
+
+        // FFA Scraper prioritaire (source officielle)
+        if (a.hasFFAScraperSupport && !b.hasFFAScraperSupport) return -1
+        if (!a.hasFFAScraperSupport && b.hasFFAScraperSupport) return 1
+
         // Puis par confidence
         if (a.maxConfidence !== b.maxConfidence) {
           return b.maxConfidence - a.maxConfidence
         }
-        
+
         // Enfin par consensus
         return b.consensusCount - a.consensusCount
       })
@@ -274,17 +290,17 @@ export function useChangesTable({
    */
   const getConfidenceDisplay = useCallback((change: ConsolidatedChange, selectedValue: any): string => {
     const sortedOptions = getSortedOptions(change)
-    const selectedOption = sortedOptions.find(opt => 
+    const selectedOption = sortedOptions.find(opt =>
       JSON.stringify(opt.value) === JSON.stringify(selectedValue)
     )
-    
+
     if (!selectedOption) return '-'
-    
+
     const confidencePercent = Math.round(selectedOption.maxConfidence * 100)
-    const consensusInfo = selectedOption.hasConsensus 
-      ? ` (${selectedOption.consensusCount} agents)` 
+    const consensusInfo = selectedOption.hasConsensus
+      ? ` (${selectedOption.consensusCount} agents)`
       : ''
-    
+
     return `${confidencePercent}%${consensusInfo}`
   }, [getSortedOptions])
 
@@ -303,13 +319,13 @@ export function useChangesTable({
     // State
     editingField,
     filteredChanges,
-    
+
     // Handlers
     handleStartEdit,
     handleSaveEdit,
     handleCancelEdit,
     handleFieldSelect,
-    
+
     // Utilities
     getFieldType,
     getFieldIcon,

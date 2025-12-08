@@ -61,6 +61,7 @@ export interface ConsolidatedChange {
   options: Array<{
     proposalId: string
     agentName: string
+    agentType?: string
     proposedValue: any
     confidence: number
     createdAt: string
@@ -450,6 +451,7 @@ export function useProposalEditor(
         entry.options.push({
           proposalId: p.id,
           agentName: (p as any).agentName || (p as any).agent?.name || 'Agent',
+          agentType: (p as any).agent?.type,
           proposedValue: value,
           confidence: (p as any).confidence || 0,
           createdAt: p.createdAt as any
