@@ -13,10 +13,10 @@ type TimeGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year'
 function generateTimeIntervals(startDate: Date, endDate: Date, granularity: TimeGranularity): Date[] {
   const intervals: Date[] = []
   let current = new Date(startDate)
-  
+
   while (current <= endDate) {
     intervals.push(new Date(current))
-    
+
     switch (granularity) {
       case 'day':
         current.setDate(current.getDate() + 1)
@@ -35,7 +35,7 @@ function generateTimeIntervals(startDate: Date, endDate: Date, granularity: Time
         break
     }
   }
-  
+
   return intervals
 }
 
@@ -46,7 +46,7 @@ function formatDateLabel(date: Date, granularity: TimeGranularity): string {
   const year = date.getFullYear()
   const month = String(date.getMonth() + 1).padStart(2, '0')
   const day = String(date.getDate()).padStart(2, '0')
-  
+
   switch (granularity) {
     case 'day':
       return `${day}/${month}/${year}`
@@ -75,7 +75,7 @@ router.get('/calendar-confirmations', async (req, res) => {
 
     // IMPORTANT: Le champ confirmedAt doit être rempli quand calendarStatus passe à CONFIRMED
     // Cette requête utilise Edition.confirmedAt pour tracer l'évolution
-    
+
     const intervals = generateTimeIntervals(startDate, endDate, granularity)
     const results = []
 
@@ -86,7 +86,7 @@ router.get('/calendar-confirmations', async (req, res) => {
       // Compte le nombre de confirmations dans cet intervalle
       // Note: Cette requête nécessite une connexion à Miles Republic via DatabaseManager
       // Pour l'instant, on retourne des données mockées jusqu'à l'implémentation complète
-      
+
       results.push({
         date: formatDateLabel(currentDate, granularity),
         count: 0, // TODO: Implémenter la vraie requête sur Miles Republic
@@ -123,12 +123,16 @@ router.get('/proposals-created', async (req, res) => {
     const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
     const granularity = (req.query.granularity as TimeGranularity) || 'month'
 
+    // Ajouter 1 jour à endDate pour inclure la journée entière (car on utilise lt: nextDate)
+    const endDateInclusive = new Date(endDate)
+    endDateInclusive.setDate(endDateInclusive.getDate() + 1)
+
     const intervals = generateTimeIntervals(startDate, endDate, granularity)
     const results = []
 
     for (let i = 0; i < intervals.length; i++) {
       const currentDate = intervals[i]
-      const nextDate = intervals[i + 1] || endDate
+      const nextDate = intervals[i + 1] || endDateInclusive
 
       // Requête groupée par type de proposition
       const proposalsByType = await prisma.proposal.groupBy({
@@ -195,12 +199,16 @@ router.get('/user-leaderboard', async (req, res) => {
     const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 30 * 24 * 60 * 60 * 1000) // 30 jours par défaut
     const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
 
+    // Ajouter 1 jour à endDate pour inclure la journée entière
+    const endDateInclusive = new Date(endDate)
+    endDateInclusive.setDate(endDateInclusive.getDate() + 1)
+
     // Récupérer toutes les propositions dans la période avec leur reviewedBy
     const proposals = await prisma.proposal.findMany({
       where: {
         reviewedAt: {
           gte: startDate,
-          lte: endDate
+          lt: endDateInclusive  // lt au lieu de lte pour être cohérent
         },
         reviewedBy: {
           not: null
@@ -257,7 +265,7 @@ router.get('/user-leaderboard', async (req, res) => {
       }
 
       const stats = userStats.get(proposal.reviewedBy)!
-      
+
       switch (proposal.status) {
         case 'APPROVED':
           stats.approved++
@@ -269,7 +277,7 @@ router.get('/user-leaderboard', async (req, res) => {
           stats.archived++
           break
       }
-      
+
       stats.total++
     })
 
