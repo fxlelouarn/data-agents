@@ -1452,18 +1452,20 @@ router.post('/validate-block-group', [
   })
 
   // ✅ NOUVEAU : Créer une application PAR BLOC validé
-  // Vérifier si une application existe déjà pour CE bloc spécifique
-  const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+  // Vérifier si une application PENDING existe déjà pour CE bloc spécifique
+  // ⚠️ FIX 2025-12-08 : Ne PAS chercher les applications APPLIED, sinon on les met à jour
+  // au lieu de créer une nouvelle application pour la proposition courante
+  const existingPendingApp = await db.prisma.proposalApplication.findFirst({
     where: {
       proposalId: { in: proposalIds },
-      blockType: block,  // ✅ Filtrer par bloc
-      status: { in: ['PENDING', 'APPLIED'] }
+      blockType: block,
+      status: 'PENDING'  // ✅ FIX: Seulement PENDING, pas APPLIED
     }
   })
 
-  if (existingAppForBlock) {
-    console.log(`ℹ️ Application déjà existante pour bloc "${block}":`, {
-      applicationId: existingAppForBlock.id,
+  if (existingPendingApp) {
+    console.log(`ℹ️ Application PENDING existante pour bloc "${block}":`, {
+      applicationId: existingPendingApp.id,
       proposalIds,
       block
     })
@@ -1477,7 +1479,7 @@ router.post('/validate-block-group', [
     })
 
     await db.prisma.proposalApplication.update({
-      where: { id: existingAppForBlock.id },
+      where: { id: existingPendingApp.id },
       data: {
         appliedChanges: filteredPayload,
         updatedAt: new Date()
@@ -1489,11 +1491,11 @@ router.post('/validate-block-group', [
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Block "${block}" application updated with final payload for proposals [${proposalIds.join(', ')}]`,
+      message: `Block "${block}" PENDING application updated with final payload for proposals [${proposalIds.join(', ')}]`,
       data: {
         proposalIds,
         block,
-        existingApplicationId: existingAppForBlock.id,
+        existingApplicationId: existingPendingApp.id,
         payloadKeys: Object.keys(finalPayload)
       }
     })
