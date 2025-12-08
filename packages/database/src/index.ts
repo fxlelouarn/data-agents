@@ -49,3 +49,11 @@ export {
   type BlockType,
   type BlockApplication
 } from './services/block-execution-order'
+
+// Export frequency calculator utilities
+export {
+  calculateNextRun,
+  validateFrequencyConfig,
+  formatFrequencyConfig,
+  areFrequencyConfigsEqual,
+} from './services/frequency-calculator'

@@ -18,7 +18,7 @@ import { eventsRouter } from './routes/events'
 import { statsRouter } from './routes/stats'
 import { versionRouter } from './routes/version'
 import authRouter from './routes/auth'
-import { AgentScheduler } from './services/scheduler'
+import { FlexibleScheduler } from './services/flexible-scheduler'
 import { updateAutoApplyScheduler } from './services/update-auto-apply-scheduler'
 import { errorHandler } from './middleware/error-handler'
 import { APP_VERSION } from './version'
@@ -114,7 +114,7 @@ app.use('*', (req, res) => {
 })
 
 // Initialize scheduler
-const scheduler = new AgentScheduler()
+const scheduler = new FlexibleScheduler()
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {

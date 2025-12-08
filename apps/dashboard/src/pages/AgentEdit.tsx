@@ -13,8 +13,6 @@ import {
   LinearProgress,
   Alert,
   Grid,
-  IconButton,
-  Tooltip,
   Dialog,
   DialogActions,
   DialogContent,
@@ -25,14 +23,15 @@ import {
   AccordionSummary,
   AccordionDetails,
   Tab,
-  Tabs
+  Tabs,
+  Tooltip
 } from '@mui/material'
 import DynamicConfigForm from '@/components/DynamicConfigForm'
+import FrequencySelector from '@/components/FrequencySelector'
 import {
   Save as SaveIcon,
   Cancel as CancelIcon,
   Delete as DeleteIcon,
-  Help as HelpIcon,
   ExpandMore as ExpandMoreIcon,
   ArrowBack as ArrowBackIcon,
   Refresh as RefreshIcon
@@ -41,6 +40,17 @@ import { useFormik } from 'formik'
 import * as Yup from 'yup'
 import { useAgent, useUpdateAgent, useDeleteAgent, useAgentValidation, useReinstallAgent, useResetAgentCursor } from '@/hooks/useApi'
 import { AgentType } from '@/types'
+import type { FrequencyConfig } from '@data-agents/types'
+
+// Validation schema pour FrequencyConfig
+const frequencyConfigSchema = Yup.object({
+  type: Yup.string().oneOf(['interval', 'daily', 'weekly']).required(),
+  intervalMinutes: Yup.number().min(1).optional(),
+  jitterMinutes: Yup.number().min(0).optional(),
+  windowStart: Yup.string().matches(/^\d{2}:\d{2}$/, 'Format HH:mm').optional(),
+  windowEnd: Yup.string().matches(/^\d{2}:\d{2}$/, 'Format HH:mm').optional(),
+  daysOfWeek: Yup.array().of(Yup.number().min(0).max(6)).optional(),
+})
 
 // Validation schema avec Yup
 const validationSchema = Yup.object({
@@ -53,33 +63,7 @@ const validationSchema = Yup.object({
   type: Yup.string()
     .oneOf(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD'])
     .required('Le type est obligatoire'),
-  frequency: Yup.string()
-    .required('La fréquence est obligatoire')
-    .test('is-valid-cron', 'Format cron invalide (ex: 0 6 * * 1, */5 * * * *, 0 */2 * * *)', function(value) {
-      if (!value) return false
-      
-      // Vérification de base : 5 champs séparés par des espaces
-      const fields = value.trim().split(/\s+/)
-      if (fields.length !== 5) return false
-      
-      // Vérification que chaque champ contient uniquement des caractères valides pour cron
-      const cronFieldPattern = /^[*\/\d,-]+$|^[A-Z]{3}$|^[A-Z]{3}-[A-Z]{3}$|^[A-Z]{3},[A-Z]{3}$/
-      const monthDayPattern = /^[*\/\d,-]+$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/
-      const weekDayPattern = /^[*\/\d,-]+$|^(SUN|MON|TUE|WED|THU|FRI|SAT)$|^(SUN|MON|TUE|WED|THU|FRI|SAT)-(SUN|MON|TUE|WED|THU|FRI|SAT)$/
-      
-      // Vérifier minute, heure, jour du mois
-      for (let i = 0; i < 3; i++) {
-        if (!cronFieldPattern.test(fields[i])) return false
-      }
-      
-      // Vérifier mois (peut avoir des noms)
-      if (!monthDayPattern.test(fields[3])) return false
-      
-      // Vérifier jour de la semaine (peut avoir des noms)
-      if (!weekDayPattern.test(fields[4])) return false
-      
-      return true
-    }),
+  frequency: frequencyConfigSchema.required('La fréquence est obligatoire'),
   isActive: Yup.boolean(),
   config: Yup.string()
     .test('is-json', 'Configuration JSON invalide', function(value) {
@@ -98,7 +82,7 @@ const AgentEdit: React.FC = () => {
   const navigate = useNavigate()
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false)
   const [configTab, setConfigTab] = useState<'form' | 'json'>('form')
-  
+
   const { data: agentData, isLoading } = useAgent(id!)
   const { data: validationData } = useAgentValidation(id!)
   const updateAgentMutation = useUpdateAgent()
@@ -112,20 +96,14 @@ const AgentEdit: React.FC = () => {
   const agentTypeLabels = {
     EXTRACTOR: 'Extracteur',
     COMPARATOR: 'Comparateur',
-    VALIDATOR: 'Validateur', 
+    VALIDATOR: 'Validateur',
     CLEANER: 'Nettoyeur',
     DUPLICATOR: 'Duplicateur',
     SPECIFIC_FIELD: 'Champ spécifique'
   }
 
-  const frequencyPresets = [
-    { value: '0 6 * * 1', label: 'Lundi à 6h00' },
-    { value: '0 */2 * * *', label: 'Toutes les 2 heures' },
-    { value: '0 0 * * *', label: 'Tous les jours à minuit' },
-    { value: '0 2 * * 0', label: 'Dimanche à 2h00' },
-    { value: '*/30 * * * *', label: 'Toutes les 30 minutes' },
-    { value: '0 8,12,16,20 * * *', label: '4 fois par jour' }
-  ]
+  // Default frequency config
+  const defaultFrequency: FrequencyConfig = { type: 'interval', intervalMinutes: 120, jitterMinutes: 30 }
 
   // Extraire le schema de configuration et les valeurs actuelles
   const configSchema = agentData?.data?.config?.configSchema || {}
@@ -140,7 +118,7 @@ const AgentEdit: React.FC = () => {
       name: agentData?.data?.name || '',
       description: agentData?.data?.description || '',
       type: (agentData?.data?.type || 'EXTRACTOR') as AgentType,
-      frequency: agentData?.data?.frequency || '0 6 * * 1',
+      frequency: (agentData?.data?.frequency as unknown as FrequencyConfig) || defaultFrequency,
       isActive: agentData?.data?.isActive ?? true,
       config: agentData?.data ? JSON.stringify(agentData.data.config, null, 2) : '{}',
       dynamicConfig: currentConfigValues
@@ -150,7 +128,7 @@ const AgentEdit: React.FC = () => {
     onSubmit: async (values) => {
       try {
         let configObject
-        
+
         if (configTab === 'form' && Object.keys(configSchema).length > 0) {
           // Utiliser les valeurs du formulaire dynamique
           configObject = {
@@ -161,7 +139,7 @@ const AgentEdit: React.FC = () => {
           // Utiliser le JSON brut
           configObject = JSON.parse(values.config)
         }
-        
+
         await updateAgentMutation.mutateAsync({
           id: id!,
           data: {
@@ -224,7 +202,7 @@ const AgentEdit: React.FC = () => {
       console.error('Error toggling agent:', error)
     }
   }
-  
+
   const handleReinstallAgent = async () => {
     try {
       await formik.handleSubmit()
@@ -275,7 +253,7 @@ const AgentEdit: React.FC = () => {
           >
             Retour à l'agent
           </Button>
-          
+
           <Box sx={{ display: 'flex', gap: 1 }}>
             <Tooltip title="Réinitialise complètement l'état de l'agent (progression, curseur, etc.)">
               <Button
@@ -289,7 +267,7 @@ const AgentEdit: React.FC = () => {
                 {resetCursorMutation.isPending ? 'Réinitialisation...' : 'Réinitialiser l\'avancement'}
               </Button>
             </Tooltip>
-            
+
             <Button
               variant="outlined"
               size="small"
@@ -300,7 +278,7 @@ const AgentEdit: React.FC = () => {
             >
               {reinstallAgentMutation.isPending ? 'Réinstallation...' : 'Réinstaller'}
             </Button>
-            
+
             <Button
               variant="outlined"
               size="small"
@@ -313,17 +291,17 @@ const AgentEdit: React.FC = () => {
             </Button>
           </Box>
         </Box>
-        
+
         <Box>
           <Typography variant="h4" sx={{ fontWeight: 600 }}>
             Édition - {agent.name}
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, mt: 1 }}>
-            <Chip 
+            <Chip
               label={formik.values.isActive ? 'Actif' : 'Inactif'}
               color={formik.values.isActive ? 'success' : 'error'}
             />
-            <Chip 
+            <Chip
               label={agentTypeLabels[formik.values.type] || formik.values.type}
               variant="outlined"
             />
@@ -463,54 +441,19 @@ const AgentEdit: React.FC = () => {
 
                 <Grid container spacing={3}>
                   <Grid item xs={12}>
-                    <Box sx={{ mb: 2 }}>
-                      <TextField
-                        fullWidth
-                        name="frequency"
-                        label="Fréquence d'exécution (Cron)"
-                        value={formik.values.frequency}
-                        onChange={formik.handleChange}
-                        error={formik.touched.frequency && Boolean(formik.errors.frequency)}
-                        helperText={formik.touched.frequency && formik.errors.frequency || "Format: minute heure jour mois jour_semaine"}
-                        variant="outlined"
-                        InputProps={{
-                          endAdornment: (
-                            <Tooltip title="Aide pour les expressions cron">
-                              <IconButton 
-                                href="https://crontab.guru/" 
-                                target="_blank" 
-                                size="small"
-                              >
-                                <HelpIcon />
-                              </IconButton>
-                            </Tooltip>
-                          )
-                        }}
-                      />
-                    </Box>
-                    
-                    <Typography variant="body2" color="text.secondary" sx={{ mb: 2 }}>
-                      Fréquences prédéfinies :
-                    </Typography>
-                    <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                      {frequencyPresets.map((preset) => (
-                        <Chip
-                          key={preset.value}
-                          label={preset.label}
-                          variant={formik.values.frequency === preset.value ? "filled" : "outlined"}
-                          onClick={() => formik.setFieldValue('frequency', preset.value)}
-                          size="small"
-                        />
-                      ))}
-                    </Box>
+                    <FrequencySelector
+                      value={formik.values.frequency}
+                      onChange={(config) => formik.setFieldValue('frequency', config)}
+                      error={formik.touched.frequency && formik.errors.frequency ? String(formik.errors.frequency) : undefined}
+                    />
                   </Grid>
 
                   <Grid item xs={12}>
                     {Object.keys(configSchema).length > 0 ? (
                       <Box>
                         <Box sx={{ borderBottom: 1, borderColor: 'divider', mb: 3 }}>
-                          <Tabs 
-                            value={configTab} 
+                          <Tabs
+                            value={configTab}
                             onChange={(_, newValue) => setConfigTab(newValue)}
                             aria-label="Configuration tabs"
                           >
@@ -518,14 +461,14 @@ const AgentEdit: React.FC = () => {
                             <Tab label="JSON" value="json" />
                           </Tabs>
                         </Box>
-                        
+
                         {configTab === 'form' ? (
                           <DynamicConfigForm
                             configSchema={configSchema}
                             values={formik.values.dynamicConfig || {}}
                             onChange={(field, value) => {
                               formik.setFieldValue(`dynamicConfig.${field}`, value)
-                              
+
                               // Synchroniser avec le JSON
                               const updatedConfig = {
                                 ...formik.values.dynamicConfig,
@@ -547,7 +490,7 @@ const AgentEdit: React.FC = () => {
                             value={formik.values.config}
                             onChange={(e) => {
                               formik.handleChange(e)
-                              
+
                               // Essayer de parser et synchroniser le formulaire
                               try {
                                 const parsed = JSON.parse(e.target.value)
@@ -648,14 +591,14 @@ const AgentEdit: React.FC = () => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={() => setDeleteDialogOpen(false)}
             disabled={deleteAgentMutation.isPending}
           >
             Annuler
           </Button>
-          <Button 
-            onClick={handleDelete} 
+          <Button
+            onClick={handleDelete}
             color="error"
             variant="contained"
             disabled={deleteAgentMutation.isPending}
