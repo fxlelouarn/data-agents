@@ -442,8 +442,8 @@ const AgentDetail: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Progression du scraping (pour agents scraper) */}
-          {(agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
+          {/* Progression du scraping (pour agents scraper, pas pour VALIDATOR) */}
+          {agent.type !== 'VALIDATOR' && (agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
             <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
           )}
 
