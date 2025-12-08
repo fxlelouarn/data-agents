@@ -15,7 +15,8 @@ const scheduler = new FlexibleScheduler()
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
-    throw createError(400, 'Validation failed', 'VALIDATION_ERROR')
+    const errorMessages = errors.array().map(e => `${e.type === 'field' ? (e as any).path : 'unknown'}: ${e.msg}`).join(', ')
+    throw createError(400, `Validation failed: ${errorMessages}`, 'VALIDATION_ERROR')
   }
   next()
 }
