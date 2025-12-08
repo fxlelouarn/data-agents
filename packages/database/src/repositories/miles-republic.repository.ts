@@ -9,10 +9,16 @@
  * Note: Uses Prisma client instance for Miles Republic DB
  */
 export class MilesRepublicRepository {
+  private auditUser: string
+
   constructor(
     private milesDb: any,
-    private auditUser: string = 'data-agents' // Nom de l'agent ou utilisateur pour l'audit trail
-  ) {}
+    agentName: string = 'data-agents', // Nom de l'agent pour l'audit trail
+    userEmail?: string // Email de l'utilisateur qui applique
+  ) {
+    // Format: "agentName (userEmail)" ou juste "agentName" si pas d'email
+    this.auditUser = userEmail ? `${agentName} (${userEmail})` : agentName
+  }
 
   // ============== EVENT OPERATIONS ==============
 

@@ -210,7 +210,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
 
       // Extract structured data
       const agentId = options.agentName || (await this.getAgentIdFromContext())
@@ -433,7 +433,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericEventId = parseInt(eventId)
 
       if (isNaN(numericEventId)) {
@@ -477,7 +477,7 @@ export class ProposalDomainService {
         racesKeys: changes.races && typeof changes.races === 'object' ? Object.keys(changes.races) : 'N/A'
       })
 
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericEditionId = parseInt(editionId)
 
       if (isNaN(numericEditionId)) {
@@ -1118,7 +1118,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericRaceId = parseInt(raceId)
 
       if (isNaN(numericRaceId)) {
@@ -1441,9 +1441,9 @@ export class ProposalDomainService {
   /**
    * Get Miles Republic repository (with connection)
    */
-  private async getMilesRepublicRepository(databaseId?: string, agentName: string = 'data-agents'): Promise<MilesRepublicRepository> {
+  private async getMilesRepublicRepository(databaseId?: string, agentName: string = 'data-agents', userEmail?: string): Promise<MilesRepublicRepository> {
     const milesDb = await this.getMilesRepublicConnection(databaseId)
-    return new MilesRepublicRepository(milesDb, agentName)
+    return new MilesRepublicRepository(milesDb, agentName, userEmail)
   }
 
   /**

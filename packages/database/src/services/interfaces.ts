@@ -209,6 +209,7 @@ export interface ApplyOptions {
   milesRepublicDatabaseId?: string // ID de la connexion Miles Republic
   capturedLogs?: string[]  // Tableau pour capturer les logs (pour l'interface utilisateur)
   agentName?: string       // Nom de l'agent pour l'audit trail (createdBy/updatedBy)
+  userEmail?: string       // Email de l'utilisateur qui applique (pour l'audit trail)
   proposalIds?: string[]   // IDs des propositions du groupe (mode groupé)
   proposalId?: string      // ✅ ID de la proposition (pour récupérer les IDs des blocs précédents)
   blockType?: string       // ✅ Type de bloc pour application partielle ('edition', 'organizer', 'races', 'event')

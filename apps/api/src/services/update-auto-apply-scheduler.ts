@@ -251,7 +251,8 @@ class UpdateAutoApplyScheduler {
 
       const applyOptions: any = {
         capturedLogs: logs,
-        proposalId: application.proposalId
+        proposalId: application.proposalId,
+        userEmail: 'auto-scheduler'  // ✅ Identifiant pour les applications automatiques
       }
 
       if (application.proposalIds && application.proposalIds.length > 0) {
