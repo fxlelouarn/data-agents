@@ -137,19 +137,19 @@ export class AutoValidatorAgent extends BaseAgent {
     // Requête SQL brute pour exclure les propositions avec racesToAdd
     // car Prisma ne supporte pas bien les requêtes JSONB complexes
     const whereClause = `
-      status = 'PENDING'
-      AND type = 'EDITION_UPDATE'
-      AND "agentId" = $1
+      p.status = 'PENDING'
+      AND p.type = 'EDITION_UPDATE'
+      AND p."agentId" = $1
       AND (
-        changes->'racesToAdd' IS NULL
-        OR changes->'racesToAdd' = 'null'::jsonb
-        OR jsonb_array_length(COALESCE(changes->'racesToAdd'->'new', changes->'racesToAdd', '[]'::jsonb)) = 0
+        p.changes->'racesToAdd' IS NULL
+        OR p.changes->'racesToAdd' = 'null'::jsonb
+        OR jsonb_array_length(COALESCE(p.changes->'racesToAdd'->'new', p.changes->'racesToAdd', '[]'::jsonb)) = 0
       )
     `
 
     // Compter le total de propositions éligibles (sans racesToAdd)
     const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
-      `SELECT COUNT(*) as count FROM proposals WHERE ${whereClause}`,
+      `SELECT COUNT(*) as count FROM proposals p WHERE ${whereClause}`,
       ffaAgentId
     )
     const totalCount = Number(countResult[0]?.count || 0)
