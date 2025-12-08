@@ -264,6 +264,9 @@ router.post('/:id/apply', [
   await ensureServices()
   const { id } = req.params
 
+  // Récupérer l'email de l'utilisateur connecté pour l'audit trail
+  const userEmail = req.user?.email || 'unknown'
+
   const application = await db.prisma.proposalApplication.findUnique({
     where: { id },
     include: {
@@ -335,7 +338,8 @@ router.post('/:id/apply', [
           const applyOptions: any = {
             capturedLogs: depLogs,
             proposalId: depApp.proposalId,  // ✅ Nécessaire pour récupérer les IDs
-            blockType: depType  // ✅ Type de bloc à appliquer
+            blockType: depType,  // ✅ Type de bloc à appliquer
+            userEmail  // ✅ Email de l'utilisateur pour l'audit trail
           }
 
           if (depApp.proposalIds && depApp.proposalIds.length > 0) {
@@ -388,7 +392,8 @@ router.post('/:id/apply', [
     // ✅ MODE GROUPÉ : Passer proposalIds si disponibles
     const applyOptions: any = {
       capturedLogs: logs,
-      proposalId: application.proposalId  // ✅ Nécessaire pour récupérer les IDs des blocs précédents
+      proposalId: application.proposalId,  // ✅ Nécessaire pour récupérer les IDs des blocs précédents
+      userEmail  // ✅ Email de l'utilisateur pour l'audit trail
     }
 
     if (application.proposalIds && application.proposalIds.length > 0) {
@@ -552,6 +557,9 @@ router.post('/bulk/apply', [
   await ensureServices()
   const { ids } = req.body
 
+  // Récupérer l'email de l'utilisateur connecté pour l'audit trail
+  const userEmail = req.user?.email || 'unknown'
+
   // Récupérer toutes les mises à jour
   const applications = await db.prisma.proposalApplication.findMany({
     where: { id: { in: ids } },
@@ -638,7 +646,11 @@ router.post('/bulk/apply', [
       // Appliquer la proposition
       const result = await applicationService.applyProposal(
         application.proposalId,
-        application.proposal.changes as Record<string, any>
+        application.proposal.changes as Record<string, any>,
+        {
+          capturedLogs: logs,
+          userEmail  // ✅ Email de l'utilisateur pour l'audit trail
+        }
       )
 
       if (result.success) {
