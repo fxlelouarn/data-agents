@@ -18,6 +18,42 @@ const validateRequest = (req: Request, res: Response, next: NextFunction) => {
   next()
 }
 
+// GET /api/proposals/eligible-count - Compte les propositions éligibles pour l'auto-validation
+// IMPORTANT: Cette route doit être AVANT /:id pour éviter le conflit
+router.get('/eligible-count', asyncHandler(async (req: Request, res: Response) => {
+  // Trouver l'agent FFA Scraper
+  const ffaAgent = await db.prisma.agent.findFirst({
+    where: {
+      OR: [
+        { name: { contains: 'FFA', mode: 'insensitive' } },
+        { name: { contains: 'Scraper', mode: 'insensitive' } }
+      ],
+      type: { not: 'VALIDATOR' }
+    }
+  })
+
+  if (!ffaAgent) {
+    return res.json({
+      success: true,
+      data: { count: 0, message: 'FFA Scraper agent not found' }
+    })
+  }
+
+  // Compter les propositions EDITION_UPDATE PENDING de l'agent FFA
+  const count = await db.prisma.proposal.count({
+    where: {
+      status: 'PENDING',
+      type: 'EDITION_UPDATE',
+      agentId: ffaAgent.id
+    }
+  })
+
+  res.json({
+    success: true,
+    data: { count }
+  })
+}))
+
 // POST /api/proposals - Create a manual proposal
 router.post('/', [
   body('eventId').optional().isString(),
@@ -2916,40 +2952,5 @@ function compareData(existing: any, proposed: any): any {
 
   return changes
 }
-
-// GET /api/proposals/eligible-count - Compte les propositions éligibles pour l'auto-validation
-router.get('/eligible-count', asyncHandler(async (req: Request, res: Response) => {
-  // Trouver l'agent FFA Scraper
-  const ffaAgent = await db.prisma.agent.findFirst({
-    where: {
-      OR: [
-        { name: { contains: 'FFA', mode: 'insensitive' } },
-        { name: { contains: 'Scraper', mode: 'insensitive' } }
-      ],
-      type: { not: 'VALIDATOR' }
-    }
-  })
-
-  if (!ffaAgent) {
-    return res.json({
-      success: true,
-      data: { count: 0, message: 'FFA Scraper agent not found' }
-    })
-  }
-
-  // Compter les propositions EDITION_UPDATE PENDING de l'agent FFA
-  const count = await db.prisma.proposal.count({
-    where: {
-      status: 'PENDING',
-      type: 'EDITION_UPDATE',
-      agentId: ffaAgent.id
-    }
-  })
-
-  res.json({
-    success: true,
-    data: { count }
-  })
-}))
 
 export { router as proposalRouter }
