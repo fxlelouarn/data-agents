@@ -87,6 +87,7 @@ export class AutoValidatorAgent extends BaseAgent {
       totalProposalsAnalyzed: 0,
       totalProposalsValidated: 0,
       totalProposalsIgnored: 0,
+      totalEligibleProposals: 0,
       exclusionBreakdown: {
         featuredEvent: 0,
         premiumCustomer: 0,
@@ -124,17 +125,24 @@ export class AutoValidatorAgent extends BaseAgent {
 
   /**
    * Récupère les propositions éligibles pour la validation automatique
+   * Retourne les propositions (limitées) et le compte total
    */
   private async getEligibleProposals(
     ffaAgentId: string,
     config: AutoValidatorConfig
-  ): Promise<any[]> {
+  ): Promise<{ proposals: any[]; totalCount: number }> {
+    const where = {
+      status: 'PENDING' as const,
+      type: 'EDITION_UPDATE' as const,
+      agentId: ffaAgentId
+    }
+
+    // Compter le total de propositions éligibles
+    const totalCount = await this.prisma.proposal.count({ where })
+
+    // Récupérer les propositions avec limite
     const proposals = await this.prisma.proposal.findMany({
-      where: {
-        status: 'PENDING',
-        type: 'EDITION_UPDATE',
-        agentId: ffaAgentId
-      },
+      where,
       orderBy: { createdAt: 'asc' },
       take: config.maxProposalsPerRun,
       include: {
@@ -144,7 +152,7 @@ export class AutoValidatorAgent extends BaseAgent {
       }
     })
 
-    return proposals
+    return { proposals, totalCount }
   }
 
   /**
@@ -357,12 +365,17 @@ export class AutoValidatorAgent extends BaseAgent {
       context.logger.info(`📌 Agent FFA trouvé: ${ffaAgentId}`)
 
       // Récupérer les propositions éligibles
-      const proposals = await this.getEligibleProposals(ffaAgentId, config)
+      const { proposals, totalCount } = await this.getEligibleProposals(ffaAgentId, config)
       runResult.proposalsAnalyzed = proposals.length
 
-      context.logger.info(`📊 ${proposals.length} propositions EDITION_UPDATE en attente`)
+      context.logger.info(`📊 ${proposals.length}/${totalCount} propositions EDITION_UPDATE en attente`)
 
       if (proposals.length === 0) {
+        // Mettre à jour totalEligibleProposals même si aucune proposition
+        const stats = await this.loadStats()
+        stats.totalEligibleProposals = totalCount
+        await this.saveStats(stats)
+
         return {
           success: true,
           message: 'No eligible proposals to validate',
@@ -449,6 +462,7 @@ export class AutoValidatorAgent extends BaseAgent {
       stats.totalProposalsAnalyzed += runResult.proposalsAnalyzed
       stats.totalProposalsValidated += runResult.proposalsValidated
       stats.totalProposalsIgnored += runResult.proposalsIgnored
+      stats.totalEligibleProposals = totalCount  // Nombre actuel de propositions éligibles
       stats.exclusionBreakdown.featuredEvent += runResult.exclusionReasons.featuredEvent
       stats.exclusionBreakdown.premiumCustomer += runResult.exclusionReasons.premiumCustomer
       stats.exclusionBreakdown.newRaces += runResult.exclusionReasons.newRaces
