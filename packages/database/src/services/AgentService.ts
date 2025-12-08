@@ -1,8 +1,8 @@
 import { PrismaClient } from '@prisma/client'
 import { IAgentService, IConnectionService, AgentFilters, ValidationResult } from './interfaces'
-import { 
-  CreateAgentSchema, 
-  UpdateAgentSchema, 
+import {
+  CreateAgentSchema,
+  UpdateAgentSchema,
   AgentFiltersSchema,
   validateWithSchema,
   CreateAgentInput,
@@ -51,7 +51,7 @@ export class AgentService implements IAgentService {
       agents.map(async (agent) => {
         const validation = await this.validateConfiguration(agent.id)
         const hasCriticalErrors = validation.errors.some(e => e.severity === 'error')
-        
+
         // Si l'agent a des erreurs critiques et est encore actif, le désactiver
         let updatedAgent = agent
         if (hasCriticalErrors && agent.isActive) {
@@ -69,7 +69,7 @@ export class AgentService implements IAgentService {
             }
           })
         }
-        
+
         return {
           ...updatedAgent,
           configurationErrors: validation.errors,
@@ -96,18 +96,18 @@ export class AgentService implements IAgentService {
           }
         }
       })
-      
+
       if (!agent) {
         throw new NotFoundError('Agent', id)
       }
-      
+
       return agent
     }, `Failed to retrieve agent ${id}`)
   }
 
   async createAgent(data: CreateAgentInput) {
     const validatedData = validateWithSchema(CreateAgentSchema, data)
-    
+
     return this.prisma.agent.create({
       data: {
         ...validatedData,
@@ -123,13 +123,13 @@ export class AgentService implements IAgentService {
     if (validatedData.isActive === true) {
       const validation = await this.validateConfiguration(id)
       const hasCriticalErrors = validation.errors.some(e => e.severity === 'error')
-      
+
       if (hasCriticalErrors) {
         const criticalErrors = validation.errors.filter(e => e.severity === 'error').map(e => e.message)
         throw new AgentValidationError(id, criticalErrors)
       }
     }
-    
+
     return this.prisma.agent.update({
       where: { id },
       data: {
@@ -151,16 +151,16 @@ export class AgentService implements IAgentService {
    */
   private migrateConfigFieldNames(config: any): any {
     const migratedConfig = { ...config }
-    
+
     // Migration: searchEngineId -> googleSearchEngineId
     if (migratedConfig.searchEngineId && !migratedConfig.googleSearchEngineId) {
       migratedConfig.googleSearchEngineId = migratedConfig.searchEngineId
       delete migratedConfig.searchEngineId
     }
-    
+
     // Ajouter d'autres migrations ici si nécessaire
     // Ex: oldFieldName -> newFieldName
-    
+
     return migratedConfig
   }
 
@@ -174,16 +174,22 @@ export class AgentService implements IAgentService {
         throw new NotFoundError('Agent', id)
       }
 
-      // 1. Détecter le type d'agent
-      const agentType = await agentRegistryService.detectAgentType(existingAgent.name, existingAgent.id)
+      // 1. Récupérer le type d'agent depuis config.agentType (prioritaire) ou détecter
+      const currentConfig = (existingAgent.config as any) || {}
+      let agentType = currentConfig.agentType
+
       if (!agentType) {
-        throw new Error(`Impossible de détecter le type d'agent pour: ${existingAgent.name}`)
+        // Fallback: détecter le type d'agent par le nom
+        agentType = await agentRegistryService.detectAgentType(existingAgent.name, existingAgent.id)
+      }
+
+      if (!agentType) {
+        throw new Error(`Impossible de déterminer le type d'agent pour: ${existingAgent.name}`)
       }
 
       // 2. Récupérer la définition actuelle depuis le code
-      const currentConfig = (existingAgent.config as any) || {}
       const agentDefinition = await agentRegistryService.getAgentDefinition(agentType, currentConfig)
-      
+
       if (!agentDefinition) {
         throw new Error(`Impossible de récupérer la définition pour l'agent de type: ${agentType}`)
       }
@@ -193,7 +199,7 @@ export class AgentService implements IAgentService {
 
       // 4. Migrer les anciens noms de champs vers les nouveaux
       const migratedConfig = this.migrateConfigFieldNames(currentConfig)
-      
+
       // 5. Fusionner les valeurs existantes avec la nouvelle structure
       const updatedConfig = {
         ...agentDefinition.defaultConfig, // Valeurs par défaut du code
@@ -238,18 +244,18 @@ export class AgentService implements IAgentService {
       // Vérifier les champs requis
       for (const [fieldName, fieldConfig] of Object.entries(configSchema)) {
         const fieldDef = fieldConfig as any
-        
+
         if (fieldDef.required) {
           const value = config[fieldName]
-          
+
           if (!value || (Array.isArray(value) && value.length === 0) || value === '') {
             let message = `Le champ "${fieldDef.label || fieldName}" est requis`
-            
+
             // Messages spécifiques selon le type
             if (fieldDef.type === 'database_select') {
               message = `Aucune base de données source sélectionnée. Sélectionnez une base de données active.`
             }
-            
+
             errors.push({
               field: fieldName,
               message,
