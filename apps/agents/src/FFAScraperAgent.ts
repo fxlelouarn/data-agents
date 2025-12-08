@@ -806,31 +806,27 @@ export class FFAScraperAgent extends BaseAgent {
       // 6bis. Mettre à jour les courses existantes non matchées avec la FFA
       // Si on a déjà proposé un changement de startDate pour l'édition, on doit aussi
       // mettre à jour les courses existantes qui n'ont pas été matchées
+      // MAIS on doit conserver l'heure précise si la course en a une (non-minuit)
       const matchedRaceIds = new Set(racesToUpdate.map(r => r.raceId))
       const unmatchedExistingRaces = existingRaces.filter((r: any) => !matchedRaceIds.has(r.id))
 
       if (unmatchedExistingRaces.length > 0) {
         const ffaStartDate = this.calculateEditionStartDate(ffaData)
+        const unmatchedExpectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
 
         // Proposer de mettre à jour la startDate de chaque course non matchée vers la nouvelle date d'édition
         unmatchedExistingRaces.forEach((race: any) => {
-          // Vérifier si la course a vraiment besoin d'être mise à jour
-          const raceDateDiff = race.startDate
-            ? Math.abs(ffaStartDate.getTime() - race.startDate.getTime())
-            : Infinity
-
-          // Mettre à jour si différence > 30 minutes
-          if (raceDateDiff > 1800000) { // 30 min en ms
+          if (!race.startDate) {
+            // Pas de date existante -> ajouter la date FFA
             racesToUpdate.push({
               raceId: race.id,
               raceName: race.name,
               updates: {
                 startDate: {
-                  old: race.startDate,
+                  old: null,
                   new: ffaStartDate
                 }
               },
-              // ✅ Ajouter les données actuelles pour affichage complet
               currentData: {
                 name: race.name,
                 startDate: race.startDate,
@@ -844,7 +840,73 @@ export class FFAScraperAgent extends BaseAgent {
                 timeZone: race.timeZone
               }
             })
+            return
           }
+
+          const raceTimeZone = race.timeZone || unmatchedExpectedTimeZone
+          const isRaceMidnight = this.isMidnightInTimezone(race.startDate, raceTimeZone)
+          const isSameDate = this.isSameDateInTimezone(race.startDate, ffaStartDate, raceTimeZone)
+
+          if (isSameDate) {
+            // Même date -> pas de mise à jour nécessaire
+            this.logger.debug(`⏭️  Course non matchée "${race.name}" déjà à la bonne date`)
+            return
+          }
+
+          // Date différente -> proposer mise à jour
+          let newStartDate: Date
+
+          if (isRaceMidnight) {
+            // Course à minuit -> utiliser ffaStartDate directement
+            newStartDate = ffaStartDate
+            this.logger.info(`📅 Course non matchée "${race.name}" (minuit) → nouvelle date édition`)
+          } else {
+            // Course avec heure précise -> CONSERVER l'heure, changer seulement la DATE
+            // Extraire l'heure de la course existante et l'appliquer à la nouvelle date FFA
+            const raceLocalTime = new Intl.DateTimeFormat('en-US', {
+              timeZone: raceTimeZone,
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            }).format(race.startDate)
+
+            const ffaLocalDate = new Intl.DateTimeFormat('en-CA', {
+              timeZone: raceTimeZone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit'
+            }).format(ffaStartDate)
+
+            // Reconstruire la date avec l'heure conservée
+            const newLocalDateTimeStr = `${ffaLocalDate}T${raceLocalTime}`
+            newStartDate = fromZonedTime(newLocalDateTimeStr, raceTimeZone)
+
+            this.logger.info(`📅 Course non matchée "${race.name}" (heure conservée: ${raceLocalTime}) → nouvelle date édition`)
+          }
+
+          racesToUpdate.push({
+            raceId: race.id,
+            raceName: race.name,
+            updates: {
+              startDate: {
+                old: race.startDate,
+                new: newStartDate
+              }
+            },
+            currentData: {
+              name: race.name,
+              startDate: race.startDate,
+              runDistance: race.runDistance,
+              walkDistance: race.walkDistance,
+              swimDistance: race.swimDistance,
+              bikeDistance: race.bikeDistance,
+              runPositiveElevation: race.runPositiveElevation,
+              categoryLevel1: race.categoryLevel1,
+              categoryLevel2: race.categoryLevel2,
+              timeZone: race.timeZone
+            }
+          })
         })
 
         // Mettre à jour les changements racesToUpdate si des courses ont été ajoutées
