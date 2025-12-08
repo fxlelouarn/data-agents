@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate, Link } from 'react-router-dom'
-import { 
-  Box, 
-  Typography, 
-  Card, 
-  CardContent, 
-  LinearProgress, 
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  LinearProgress,
   Button,
   Grid,
   Chip,
@@ -19,7 +19,7 @@ import {
   DialogContentText,
   DialogActions,
 } from '@mui/material'
-import { 
+import {
   Edit as EditIcon,
   PlayArrow as PlayIcon,
   Delete as DeleteIcon,
@@ -29,6 +29,48 @@ import { useAgent, useRunAgent, useAgents, useFailureReport, useToggleAgent, use
 import AgentNavigation from '@/components/agents/AgentNavigation'
 import ScraperProgressCard from '@/components/ScraperProgressCard'
 import DynamicConfigDisplay from '@/components/DynamicConfigDisplay'
+import type { FrequencyConfig } from '@data-agents/types'
+
+/**
+ * Formate une configuration de fréquence en texte lisible
+ */
+function formatFrequency(config: FrequencyConfig | string | undefined): string {
+  if (!config) return '-'
+  if (typeof config === 'string') return config // Fallback pour ancien format cron
+
+  switch (config.type) {
+    case 'interval': {
+      const hours = Math.floor((config.intervalMinutes || 0) / 60)
+      const minutes = (config.intervalMinutes || 0) % 60
+      let interval = ''
+      if (hours > 0 && minutes > 0) interval = `${hours}h${minutes}min`
+      else if (hours > 0) interval = `${hours}h`
+      else interval = `${minutes}min`
+
+      let result = `Toutes les ${interval}`
+      if (config.jitterMinutes) {
+        const jH = Math.floor(config.jitterMinutes / 60)
+        const jM = config.jitterMinutes % 60
+        let jitter = jH > 0 ? `${jH}h` : ''
+        if (jM > 0) jitter += `${jM}min`
+        result += ` ± ${jitter}`
+      }
+      if (config.windowStart && config.windowEnd) {
+        result += ` (${config.windowStart}-${config.windowEnd})`
+      }
+      return result
+    }
+    case 'daily':
+      return `Quotidien (${config.windowStart}-${config.windowEnd})`
+    case 'weekly': {
+      const dayNames = ['dim', 'lun', 'mar', 'mer', 'jeu', 'ven', 'sam']
+      const days = (config.daysOfWeek || []).sort().map(d => dayNames[d]).join(', ')
+      return `Hebdo ${days} (${config.windowStart}-${config.windowEnd})`
+    }
+    default:
+      return '-'
+  }
+}
 
 const AgentDetail: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -70,24 +112,24 @@ const AgentDetail: React.FC = () => {
 
   // Tous les hooks et useMemo doivent être ici, avant les returns conditionnels
   const agent = agentData?.data
-  
+
   // Détection des agents auto-désactivés
   const isAutoDisabled = React.useMemo(() => {
     if (!agent || agent.isActive) return false
-    
+
     // Vérifier dans le rapport d'échecs
     if (failureReportData?.data?.agents) {
-      return failureReportData.data.agents.some(failedAgent => 
+      return failureReportData.data.agents.some(failedAgent =>
         failedAgent.agentId === agent.id && failedAgent.shouldDisable
       )
     }
-    
+
     return false
   }, [agent, failureReportData])
-  
+
   const agentTypeLabels = {
     EXTRACTOR: 'Extracteur',
-    COMPARATOR: 'Comparateur', 
+    COMPARATOR: 'Comparateur',
     VALIDATOR: 'Validateur',
     CLEANER: 'Nettoyeur',
     DUPLICATOR: 'Duplicateur',
@@ -155,7 +197,7 @@ const AgentDetail: React.FC = () => {
     <Box>
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AgentNavigation 
+          <AgentNavigation
             navigation={{
               hasPrevious,
               hasNext,
@@ -166,7 +208,7 @@ const AgentDetail: React.FC = () => {
             disabled={runAgentMutation.isPending}
           />
         </Box>
-        
+
         <Box sx={{ display: 'flex', gap: 1 }}>
           <Button
             variant={agent.isActive ? "contained" : "outlined"}
@@ -188,7 +230,7 @@ const AgentDetail: React.FC = () => {
           >
             {agent.isActive ? 'Exécuter' : isAutoDisabled ? 'Tester (auto-désactivé)' : 'Tester (inactif)'}
           </Button>
-          
+
           <Button
             variant="outlined"
             size="small"
@@ -199,7 +241,7 @@ const AgentDetail: React.FC = () => {
           >
             {agent.isActive ? 'Désactiver' : 'Activer'}
           </Button>
-          
+
           <Button
             variant="outlined"
             size="small"
@@ -209,36 +251,36 @@ const AgentDetail: React.FC = () => {
           >
             Modifier
           </Button>
-          
+
         </Box>
       </Box>
-      
+
       <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 3 }}>
         <Typography variant="h4" sx={{ fontWeight: 600 }}>
           {agent.name}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-          <Chip 
+          <Chip
             label={agent.isActive ? 'Actif' : 'Inactif'}
             color={agent.isActive ? 'success' : 'error'}
             size="medium"
           />
           {isAutoDisabled && (
-            <Chip 
+            <Chip
               label="Auto-désactivé"
               color="error"
               variant="filled"
               size="medium"
             />
           )}
-          <Chip 
+          <Chip
             label={agentTypeLabels[agent.type as keyof typeof agentTypeLabels]}
             variant="outlined"
             size="medium"
           />
         </Box>
       </Box>
-      
+
       <Grid container spacing={3}>
         {/* Colonne principale - Activités */}
         <Grid item xs={12} md={8}>
@@ -270,15 +312,15 @@ const AgentDetail: React.FC = () => {
               </Grid>
             </CardContent>
           </Card>
-          
+
           {/* Derniers logs */}
           {agent.logs && agent.logs.length > 0 && (
             <Card sx={{ mb: 3 }}>
               <CardContent>
                 <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 2 }}>
                   <Typography variant="h6">Derniers logs</Typography>
-                  <Button 
-                    size="small" 
+                  <Button
+                    size="small"
                     variant="outlined"
                     component={Link}
                     to={`/agents/${id}/logs`}
@@ -288,11 +330,11 @@ const AgentDetail: React.FC = () => {
                 </Box>
                 <List dense>
                   {agent.logs.slice(0, 8).map((log: any) => (
-                    <ListItem 
-                      key={log.id} 
-                      button 
+                    <ListItem
+                      key={log.id}
+                      button
                       onClick={() => handleLogClick(log)}
-                      sx={{ 
+                      sx={{
                         cursor: 'pointer',
                         '&:hover': { backgroundColor: 'action.hover' }
                       }}
@@ -301,9 +343,9 @@ const AgentDetail: React.FC = () => {
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                             <Chip
-                              size="small" 
+                              size="small"
                               label={log.level}
-                              color={log.level === 'ERROR' ? 'error' : 
+                              color={log.level === 'ERROR' ? 'error' :
                                      log.level === 'WARN' ? 'warning' : 'info'}
                             />
                             <Typography variant="body2" sx={{ flexGrow: 1 }}>
@@ -319,7 +361,7 @@ const AgentDetail: React.FC = () => {
               </CardContent>
             </Card>
           )}
-          
+
           {/* Dernières exécutions */}
           {agent.runs && agent.runs.length > 0 && (
             <Card>
@@ -332,10 +374,10 @@ const AgentDetail: React.FC = () => {
                         primary={
                           <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
                             <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                              <Chip 
+                              <Chip
                                 size="small"
                                 label={run.status}
-                                color={run.status === 'SUCCESS' ? 'success' : 
+                                color={run.status === 'SUCCESS' ? 'success' :
                                        run.status === 'FAILED' ? 'error' : 'default'}
                               />
                               <Typography variant="body2">
@@ -355,7 +397,7 @@ const AgentDetail: React.FC = () => {
             </Card>
           )}
         </Grid>
-        
+
         {/* Colonne secondaire - Détails de l'agent */}
         <Grid item xs={12} md={4}>
           <Card sx={{ mb: 3 }}>
@@ -369,43 +411,43 @@ const AgentDetail: React.FC = () => {
                   <ListItemText primary="Type" secondary={agentTypeLabels[agent.type as keyof typeof agentTypeLabels]} />
                 </ListItem>
                 <ListItem>
-                  <ListItemText primary="Fréquence" secondary={agent.frequency} />
+                  <ListItemText primary="Fréquence" secondary={formatFrequency(agent.frequency as unknown as FrequencyConfig)} />
                 </ListItem>
                 <ListItem>
-                  <ListItemText 
-                    primary="Créé le" 
+                  <ListItemText
+                    primary="Créé le"
                     secondary={new Date(agent.createdAt).toLocaleDateString('fr-FR', {
                       year: 'numeric',
-                      month: 'long', 
+                      month: 'long',
                       day: 'numeric',
                       hour: '2-digit',
                       minute: '2-digit'
-                    })} 
+                    })}
                   />
                 </ListItem>
                 <ListItem>
-                  <ListItemText 
-                    primary="Dernière modification" 
+                  <ListItemText
+                    primary="Dernière modification"
                     secondary={new Date(agent.updatedAt).toLocaleDateString('fr-FR', {
                       year: 'numeric',
                       month: 'long',
-                      day: 'numeric', 
+                      day: 'numeric',
                       hour: '2-digit',
                       minute: '2-digit'
-                    })} 
+                    })}
                   />
                 </ListItem>
               </List>
             </CardContent>
           </Card>
-          
+
           {/* Progression du scraping (pour agents scraper) */}
           {(agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
             <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
           )}
         </Grid>
       </Grid>
-      
+
       {/* Configuration de l'agent */}
       {Object.keys(configSchema).length > 0 && (
         <Box sx={{ mt: 3 }}>
@@ -416,7 +458,7 @@ const AgentDetail: React.FC = () => {
           />
         </Box>
       )}
-      
+
       {/* Dialog des détails du log */}
       <Dialog
         open={logDetailDialogOpen}
@@ -430,9 +472,9 @@ const AgentDetail: React.FC = () => {
             Détails du log
             {selectedLog && (
               <Chip
-                size="small" 
+                size="small"
                 label={selectedLog.level}
-                color={selectedLog.level === 'ERROR' ? 'error' : 
+                color={selectedLog.level === 'ERROR' ? 'error' :
                        selectedLog.level === 'WARN' ? 'warning' : 'info'}
               />
             )}
@@ -445,8 +487,8 @@ const AgentDetail: React.FC = () => {
               <Typography variant="h6" gutterBottom>Informations générales</Typography>
               <List dense>
                 <ListItem>
-                  <ListItemText 
-                    primary="Horodatage" 
+                  <ListItemText
+                    primary="Horodatage"
                     secondary={new Date(selectedLog.timestamp).toLocaleString('fr-FR', {
                       year: 'numeric',
                       month: 'long',
@@ -464,7 +506,7 @@ const AgentDetail: React.FC = () => {
                   <ListItemText primary="Run ID" secondary={selectedLog.runId || 'Non spécifié'} />
                 </ListItem>
               </List>
-              
+
               {/* Message */}
               <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Message</Typography>
               <Box
@@ -480,7 +522,7 @@ const AgentDetail: React.FC = () => {
               >
                 {selectedLog.message}
               </Box>
-              
+
               {/* Données additionnelles */}
               {selectedLog.data && Object.keys(selectedLog.data).length > 0 && (
                 <>
@@ -500,7 +542,7 @@ const AgentDetail: React.FC = () => {
                   </Box>
                 </>
               )}
-              
+
               {/* Métadonnées */}
               {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
                 <>
@@ -527,7 +569,7 @@ const AgentDetail: React.FC = () => {
           <Button onClick={handleLogDetailClose}>Fermer</Button>
         </DialogActions>
       </Dialog>
-      
+
       {/* Dialog de confirmation de suppression */}
       <Dialog
         open={deleteDialogOpen}
@@ -550,14 +592,14 @@ const AgentDetail: React.FC = () => {
           </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button 
+          <Button
             onClick={() => setDeleteDialogOpen(false)}
             disabled={deleteAgentMutation.isPending}
           >
             Annuler
           </Button>
-          <Button 
-            onClick={handleDeleteAgent} 
+          <Button
+            onClick={handleDeleteAgent}
             color="error"
             variant="contained"
             disabled={deleteAgentMutation.isPending}
