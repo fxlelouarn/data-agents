@@ -9,7 +9,7 @@ import {
 import {
   Analytics as AnalyticsIcon
 } from '@mui/icons-material'
-import { useAgentState } from '@/hooks/useApi'
+import { useAgentState, useEligibleProposalsCount } from '@/hooks/useApi'
 
 interface ValidatorStatsCardProps {
   agentId: string
@@ -23,14 +23,14 @@ interface AutoValidatorStats {
   totalProposalsAnalyzed: number
   totalProposalsValidated: number
   totalProposalsIgnored: number
-  totalEligibleProposals: number
   lastRunAt?: string
 }
 
 const ValidatorStatsCard: React.FC<ValidatorStatsCardProps> = ({ agentId, agentName }) => {
-  const { data: stateData, isLoading } = useAgentState(agentId)
+  const { data: stateData, isLoading: isLoadingState } = useAgentState(agentId)
+  const { data: eligibleData, isLoading: isLoadingEligible } = useEligibleProposalsCount()
 
-  if (isLoading) {
+  if (isLoadingState || isLoadingEligible) {
     return (
       <Card>
         <CardContent>
@@ -46,9 +46,8 @@ const ValidatorStatsCard: React.FC<ValidatorStatsCardProps> = ({ agentId, agentN
     return null
   }
 
-  // Calcul du dénominateur pour les propositions traitées
-  // totalEligibleProposals si disponible, sinon totalProposalsValidated + totalProposalsIgnored
-  const totalEligible = stats.totalEligibleProposals ?? (stats.totalProposalsValidated + stats.totalProposalsIgnored)
+  // Nombre actuel de propositions éligibles (temps réel depuis l'API)
+  const totalEligible = eligibleData?.data?.count ?? 0
   const totalProcessed = stats.totalProposalsValidated
 
   return (
