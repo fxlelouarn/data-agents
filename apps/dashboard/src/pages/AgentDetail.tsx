@@ -28,6 +28,7 @@ import {
 import { useAgent, useRunAgent, useAgents, useFailureReport, useToggleAgent, useDeleteAgent } from '@/hooks/useApi'
 import AgentNavigation from '@/components/agents/AgentNavigation'
 import ScraperProgressCard from '@/components/ScraperProgressCard'
+import ValidatorStatsCard from '@/components/ValidatorStatsCard'
 import DynamicConfigDisplay from '@/components/DynamicConfigDisplay'
 import type { FrequencyConfig } from '@data-agents/types'
 
@@ -444,6 +445,11 @@ const AgentDetail: React.FC = () => {
           {/* Progression du scraping (pour agents scraper) */}
           {(agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
             <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
+          )}
+
+          {/* Statistiques (pour agents validator) */}
+          {agent.type === 'VALIDATOR' && (
+            <ValidatorStatsCard agentId={agent.id} agentName={agent.name} />
           )}
         </Grid>
       </Grid>
