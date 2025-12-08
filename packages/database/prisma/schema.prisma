@@ -10,19 +10,20 @@ datasource db {
 }
 
 model Agent {
-  id          String     @id @default(cuid())
-  name        String     @unique
+  id          String       @id @default(cuid())
+  name        String       @unique
   description String?
   type        AgentType
-  isActive    Boolean    @default(true)
-  frequency   String
+  isActive    Boolean      @default(true)
+  frequency   Json         // FrequencyConfig (interval/daily/weekly avec jitter et fenêtres)
+  nextRunAt   DateTime?    // Prochaine exécution planifiée (UTC)
   config      Json
-  createdAt   DateTime   @default(now())
-  updatedAt   DateTime   @updatedAt
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
   logs        AgentLog[]
   runs        AgentRun[]
-  proposals   Proposal[]
   states      AgentState[]
+  proposals   Proposal[]
 
   @@map("agents")
 }
@@ -70,56 +71,54 @@ model AgentLog {
 }
 
 model Proposal {
-  id            String                @id @default(cuid())
-  agentId       String
-  type          ProposalType
-  status        ProposalStatus        @default(PENDING)
-  eventId       String?
-  editionId     String?
-  raceId        String?
-  changes       Json
-  justification Json
-  confidence    Float?
-  // Modifications utilisateur
-  userModifiedChanges Json?
-  modificationReason  String?
-  modifiedBy          String?
-  modifiedAt          DateTime?
-  // Approbations par bloc
-  approvedBlocks      Json?                 @default("{}")
+  id                  String                @id @default(cuid())
+  agentId             String
+  type                ProposalType
+  status              ProposalStatus        @default(PENDING)
+  eventId             String?
+  editionId           String?
+  raceId              String?
+  changes             Json
+  justification       Json
+  confidence          Float?
   // Champs de contexte pour affichage
-  eventName     String?
-  eventCity     String?
-  editionYear   Int?
-  raceName      String?
+  eventName           String?
+  eventCity           String?
+  editionYear         Int?
+  raceName            String?
   // Champ dénormalisé pour tri par date d'événement proposée
-  proposedStartDate DateTime?
-  createdAt     DateTime              @default(now())
-  updatedAt     DateTime              @updatedAt
-  reviewedAt    DateTime?
-  reviewedBy    String?  // User ID du validateur
-  appliedBy     String?  // User ID de l'exécuteur
-  agent         Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
-  applications  ProposalApplication[]
+  proposedStartDate   DateTime?
+  createdAt           DateTime              @default(now())
+  updatedAt           DateTime              @updatedAt
+  reviewedAt          DateTime?
+  reviewedBy          String?               // User ID du validateur
+  appliedBy           String?               // User ID de l'exécuteur
+  modificationReason  String?
+  modifiedAt          DateTime?
+  modifiedBy          String?
+  userModifiedChanges Json?
+  approvedBlocks      Json?                 @default("{}")
+  applications        ProposalApplication[]
+  agent               Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
   @@map("proposals")
 }
 
 model ProposalApplication {
-  id           String                  @id @default(cuid())
-  proposalId   String
-  proposalIds  String[]                @default([])  // IDs des propositions du groupe (mode groupé)
-  blockType    String?                              // Type de bloc : 'edition', 'organizer', 'races', 'event', ou null (legacy/complet)
-  status       ApplicationStatus       @default(PENDING)
-  scheduledAt  DateTime?
-  appliedAt    DateTime?
-  errorMessage String?
-  logs         String[]                @default([])
+  id             String            @id @default(cuid())
+  proposalId     String
+  status         ApplicationStatus @default(PENDING)
+  scheduledAt    DateTime?
+  appliedAt      DateTime?
+  errorMessage   String?
+  logs           String[]          @default([])
   appliedChanges Json?
-  rollbackData Json?
-  createdAt    DateTime                @default(now())
-  updatedAt    DateTime                @updatedAt
-  proposal     Proposal                @relation(fields: [proposalId], references: [id], onDelete: Cascade)
+  rollbackData   Json?
+  createdAt      DateTime          @default(now())
+  updatedAt      DateTime          @updatedAt
+  proposalIds    String[]          @default([])
+  blockType      String?
+  proposal       Proposal          @relation(fields: [proposalId], references: [id], onDelete: Cascade)
 
   @@map("proposal_applications")
 }
@@ -136,7 +135,6 @@ model DatabaseConnection {
   username       String?
   password       String?
   connectionUrl  String?
-  prismaSchema   String?      // Chemin relatif vers le schéma Prisma spécifique (ex: apps/agents/prisma/miles-republic.prisma)
   sslMode        String?      @default("prefer")
   timeout        Int?         @default(30000)
   maxConnections Int?         @default(10)
@@ -145,49 +143,49 @@ model DatabaseConnection {
   updatedAt      DateTime     @updatedAt
   lastTestedAt   DateTime?
   isHealthy      Boolean      @default(false)
+  prismaSchema   String?
 
   @@map("database_connections")
 }
 
 model Settings {
-  id                      String   @id @default("singleton") // Un seul enregistrement de settings
-  maxConsecutiveFailures  Int      @default(3)
-  enableAutoDisabling     Boolean  @default(true)
-  checkIntervalMinutes    Int      @default(5)
-  meilisearchUrl          String?
-  meilisearchApiKey       String?
-  // Application automatique des mises à jour PENDING
-  enableAutoApplyUpdates     Boolean   @default(false)
-  autoApplyIntervalMinutes   Int       @default(60)
-  autoApplyLastRunAt         DateTime?
-  autoApplyNextRunAt         DateTime?
-  autoApplyLastRunResult     Json?     // { success: number, failed: number, errors: string[] }
-  createdAt               DateTime @default(now())
-  updatedAt               DateTime @updatedAt
+  id                       String    @id @default("singleton")
+  maxConsecutiveFailures   Int       @default(3)
+  enableAutoDisabling      Boolean   @default(true)
+  checkIntervalMinutes     Int       @default(5)
+  meilisearchUrl           String?
+  meilisearchApiKey        String?
+  createdAt                DateTime  @default(now())
+  updatedAt                DateTime  @updatedAt
+  autoApplyIntervalMinutes Int       @default(60)
+  autoApplyLastRunAt       DateTime?
+  autoApplyLastRunResult   Json?
+  autoApplyNextRunAt       DateTime?
+  enableAutoApplyUpdates   Boolean   @default(false)
 
   @@map("settings")
 }
 
-enum UserRole {
-  ADMIN      // Accès complet : agents, propositions, mises à jour, utilisateurs
-  VALIDATOR  // Peut valider/rejeter les propositions
-  EXECUTOR   // Peut exécuter les mises à jour (propositions + mises à jour)
-}
-
 model User {
-  id            String   @id @default(cuid())
-  email         String   @unique
-  passwordHash  String
-  firstName     String
-  lastName      String
-  role          UserRole @default(VALIDATOR)
-  isActive      Boolean  @default(true)
-  lastLoginAt   DateTime?
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
-  createdBy     String?  // ID de l'admin qui a créé l'utilisateur
+  id           String    @id @default(cuid())
+  email        String    @unique
+  passwordHash String
+  firstName    String
+  lastName     String
+  role         UserRole  @default(VALIDATOR)
+  isActive     Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+  updatedAt    DateTime  @updatedAt
+  createdBy    String?
 
   @@map("users")
+}
+
+enum UserRole {
+  ADMIN
+  VALIDATOR
+  EXECUTOR
 }
 
 enum AgentType {
@@ -223,10 +221,10 @@ enum ProposalType {
 
 enum ProposalStatus {
   PENDING
-  PARTIALLY_APPROVED  // Au moins un bloc validé, mais pas tous
   APPROVED
   REJECTED
   ARCHIVED
+  PARTIALLY_APPROVED
 }
 
 enum DatabaseType {

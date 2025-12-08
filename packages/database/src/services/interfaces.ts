@@ -50,37 +50,38 @@ export interface ConnectionTestResult {
 
 // Service interfaces
 export interface IAgentService {
-  getAgents(filters?: AgentFilters): Promise<(Agent & { 
+  getAgents(filters?: AgentFilters): Promise<(Agent & {
     _count: { runs: number; proposals: number }
     configurationErrors?: ValidationResult['errors']
     hasConfigurationErrors?: boolean
   })[]>
-  
+
   getAgent(id: string): Promise<(Agent & {
     runs: AgentRun[]
     logs: AgentLog[]
   }) | null>
-  
+
   createAgent(data: {
     name: string
     description?: string
     type: string
-    frequency: string
+    frequency: any  // FrequencyConfig JSON
     config: any
   }): Promise<Agent>
-  
+
   updateAgent(id: string, data: Partial<{
     name: string
     description: string
     isActive: boolean
-    frequency: string
+    frequency: any  // FrequencyConfig JSON
+    nextRunAt: Date | null
     config: any
   }>): Promise<Agent>
-  
+
   deleteAgent(id: string): Promise<void>
-  
+
   validateConfiguration(agentId: string): Promise<ValidationResult>
-  
+
   reinstallAgent(id: string): Promise<Agent>
 }
 
@@ -88,9 +89,9 @@ export interface IProposalService {
   getProposals(filters?: ProposalFilters): Promise<(Proposal & {
     agent: { name: string; type: string }
   })[]>
-  
+
   getProposal(id: string): Promise<Proposal | null>
-  
+
   createProposal(data: {
     agentId: string
     type: string
@@ -101,7 +102,7 @@ export interface IProposalService {
     justification: any
     confidence?: number
   }): Promise<Proposal>
-  
+
   updateProposal(id: string, data: {
     status?: string
     reviewedAt?: Date
@@ -113,17 +114,17 @@ export interface IProposalService {
     modifiedAt?: Date
     approvedBlocks?: any
   }): Promise<Proposal>
-  
+
   deleteProposal(id: string): Promise<void>
 }
 
 export interface IRunService {
   getRuns(filters?: RunFilters): Promise<AgentRun[]>
-  
+
   getRun(id: string): Promise<(AgentRun & { logs: AgentLog[] }) | null>
-  
+
   createRun(agentId: string): Promise<AgentRun>
-  
+
   updateRun(id: string, data: {
     status?: string
     endedAt?: Date
@@ -131,13 +132,13 @@ export interface IRunService {
     result?: any
     error?: string
   }): Promise<AgentRun>
-  
+
   getAgentRuns(agentId: string, limit?: number): Promise<AgentRun[]>
 }
 
 export interface ILogService {
   getLogs(filters?: LogFilters): Promise<AgentLog[]>
-  
+
   createLog(data: {
     agentId: string
     runId?: string
@@ -145,17 +146,17 @@ export interface ILogService {
     message: string
     data?: any
   }): Promise<AgentLog>
-  
+
   getAgentLogs(agentId: string, limit?: number): Promise<AgentLog[]>
-  
+
   getRunLogs(runId: string): Promise<AgentLog[]>
 }
 
 export interface IConnectionService {
   getConnections(includeInactive?: boolean): Promise<Omit<DatabaseConnection, 'password'>[]>
-  
+
   getConnection(id: string): Promise<Omit<DatabaseConnection, 'password'> | null>
-  
+
   createConnection(data: {
     name: string
     description?: string
@@ -171,7 +172,7 @@ export interface IConnectionService {
     maxConnections?: number
     tags?: string[]
   }): Promise<Omit<DatabaseConnection, 'password'>>
-  
+
   updateConnection(id: string, data: Partial<{
     name: string
     description: string
@@ -188,11 +189,11 @@ export interface IConnectionService {
     maxConnections: number
     tags: string[]
   }>): Promise<Omit<DatabaseConnection, 'password'>>
-  
+
   deleteConnection(id: string): Promise<void>
-  
+
   testConnection(id: string): Promise<ConnectionTestResult>
-  
+
   getAgentsUsingConnection(connectionId: string): Promise<Array<{
     id: string
     name: string

@@ -1,40 +1,15 @@
 import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { getDatabaseServiceSync } from '../services/database'
-import { AgentScheduler } from '../services/scheduler'
+import { validateFrequencyConfig } from '@data-agents/database'
+import { FlexibleScheduler } from '../services/flexible-scheduler'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichAgentWithMetadata } from '../services/agent-metadata'
+import type { FrequencyConfig } from '@data-agents/types'
 
 const router = Router()
 const db = getDatabaseServiceSync()
-const scheduler = new AgentScheduler()
-
-// Function to validate cron expressions with support for intervals
-const isValidCronExpression = (expression: string): boolean => {
-  if (!expression) return false
-
-  // Vérification de base : 5 champs séparés par des espaces
-  const fields = expression.trim().split(/\s+/)
-  if (fields.length !== 5) return false
-
-  // Vérification que chaque champ contient uniquement des caractères valides pour cron
-  const cronFieldPattern = /^[*\/\d,-]+$|^[A-Z]{3}$|^[A-Z]{3}-[A-Z]{3}$|^[A-Z]{3},[A-Z]{3}$/
-  const monthDayPattern = /^[*\/\d,-]+$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$|^(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)-(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)$/
-  const weekDayPattern = /^[*\/\d,-]+$|^(SUN|MON|TUE|WED|THU|FRI|SAT)$|^(SUN|MON|TUE|WED|THU|FRI|SAT)-(SUN|MON|TUE|WED|THU|FRI|SAT)$/
-
-  // Vérifier minute, heure, jour du mois
-  for (let i = 0; i < 3; i++) {
-    if (!cronFieldPattern.test(fields[i])) return false
-  }
-
-  // Vérifier mois (peut avoir des noms)
-  if (!monthDayPattern.test(fields[3])) return false
-
-  // Vérifier jour de la semaine (peut avoir des noms)
-  if (!weekDayPattern.test(fields[4])) return false
-
-  return true
-}
+const scheduler = new FlexibleScheduler()
 
 // Validation middleware
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {
@@ -88,15 +63,17 @@ router.post('/', [
   body('name').isString().notEmpty().withMessage('Name is required'),
   body('description').optional().isString(),
   body('type').isIn(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD']),
-  body('frequency').isString().notEmpty().withMessage('Frequency (cron expression) is required'),
+  body('frequency').isObject().withMessage('Frequency must be a FrequencyConfig object'),
   body('config').isObject().withMessage('Config must be an object'),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { name, description, type, frequency, config } = req.body
 
-  // Validate cron expression
-  if (!isValidCronExpression(frequency)) {
-    throw createError(400, 'Invalid cron expression', 'INVALID_CRON')
+  // Validate frequency config
+  const frequencyConfig = frequency as FrequencyConfig
+  const validation = validateFrequencyConfig(frequencyConfig)
+  if (!validation.valid) {
+    throw createError(400, `Invalid frequency config: ${validation.errors.join(', ')}`, 'INVALID_FREQUENCY')
   }
 
   // Enrichir automatiquement avec les métadonnées depuis le code
@@ -110,7 +87,7 @@ router.post('/', [
     name,
     description: enriched.description,
     type,
-    frequency,
+    frequency: frequencyConfig,
     config: enriched.config
   })
 
@@ -129,17 +106,19 @@ router.put('/:id', [
   param('id').isString().notEmpty(),
   body('name').optional().isString().notEmpty(),
   body('description').optional().isString(),
-  body('frequency').optional().isString(),
+  body('frequency').optional().isObject(),
   body('config').optional().isObject(),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
   const updates = req.body
 
-  // Validate cron expression if provided
+  // Validate frequency config if provided
   if (updates.frequency) {
-    if (!isValidCronExpression(updates.frequency)) {
-      throw createError(400, 'Invalid cron expression', 'INVALID_CRON')
+    const frequencyConfig = updates.frequency as FrequencyConfig
+    const validation = validateFrequencyConfig(frequencyConfig)
+    if (!validation.valid) {
+      throw createError(400, `Invalid frequency config: ${validation.errors.join(', ')}`, 'INVALID_FREQUENCY')
     }
   }
 

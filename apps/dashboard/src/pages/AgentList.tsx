@@ -34,10 +34,35 @@ import {
 import { DataGridPro, GridColDef } from '@mui/x-data-grid-pro'
 import { useAgents, useToggleAgent, useRunAgent, useFailureReport, useLogs } from '@/hooks/useApi'
 import { AgentType } from '@/types'
+import type { FrequencyConfig } from '@data-agents/types'
+
+/**
+ * Formate une configuration de fréquence en texte court pour la liste
+ */
+function formatFrequencyShort(config: FrequencyConfig | string | undefined): string {
+  if (!config) return '-'
+  if (typeof config === 'string') return config // Fallback pour ancien format cron
+
+  switch (config.type) {
+    case 'interval': {
+      const hours = Math.floor((config.intervalMinutes || 0) / 60)
+      const minutes = (config.intervalMinutes || 0) % 60
+      if (hours > 0 && minutes > 0) return `~${hours}h${minutes}min`
+      if (hours > 0) return `~${hours}h`
+      return `~${minutes}min`
+    }
+    case 'daily':
+      return `Quotidien`
+    case 'weekly':
+      return `Hebdo`
+    default:
+      return '-'
+  }
+}
 
 const agentTypeLabels: Record<AgentType, string> = {
   EXTRACTOR: 'Extracteur',
-  COMPARATOR: 'Comparateur', 
+  COMPARATOR: 'Comparateur',
   VALIDATOR: 'Validateur',
   CLEANER: 'Nettoyeur',
   DUPLICATOR: 'Duplicateur',
@@ -47,7 +72,7 @@ const agentTypeLabels: Record<AgentType, string> = {
 const agentTypeColors: Record<AgentType, 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'> = {
   EXTRACTOR: 'primary',
   COMPARATOR: 'secondary',
-  VALIDATOR: 'success', 
+  VALIDATOR: 'success',
   CLEANER: 'warning',
   DUPLICATOR: 'info',
   SPECIFIC_FIELD: 'error',
@@ -58,7 +83,7 @@ const AgentList: React.FC = () => {
   const [typeFilter, setTypeFilter] = useState<AgentType | 'ALL'>('ALL')
   const [showInactive, setShowInactive] = useState(true)
 
-  const { data: agentsData, isLoading } = useAgents({ 
+  const { data: agentsData, isLoading } = useAgents({
     includeInactive: showInactive,
     type: typeFilter !== 'ALL' ? typeFilter : undefined,
   })
@@ -69,11 +94,11 @@ const AgentList: React.FC = () => {
   }, 50, 0)
   const toggleMutation = useToggleAgent()
   const runMutation = useRunAgent()
-  
+
   // Create a map of agents that were auto-disabled
   const autoDisabledAgents = useMemo(() => {
     const map = new Set<string>()
-    
+
     // Agents actuellement à risque ou qui devraient être désactivés
     if (failureReportData?.data?.agents) {
       failureReportData.data.agents.forEach(agent => {
@@ -82,7 +107,7 @@ const AgentList: React.FC = () => {
         }
       })
     }
-    
+
     // Agents désactivés automatiquement (via les logs)
     if (logsData?.data) {
       logsData.data.forEach(log => {
@@ -91,33 +116,33 @@ const AgentList: React.FC = () => {
         }
       })
     }
-    
+
     return map
   }, [failureReportData, logsData])
 
   // Filter agents based on search term
   const filteredAgents = useMemo(() => {
     if (!agentsData?.data) return []
-    
-    return agentsData.data.filter(agent => 
+
+    return agentsData.data.filter(agent =>
       agent.name.toLowerCase().includes(searchTerm.toLowerCase()) ||
       agent.description?.toLowerCase().includes(searchTerm.toLowerCase())
     )
   }, [agentsData?.data, searchTerm])
-  
+
   // Statistics for display
   const agentStats = useMemo(() => {
     if (!agentsData?.data) return { total: 0, active: 0, autoDisabled: 0, atRisk: 0 }
-    
+
     const total = agentsData.data.length
     const active = agentsData.data.filter(agent => agent.isActive).length
-    const autoDisabled = agentsData.data.filter(agent => 
+    const autoDisabled = agentsData.data.filter(agent =>
       !agent.isActive && autoDisabledAgents.has(agent.id)
     ).length
-    const atRisk = agentsData.data.filter(agent => 
+    const atRisk = agentsData.data.filter(agent =>
       agent.isActive && autoDisabledAgents.has(agent.id)
     ).length
-    
+
     return { total, active, autoDisabled, atRisk }
   }, [agentsData?.data, autoDisabledAgents])
 
@@ -137,9 +162,9 @@ const AgentList: React.FC = () => {
       sortable: false,
       disableColumnMenu: true,
       renderCell: (params) => (
-        <Avatar 
-          sx={{ 
-            width: 32, 
+        <Avatar
+          sx={{
+            width: 32,
             height: 32,
             bgcolor: agentTypeColors[params.row.type as AgentType] + '.light',
             color: agentTypeColors[params.row.type as AgentType] + '.contrastText'
@@ -154,8 +179,8 @@ const AgentList: React.FC = () => {
       headerName: 'Nom',
       width: 180,
       renderCell: (params) => (
-        <Typography 
-          variant="body2" 
+        <Typography
+          variant="body2"
           sx={{ fontWeight: 500, cursor: 'pointer' }}
           component={RouterLink}
           to={`/agents/${params.row.id}`}
@@ -195,7 +220,7 @@ const AgentList: React.FC = () => {
       width: 120,
       renderCell: (params) => (
         <Typography variant="body2" color="text.secondary">
-          {params.value}
+          {formatFrequencyShort(params.value as FrequencyConfig)}
         </Typography>
       ),
     },
@@ -226,7 +251,7 @@ const AgentList: React.FC = () => {
                 })
               }}
             />
-            
+
             {/* Agent à risque (actif mais avec échecs) */}
             {isAtRisk && (
               <Tooltip title={
@@ -236,7 +261,7 @@ const AgentList: React.FC = () => {
                   Il sera désactivé automatiquement si les échecs continuent.
                 </div>
               }>
-                <Chip 
+                <Chip
                   icon={<WarningIcon />}
                   label="À risque"
                   size="small"
@@ -246,7 +271,7 @@ const AgentList: React.FC = () => {
                 />
               </Tooltip>
             )}
-            
+
             {/* Agent désactivé automatiquement */}
             {isAutoDisabled && (
               <Tooltip title={
@@ -257,7 +282,7 @@ const AgentList: React.FC = () => {
                   Vérifiez la configuration et réactivez-le manuellement.
                 </div>
               }>
-                <Chip 
+                <Chip
                   icon={<BlockIcon />}
                   label="Auto-désactivé"
                   size="small"
@@ -267,14 +292,14 @@ const AgentList: React.FC = () => {
                 />
               </Tooltip>
             )}
-            
+
             {/* Erreurs de configuration */}
             {hasCriticalErrors && (
               <Tooltip title={`Erreurs de configuration : ${params.row.configurationErrors.filter((e: any) => e.severity === 'error').map((e: any) => e.message).join(', ')}`}>
                 <ErrorIcon sx={{ color: 'error.main', fontSize: 16 }} />
               </Tooltip>
             )}
-            
+
             {/* Avertissements (seulement si pas d'erreurs critiques et pas d'état spécial) */}
             {hasOnlyWarnings && !isAutoDisabled && !isAtRisk && (
               <Tooltip title={`Avertissements : ${params.row.configurationErrors.filter((e: any) => e.severity === 'warning').map((e: any) => e.message).join(', ')}`}>
@@ -320,14 +345,14 @@ const AgentList: React.FC = () => {
         const hasErrors = params.row.configurationErrors && params.row.configurationErrors.length > 0;
         const hasCriticalErrors = hasErrors && params.row.configurationErrors.some((error: any) => error.severity === 'error');
         const isAutoDisabled = !params.row.isActive && autoDisabledAgents.has(params.row.id);
-        
+
         return (
           <Box sx={{ display: 'flex', gap: 0.5 }}>
             <Tooltip title={
-              hasCriticalErrors 
-                ? "Impossible d'exécuter : erreurs de configuration critiques" 
-                : params.row.isActive 
-                ? "Exécuter maintenant" 
+              hasCriticalErrors
+                ? "Impossible d'exécuter : erreurs de configuration critiques"
+                : params.row.isActive
+                ? "Exécuter maintenant"
                 : isAutoDisabled
                 ? "Exécuter maintenant (agent auto-désactivé)"
                 : "Exécuter maintenant (agent inactif)"
@@ -372,31 +397,31 @@ const AgentList: React.FC = () => {
             Agents
           </Typography>
           <Box sx={{ display: 'flex', gap: 2, mt: 1 }}>
-            <Chip 
-              label={`${agentStats.total} total`} 
-              size="small" 
-              variant="outlined" 
+            <Chip
+              label={`${agentStats.total} total`}
+              size="small"
+              variant="outlined"
             />
-            <Chip 
-              label={`${agentStats.active} actifs`} 
-              size="small" 
-              color="success" 
-              variant="outlined" 
+            <Chip
+              label={`${agentStats.active} actifs`}
+              size="small"
+              color="success"
+              variant="outlined"
             />
             {agentStats.atRisk > 0 && (
-              <Chip 
-                label={`${agentStats.atRisk} à risque`} 
-                size="small" 
-                color="warning" 
-                variant="filled" 
+              <Chip
+                label={`${agentStats.atRisk} à risque`}
+                size="small"
+                color="warning"
+                variant="filled"
               />
             )}
             {agentStats.autoDisabled > 0 && (
-              <Chip 
-                label={`${agentStats.autoDisabled} auto-désactivés`} 
-                size="small" 
-                color="error" 
-                variant="filled" 
+              <Chip
+                label={`${agentStats.autoDisabled} auto-désactivés`}
+                size="small"
+                color="error"
+                variant="filled"
               />
             )}
           </Box>
