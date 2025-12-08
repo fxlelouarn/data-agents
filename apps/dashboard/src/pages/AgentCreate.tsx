@@ -218,7 +218,11 @@ const AgentCreate: React.FC = () => {
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    frequency: '0 2 * * *', // Default: tous les jours à 2h du matin
+    frequency: {
+      type: 'daily' as const,
+      windowStart: '02:00',
+      windowEnd: '05:00'
+    }, // Default: 1x par jour entre 2h et 5h du matin
     isActive: true,
     config: {} as Record<string, any>,
   })
@@ -278,7 +282,7 @@ const AgentCreate: React.FC = () => {
     if (!selectedAgentType) {
       newErrors.agentType = 'Le type d\'agent est requis'
     }
-    if (!formData.frequency.trim()) {
+    if (!formData.frequency || !formData.frequency.type) {
       newErrors.frequency = 'La fréquence est requise'
     }
 
@@ -421,11 +425,10 @@ const AgentCreate: React.FC = () => {
             <Grid item xs={12} md={6}>
               <TextField
                 fullWidth
-                label="Fréquence (cron) *"
-                value={formData.frequency}
-                onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                error={Boolean(errors.frequency)}
-                helperText={errors.frequency || 'Expression cron (ex: 0 2 * * * pour tous les jours à 2h)'}
+                label="Fréquence"
+                value={`${formData.frequency.type === 'daily' ? 'Quotidien' : formData.frequency.type} (${formData.frequency.windowStart} - ${formData.frequency.windowEnd})`}
+                disabled
+                helperText="1 fois par jour entre 2h et 5h du matin"
               />
             </Grid>
 
