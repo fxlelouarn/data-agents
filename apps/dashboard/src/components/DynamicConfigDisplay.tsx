@@ -25,11 +25,11 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
     if (configSchema.fields && Array.isArray(configSchema.fields)) {
       return configSchema
     }
-    
+
     // Sinon, convertir depuis l'ancien format (objet plat avec champs comme clés)
     const fields: ConfigField[] = []
     const { title, description, categories, fields: _, ...fieldConfigs } = configSchema as any
-    
+
     Object.entries(fieldConfigs).forEach(([name, config]: [string, any]) => {
       if (config && typeof config === 'object' && config.type) {
         fields.push({
@@ -38,18 +38,18 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
         })
       }
     })
-    
+
     return {
       ...configSchema,
       fields,
       categories: categories || []
     }
   }, [configSchema])
-  
+
   // Grouper les champs par catégorie
   const groupedFields = React.useMemo(() => {
     const groups: { [categoryId: string]: { category: ConfigCategory; fields: ConfigField[] } } = {}
-    
+
     // Créer les groupes à partir des catégories définies
     normalizedSchema.categories?.forEach((category: ConfigCategory) => {
       groups[category.id] = {
@@ -57,7 +57,7 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
         fields: []
       }
     })
-    
+
     // Ajouter une catégorie par défaut si aucune n'est définie
     if (!normalizedSchema.categories || normalizedSchema.categories.length === 0) {
       groups['default'] = {
@@ -65,13 +65,13 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
         fields: []
       }
     }
-    
+
     // Assigner les champs aux catégories
     if (!normalizedSchema.fields || !Array.isArray(normalizedSchema.fields)) {
       console.warn('normalizedSchema.fields is not an array:', normalizedSchema)
       return groups
     }
-    
+
     normalizedSchema.fields.forEach(field => {
       const categoryId = field.category || 'default'
       if (groups[categoryId]) {
@@ -87,45 +87,52 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
         groups['default'].fields.push(field)
       }
     })
-    
+
     // Supprimer les catégories vides
     Object.keys(groups).forEach(key => {
       if (groups[key].fields.length === 0) {
         delete groups[key]
       }
     })
-    
+
     return groups
   }, [normalizedSchema])
 
   const formatValue = (field: ConfigField, value: any) => {
-    if (value === undefined || value === null) {
-      return field.defaultValue !== undefined ? String(field.defaultValue) : '-'
+    // Utiliser la valeur par défaut si la valeur est undefined/null
+    const effectiveValue = (value === undefined || value === null)
+      ? field.defaultValue
+      : value
+
+    if (effectiveValue === undefined || effectiveValue === null) {
+      return '-'
     }
 
     switch (field.type) {
       case 'switch':
-        return value ? 'Activé' : 'Désactivé'
-      
+        return effectiveValue ? 'Activé' : 'Désactivé'
+
       case 'select':
-        const option = field.options?.find(opt => opt.value === value)
-        return option ? option.label : String(value)
-      
+        const option = field.options?.find(opt => opt.value === effectiveValue)
+        return option ? option.label : String(effectiveValue)
+
       case 'password':
-        return value ? '••••••••' : '-'
-      
+        return effectiveValue ? '••••••••' : '-'
+
       case 'slider':
-        return `${value}${field.validation?.max ? ` / ${field.validation.max}` : ''}`
-      
+        return `${effectiveValue}${field.validation?.max ? ` / ${field.validation.max}` : ''}`
+
       default:
-        return String(value)
+        return String(effectiveValue)
     }
   }
 
   const renderField = (field: ConfigField) => {
     const value = values[field.name]
     const displayValue = formatValue(field, value)
-    const isEmpty = value === undefined || value === null || value === ''
+    // Utiliser la valeur effective (avec fallback sur defaultValue) pour les conditions
+    const effectiveValue = (value === undefined || value === null) ? field.defaultValue : value
+    const isEmpty = effectiveValue === undefined || effectiveValue === null || effectiveValue === ''
 
     return (
       <Grid item xs={12} md={6} key={field.name}>
@@ -136,10 +143,10 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', minHeight: '40px' }}>
             {field.type === 'switch' ? (
-              <Chip 
+              <Chip
                 label={displayValue}
-                color={value ? 'success' : 'default'}
-                variant={value ? 'filled' : 'outlined'}
+                color={effectiveValue ? 'success' : 'default'}
+                variant={effectiveValue ? 'filled' : 'outlined'}
                 size="small"
               />
             ) : isEmpty ? (
@@ -190,7 +197,7 @@ const DynamicConfigDisplay: React.FC<DynamicConfigDisplayProps> = ({
               )}
               <Divider />
             </Box>
-            
+
             <Grid container spacing={3}>
               {fields.map(field => renderField(field))}
             </Grid>
