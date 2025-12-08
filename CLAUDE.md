@@ -4,6 +4,51 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-08 - Fix: Application races non créée lors de validation groupée ✅
+
+**Problème résolu** : Lors de la validation du bloc `races` pour une proposition groupée, si une autre proposition du groupe avait déjà une `ProposalApplication` de type `races` avec statut `APPLIED`, le système mettait à jour cette application existante au lieu d'en créer une nouvelle.
+
+#### Symptômes
+
+1. Utilisateur valide le bloc `races` pour la proposition A
+2. L'application `races` est créée et appliquée (`APPLIED`)
+3. Utilisateur valide le bloc `races` pour la proposition B (même groupe)
+4. Le système trouve l'application `APPLIED` de la proposition A
+5. Il **met à jour** cette application au lieu d'en créer une nouvelle
+6. Résultat : les courses de la proposition B ne sont jamais appliquées
+
+#### Cause
+
+La requête de détection d'application existante incluait `status: { in: ['PENDING', 'APPLIED'] }` au lieu de seulement `status: 'PENDING'`.
+
+#### Solution
+
+```typescript
+// AVANT (bug)
+const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+  where: {
+    proposalId: { in: proposalIds },
+    blockType: block,
+    status: { in: ['PENDING', 'APPLIED'] }  // ❌ Trouve les APPLIED
+  }
+})
+
+// APRÈS (fix)
+const existingPendingApp = await db.prisma.proposalApplication.findFirst({
+  where: {
+    proposalId: { in: proposalIds },
+    blockType: block,
+    status: 'PENDING'  // ✅ Seulement PENDING
+  }
+})
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts` (endpoint `validate-block-group`)
+
+---
+
 ### 2025-12-04 - Application automatique des mises à jour PENDING ✅
 
 **Fonctionnalité ajoutée** : Nouvelle option dans le panneau d'Administration permettant d'appliquer automatiquement et périodiquement les `ProposalApplication` en statut `PENDING`.
