@@ -126,33 +126,54 @@ export class AutoValidatorAgent extends BaseAgent {
   /**
    * Récupère les propositions éligibles pour la validation automatique
    * Retourne les propositions (limitées) et le compte total
+   *
+   * IMPORTANT: On exclut les propositions avec racesToAdd car elles créent
+   * de nouvelles courses, ce que l'auto-validateur ne peut pas faire.
    */
   private async getEligibleProposals(
     ffaAgentId: string,
     config: AutoValidatorConfig
   ): Promise<{ proposals: any[]; totalCount: number }> {
-    const where = {
-      status: 'PENDING' as const,
-      type: 'EDITION_UPDATE' as const,
-      agentId: ffaAgentId
-    }
+    // Requête SQL brute pour exclure les propositions avec racesToAdd
+    // car Prisma ne supporte pas bien les requêtes JSONB complexes
+    const whereClause = `
+      status = 'PENDING'
+      AND type = 'EDITION_UPDATE'
+      AND "agentId" = $1
+      AND (
+        changes->'racesToAdd' IS NULL
+        OR changes->'racesToAdd' = 'null'::jsonb
+        OR jsonb_array_length(COALESCE(changes->'racesToAdd'->'new', changes->'racesToAdd', '[]'::jsonb)) = 0
+      )
+    `
 
-    // Compter le total de propositions éligibles
-    const totalCount = await this.prisma.proposal.count({ where })
+    // Compter le total de propositions éligibles (sans racesToAdd)
+    const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) as count FROM proposals WHERE ${whereClause}`,
+      ffaAgentId
+    )
+    const totalCount = Number(countResult[0]?.count || 0)
 
     // Récupérer les propositions avec limite
-    const proposals = await this.prisma.proposal.findMany({
-      where,
-      orderBy: { createdAt: 'asc' },
-      take: config.maxProposalsPerRun,
-      include: {
-        agent: {
-          select: { name: true }
-        }
-      }
-    })
+    const proposals = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT p.*, a.name as "agentName"
+       FROM proposals p
+       LEFT JOIN agents a ON p."agentId" = a.id
+       WHERE ${whereClause}
+       ORDER BY p."createdAt" ASC
+       LIMIT $2`,
+      ffaAgentId,
+      config.maxProposalsPerRun
+    )
 
-    return { proposals, totalCount }
+    // Reformater pour correspondre à l'ancienne structure
+    return {
+      proposals: proposals.map(p => ({
+        ...p,
+        agent: { name: p.agentName }
+      })),
+      totalCount
+    }
   }
 
   /**
