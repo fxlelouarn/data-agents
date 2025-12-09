@@ -1419,10 +1419,57 @@ router.post('/validate-block-group', [
 
   console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
 
+  // ✅ AUTO-ARCHIVAGE : Archiver les autres propositions PENDING du même groupe
+  // Quand une proposition est validée, les autres du même groupe deviennent obsolètes
+  let archivedCount = 0
+  if (firstProposal.eventId && firstProposal.editionId) {
+    const otherPendingProposals = await db.prisma.proposal.findMany({
+      where: {
+        eventId: firstProposal.eventId,
+        editionId: firstProposal.editionId,
+        id: { notIn: proposalIds },
+        status: 'PENDING'
+      }
+    })
+
+    if (otherPendingProposals.length > 0) {
+      await db.prisma.proposal.updateMany({
+        where: {
+          id: { in: otherPendingProposals.map(p => p.id) }
+        },
+        data: {
+          status: 'ARCHIVED',
+          reviewedAt: new Date(),
+          reviewedBy: 'system-auto-archive',
+          modificationReason: `Auto-archived: superseded by validated proposals [${proposalIds.join(', ')}]`
+        }
+      })
+
+      archivedCount = otherPendingProposals.length
+
+      console.log(`🗄️ Auto-archivage: ${archivedCount} proposition(s) PENDING archivée(s):`, {
+        archivedIds: otherPendingProposals.map(p => p.id),
+        reason: 'superseded by validated proposals'
+      })
+
+      await db.createLog({
+        agentId: firstProposal.agentId,
+        level: 'INFO',
+        message: `Auto-archived ${archivedCount} PENDING proposal(s) superseded by validation`,
+        data: {
+          validatedProposalIds: proposalIds,
+          archivedProposalIds: otherPendingProposals.map(p => p.id),
+          eventId: firstProposal.eventId,
+          editionId: firstProposal.editionId
+        }
+      })
+    }
+  }
+
   res.json({
     success: true,
     data: finalProposals,
-    message: `Block "${block}" validated for ${proposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}`
+    message: `Block "${block}" validated for ${proposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}${archivedCount > 0 ? ` - ${archivedCount} other proposal(s) auto-archived` : ''}`
   })
 }))
 
