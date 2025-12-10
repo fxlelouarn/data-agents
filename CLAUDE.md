@@ -4,6 +4,55 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-10 - Fix: Mélange des noms de courses dans propositions groupées ✅
+
+**Problème résolu** : Dans les propositions groupées (même événement/édition), les noms de courses étaient mélangés dans l'affichage car les propositions du groupe avaient des ordres différents dans leur tableau `racesToUpdate`.
+
+#### Symptômes
+
+1. Proposition FFA a `racesToUpdate` avec l'ordre : [Trail solo, Randonnée, Trail duo]
+2. Proposition Google a `racesToUpdate` avec l'ordre : [Randonnée, Trail solo, Trail duo]
+3. Le frontend utilisait `existing-{index}` comme clé de consolidation
+4. `existing-0` de FFA (Trail solo) était écrasé par `existing-0` de Google (Randonnée)
+5. Résultat : affichage incohérent avec noms de courses inversés
+
+#### Cause
+
+Le frontend utilisait l'index du tableau `racesToUpdate` (`existing-{index}`) comme clé unique pour consolider les courses de plusieurs propositions, mais chaque proposition pouvait avoir un ordre différent.
+
+#### Solution
+
+Utiliser le **vrai `raceId`** (147544, 147545, 147546) comme clé de consolidation pour l'affichage, avec un mapping bidirectionnel vers `existing-{index}` pour la sauvegarde (le backend attend ce format).
+
+```typescript
+// AVANT
+const raceId = `existing-${index}`  // Problème: même index = courses différentes!
+
+// APRÈS
+const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
+// + mapping raceIdToIndexMap pour reconvertir à la sauvegarde
+```
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/hooks/useProposalEditor.ts`
+  - Ajout champ `raceIdToIndexMap` dans `WorkingProposalGroup`
+  - `extractRacesOriginalData()` : Utiliser vrai raceId
+  - `extractRaces()` : Utiliser vrai raceId + stocker `_originalIndex`
+  - `consolidateRacesFromProposals()` : Construire le mapping
+  - `initializeWorkingGroup()` : Convertir clés sauvegardées
+  - `buildGroupDiff()`, `getBlockPayload()`, `getPayload()` : Reconvertir à la sauvegarde
+
+- Frontend : `apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx`
+  - Propagation des dates : Utiliser vrai raceId
+
+#### Documentation
+
+- `docs/fix-race-id-mapping-grouped-proposals/PLAN.md`
+- `docs/fix-race-id-mapping-grouped-proposals/IMPLEMENTATION.md`
+
+---
+
 ### 2025-12-10 - Fix: Propositions ARCHIVED réapprouvées lors de validation groupée ✅
 
 **Problème résolu** : Lors de la validation d'un bloc pour une proposition groupée, les propositions ARCHIVED ou REJECTED du même groupe (même `eventId`/`editionId`) étaient réapprouvées par erreur.
