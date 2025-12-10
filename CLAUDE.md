@@ -4,6 +4,61 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-10 - Fix: Propositions ARCHIVED réapprouvées lors de validation groupée ✅
+
+**Problème résolu** : Lors de la validation d'un bloc pour une proposition groupée, les propositions ARCHIVED ou REJECTED du même groupe (même `eventId`/`editionId`) étaient réapprouvées par erreur.
+
+#### Symptômes
+
+1. Utilisateur archive la proposition A (status = `ARCHIVED`)
+2. Proposition B existe pour le même événement/édition (status = `PENDING`)
+3. Utilisateur valide un bloc de la proposition B
+4. Le système récupère **toutes** les propositions du groupe, y compris A (archivée)
+5. Le système met à jour **toutes** les propositions, y compris A
+6. Résultat : la proposition A passe de `ARCHIVED` à `APPROVED`
+
+#### Cause
+
+Deux problèmes dans `apps/api/src/routes/proposals.ts` :
+
+1. **`GET /api/proposals/group/:groupKey`** : Ne filtrait pas les propositions par statut, retournant les ARCHIVED/REJECTED
+2. **`POST /api/proposals/validate-block-group`** : Mettait à jour toutes les propositions reçues sans vérifier leur statut
+
+#### Solution
+
+```typescript
+// FIX 1: GET /api/proposals/group/:groupKey
+// Exclure les propositions ARCHIVED et REJECTED
+proposals = await db.prisma.proposal.findMany({
+  where: {
+    eventId,
+    editionId,
+    status: { notIn: ['ARCHIVED', 'REJECTED'] }  // ✅ Nouveau filtre
+  },
+  // ...
+})
+
+// FIX 2: POST /api/proposals/validate-block-group
+// Filtrer les propositions invalides même si le frontend les envoie
+const proposals = allProposals.filter((p: Proposal) => 
+  p.status !== 'ARCHIVED' && p.status !== 'REJECTED'
+)
+const validProposalIds = proposals.map((p: Proposal) => p.id)
+// Utiliser validProposalIds partout au lieu de proposalIds
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Endpoint `GET /api/proposals/group/:groupKey` : Ajout filtre `status: { notIn: ['ARCHIVED', 'REJECTED'] }`
+  - Endpoint `POST /api/proposals/validate-block-group` : Ajout filtrage des propositions invalides
+
+#### Données corrigées en production
+
+- Proposition `cmirhz7uv36h7lx1vsuaqgtz2` : Remise en statut `ARCHIVED`
+
+---
+
 ### 2025-12-08 - Fix: Application races non créée lors de validation groupée ✅
 
 **Problème résolu** : Lors de la validation du bloc `races` pour une proposition groupée, si une autre proposition du groupe avait déjà une `ProposalApplication` de type `races` avec statut `APPLIED`, le système mettait à jour cette application existante au lieu d'en créer une nouvelle.
