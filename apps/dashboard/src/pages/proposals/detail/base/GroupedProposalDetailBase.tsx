@@ -142,8 +142,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     currentEditionDate: string
     newRaceDate: string
     raceName: string
-    raceIndex: number
+    raceId: string  // ✅ Fix: utiliser raceId au lieu de raceIndex
   } | null>(null)
+
+  // ✅ Flag pour désactiver la cascade automatique lors de la mise à jour de date d'édition depuis une course
+  // Quand on modifie une course qui sort des bornes de l'édition et qu'on accepte d'ajuster l'édition,
+  // on ne veut PAS que toutes les autres courses soient affectées
+  const [skipDateCascade, setSkipDateCascade] = useState(false)
 
   // Hooks API (DOIT être déclaré AVANT proposalIds qui l'utilise)
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
@@ -264,6 +269,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // Si pas de modification manuelle, retourner les courses SANS cascade
     if (!editionStartDate) return workingGroup.consolidatedRaces
 
+    // ✅ Si skipDateCascade est activé, ne PAS propager aux courses
+    // Ce flag est activé quand on ajuste la date d'édition depuis une modification de course
+    if (skipDateCascade) return workingGroup.consolidatedRaces
+
     // Propager startDate aux courses
     return workingGroup.consolidatedRaces.map(raceChange => ({
       ...raceChange,
@@ -308,7 +317,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         return { ...acc, [fieldName]: fieldData }
       }, {})
     }))
-  }, [workingGroup])
+  }, [workingGroup, skipDateCascade])
 
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
@@ -384,7 +393,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentStartDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex: 0
+          raceId  // ✅ Fix: passer le vrai raceId
         })
         return
       }
@@ -397,7 +406,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentEndDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex: 0
+          raceId  // ✅ Fix: passer le vrai raceId
         })
         return
       }
@@ -857,13 +866,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const confirmEditionDateUpdate = () => {
     if (!editionDateUpdateModal) return
 
-    const { dateType, newRaceDate, raceIndex } = editionDateUpdateModal
+    const { dateType, newRaceDate, raceId } = editionDateUpdateModal
+
+    // ✅ Activer le flag pour désactiver la cascade automatique
+    // On ne veut PAS que la modification de l'édition propage à toutes les courses
+    setSkipDateCascade(true)
 
     // Mettre à jour la date de l'édition via le hook
     updateFieldEditor(dateType, newRaceDate)
 
     // Appliquer aussi la modification de la course via le hook
-    updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
+    updateRaceEditor(raceId, 'startDate', newRaceDate)
 
     setEditionDateUpdateModal(null)
   }

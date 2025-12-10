@@ -306,19 +306,35 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
         if (fieldName && ['racesToUpdate', 'racesToAdd', 'racesToDelete', 'races', 'manuallyAddedRaces'].includes(fieldName)) {
           if (value.length === 0) return 'Aucune'
 
+          // Helper pour extraire la valeur (gère les objets {new, old} créés par l'édition utilisateur)
+          const extractValue = (val: any): any => {
+            if (val && typeof val === 'object' && 'new' in val) {
+              return val.new
+            }
+            return val
+          }
+
           // Afficher nom + détail des changements pour chaque course
           return value.map((race: any, index: number) => {
-            const raceName = race.raceName || race.name || `Course ${index + 1}`
+            // Extraire le nom (peut être un objet {new, old} si modifié)
+            const rawName = race.raceName || race.name
+            const raceName = extractValue(rawName) || `Course ${index + 1}`
 
             // Nouvelles courses (agent ou manuelles) : afficher tous les champs
             if (fieldName === 'racesToAdd' || fieldName === 'manuallyAddedRaces') {
               const details: string[] = []
-              if (race.runDistance) details.push(`${race.runDistance}km`)
-              if (race.categoryLevel1) details.push(race.categoryLevel1)
-              if (race.startDate) {
+              const runDistance = extractValue(race.runDistance)
+              const categoryLevel1 = extractValue(race.categoryLevel1)
+              const startDate = extractValue(race.startDate)
+
+              if (runDistance) details.push(`${runDistance}km`)
+              if (categoryLevel1) details.push(categoryLevel1)
+              if (startDate) {
                 try {
-                  const date = new Date(race.startDate)
-                  details.push(date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))
+                  const date = new Date(startDate)
+                  if (!isNaN(date.getTime())) {
+                    details.push(date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))
+                  }
                 } catch {
                   // ignore
                 }
