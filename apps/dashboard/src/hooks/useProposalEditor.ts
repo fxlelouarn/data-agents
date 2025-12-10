@@ -266,11 +266,13 @@ export function useProposalEditor(
     const consolidatedRaces = consolidateRacesFromProposals(proposalsToConsolidate)
 
     // ✅ Blocs approuvés (PENDING ou APPROVED)
+    // Un bloc est validé si AU MOINS UNE proposition du groupe l'a validé
+    // (pas toutes, car certaines propositions peuvent ne pas avoir ce bloc dans leurs changes)
     const approvedBlocks: Record<string, boolean> = {}
     const allBlockKeys = new Set<string>()
     proposalsToConsolidate.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
     allBlockKeys.forEach(blockKey => {
-      approvedBlocks[blockKey] = proposalsToConsolidate.every(p => p.approvedBlocks?.[blockKey])
+      approvedBlocks[blockKey] = proposalsToConsolidate.some(p => p.approvedBlocks?.[blockKey])
     })
 
     // Extraire userModifiedChanges depuis la première proposition (PENDING ou APPROVED)
