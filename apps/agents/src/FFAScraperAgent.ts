@@ -1120,7 +1120,7 @@ export class FFAScraperAgent extends BaseAgent {
     if (lowerName.includes('ultra cycling') || (lowerName.includes('ultra') && bikeDistance && bikeDistance > 200)) {
       return ['CYCLING', 'ULTRA_CYCLING']
     }
-    if (lowerName.includes('contre-la-montre') || lowerName.includes('clm') || lowerName.includes('time trial') || lowerName.includes('tt')) {
+    if (lowerName.includes('contre-la-montre') || lowerName.includes('clm') || lowerName.includes('time trial') || /\btt\b/.test(lowerName)) {
       return ['CYCLING', 'TIME_TRIAL']
     }
     if (lowerName.includes('touring') || lowerName.includes('cyclo')) return ['CYCLING', 'CYCLE_TOURING']
