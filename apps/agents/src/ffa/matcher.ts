@@ -1,6 +1,6 @@
 /**
  * Utilitaires de matching pour comparer les données FFA avec Miles Republic
- * 
+ *
  * Ce module gère :
  * - Calcul de similarité entre noms d'événements (algorithme de Levenshtein)
  * - Matching de courses par distance
@@ -60,7 +60,7 @@ export async function matchCompetition(
     // 3. Préparer les données normalisées pour fuse.js
     const prepared = candidates.map(c => {
       const nameNorm = normalizeString(removeEditionNumber(c.name))
-      
+
       // Calculer la proximité temporelle de l'édition la plus proche
       let dateProximity = 0
       if (c.editions && c.editions.length > 0) {
@@ -70,14 +70,14 @@ export async function matchCompetition(
           const closestDiff = closest?.startDate ? Math.abs(new Date(closest.startDate).getTime() - searchDate.getTime()) : Infinity
           return diff < closestDiff ? ed : closest
         }, c.editions[0])
-        
+
         if (closestEdition?.startDate) {
           const daysDiff = Math.abs(new Date(closestEdition.startDate).getTime() - searchDate.getTime()) / (1000 * 60 * 60 * 24)
           // Score de proximité : 1.0 si même date, diminue linéairement jusqu'à 0 à 90 jours
           dateProximity = Math.max(0, 1 - (daysDiff / 90))
         }
       }
-      
+
       return {
         ...c,
         nameNorm,
@@ -103,7 +103,7 @@ export async function matchCompetition(
 
     // 5. Recherche combinée nom+ville avec stratégie hybride
     const searchNameKeywords = removeStopwords(searchName)
-    
+
     // Recherche niveau 1 : Nom complet
     const nameResults = fuse.search(searchName)
     // Recherche niveau 2 : Mots-clés sans stopwords
@@ -118,14 +118,14 @@ export async function matchCompetition(
     }
 
     // 6. Combiner les scores avec stratégie hybride
-    type ScoredCandidate = { 
-      event: any, 
-      nameScore: number, 
-      keywordScore: number, 
+    type ScoredCandidate = {
+      event: any,
+      nameScore: number,
+      keywordScore: number,
       cityScore: number,
       departmentMatch: boolean,
       dateProximity: number,
-      combined: number 
+      combined: number
     }
     const scoreMap = new Map<string, ScoredCandidate>()
 
@@ -134,14 +134,14 @@ export async function matchCompetition(
       const similarity = 1 - (result.score ?? 1)
       const id = result.item.id
       const departmentMatch = result.item.department === searchDepartment
-      const existing = scoreMap.get(id) || { 
-        event: result.item, 
-        nameScore: 0, 
+      const existing = scoreMap.get(id) || {
+        event: result.item,
+        nameScore: 0,
         keywordScore: 0,
         cityScore: 0,
         departmentMatch,
         dateProximity: result.item.dateProximity || 0,
-        combined: 0 
+        combined: 0
       }
       existing.nameScore = Math.max(existing.nameScore, similarity)
       existing.departmentMatch = existing.departmentMatch || departmentMatch
@@ -153,14 +153,14 @@ export async function matchCompetition(
       const similarity = 1 - (result.score ?? 1)
       const id = result.item.id
       const departmentMatch = result.item.department === searchDepartment
-      const existing = scoreMap.get(id) || { 
-        event: result.item, 
-        nameScore: 0, 
+      const existing = scoreMap.get(id) || {
+        event: result.item,
+        nameScore: 0,
         keywordScore: 0,
         cityScore: 0,
         departmentMatch,
         dateProximity: result.item.dateProximity || 0,
-        combined: 0 
+        combined: 0
       }
       existing.keywordScore = Math.max(existing.keywordScore, similarity)
       existing.departmentMatch = existing.departmentMatch || departmentMatch
@@ -171,14 +171,14 @@ export async function matchCompetition(
       const similarity = 1 - (result.score ?? 1)
       const id = result.item.id
       const departmentMatch = result.item.department === searchDepartment
-      const existing = scoreMap.get(id) || { 
-        event: result.item, 
+      const existing = scoreMap.get(id) || {
+        event: result.item,
         nameScore: 0,
         keywordScore: 0,
         cityScore: 0,
         departmentMatch,
         dateProximity: result.item.dateProximity || 0,
-        combined: 0 
+        combined: 0
       }
       existing.cityScore = Math.max(existing.cityScore, similarity)
       existing.departmentMatch = existing.departmentMatch || departmentMatch
@@ -187,35 +187,44 @@ export async function matchCompetition(
 
     // 7. Calculer le score combiné avec logique adaptative hybride
     const searchKeywords = extractKeywords(searchNameKeywords)
-    
+
     const scoredCandidates = Array.from(scoreMap.values()).map(candidate => {
       // Stratégie hybride : Prioriser le meilleur score entre nom complet et keywords
       const bestNameScore = Math.max(candidate.nameScore, candidate.keywordScore)
-      
+
       // Validation anti-faux-positifs :
       // Si le score vient principalement des keywords (nom complet faible),
       // vérifier la qualité du match
       if (candidate.keywordScore > candidate.nameScore && candidate.nameScore < 0.5) {
         const candidateKeywords = extractKeywords(candidate.event.nameKeywords)
         const isValidKeywordMatch = validateKeywordMatch(searchKeywords, candidateKeywords)
-        
+
         if (!isValidKeywordMatch) {
           // Pénaliser fortement si le match keyword est suspect
           candidate.keywordScore *= 0.3
           logger.debug(`  ⚠️  Keyword match suspect pour "${candidate.event.name}" - score pénalisé`);
         }
       }
-      
+
       // Recalculer le meilleur score après validation
       const validatedBestScore = Math.max(candidate.nameScore, candidate.keywordScore)
-      
+
       // Bonus département : Si même département mais villes différentes, c'est très probable
       const departmentBonus = candidate.departmentMatch && candidate.cityScore < 0.9 ? 0.15 : 0
-      
+
+      // PÉNALITÉ DÉPARTEMENT (v2.3) : Si le nom est très similaire (>0.9) mais département différent,
+      // c'est probablement un homonyme dans un autre département (ex: "Corrida de Noël" existe
+      // dans plusieurs départements). Appliquer une pénalité forte pour éviter les faux positifs.
+      // La pénalité est proportionnelle au score de nom : plus le nom est identique, plus
+      // il est suspect qu'un département différent soit le bon match.
+      const departmentPenalty = !candidate.departmentMatch && validatedBestScore >= 0.85
+        ? 0.25 * validatedBestScore  // Pénalité de 21-25% pour les noms très similaires
+        : 0
+
       // Pénalité temporelle : Réduire le score si la date est éloignée
       // dateProximity: 1.0 = même date, 0.5 = 45 jours d'écart, 0.0 = 90+ jours
       const dateMultiplier = 0.8 + (candidate.dateProximity * 0.2) // 80-100% du score selon proximité
-      
+
       // Si le nom (ou keywords) correspond très bien (>0.9), tolérer les villes différentes
       // (gérer Saint-Apollinaire vs Dijon, Nevers vs Magny-Cours, etc.)
       if (validatedBestScore >= 0.9) {
@@ -223,13 +232,14 @@ export async function matchCompetition(
         if (candidate.departmentMatch) {
           candidate.combined = Math.min(1.0, (validatedBestScore * 0.90 + candidate.cityScore * 0.05 + departmentBonus) * dateMultiplier)
         } else {
-          candidate.combined = Math.min(1.0, (validatedBestScore * 0.95 + candidate.cityScore * 0.05) * dateMultiplier)
+          // Département différent : appliquer la pénalité pour éviter les homonymes
+          candidate.combined = Math.min(1.0, (validatedBestScore * 0.95 + candidate.cityScore * 0.05 - departmentPenalty) * dateMultiplier)
         }
       } else {
         // Sinon, équilibrer nom complet, keywords, ville et département
-        // 50% meilleur score nom, 30% ville, 20% score alternatif + bonus département
+        // 50% meilleur score nom, 30% ville, 20% score alternatif + bonus département - pénalité département
         const alternativeScore = Math.min(candidate.nameScore, candidate.keywordScore)
-        candidate.combined = Math.min(1.0, (validatedBestScore * 0.5 + candidate.cityScore * 0.3 + alternativeScore * 0.2 + departmentBonus) * dateMultiplier)
+        candidate.combined = Math.min(1.0, (validatedBestScore * 0.5 + candidate.cityScore * 0.3 + alternativeScore * 0.2 + departmentBonus - departmentPenalty) * dateMultiplier)
       }
       return candidate
     })
@@ -241,12 +251,14 @@ export async function matchCompetition(
     logger.info(`  Top 3 matches:`);
     scoredCandidates.slice(0, 3).forEach((c, i) => {
       const deptMatch = c.departmentMatch ? '✓' : '✗'
-      logger.info(`    ${i+1}. "${c.event.name}" (${c.event.city}, dept: ${c.event.department} ${deptMatch}) - score: ${c.combined.toFixed(3)} (name: ${c.nameScore.toFixed(3)}, city: ${c.cityScore.toFixed(3)}, date: ${c.dateProximity.toFixed(3)})`);
+      const bestScore = Math.max(c.nameScore, c.keywordScore)
+      const penalty = !c.departmentMatch && bestScore >= 0.85 ? ` penalty:-${(0.25 * bestScore).toFixed(2)}` : ''
+      logger.info(`    ${i+1}. "${c.event.name}" (${c.event.city}, dept: ${c.event.department} ${deptMatch}${penalty}) - score: ${c.combined.toFixed(3)} (name: ${c.nameScore.toFixed(3)}, city: ${c.cityScore.toFixed(3)}, date: ${c.dateProximity.toFixed(3)})`);
     });
 
     // 9. Sélectionner le meilleur match
     const best = scoredCandidates[0]
-    
+
     if (best.combined < 0.3) {
       logger.info(`  → Result: NO_MATCH (best score ${best.combined.toFixed(3)} < 0.3)`);
       return { type: 'NO_MATCH', confidence: 0 }
@@ -297,7 +309,7 @@ export async function matchCompetition(
     }
 
     logger.info(`  → Result: ${result.type} with "${result.event?.name || 'unknown'}" (confidence: ${result.confidence.toFixed(3)}, edition: ${result.edition ? 'YES' : 'NO'})`);
-    
+
     return result
   } catch (error) {
     logger.error('Erreur lors du matching:', error)
@@ -308,7 +320,7 @@ export async function matchCompetition(
 /**
  * @deprecated Cette fonction n'est plus utilisée. fuse.js gère maintenant le calcul de similarité.
  * Conservée pour compatibilité avec matchRace() qui l'utilise encore.
- * 
+ *
  * Calcule la similarité entre deux chaînes (distance de Levenshtein normalisée)
  * Retourne un score entre 0 et 1 (1 = identique)
  */
@@ -321,7 +333,7 @@ export function calculateSimilarity(str1: string, str2: string): number {
 
   const distance = levenshteinDistance(s1, s2)
   const maxLength = Math.max(s1.length, s2.length)
-  
+
   return 1 - distance / maxLength
 }
 
@@ -373,11 +385,11 @@ function normalizeString(str: string): string {
 
 /**
  * Valide qu'un match basé sur les keywords est légitime
- * 
+ *
  * Critères de validation :
  * 1. Au moins 2 keywords en commun OU
  * 2. Un keyword très distinctif (>= 8 caractères) en commun
- * 
+ *
  * @param searchKeywords - Keywords de la recherche
  * @param candidateKeywords - Keywords du candidat
  * @returns true si le match est valide
@@ -386,20 +398,20 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
   if (searchKeywords.length === 0 || candidateKeywords.length === 0) {
     return false
   }
-  
+
   // Calculer l'intersection des keywords
-  const commonKeywords = searchKeywords.filter(sk => 
-    candidateKeywords.some(ck => 
+  const commonKeywords = searchKeywords.filter(sk =>
+    candidateKeywords.some(ck =>
       // Match exact ou l'un contient l'autre (pour gérer pluriels, etc.)
       sk === ck || sk.includes(ck) || ck.includes(sk)
     )
   )
-  
+
   // Critère 1 : Au moins 2 keywords en commun
   if (commonKeywords.length >= 2) {
     return true
   }
-  
+
   // Critère 2 : Un keyword très distinctif (>= 8 caractères)
   if (commonKeywords.length >= 1) {
     const hasDistinctiveKeyword = commonKeywords.some(kw => kw.length >= 8)
@@ -407,7 +419,7 @@ function validateKeywordMatch(searchKeywords: string[], candidateKeywords: strin
       return true
     }
   }
-  
+
   // Sinon, le match est suspect (probablement un mot générique comme "nevers")
   return false
 }
@@ -517,14 +529,14 @@ interface RaceWithDistance {
 /**
  * Match des courses FFA avec des courses Miles Republic existantes
  * en utilisant un algorithme hybride distance + nom (fuse.js)
- * 
+ *
  * Stratégie :
  * 1. Grouper les courses DB par distance (tolérance configurable)
  * 2. Pour chaque course FFA :
  *    - Si 1 seule course DB avec cette distance → Match automatique
  *    - Si plusieurs courses DB → Fuzzy match sur le nom (fuse.js)
  *    - Si aucune course DB → Nouvelle course
- * 
+ *
  * @param ffaRaces - Courses extraites de la FFA
  * @param dbRaces - Courses existantes dans Miles Republic
  * @param logger - Logger pour debugging
@@ -537,23 +549,23 @@ export function matchRacesByDistanceAndName(
   logger: any,
   tolerancePercent: number = 0.05
 ): {
-  matched: Array<{ ffa: any, db: RaceWithDistance }>, 
-  unmatched: any[] 
+  matched: Array<{ ffa: any, db: RaceWithDistance }>,
+  unmatched: any[]
 } {
   const matched: Array<{ ffa: any, db: RaceWithDistance }> = []
   const unmatched: any[] = []
-  
+
   // 1. Grouper les courses DB par distance (tolérance configurable)
   const racesByDistance = new Map<number, RaceWithDistance[]>()
-  
+
   for (const race of dbRaces) {
-    const totalDistanceKm = (race.runDistance || 0) + 
-                            (race.walkDistance || 0) + 
-                            (race.swimDistance || 0) + 
+    const totalDistanceKm = (race.runDistance || 0) +
+                            (race.walkDistance || 0) +
+                            (race.swimDistance || 0) +
                             (race.bikeDistance || 0)
-    
+
     if (totalDistanceKm === 0) continue
-    
+
     // Trouver un groupe existant avec la tolérance configurée
     let foundGroup = false
     for (const [groupDistance, races] of racesByDistance.entries()) {
@@ -564,37 +576,37 @@ export function matchRacesByDistanceAndName(
         break
       }
     }
-    
+
     if (!foundGroup) {
       racesByDistance.set(totalDistanceKm, [race])
     }
   }
-  
+
   logger.info(`  🏃 Grouped ${dbRaces.length} existing races into ${racesByDistance.size} distance groups`)
-  
+
   // Séparer les courses DB sans distance pour le fallback
   const racesWithoutDistance = dbRaces.filter(race => {
-    const totalDistanceKm = (race.runDistance || 0) + 
-                            (race.walkDistance || 0) + 
-                            (race.swimDistance || 0) + 
+    const totalDistanceKm = (race.runDistance || 0) +
+                            (race.walkDistance || 0) +
+                            (race.swimDistance || 0) +
                             (race.bikeDistance || 0)
     return totalDistanceKm === 0
   })
-  
+
   if (racesWithoutDistance.length > 0) {
     logger.info(`  ℹ️  ${racesWithoutDistance.length} races without distance available for fallback matching`)
   }
-  
+
   // 2. Matcher chaque course FFA
   for (const ffaRace of ffaRaces) {
     const ffaDistanceKm = ffaRace.runDistance || 0
-    
+
     if (ffaDistanceKm === 0) {
       logger.info(`  ⚠️  Race "${ffaRace.name}" has no distance - treating as new race`)
       unmatched.push(ffaRace)
       continue
     }
-    
+
     // Trouver les candidats par distance
     let candidates: RaceWithDistance[] = []
     for (const [groupDistance, races] of racesByDistance.entries()) {
@@ -604,14 +616,14 @@ export function matchRacesByDistanceAndName(
         break
       }
     }
-    
+
     if (candidates.length === 0) {
       // Aucune course avec cette distance
       // ✅ FALLBACK: Essayer de matcher avec les courses sans distance
       if (racesWithoutDistance.length > 0) {
         logger.info(`  🔍 Race "${ffaRace.name}" (${ffaDistanceKm}km) - no distance match, trying name fallback...`)
         const bestMatch = fuzzyMatchRaceName(ffaRace, racesWithoutDistance, logger)
-        
+
         if (bestMatch.score >= 0.7) { // Seuil plus strict pour le fallback
           logger.info(`  ✅ Fallback match: "${ffaRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)}, no distance in DB)`)
           matched.push({ ffa: ffaRace, db: bestMatch.race })
@@ -631,7 +643,7 @@ export function matchRacesByDistanceAndName(
       // Plusieurs courses → Fuzzy match sur le nom
       logger.info(`  🔍 Race "${ffaRace.name}" (${ffaDistanceKm}km) - ${candidates.length} candidates, fuzzy matching...`)
       const bestMatch = fuzzyMatchRaceName(ffaRace, candidates, logger)
-      
+
       if (bestMatch.score >= 0.5) {
         logger.info(`  ✅ Race "${ffaRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)})`)
         matched.push({ ffa: ffaRace, db: bestMatch.race })
@@ -642,14 +654,14 @@ export function matchRacesByDistanceAndName(
       }
     }
   }
-  
+
   return { matched, unmatched }
 }
 
 /**
  * Effectue un fuzzy matching entre une course FFA et plusieurs candidats
  * en utilisant fuse.js sur les noms normalisés
- * 
+ *
  * @param ffaRace - Course FFA à matcher
  * @param candidates - Courses candidates avec la même distance
  * @param logger - Logger pour debugging
@@ -663,14 +675,14 @@ function fuzzyMatchRaceName(
   // Normaliser le nom FFA
   const searchName = normalizeRaceName(ffaRace.name)
   const searchKeywords = removeStopwords(searchName)
-  
+
   // Préparer les candidats avec noms normalisés
   const prepared = candidates.map(race => ({
     ...race,
     nameNorm: normalizeRaceName(race.name || ''),
     nameKeywords: removeStopwords(normalizeRaceName(race.name || ''))
   }))
-  
+
   // Configuration fuse.js pour les courses
   const fuse = new Fuse(prepared, {
     includeScore: true,
@@ -681,21 +693,21 @@ function fuzzyMatchRaceName(
       { name: 'nameKeywords', weight: 0.4 }
     ]
   })
-  
+
   // Chercher avec le nom complet
   const nameResults = fuse.search(searchName)
   // Chercher avec les keywords
   const keywordResults = fuse.search(searchKeywords)
-  
+
   // Combiner les résultats
   const scoreMap = new Map<string | number, { race: RaceWithDistance, score: number }>()
-  
+
   for (const result of nameResults) {
     const similarity = 1 - (result.score ?? 1)
     const id = result.item.id
     scoreMap.set(id, { race: result.item, score: similarity })
   }
-  
+
   for (const result of keywordResults) {
     const similarity = 1 - (result.score ?? 1)
     const id = result.item.id
@@ -704,7 +716,7 @@ function fuzzyMatchRaceName(
       scoreMap.set(id, { race: result.item, score: similarity })
     }
   }
-  
+
   // Trouver le meilleur score
   let best = { race: candidates[0], score: 0 }
   for (const entry of scoreMap.values()) {
@@ -712,14 +724,14 @@ function fuzzyMatchRaceName(
       best = entry
     }
   }
-  
+
   return best
 }
 
 /**
  * Normalise un nom de course pour le matching
  * Retire les suffixes FFA courants et normalise la chaîne
- * 
+ *
  * @param name - Nom de la course à normaliser
  * @returns Nom normalisé
  */
@@ -734,12 +746,12 @@ function normalizeRaceName(name: string): string {
 
 /**
  * Recherche des événements candidats par nom + ville + période
- * 
+ *
  * Stratégie en 3 passes SQL pour maximiser les candidats pertinents :
  * 1. Nom ET Ville (restrictif)
  * 2. Nom OU Ville (élargi)
  * 3. Nom uniquement (villes différentes)
- * 
+ *
  * Note : Le scoring et ranking sont désormais gérés par matchCompetition() avec fuse.js
  */
 export async function findCandidateEvents(
@@ -753,14 +765,14 @@ export async function findCandidateEvents(
     // Calculer la fenêtre temporelle (±90 jours)
     const startDate = new Date(date)
     startDate.setDate(startDate.getDate() - 90)
-    
+
     const endDate = new Date(date)
     endDate.setDate(endDate.getDate() + 90)
 
     // Extraire TOUS les mots significatifs (>= 3 caractères)
     const nameWords = name.split(' ').filter(w => w.length >= 3)
     const cityWords = city.split(' ').filter(w => w.length >= 3)
-    
+
     console.log(`🔍 [SQL] Mots-clés nom: [${nameWords.join(', ')}], ville: [${cityWords.join(', ')}], dept: ${department}`);
 
     // === PASSE 1 : Même département + Nom (prioritaire) ===
@@ -800,7 +812,7 @@ export async function findCandidateEvents(
       },
       take: 100
     })
-    
+
     console.log(`🔍 [PASSE 1] Trouvé ${allEvents.length} événements`);
     if (allEvents.length >= 100) {
       console.log('⚠️  [PASSE 1] Limite de 100 atteinte, certains candidats peuvent être manqués');
@@ -847,7 +859,7 @@ export async function findCandidateEvents(
       console.log(`🔍 [PASSE 2] Ajouté ${moreEvents.length} événements, total: ${allEvents.length + moreEvents.length}`);
       allEvents = [...allEvents, ...moreEvents]
     }
-    
+
     // Retourner les candidats bruts (le scoring sera fait par fuse.js dans matchCompetition)
     return allEvents
   } catch (error) {
@@ -892,24 +904,24 @@ export function calculateAdjustedConfidence(
 
 /**
  * Calcule la confiance pour la création d'un NOUVEL événement
- * 
+ *
  * Logique inversée : Plus le match avec l'existant est faible, plus on est confiant
  * qu'il s'agit d'un nouvel événement à créer.
- * 
+ *
  * @param baseConfidence - Confiance de base (typiquement 0.9)
  * @param competition - Données de la compétition FFA
  * @param matchResult - Résultat du matching (devrait être NO_MATCH)
  * @returns Score de confiance entre 0 et 1
- * 
+ *
  * @example
  * // Aucun candidat trouvé → Confiance max
  * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0 })
  * // → 0.95 (très confiant de créer)
- * 
+ *
  * // Match faible trouvé (0.3) → Confiance haute
  * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0.3 })
  * // → 0.76 (confiant de créer)
- * 
+ *
  * // Match fort trouvé (0.7) → Confiance faible
  * calculateNewEventConfidence(0.9, competition, { type: 'NO_MATCH', confidence: 0.7 })
  * // → 0.52 (risque de doublon, peu confiant)
