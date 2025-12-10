@@ -38,6 +38,39 @@ L'algorithme utilise une approche hybride combinant :
 - `similarityThreshold` abaissé de 0.85 à 0.75
 - Accepte les matches avec incertitude temporelle
 
+### ✅ Amélioration v2.3 (Déc 2025) - Pénalité Département pour Homonymes
+
+**Problème résolu** : Faux positifs sur les événements homonymes dans différents départements.
+
+**Exemple concret** :
+- FFA : "Corrida de Noël" à Lagraulière (dept 19)
+- Miles Republic a 2 "Corrida de Noël" :
+  - Cléguérec (dept 56) - date 20/12
+  - Lagraulière (dept 19) - date 21/12
+- AVANT v2.3 : L'algo choisissait Cléguérec (meilleure proximité temporelle)
+- APRÈS v2.3 : L'algo choisit Lagraulière (même département = critère discriminant)
+
+**Solution** :
+- Pénalité de 21-25% si nom très similaire (≥0.85) mais département différent
+- Pénalité proportionnelle au score de nom : `penalty = 0.25 × nameScore`
+- Plus le nom est identique, plus un département différent est suspect
+
+**Formule mise à jour** :
+```typescript
+const departmentPenalty = !departmentMatch && nameScore >= 0.85 
+  ? 0.25 * nameScore  // Pénalité de 21-25%
+  : 0
+
+if (nameScore >= 0.9) {
+  if (departmentMatch) {
+    combined = (nameScore × 0.90 + cityScore × 0.05 + departmentBonus) × dateMultiplier
+  } else {
+    // Nouvelle pénalité pour département différent
+    combined = (nameScore × 0.95 + cityScore × 0.05 - departmentPenalty) × dateMultiplier
+  }
+}
+```
+
 ## Architecture en 3 passes
 
 ### Passe 1 : Nom ET Ville (Restrictif)
@@ -242,7 +275,36 @@ Résultat:
 **Accepté avec seuil à 0.75** (0.769 > 0.75) ✅  
 La pénalité temporelle réduit le score mais le bonus département compense.
 
-### ❌ Cas 4 : Fenêtre temporelle dépassée
+### ✅ Cas 4 : Homonymes dans différents départements (v2.3)
+```
+FFA: "Corrida de Noël" à Lagraulière (dept: 19) - 20/12/2025
+Base: "Corrida de Noël" à Cléguérec (dept: 56) - 20/12/2025  ← date exacte
+Base: "Corrida de Noël" à Lagraulière (dept: 19) - 21/12/2025  ← bon département
+
+AVANT v2.3 (bug - choisit Cléguérec):
+- Cléguérec: nameScore=1.000, dateProximity=1.000, deptMatch=✗
+- scoreCombiné: 1.000 × 0.95 × 1.000 = 0.950
+
+- Lagraulière: nameScore=1.000, dateProximity=0.989, deptMatch=✓
+- scoreCombiné: (1.000 × 0.90 + 0.15) × 0.998 = 1.048 → plafonné à 1.000
+
+Résultat: Cléguérec gagne à cause de la proximité temporelle légèrement meilleure
+
+APRÈS v2.3 (corrigé - choisit Lagraulière):
+- Cléguérec: nameScore=1.000, deptMatch=✗
+- departmentPenalty: 0.25 × 1.000 = 0.25
+- scoreCombiné: (1.000 × 0.95 - 0.25) × 1.000 = 0.700
+
+- Lagraulière: nameScore=1.000, deptMatch=✓
+- departmentBonus: +0.15
+- scoreCombiné: (1.000 × 0.90 + 0.15) × 0.998 = 1.048 → plafonné à 1.000
+
+Résultat: Lagraulière gagne grâce à la pénalité département sur Cléguérec
+```
+
+**Accepté** avec le bon département ✅
+
+### ❌ Cas 5 : Fenêtre temporelle dépassée
 ```
 FFA: "Nevers Marathon" le 06/04/2025
 Base: "Ekiden Nevers Marathon" le 22/11/2025
@@ -339,6 +401,7 @@ D'après les tests réels :
 - [x] ~~Scoring géographique (bonus département)~~ ✅ v2.1
 - [x] ~~Pénalité temporelle pour dates éloignées~~ ✅ v2.1
 - [x] ~~Fenêtre temporelle élargie (±90 jours)~~ ✅ v2.1
+- [x] ~~Pénalité département pour homonymes~~ ✅ v2.3
 - [ ] Scoring géographique avancé (distance réelle entre villes via géolocalisation)
 - [ ] Machine learning pour ajuster les poids automatiquement
 - [ ] Cache des résultats fuse.js pour événements fréquents
