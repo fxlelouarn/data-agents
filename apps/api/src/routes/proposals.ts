@@ -963,10 +963,13 @@ router.get('/group/:groupKey', [
     }
 
     // Get all proposals for this event/edition combination
+    // ⚠️ FIX 2025-12-10: Exclure les propositions ARCHIVED et REJECTED pour éviter
+    // qu'elles soient réapprouvées lors de la validation groupée
     proposals = await db.prisma.proposal.findMany({
       where: {
         eventId,
-        editionId
+        editionId,
+        status: { notIn: ['ARCHIVED', 'REJECTED'] }
       },
       include: {
         agent: {
@@ -1257,12 +1260,29 @@ router.post('/validate-block-group', [
   })
 
   // Vérifier que les propositions existent et sont du même groupe
-  const proposals = await db.prisma.proposal.findMany({
+  const allProposals = await db.prisma.proposal.findMany({
     where: { id: { in: proposalIds } }
   })
 
-  if (proposals.length !== proposalIds.length) {
+  if (allProposals.length !== proposalIds.length) {
     throw createError(404, 'Some proposals not found', 'PROPOSALS_NOT_FOUND')
+  }
+
+  // ⚠️ FIX 2025-12-10: Filtrer les propositions ARCHIVED et REJECTED
+  // Elles ne doivent pas être réapprouvées lors de la validation groupée
+  const proposals = allProposals.filter((p: Proposal) =>
+    p.status !== 'ARCHIVED' && p.status !== 'REJECTED'
+  )
+
+  if (proposals.length === 0) {
+    throw createError(400, 'No valid proposals to validate (all are archived or rejected)', 'NO_VALID_PROPOSALS')
+  }
+
+  // Mettre à jour proposalIds pour ne garder que les valides
+  const validProposalIds = proposals.map((p: Proposal) => p.id)
+
+  if (validProposalIds.length < proposalIds.length) {
+    console.log(`⚠️ validate-block-group: Filtered out ${proposalIds.length - validProposalIds.length} ARCHIVED/REJECTED proposals`)
   }
 
   // Vérifier la cohérence du groupe selon le type
@@ -1425,9 +1445,9 @@ router.post('/validate-block-group', [
     hasRaceEdits: !!finalPayload.raceEdits
   })
 
-  // Mettre à jour TOUTES les propositions avec le même payload
+  // Mettre à jour les propositions valides avec le même payload
   const updatedProposals = await Promise.all(
-    proposalIds.map(async (proposalId: string) => {
+    validProposalIds.map(async (proposalId: string) => {
       const proposal = proposals.find((p: Proposal) => p.id === proposalId)!
       const existingApprovedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
       const existingUserModifiedChanges = (proposal.userModifiedChanges as Record<string, any>) || {}
@@ -1493,7 +1513,7 @@ router.post('/validate-block-group', [
   // au lieu de créer une nouvelle application pour la proposition courante
   const existingPendingApp = await db.prisma.proposalApplication.findFirst({
     where: {
-      proposalId: { in: proposalIds },
+      proposalId: { in: validProposalIds },
       blockType: block,
       status: 'PENDING'  // ✅ FIX: Seulement PENDING, pas APPLIED
     }
@@ -1502,7 +1522,7 @@ router.post('/validate-block-group', [
   if (existingPendingApp) {
     console.log(`ℹ️ Application PENDING existante pour bloc "${block}":`, {
       applicationId: existingPendingApp.id,
-      proposalIds,
+      validProposalIds,
       block
     })
 
@@ -1527,9 +1547,9 @@ router.post('/validate-block-group', [
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Block "${block}" PENDING application updated with final payload for proposals [${proposalIds.join(', ')}]`,
+      message: `Block "${block}" PENDING application updated with final payload for proposals [${validProposalIds.join(', ')}]`,
       data: {
-        proposalIds,
+        validProposalIds,
         block,
         existingApplicationId: existingPendingApp.id,
         payloadKeys: Object.keys(finalPayload)
@@ -1551,8 +1571,8 @@ router.post('/validate-block-group', [
     await db.prisma.proposalApplication.create({
       data: {
         id: applicationId,
-        proposalId: proposalIds[0],
-        proposalIds: proposalIds,
+        proposalId: validProposalIds[0],
+        proposalIds: validProposalIds,
         blockType: block,
         status: 'PENDING',
         appliedChanges: filteredPayload,  // ✅ Payload FILTRÉ par bloc
@@ -1563,9 +1583,9 @@ router.post('/validate-block-group', [
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Application created for block "${block}" with final payload - proposals [${proposalIds.join(', ')}]`,
+      message: `Application created for block "${block}" with final payload - proposals [${validProposalIds.join(', ')}]`,
       data: {
-        proposalIds,
+        validProposalIds,
         applicationId,
         block,
         payloadKeys: Object.keys(finalPayload)
@@ -1579,7 +1599,7 @@ router.post('/validate-block-group', [
   if (allBlocksValidated) {
     // Tous les blocs validés → APPROVED
     const approvedProposals = await Promise.all(
-      proposalIds.map((proposalId: string) =>
+      validProposalIds.map((proposalId: string) =>
         db.updateProposal(proposalId, {
           status: 'APPROVED',
           reviewedAt: new Date(),
@@ -1589,7 +1609,7 @@ router.post('/validate-block-group', [
     )
 
     console.log('✅ Tous les blocs validés - Statut mis à jour à APPROVED:', {
-      proposalIds,
+      validProposalIds,
       statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
     })
   } else {
@@ -1598,7 +1618,7 @@ router.post('/validate-block-group', [
 
     if (validatedBlocksCount > 0) {
       const partiallyApprovedProposals = await Promise.all(
-        proposalIds.map((proposalId: string) =>
+        validProposalIds.map((proposalId: string) =>
           db.updateProposal(proposalId, {
             status: 'PARTIALLY_APPROVED',
             reviewedAt: new Date(),
@@ -1608,7 +1628,7 @@ router.post('/validate-block-group', [
       )
 
       console.log(`🔶 ${validatedBlocksCount} bloc(s) validé(s) - Statut mis à jour à PARTIALLY_APPROVED:`, {
-        proposalIds,
+        validProposalIds,
         validatedBlocks: Object.keys(approvedBlocksObj).filter(k => approvedBlocksObj[k]),
         statuses: partiallyApprovedProposals.map(p => ({ id: p.id, status: p.status }))
       })
@@ -1618,7 +1638,7 @@ router.post('/validate-block-group', [
   // Récupérer les propositions finales avec le statut mis à jour
   // On doit recharger depuis la DB car le statut a été changé après updatedProposals
   const finalProposals = await db.prisma.proposal.findMany({
-    where: { id: { in: proposalIds } }
+    where: { id: { in: validProposalIds } }
   })
 
   console.log('✅ Propositions mises à jour:', finalProposals.map((p: Proposal) => ({ id: p.id, status: p.status })))
@@ -1626,7 +1646,7 @@ router.post('/validate-block-group', [
   res.json({
     success: true,
     data: finalProposals,
-    message: `Block "${block}" validated for ${proposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}`
+    message: `Block "${block}" validated for ${validProposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}`
   })
 }))
 
