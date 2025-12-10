@@ -829,10 +829,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     if (Array.isArray(racesToUpdate)) {
       console.log(`🔄 [DATE PROPAGATION] racesToUpdate: ${racesToUpdate.length} courses`)
       racesToUpdate.forEach((raceUpdate: any, index: number) => {
-        // ✅ Utiliser existing-{index} comme clé (convention backend)
-        // Le backend mappe cet index vers existingRaces[index] pour récupérer le vrai raceId
-        const key = `existing-${index}`
-        console.log(`  ✅ Propagation vers course existing-${index}:`, {
+        // ✅ FIX 2025-12-10: Utiliser le vrai raceId pour éviter mélange dans propositions groupées
+        // Fallback vers existing-{index} si raceId absent (compatibilité)
+        const key = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
+        console.log(`  ✅ Propagation vers course ${key}:`, {
           key,
           raceId: raceUpdate.raceId,
           raceName: raceUpdate.raceName,
