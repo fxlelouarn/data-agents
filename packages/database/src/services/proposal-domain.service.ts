@@ -738,9 +738,9 @@ export class ProposalDomainService {
           }
 
           // ✅ MERGER les modifications utilisateur (raceEdits) qui ont priorité
-          // Structure : raceEdits["existing-0"] = { startDate: "...", distance: "..." }
-          const editKey = `existing-${i}`
-          const userEdits = raceEdits[editKey] || {}
+          // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+          // Chercher d'abord par raceId, puis fallback sur existing-{index} (rétro-compatibilité)
+          const userEdits = raceEdits[raceId.toString()] || raceEdits[`existing-${i}`] || {}
 
           if (Object.keys(userEdits).length > 0) {
             this.logger.info(`  📝 Modifications utilisateur détectées pour course index ${i}:`, userEdits)
@@ -988,14 +988,28 @@ export class ProposalDomainService {
         raceEdits: JSON.stringify(raceEdits, null, 2)
       })
 
+      // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+      // Supporter les deux formats: existing-{index} (ancien) et {raceId} (nouveau)
       const existingRaceEdits = Object.keys(raceEdits)
-        .filter(key => key.startsWith('existing-') && !raceEdits[key]._deleted)
-        .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
+        .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && !raceEdits[key]._deleted)
+        .map(key => {
+          if (key.startsWith('existing-')) {
+            return { index: parseInt(key.replace('existing-', '')), raceId: null, edits: raceEdits[key] }
+          } else {
+            return { index: null, raceId: parseInt(key), edits: raceEdits[key] }
+          }
+        })
 
       // ✅ FIX: Construire racesToDelete depuis raceEdits._deleted
       const racesToDeleteFromEdits = Object.keys(raceEdits)
-        .filter(key => key.startsWith('existing-') && raceEdits[key]._deleted === true)
-        .map(key => parseInt(key.replace('existing-', '')))
+        .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && raceEdits[key]._deleted === true)
+        .map(key => {
+          if (key.startsWith('existing-')) {
+            return { index: parseInt(key.replace('existing-', '')), raceId: null }
+          } else {
+            return { index: null, raceId: parseInt(key) }
+          }
+        })
 
       this.logger.info(`🐞 [DEBUG] Edits+Deletes counts:`, {
         existingRaceEdits: existingRaceEdits.length,
@@ -1025,15 +1039,19 @@ export class ProposalDomainService {
         if (racesToDeleteFromEdits.length > 0) {
           this.logger.info(`🗑️  Suppression de ${racesToDeleteFromEdits.length} course(s) (via raceEdits._deleted)`)
 
-          for (const index of racesToDeleteFromEdits) {
-            const raceId = indexToRaceId.get(index)
+          for (const item of racesToDeleteFromEdits) {
+            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
+            let raceId: number | null = item.raceId
+            if (!raceId && item.index !== null) {
+              raceId = indexToRaceId.get(item.index) || null
+            }
             if (!raceId) {
-              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
+              this.logger.warn(`  ⚠️  Course ${item.raceId || `index ${item.index}`} non trouvé`)
               continue
             }
 
             await milesRepo.deleteRace(raceId)
-            this.logger.info(`  ✅ Course ${raceId} (index ${index}) supprimée`)
+            this.logger.info(`  ✅ Course ${raceId} supprimée`)
           }
         }
 
@@ -1041,10 +1059,14 @@ export class ProposalDomainService {
         if (existingRaceEdits.length > 0) {
           this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
 
-          for (const { index, edits } of existingRaceEdits) {
-            const raceId = indexToRaceId.get(index)
+          for (const { index, raceId: directRaceId, edits } of existingRaceEdits) {
+            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
+            let raceId: number | null = directRaceId
+            if (!raceId && index !== null) {
+              raceId = indexToRaceId.get(index) || null
+            }
             if (!raceId) {
-              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
+              this.logger.warn(`  ⚠️  Course ${directRaceId || `index ${index}`} non trouvé`)
               continue
             }
 
@@ -1073,7 +1095,7 @@ export class ProposalDomainService {
 
             if (Object.keys(updateData).length > 0) {
               await milesRepo.updateRace(raceId, updateData)
-              this.logger.info(`  ✅ Course ${raceId} (index ${index}) mise à jour via edits utilisateur:`, updateData)
+              this.logger.info(`  ✅ Course ${raceId} mise à jour via edits utilisateur:`, updateData)
             }
           }
         }

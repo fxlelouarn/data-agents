@@ -1335,10 +1335,20 @@ router.post('/validate-block-group', [
     // Essayer d'extraire existingRaces depuis les changes (racesToUpdate)
     const existingRacesFromChanges = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
 
+    // ✅ FIX 2025-12-11: Construire un index par raceId pour lookup rapide
+    const racesByRaceId: Record<string, any> = {}
+    if (Array.isArray(existingRacesFromChanges)) {
+      existingRacesFromChanges.forEach((race: any) => {
+        if (race.raceId) {
+          racesByRaceId[race.raceId.toString()] = race
+        }
+      })
+    }
+
     Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
       if (mods._deleted === true) {
         if (key.startsWith('existing-')) {
-          // Course existante supprimée
+          // Course existante supprimée (ancien format)
           const index = parseInt(key.replace('existing-', ''))
           const race = existingRacesFromChanges[index]
           if (race) {
@@ -1360,6 +1370,20 @@ router.post('/validate-block-group', [
             raceId: key,
             raceName: `Nouvelle course ${index}`
           })
+        } else if (/^\d+$/.test(key)) {
+          // ✅ FIX 2025-12-11: Nouveau format - clé est le vrai raceId
+          const race = racesByRaceId[key]
+          if (race) {
+            racesToDelete.push({
+              raceId: parseInt(key),
+              raceName: race.raceName || race.name || `Course ${key}`
+            })
+          } else {
+            racesToDelete.push({
+              raceId: parseInt(key),
+              raceName: `Course ${key}`
+            })
+          }
         }
       }
     })
@@ -1377,8 +1401,10 @@ router.post('/validate-block-group', [
       const racesToUpdate = baseChanges.racesToUpdate.new || baseChanges.racesToUpdate
       if (Array.isArray(racesToUpdate)) {
         racesToUpdate.forEach((race: any, index: number) => {
-          const key = `existing-${index}`
-          const userEdits = raceEdits[key]
+          // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+          // Chercher d'abord par raceId, puis fallback sur existing-{index} (rétro-compatibilité)
+          const raceId = race.raceId?.toString()
+          const userEdits = raceEdits[raceId] || raceEdits[`existing-${index}`]
 
           if (userEdits && !userEdits._deleted) {
             if (!race.updates) race.updates = {}
