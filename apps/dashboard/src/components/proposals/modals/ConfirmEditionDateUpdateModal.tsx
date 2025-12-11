@@ -45,15 +45,15 @@ const ConfirmEditionDateUpdateModal: React.FC<ConfirmEditionDateUpdateModalProps
       return 'Date invalide'
     }
   }
-  
+
   const formattedCurrentDate = formatDate(currentEditionDate)
   const formattedNewDate = formatDate(newRaceDate)
-  
+
   const isStartDate = dateType === 'startDate'
-  const title = isStartDate 
+  const title = isStartDate
     ? "Mettre à jour la date de début de l'édition ?"
     : "Mettre à jour la date de fin de l'édition ?"
-  
+
   const message = isStartDate
     ? `La course "${raceName}" commence AVANT la date de début actuelle de l'édition.`
     : `La course "${raceName}" se termine APRÈS la date de fin actuelle de l'édition.`
@@ -69,15 +69,15 @@ const ConfirmEditionDateUpdateModal: React.FC<ConfirmEditionDateUpdateModalProps
           <Typography variant="body1" gutterBottom>
             {message}
           </Typography>
-          
-          <Box sx={{ my: 2, p: 2, bgcolor: 'grey.100', borderRadius: 1 }}>
+
+          <Box sx={{ my: 2, p: 2, bgcolor: 'action.hover', borderRadius: 1 }}>
             <Typography variant="body2" color="text.secondary">
               {isStartDate ? 'Date de début actuelle' : 'Date de fin actuelle'} de l'édition :
             </Typography>
             <Typography variant="body1" sx={{ fontWeight: 'medium' }}>
               {formattedCurrentDate}
             </Typography>
-            
+
             <Typography variant="body2" color="text.secondary" sx={{ mt: 1 }}>
               Date de la course "{raceName}" :
             </Typography>

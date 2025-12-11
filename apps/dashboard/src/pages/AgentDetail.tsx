@@ -517,7 +517,7 @@ const AgentDetail: React.FC = () => {
               <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Message</Typography>
               <Box
                 sx={{
-                  backgroundColor: '#f5f5f5',
+                  bgcolor: 'action.hover',
                   padding: 2,
                   borderRadius: 1,
                   fontFamily: 'monospace',
@@ -535,7 +535,7 @@ const AgentDetail: React.FC = () => {
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Données additionnelles</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',
@@ -555,7 +555,7 @@ const AgentDetail: React.FC = () => {
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Métadonnées</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',

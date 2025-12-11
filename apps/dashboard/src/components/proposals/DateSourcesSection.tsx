@@ -21,14 +21,14 @@ interface DateSourcesSectionProps {
 const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications }) => {
   // S'assurer que justifications est un array
   const justificationsArray = Array.isArray(justifications) ? justifications : [];
-  
+
   // Extraire les justifications avec métadonnées de date extraction
   const dateExtractions = justificationsArray
     .filter((justif: any) => justif.metadata?.dateDetails || justif.metadata?.extractedDate)
     .flatMap((justif: any) => {
       const metadata = justif.metadata || {}
       const dateDetails = metadata.dateDetails || {}
-      
+
       // Nouveau format consolidé avec sources multiples
       if (dateDetails.sources && Array.isArray(dateDetails.sources)) {
         return dateDetails.sources.map((sourceInfo: any) => ({
@@ -73,9 +73,9 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
         racesInfo: new Set()
       }
     }
-    
+
     // Ajouter la source si elle n'existe pas déjà
-    let sourceEntry = acc[extraction.date].sources.find((s: any) => 
+    let sourceEntry = acc[extraction.date].sources.find((s: any) =>
       s.source === extraction.source && s.snippet === extraction.snippet
     )
     if (!sourceEntry) {
@@ -87,20 +87,20 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
       }
       acc[extraction.date].sources.push(sourceEntry)
     }
-    
+
     // Ajouter l'agent s'il existe
     if (extraction.agentName) {
       sourceEntry.agents.add(extraction.agentName)
     }
-    
+
     // Compter toutes les propositions
     acc[extraction.date].totalPropositions++
-    
+
     // Collecter les noms des courses
     if (extraction.raceName) {
       acc[extraction.date].racesInfo.add(extraction.raceName)
     }
-    
+
     return acc
   }, {} as Record<string, {
     sources: Array<{source: string, snippet: string, confidence: number, agents: Set<string>}>,
@@ -121,35 +121,35 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
           const avgConfidence = dateInfo.sources.length > 0 ? Math.round(
             (dateInfo.sources.reduce((sum: number, s: {source: string, snippet: string, confidence: number}) => sum + (s.confidence || 0), 0) / dateInfo.sources.length) * 100
           ) : 0
-          
+
           const racesList = Array.from(dateInfo.racesInfo)
-          
+
           return (
-            <Paper key={date} sx={{ mb: 3, p: 2, bgcolor: '#f8f9fa', border: '1px solid #e9ecef' }}>
+            <Paper key={date} sx={{ mb: 3, p: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
               <Box sx={{ mb: 3 }}>
                 <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 1 }}>
                   <DateIcon color="primary" />
                   <Typography variant="h6" color="primary" sx={{ fontWeight: 'bold' }}>
                     {date}
                   </Typography>
-                  <Chip 
-                    size="small" 
+                  <Chip
+                    size="small"
                     label={`${avgConfidence}% confiance`}
                     color={avgConfidence >= 80 ? 'success' : avgConfidence >= 60 ? 'warning' : 'error'}
                   />
-                  <Chip 
-                    size="small" 
+                  <Chip
+                    size="small"
                     label={`${dateInfo.sources.length} source${dateInfo.sources.length > 1 ? 's' : ''}`}
                     color="info"
                     variant="outlined"
                   />
-                  <Chip 
-                    size="small" 
+                  <Chip
+                    size="small"
                     label={`${dateInfo.totalPropositions} propositions`}
                     variant="outlined"
                   />
                 </Box>
-                
+
                 {racesList.length > 0 && (
                   <Typography variant="body2" color="text.secondary" sx={{ ml: 4 }}>
                     Courses concernées: {racesList.join(', ')}
@@ -159,13 +159,15 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
 
               {/* Afficher chaque source distincte */}
               {dateInfo.sources.map((sourceInfo, idx) => (
-                <Box key={idx} sx={{ 
-                  display: 'flex', 
-                  alignItems: 'flex-start', 
-                  gap: 2, 
+                <Box key={idx} sx={{
+                  display: 'flex',
+                  alignItems: 'flex-start',
+                  gap: 2,
                   mb: 3,
                   pl: 2,
-                  borderLeft: idx < dateInfo.sources.length - 1 ? '2px solid #e0e0e0' : 'none'
+                  borderLeft: idx < dateInfo.sources.length - 1 ? 2 : 'none',
+                  borderLeftStyle: 'solid',
+                  borderLeftColor: 'divider'
                 }}>
                   <LinkIcon fontSize="small" color="primary" sx={{ mt: 0.5 }} />
                   <Box sx={{ flexGrow: 1 }}>
@@ -179,11 +181,11 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
                         </Typography>
                       )}
                     </Box>
-                    <Link 
-                      href={sourceInfo.source} 
-                      target="_blank" 
+                    <Link
+                      href={sourceInfo.source}
+                      target="_blank"
                       rel="noopener noreferrer"
-                      sx={{ 
+                      sx={{
                         fontSize: '0.875rem',
                         display: 'block',
                         mb: 2,
@@ -193,17 +195,19 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
                     >
                       {sourceInfo.source}
                     </Link>
-                    
+
                     <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
                       Snippet:
                     </Typography>
-                    <Paper sx={{ 
-                      p: 2, 
-                      backgroundColor: 'background.paper',
-                      borderLeft: '3px solid',
+                    <Paper sx={{
+                      p: 2,
+                      bgcolor: 'background.paper',
+                      borderLeft: 3,
+                      borderLeftStyle: 'solid',
                       borderLeftColor: 'info.main',
                       fontStyle: 'italic',
-                      border: '1px solid #e0e0e0'
+                      border: 1,
+                      borderColor: 'divider'
                     }}>
                       <Typography variant="body2" sx={{ lineHeight: 1.5 }}>
                         "{sourceInfo.snippet}"

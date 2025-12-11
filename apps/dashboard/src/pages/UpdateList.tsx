@@ -498,7 +498,7 @@ const UpdateList: React.FC = () => {
                     </Box>
                   </AccordionSummary>
 
-                  <AccordionDetails sx={{ bgcolor: 'grey.50' }}>
+                  <AccordionDetails sx={{ bgcolor: 'action.hover' }}>
                     {/* Liste des applications individuelles */}
                     <List disablePadding>
                       {group.applications.map((app: any, index: number) => (

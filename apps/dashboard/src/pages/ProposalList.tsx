@@ -54,11 +54,11 @@ import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposa
 
 const getProposalTypeStyle = (type: ProposalType) => {
   return proposalTypeStyles[type] || {
-    backgroundColor: '#6b7280',
+    bgcolor: 'grey.600',
     color: 'white',
-    borderColor: '#4b5563',
+    borderColor: 'grey.700',
     '& .MuiChip-icon': {
-      color: '#374151'
+      color: 'grey.800'
     }
   }
 }
@@ -934,8 +934,8 @@ const ProposalList: React.FC = () => {
                         label={agentName}
                         variant="outlined"
                         sx={{
-                          backgroundColor: '#f3f4f6',
-                          borderColor: '#9ca3af',
+                          bgcolor: 'action.selected',
+                          borderColor: 'divider',
                           fontWeight: 500
                         }}
                       />
