@@ -229,8 +229,8 @@ router.get('/calendar-confirmations', async (req, res) => {
 
 /**
  * GET /api/stats/pending-confirmations
- * Évolution du nombre d'éditions futures en TO_BE_CONFIRMED
- * Montre combien d'éditions dans le futur n'ont pas encore été confirmées
+ * Évolution du nombre d'éditions futures (confirmées et à confirmer)
+ * Retourne un stacked bar chart avec les deux statuts
  */
 router.get('/pending-confirmations', async (req, res) => {
   try {
@@ -252,15 +252,27 @@ router.get('/pending-confirmations', async (req, res) => {
       const currentDate = intervals[i]
       const nextDate = intervals[i + 1] || endPeriodBoundary
 
-      // Compte les éditions TO_BE_CONFIRMED dont la date de début est dans le futur
-      // et dont le startDate de l'édition tombe dans cet intervalle
-      const count = await sourceDb.edition.count({
+      // Compte les éditions TO_BE_CONFIRMED (futures)
+      const toBeConfirmedCount = await sourceDb.edition.count({
         where: {
           calendarStatus: 'TO_BE_CONFIRMED',
           startDate: {
             gte: now // Seulement les éditions futures
           },
-          // On groupe par la date de l'édition (quand elle aura lieu)
+          AND: [
+            { startDate: { gte: currentDate } },
+            { startDate: { lt: nextDate } }
+          ]
+        }
+      })
+
+      // Compte les éditions CONFIRMED (futures)
+      const confirmedCount = await sourceDb.edition.count({
+        where: {
+          calendarStatus: 'CONFIRMED',
+          startDate: {
+            gte: now // Seulement les éditions futures
+          },
           AND: [
             { startDate: { gte: currentDate } },
             { startDate: { lt: nextDate } }
@@ -270,7 +282,9 @@ router.get('/pending-confirmations', async (req, res) => {
 
       results.push({
         date: formatDateLabel(currentDate, granularity),
-        count,
+        confirmed: confirmedCount,
+        toBeConfirmed: toBeConfirmedCount,
+        total: confirmedCount + toBeConfirmedCount,
         timestamp: currentDate.toISOString()
       })
     }
