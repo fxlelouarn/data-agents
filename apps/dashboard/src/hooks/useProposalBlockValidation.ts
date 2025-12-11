@@ -20,8 +20,7 @@ export const useProposalBlockValidation = (
     return new Promise<void>((resolve, reject) => {
       updateProposalMutation.mutate({
         id: proposalId,
-        status: 'APPROVED',
-        reviewedBy: 'Utilisateur'
+        status: 'APPROVED'
       }, {
         onSuccess: () => {
           setIsValidated(true)

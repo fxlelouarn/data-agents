@@ -34,11 +34,11 @@ import {
   ResponsiveContainer,
   LabelList
 } from 'recharts'
-import { 
+import {
   TrendingUp as TrendingUpIcon,
   EmojiEvents as TrophyIcon
 } from '@mui/icons-material'
-import { useCalendarConfirmations, useProposalsCreated, useUserLeaderboard } from '@/hooks/useApi'
+import { useCalendarConfirmations, usePendingConfirmations, useProposalsCreated, useUserLeaderboard } from '@/hooks/useApi'
 import { format, subDays, subMonths } from 'date-fns'
 import { proposalTypeLabels, proposalTypeColors } from '@/constants/proposals'
 
@@ -52,6 +52,15 @@ const Statistics: React.FC = () => {
   )
   const [confirmationsEndDate, setConfirmationsEndDate] = useState(
     format(new Date(), 'yyyy-MM-dd')
+  )
+
+  // Filtres pour éditions TO_BE_CONFIRMED (événements futurs)
+  const [pendingGranularity, setPendingGranularity] = useState<TimeGranularity>('month')
+  const [pendingStartDate, setPendingStartDate] = useState(
+    format(new Date(), 'yyyy-MM-dd')
+  )
+  const [pendingEndDate, setPendingEndDate] = useState(
+    format(subMonths(new Date(), -6), 'yyyy-MM-dd') // 6 mois dans le futur
   )
 
   // Filtres pour propositions créées
@@ -78,6 +87,12 @@ const Statistics: React.FC = () => {
     granularity: confirmationsGranularity
   })
 
+  const { data: pendingData, isLoading: pendingLoading } = usePendingConfirmations({
+    startDate: pendingStartDate,
+    endDate: pendingEndDate,
+    granularity: pendingGranularity
+  })
+
   const { data: proposalsData, isLoading: proposalsLoading } = useProposalsCreated({
     startDate: proposalsStartDate,
     endDate: proposalsEndDate,
@@ -97,6 +112,14 @@ const Statistics: React.FC = () => {
       Confirmations: item.count
     }))
   }, [confirmationsData])
+
+  const pendingChartData = useMemo(() => {
+    if (!pendingData?.data?.results) return []
+    return pendingData.data.results.map(item => ({
+      date: item.date,
+      'À confirmer': item.count
+    }))
+  }, [pendingData])
 
   const proposalsChartData = useMemo(() => {
     if (!proposalsData?.data?.results) return []
@@ -177,14 +200,86 @@ const Statistics: React.FC = () => {
                 <YAxis />
                 <Tooltip />
                 <Legend />
-                <Line 
-                  type="monotone" 
-                  dataKey="Confirmations" 
-                  stroke="#8884d8" 
+                <Line
+                  type="monotone"
+                  dataKey="Confirmations"
+                  stroke="#8884d8"
                   strokeWidth={2}
-                  activeDot={{ r: 8 }} 
+                  activeDot={{ r: 8 }}
                 />
               </LineChart>
+            </ResponsiveContainer>
+          )}
+        </CardContent>
+      </Card>
+
+      {/* Éditions TO_BE_CONFIRMED dans le futur */}
+      <Card sx={{ mb: 4 }}>
+        <CardContent>
+          <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+            <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
+              <TrendingUpIcon sx={{ mr: 1 }} />
+              Éditions futures à confirmer (TO_BE_CONFIRMED)
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 2 }}>
+              <TextField
+                label="Début"
+                type="date"
+                value={pendingStartDate}
+                onChange={(e) => setPendingStartDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+              />
+              <TextField
+                label="Fin"
+                type="date"
+                value={pendingEndDate}
+                onChange={(e) => setPendingEndDate(e.target.value)}
+                InputLabelProps={{ shrink: true }}
+                size="small"
+              />
+              <FormControl size="small" sx={{ minWidth: 150 }}>
+                <InputLabel>Granularité</InputLabel>
+                <Select
+                  value={pendingGranularity}
+                  label="Granularité"
+                  onChange={(e) => setPendingGranularity(e.target.value as TimeGranularity)}
+                >
+                  <MenuItem value="day">Jour</MenuItem>
+                  <MenuItem value="week">Semaine</MenuItem>
+                  <MenuItem value="month">Mois</MenuItem>
+                  <MenuItem value="quarter">Trimestre</MenuItem>
+                  <MenuItem value="year">Année</MenuItem>
+                </Select>
+              </FormControl>
+            </Box>
+          </Box>
+
+          {pendingLoading ? (
+            <LinearProgress />
+          ) : pendingChartData.length === 0 ? (
+            <Typography color="text.secondary" sx={{ textAlign: 'center', py: 4 }}>
+              Aucune donnée disponible pour cette période
+            </Typography>
+          ) : (
+            <ResponsiveContainer width="100%" height={300}>
+              <BarChart data={pendingChartData}>
+                <CartesianGrid strokeDasharray="3 3" />
+                <XAxis dataKey="date" />
+                <YAxis />
+                <Tooltip />
+                <Legend />
+                <Bar
+                  dataKey="À confirmer"
+                  fill="#f59e0b"
+                >
+                  <LabelList
+                    dataKey="À confirmer"
+                    position="top"
+                    style={{ fill: '#374151', fontWeight: 'bold', fontSize: 12 }}
+                  />
+                </Bar>
+              </BarChart>
             </ResponsiveContainer>
           )}
         </CardContent>
@@ -244,19 +339,19 @@ const Statistics: React.FC = () => {
                 <CartesianGrid strokeDasharray="3 3" />
                 <XAxis dataKey="date" />
                 <YAxis />
-                <Tooltip 
+                <Tooltip
                   formatter={(value, name) => [value, proposalTypeLabels[name as keyof typeof proposalTypeLabels] || name]}
                 />
-                <Legend 
+                <Legend
                   formatter={(value) => proposalTypeLabels[value as keyof typeof proposalTypeLabels] || value}
                 />
                 <Bar dataKey="NEW_EVENT" stackId="a" fill={proposalTypeColors.NEW_EVENT} name="NEW_EVENT" />
                 <Bar dataKey="EVENT_UPDATE" stackId="a" fill={proposalTypeColors.EVENT_UPDATE} name="EVENT_UPDATE" />
                 <Bar dataKey="EDITION_UPDATE" stackId="a" fill={proposalTypeColors.EDITION_UPDATE} name="EDITION_UPDATE" />
                 <Bar dataKey="RACE_UPDATE" stackId="a" fill={proposalTypeColors.RACE_UPDATE} name="RACE_UPDATE">
-                  <LabelList 
-                    dataKey="Total" 
-                    position="top" 
+                  <LabelList
+                    dataKey="Total"
+                    position="top"
                     style={{ fill: '#374151', fontWeight: 'bold', fontSize: 12 }}
                   />
                 </Bar>
@@ -348,33 +443,33 @@ const Statistics: React.FC = () => {
                         </Box>
                       </TableCell>
                       <TableCell align="center">
-                        <Chip 
-                          label={user.approved} 
-                          color="success" 
+                        <Chip
+                          label={user.approved}
+                          color="success"
                           size="small"
                           sx={{ minWidth: 60 }}
                         />
                       </TableCell>
                       <TableCell align="center">
-                        <Chip 
-                          label={user.rejected} 
-                          color="error" 
+                        <Chip
+                          label={user.rejected}
+                          color="error"
                           size="small"
                           sx={{ minWidth: 60 }}
                         />
                       </TableCell>
                       <TableCell align="center">
-                        <Chip 
-                          label={user.archived} 
-                          color="default" 
+                        <Chip
+                          label={user.archived}
+                          color="default"
                           size="small"
                           sx={{ minWidth: 60 }}
                         />
                       </TableCell>
                       <TableCell align="center">
-                        <Chip 
-                          label={user.total} 
-                          color="primary" 
+                        <Chip
+                          label={user.total}
+                          color="primary"
                           size="small"
                           sx={{ minWidth: 60, fontWeight: 600 }}
                         />

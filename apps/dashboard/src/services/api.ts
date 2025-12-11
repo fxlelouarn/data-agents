@@ -634,6 +634,22 @@ export const statsApi = {
   }>> =>
     api.get('/stats/calendar-confirmations', { params: filters }).then(res => res.data),
 
+  getPendingConfirmations: (filters: {
+    startDate?: string
+    endDate?: string
+    granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  } = {}): Promise<ApiResponse<{
+    startDate: string
+    endDate: string
+    granularity: string
+    results: Array<{
+      date: string
+      count: number
+      timestamp: string
+    }>
+  }>> =>
+    api.get('/stats/pending-confirmations', { params: filters }).then(res => res.data),
+
   getProposalsCreated: (filters: {
     startDate?: string
     endDate?: string
