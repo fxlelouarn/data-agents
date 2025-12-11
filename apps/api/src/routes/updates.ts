@@ -116,10 +116,20 @@ router.get('/', [
   }
 
   if (search) {
+    // ✅ FIX 2025-12-11: Recherche étendue sur eventName, eventCity, editionYear, blockType
     where.OR = [
       { proposalId: { contains: search, mode: 'insensitive' } },
-      { proposal: { agent: { name: { contains: search, mode: 'insensitive' } } } }
+      { blockType: { contains: search, mode: 'insensitive' } },
+      { proposal: { agent: { name: { contains: search, mode: 'insensitive' } } } },
+      { proposal: { eventName: { contains: search, mode: 'insensitive' } } },
+      { proposal: { eventCity: { contains: search, mode: 'insensitive' } } },
     ]
+
+    // Si la recherche est un nombre, chercher aussi dans editionYear
+    const searchAsNumber = parseInt(search)
+    if (!isNaN(searchAsNumber)) {
+      where.OR.push({ proposal: { editionYear: searchAsNumber } })
+    }
   }
 
   const applications = await db.prisma.proposalApplication.findMany({
