@@ -1,5 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { slackService, SlackMessage } from '../services/slack/SlackService'
+import { eventDataExtractor, ExtractedEventData } from '../services/slack/extractors'
 
 const router = Router()
 
@@ -162,35 +163,94 @@ async function handleBotMention(message: SlackMessage) {
     const sourceUrl = urls.length > 0 ? urls[0] : undefined
     const sourceMetadata = await slackService.buildSourceMetadata(message, sourceUrl)
 
-    // TODO: Phase 2 - Extract event data from URL or image
-    // For now, just acknowledge receipt
+    // Phase 2: Extract event data from URL or image
+    const extractionResult = await eventDataExtractor.extractFromMessage({
+      message,
+      urls,
+      hasImages: !!hasImages
+    })
 
     await slackService.removeReaction(message.channel, message.ts, 'eyes')
 
-    // Temporary response until extraction is implemented
-    let responseText = "🔍 J'ai bien reçu ta demande.\n\n"
+    if (!extractionResult.success || !extractionResult.data) {
+      // Extraction failed
+      await slackService.addReaction(message.channel, message.ts, 'warning')
 
-    if (urls.length > 0) {
-      responseText += `📎 Lien détecté: ${urls[0]}\n`
+      let errorMessage = "⚠️ Je n'ai pas réussi à extraire les informations de l'événement.\n\n"
+      if (extractionResult.error) {
+        errorMessage += `Raison: ${extractionResult.error}\n\n`
+      }
+      errorMessage += "Tu peux:\n"
+      errorMessage += "• Vérifier que le lien est correct et accessible\n"
+      errorMessage += "• Essayer avec un autre lien vers la page de l'événement\n"
+      errorMessage += "• Partager une image claire avec les informations"
+
+      await slackService.postMessage(
+        message.channel,
+        errorMessage,
+        { thread_ts: message.ts }
+      )
+      return
     }
 
-    if (hasImages) {
-      const imageCount = message.files!.filter(f => f.mimetype.startsWith('image/')).length
-      responseText += `🖼️ ${imageCount} image(s) détectée(s)\n`
+    // Extraction successful!
+    const extractedData = extractionResult.data
+    console.log(`✅ Extraction successful: ${extractedData.eventName}`)
+
+    // Validate extracted data
+    const validation = eventDataExtractor.validateExtractedData(extractedData)
+    if (!validation.valid) {
+      console.warn(`⚠️ Extracted data missing fields: ${validation.missing.join(', ')}`)
     }
 
-    responseText += "\n⏳ L'extraction automatique n'est pas encore implémentée. Restez connectés !"
+    // Format and send response
+    const formattedText = eventDataExtractor.formatForSlack(extractedData)
+
+    // Add success reaction
+    await slackService.addReaction(message.channel, message.ts, 'white_check_mark')
+
+    // Post extracted data with action buttons
+    // TODO: Phase 4 - Add actual proposal creation and buttons
+    const dashboardUrl = process.env.FRONTEND_URL || 'https://data-agents-dashboard.onrender.com'
 
     await slackService.postMessage(
       message.channel,
-      responseText,
-      { thread_ts: message.ts }
+      formattedText + '\n\n_Création de la proposition en cours..._',
+      {
+        thread_ts: message.ts,
+        blocks: [
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: formattedText
+            }
+          },
+          {
+            type: 'divider'
+          },
+          {
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: `📍 Source: ${extractedData.sourceUrl || 'Message Slack'} | 🔧 Méthode: ${extractedData.extractionMethod}`
+              }
+            ]
+          },
+          {
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: '⏳ *Phase 4 à venir:* Création automatique de la Proposal avec boutons de validation'
+            }
+          }
+        ]
+      }
     )
 
-    // For now, add a placeholder reaction
-    await slackService.addReaction(message.channel, message.ts, 'hourglass_flowing_sand')
-
-    console.log('📋 Source metadata built:', JSON.stringify(sourceMetadata, null, 2))
+    console.log('📋 Source metadata:', JSON.stringify(sourceMetadata, null, 2))
+    console.log('📋 Extracted data:', JSON.stringify(extractedData, null, 2))
 
   } catch (error) {
     console.error('Error handling bot mention:', error)
