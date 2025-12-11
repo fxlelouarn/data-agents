@@ -17,13 +17,17 @@
 import { PrismaClient as DataAgentsPrisma } from "@prisma/client";
 import { PrismaClient as MilesRepublicPrisma } from "../node_modules/.prisma/client-miles";
 
-const DATA_AGENTS_DB_URL =
-  process.env.DATA_AGENTS_PROD_URL ||
-  "postgresql://data_agents_user:epbhY7JjPVJERAY7tkHzBWx3THEFFy0M@dpg-d4c5448dl3ps73b959s0-a.frankfurt-postgres.render.com/data_agents_8bni";
+const DATA_AGENTS_DB_URL = process.env.DATA_AGENTS_PROD_URL;
+const MILES_REPUBLIC_DB_URL = process.env.MILES_REPUBLIC_PROD_URL;
 
-const MILES_REPUBLIC_DB_URL =
-  process.env.MILES_REPUBLIC_PROD_URL ||
-  "postgresql://neondb_owner:EcB08pZVgXGk@ep-summer-smoke-a29510xq-pooler.eu-central-1.aws.neon.tech/neondb";
+if (!DATA_AGENTS_DB_URL || !MILES_REPUBLIC_DB_URL) {
+  console.error("Error: Missing required environment variables:");
+  console.error("  - DATA_AGENTS_PROD_URL");
+  console.error("  - MILES_REPUBLIC_PROD_URL");
+  console.error("\nUsage:");
+  console.error("  DATA_AGENTS_PROD_URL=... MILES_REPUBLIC_PROD_URL=... npx ts-node scripts/fix-unmatched-races-starttime.ts --dry-run");
+  process.exit(1);
+}
 
 const dataAgentsDb = new DataAgentsPrisma({
   datasources: { db: { url: DATA_AGENTS_DB_URL } },

@@ -308,6 +308,38 @@ export class AutoValidatorAgent extends BaseAgent {
       approvedBlocks: Object.keys(newApprovedBlocks).filter(k => newApprovedBlocks[k])
     })
 
+    // ✅ AUTO-ARCHIVAGE : Archiver les autres propositions PENDING du même groupe
+    // Quand une proposition est validée, les autres du même groupe deviennent obsolètes
+    if (proposal.eventId && proposal.editionId) {
+      const otherPendingProposals = await this.prisma.proposal.findMany({
+        where: {
+          eventId: proposal.eventId,
+          editionId: proposal.editionId,
+          id: { not: proposal.id },
+          status: 'PENDING'
+        }
+      })
+
+      if (otherPendingProposals.length > 0) {
+        await this.prisma.proposal.updateMany({
+          where: {
+            id: { in: otherPendingProposals.map(p => p.id) }
+          },
+          data: {
+            status: 'ARCHIVED',
+            reviewedAt: new Date(),
+            reviewedBy: 'auto-validator-agent',
+            modificationReason: `Auto-archived: superseded by validated proposal ${proposal.id}`
+          }
+        })
+
+        context.logger.info(`🗄️ Auto-archivage: ${otherPendingProposals.length} proposition(s) PENDING archivée(s)`, {
+          archivedIds: otherPendingProposals.map(p => p.id),
+          reason: 'superseded by auto-validated proposal'
+        })
+      }
+    }
+
     return { blocksValidated: blocksToValidate, applicationIds }
   }
 
