@@ -644,7 +644,9 @@ export const statsApi = {
     granularity: string
     results: Array<{
       date: string
-      count: number
+      confirmed: number
+      toBeConfirmed: number
+      total: number
       timestamp: string
     }>
   }>> =>
