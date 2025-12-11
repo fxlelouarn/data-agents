@@ -117,7 +117,9 @@ const Statistics: React.FC = () => {
     if (!pendingData?.data?.results) return []
     return pendingData.data.results.map(item => ({
       date: item.date,
-      'À confirmer': item.count
+      'Confirmées': item.confirmed || 0,
+      'À confirmer': item.toBeConfirmed || 0,
+      'Total': item.total || 0
     }))
   }, [pendingData])
 
@@ -213,13 +215,13 @@ const Statistics: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Éditions TO_BE_CONFIRMED dans le futur */}
+      {/* Éditions futures (confirmées et à confirmer) */}
       <Card sx={{ mb: 4 }}>
         <CardContent>
           <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
             <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center' }}>
               <TrendingUpIcon sx={{ mr: 1 }} />
-              Éditions futures à confirmer (TO_BE_CONFIRMED)
+              Éditions futures par statut
             </Typography>
             <Box sx={{ display: 'flex', gap: 2 }}>
               <TextField
@@ -270,11 +272,19 @@ const Statistics: React.FC = () => {
                 <Tooltip />
                 <Legend />
                 <Bar
+                  dataKey="Confirmées"
+                  stackId="a"
+                  fill="#22c55e"
+                  name="Confirmées"
+                />
+                <Bar
                   dataKey="À confirmer"
+                  stackId="a"
                   fill="#f59e0b"
+                  name="À confirmer"
                 >
                   <LabelList
-                    dataKey="À confirmer"
+                    dataKey="Total"
                     position="top"
                     style={{ fill: '#374151', fontWeight: 'bold', fontSize: 12 }}
                   />
