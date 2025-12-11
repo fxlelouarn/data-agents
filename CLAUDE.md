@@ -4,6 +4,44 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-11 - Fix: Modifications manuelles des courses non prises en compte dans ProposalApplication ✅
+
+**Problème résolu** : Lors de la validation du bloc `races`, les modifications manuelles (heures de départ modifiées via l'interface) n'étaient pas fusionnées dans `racesToUpdate` de la `ProposalApplication`.
+
+#### Symptômes
+
+1. Utilisateur modifie l'heure de départ d'une course (ex: Trail 7km → 18h)
+2. La modification est stockée dans `userModifiedChanges.raceEdits` avec la clé du vrai raceId (ex: `"152860": {"startDate": "..."}`)
+3. Le backend cherche les modifications avec la clé `existing-{index}` (ex: `existing-2`)
+4. Aucune correspondance trouvée → modifications ignorées
+5. Résultat : la `ProposalApplication` contient les heures originales de l'agent, pas les heures modifiées
+
+#### Cause
+
+Le fix du 2025-12-10 a changé le frontend pour utiliser les vrais `raceId` comme clés dans `raceEdits`, mais le backend n'a pas été mis à jour et continuait à chercher les clés `existing-{index}`.
+
+#### Solution
+
+Modifier le backend pour chercher les modifications utilisateur par **raceId d'abord**, puis fallback sur `existing-{index}` pour rétro-compatibilité.
+
+```typescript
+// AVANT
+const key = `existing-${index}`
+const userEdits = raceEdits[key]
+
+// APRÈS
+const raceId = race.raceId?.toString()
+const userEdits = raceEdits[raceId] || raceEdits[`existing-${index}`]
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Section "Merger modifications utilisateur dans racesToUpdate" : Lookup par raceId + fallback
+  - Section "Construire racesToDelete" : Support des clés numériques (vrais raceId)
+
+---
+
 ### 2025-12-10 - Fix: Mélange des noms de courses dans propositions groupées ✅
 
 **Problème résolu** : Dans les propositions groupées (même événement/édition), les noms de courses étaient mélangés dans l'affichage car les propositions du groupe avaient des ordres différents dans leur tableau `racesToUpdate`.
