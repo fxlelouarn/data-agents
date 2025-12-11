@@ -1,13 +1,13 @@
 import React from 'react'
-import { 
-  Box, 
-  Typography, 
-  Card, 
-  CardContent, 
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
   Button
 } from '@mui/material'
-import { 
-  Person as PersonIcon, 
+import {
+  Person as PersonIcon,
   Schedule as ScheduleIcon,
   Info as InfoIcon,
   CheckCircle as CheckIcon,
@@ -56,7 +56,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
   // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
   const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
   const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
-  
+
   const formatDate = (dateString: string) => {
     try {
       const date = new Date(dateString)
@@ -111,12 +111,12 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
       if (justif.metadata?.source) {
         return justif.metadata.source
       }
-      
+
       // Priorité 2: content de type url
       if (justif.type === 'url' && justif.content) {
         return justif.content
       }
-      
+
       // Priorité 3: content qui ressemble à une URL
       if (justif.content && typeof justif.content === 'string' && justif.content.match(/^https?:\/\//)) {
         return justif.content
@@ -127,12 +127,12 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
   }
 
   const renderProposal = (proposal: Proposal, index: number, isPending: boolean) => (
-    <Box 
-      key={proposal.id} 
-      sx={{ 
-        mb: 1.5, 
-        p: 1.5, 
-        bgcolor: isPending ? 'grey.50' : 'background.paper',
+    <Box
+      key={proposal.id}
+      sx={{
+        mb: 1.5,
+        p: 1.5,
+        bgcolor: isPending ? 'action.hover' : 'background.paper',
         borderRadius: 1,
         border: isPending ? 'none' : 1,
         borderColor: 'divider'
@@ -154,7 +154,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
           )}
         </Box>
       )}
-      
+
       <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', gap: 1, mb: 1 }}>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
           {getStatusIcon(proposal.status)}
@@ -166,21 +166,21 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
           {`${Math.round((proposal.confidence || 0) * 100)}%`}
         </Typography>
       </Box>
-      
+
       <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5, ml: 3 }}>
         Statut : {getStatusLabel(proposal.status)}
       </Typography>
-      
+
       <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5 }}>
         <PersonIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
         {proposal.agent.name}
         {proposal.agent.type && (
-          <Typography component="span" variant="caption" sx={{ ml: 1, px: 0.5, py: 0.25, bgcolor: 'primary.light', borderRadius: 0.5, color: 'primary.contrastText', fontSize: '0.65rem' }}>
+          <Typography component="span" variant="caption" sx={{ ml: 1, px: 0.5, py: 0.25, bgcolor: 'primary.main', borderRadius: 0.5, color: 'primary.contrastText', fontSize: '0.65rem' }}>
             {proposal.agent.type}
           </Typography>
         )}
       </Typography>
-      
+
       <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 1 }}>
         <ScheduleIcon sx={{ fontSize: '0.875rem', mr: 0.5, verticalAlign: 'middle' }} />
         {formatDate(proposal.createdAt)}
@@ -196,7 +196,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
         >
           Voir détails
         </Button>
-        
+
         {getSourceUrl(proposal) && (
           <Button
             size="small"
@@ -212,7 +212,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
       </Box>
     </Box>
   )
-  
+
   return (
     <>
       {/* ✅ Section Propositions PENDING */}
@@ -223,15 +223,15 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
               <InfoIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
               Propositions en attente
             </Typography>
-            
+
             {pendingProposals.map((proposal, index) => renderProposal(proposal, index, true))}
           </CardContent>
         </Card>
       )}
-      
+
       {/* ✅ Section Historique (propositions déjà traitées) */}
       {historicalProposals.length > 0 && (
-        <Card sx={{ mb: 2, bgcolor: 'grey.50', border: 1, borderColor: 'divider' }}>
+        <Card sx={{ mb: 2, bgcolor: 'action.hover', border: 1, borderColor: 'divider' }}>
           <CardContent>
             <Typography variant="h6" gutterBottom sx={{ color: 'text.secondary' }}>
               <ArchiveIcon sx={{ mr: 1, verticalAlign: 'middle' }} />
@@ -240,7 +240,7 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
             <Typography variant="body2" color="text.secondary" sx={{ mb: 2, fontStyle: 'italic', fontSize: '0.8rem' }}>
               Ces propositions ont déjà été traitées et n'influencent pas la proposition actuelle.
             </Typography>
-            
+
             {historicalProposals.map((proposal, index) => renderProposal(proposal, index, false))}
           </CardContent>
         </Card>

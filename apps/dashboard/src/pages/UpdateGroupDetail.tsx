@@ -503,9 +503,9 @@ const UpdateGroupDetail: React.FC = () => {
               </Box>
             </AccordionSummary>
 
-            <AccordionDetails sx={{ bgcolor: 'grey.50' }}>
+            <AccordionDetails sx={{ bgcolor: 'action.hover' }}>
               {/* Détails des changements avec BlockChangesTable */}
-              <Paper sx={{ p: 2 }}>
+              <Box sx={{ p: 2 }}>
                 <Typography variant="subtitle2" sx={{ mb: 2, fontWeight: 600 }}>
                   Changements
                 </Typography>
@@ -551,7 +551,7 @@ const UpdateGroupDetail: React.FC = () => {
                     <Typography variant="body2">{app.errorMessage}</Typography>
                   </Alert>
                 )}
-              </Paper>
+              </Box>
             </AccordionDetails>
           </Accordion>
         )
