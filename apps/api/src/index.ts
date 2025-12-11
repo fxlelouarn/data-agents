@@ -18,6 +18,8 @@ import { eventsRouter } from './routes/events'
 import { statsRouter } from './routes/stats'
 import { versionRouter } from './routes/version'
 import authRouter from './routes/auth'
+import { slackRouter } from './routes/slack'
+import { slackService } from './services/slack/SlackService'
 import { FlexibleScheduler } from './services/flexible-scheduler'
 import { updateAutoApplyScheduler } from './services/update-auto-apply-scheduler'
 import { errorHandler } from './middleware/error-handler'
@@ -85,6 +87,36 @@ app.use((req, res, next) => {
 // General middleware
 app.use(compression())
 app.use(morgan('combined'))
+
+// Slack routes need raw body for signature verification
+// Must be before express.json() for /api/slack routes
+app.use('/api/slack', express.raw({ type: 'application/json' }), (req, res, next) => {
+  // Store raw body and parse JSON manually
+  if (req.body && Buffer.isBuffer(req.body)) {
+    (req as any).rawBody = req.body.toString()
+    try {
+      req.body = JSON.parse((req as any).rawBody)
+    } catch {
+      // Body might be form-urlencoded for interactions
+    }
+  }
+  next()
+})
+app.use('/api/slack', express.urlencoded({ extended: true }), (req, res, next) => {
+  // For interactions, Slack sends form-urlencoded with payload field
+  if (req.body && typeof req.body === 'object' && !Buffer.isBuffer(req.body)) {
+    if (!(req as any).rawBody) {
+      // Reconstruct raw body from parsed form data for signature verification
+      const params = new URLSearchParams()
+      for (const [key, value] of Object.entries(req.body)) {
+        params.append(key, value as string)
+      }
+      (req as any).rawBody = params.toString()
+    }
+  }
+  next()
+})
+
 app.use(express.json({ limit: '10mb' }))
 app.use(express.urlencoded({ extended: true }))
 
@@ -101,6 +133,7 @@ app.use('/api/databases', databaseRouter)
 app.use('/api/settings', settingsRouter)
 app.use('/api/events', eventsRouter)
 app.use('/api/stats', statsRouter)
+app.use('/api/slack', slackRouter)
 
 // Error handling
 app.use(errorHandler)
@@ -137,6 +170,11 @@ app.listen(PORT, async () => {
   console.log(`📊 Environment: ${process.env.NODE_ENV || 'development'}`)
   console.log(`🐝 Node version: ${process.version}`)
   console.log(`📡 Version endpoint: http://localhost:${PORT}/api/version`)
+
+  // Initialize Slack service
+  if (slackService.initialize()) {
+    console.log(`💬 Slack integration enabled - listening on /api/slack/*`)
+  }
 
   // Synchroniser les agents avec le code
   try {

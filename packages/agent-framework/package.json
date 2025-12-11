@@ -10,12 +10,13 @@
     "tsc": "tsc --noEmit"
   },
   "dependencies": {
-    "@data-agents/types": "*",
     "@data-agents/database": "*",
+    "@data-agents/types": "*",
     "@prisma/client": "^6.19.0",
     "axios": "^1.6.0",
     "cheerio": "^1.0.0-rc.12",
     "cron": "^3.1.6",
+    "fuse.js": "^7.1.0",
     "playwright": "^1.40.0",
     "string-similarity": "^4.0.0",
     "winston": "^3.11.0"
