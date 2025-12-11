@@ -16,6 +16,21 @@ import {
   EXTRACTION_PROMPT_USER
 } from './types'
 
+// Custom error classes for specific API errors
+export class ApiCreditError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ApiCreditError'
+  }
+}
+
+export class ApiRateLimitError extends Error {
+  constructor(message: string) {
+    super(message)
+    this.name = 'ApiRateLimitError'
+  }
+}
+
 const DEFAULT_TIMEOUT = 30000 // 30 seconds
 const MAX_CONTENT_LENGTH = 100000 // ~100KB of text to send to Claude
 
@@ -316,13 +331,32 @@ export class HtmlExtractor {
     } catch (error: any) {
       console.error('Claude API error:', error.message)
 
-      // If Haiku fails, try Sonnet as fallback
-      if (error.status !== 429) { // Don't retry on rate limit
-        return this.extractWithClaudeSonnet(content, url)
+      // Check for credit/billing errors - don't retry, propagate immediately
+      if (this.isApiCreditError(error)) {
+        throw new ApiCreditError('Crédits API Anthropic insuffisants')
       }
 
-      return null
+      // Check for rate limit
+      if (error.status === 429) {
+        throw new ApiRateLimitError('Limite de requêtes API atteinte')
+      }
+
+      // For other errors, try Sonnet as fallback
+      return this.extractWithClaudeSonnet(content, url)
     }
+  }
+
+  /**
+   * Check if error is related to API credits/billing
+   */
+  private isApiCreditError(error: any): boolean {
+    if (error.status === 400) {
+      const message = error.message || ''
+      return message.includes('credit balance') ||
+             message.includes('billing') ||
+             message.includes('purchase credits')
+    }
+    return false
   }
 
   /**
@@ -361,8 +395,19 @@ export class HtmlExtractor {
         confidence: parsed.confidence || 0.6
       }
 
-    } catch (error) {
+    } catch (error: any) {
       console.error('Sonnet fallback also failed:', error)
+
+      // Check for credit/billing errors
+      if (this.isApiCreditError(error)) {
+        throw new ApiCreditError('Crédits API Anthropic insuffisants')
+      }
+
+      // Check for rate limit
+      if (error.status === 429) {
+        throw new ApiRateLimitError('Limite de requêtes API atteinte')
+      }
+
       return null
     }
   }
