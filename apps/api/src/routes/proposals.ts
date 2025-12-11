@@ -1243,7 +1243,7 @@ function filterChangesByBlock(changes: Record<string, any>, blockType: string): 
 }
 
 // POST /api/proposals/validate-block-group - Validate a block for multiple proposals (grouped mode)
-router.post('/validate-block-group', [
+router.post('/validate-block-group', requireAuth, [
   body('proposalIds').isArray().withMessage('proposalIds must be an array'),
   body('proposalIds.*').isString().withMessage('Each proposalId must be a string'),
   body('block').isString().notEmpty().withMessage('block is required'),
@@ -1251,6 +1251,7 @@ router.post('/validate-block-group', [
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { proposalIds, block, changes } = req.body
+  const userId = req.user!.userId
 
   // Log pour debug
   console.log('\ud83d\udce6 validate-block-group appelé avec:', {
@@ -1482,7 +1483,7 @@ router.post('/validate-block-group', [
         approvedBlocks: { ...existingApprovedBlocks, ...approvedBlocks },
         userModifiedChanges: { ...existingUserModifiedChanges, ...changes },
         modifiedAt: new Date(),
-        modifiedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+        modifiedBy: userId
       })
     })
   )
@@ -1629,7 +1630,7 @@ router.post('/validate-block-group', [
         db.updateProposal(proposalId, {
           status: 'APPROVED',
           reviewedAt: new Date(),
-          reviewedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+          reviewedBy: userId
         })
       )
     )
@@ -1648,7 +1649,7 @@ router.post('/validate-block-group', [
           db.updateProposal(proposalId, {
             status: 'PARTIALLY_APPROVED',
             reviewedAt: new Date(),
-            reviewedBy: 'system'
+            reviewedBy: userId
           })
         )
       )
