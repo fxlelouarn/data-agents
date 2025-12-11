@@ -860,6 +860,56 @@ export async function findCandidateEvents(
       allEvents = [...allEvents, ...moreEvents]
     }
 
+    // === PASSE 3 : Nom ET Ville similaires, SANS contrainte de date ===
+    // Pour capturer les événements qui ont changé de date (ex: mars → décembre)
+    // Ces candidats apparaîtront dans rejectedMatches si leur score est suffisant
+    const ffaYear = date.getFullYear()
+    console.log('🔍 [PASSE 3] Recherche nom ET ville similaires (sans contrainte de date, année ' + ffaYear + ')...');
+
+    const exactMatchEvents = await sourceDb.event.findMany({
+      where: {
+        AND: [
+          // Au moins une édition dans l'année FFA
+          {
+            editions: {
+              some: { year: String(ffaYear) }
+            }
+          },
+          // Nom contient au moins un mot significatif
+          nameWords.length > 0 ? {
+            OR: nameWords.map(w => ({
+              name: { contains: w, mode: 'insensitive' as const }
+            }))
+          } : {},
+          // ET ville contient au moins un mot significatif
+          cityWords.length > 0 ? {
+            OR: cityWords.map(w => ({
+              city: { contains: w, mode: 'insensitive' as const }
+            }))
+          } : {},
+          // Exclure les événements déjà trouvés
+          { NOT: { id: { in: allEvents.map((e: any) => e.id) } } }
+        ].filter(clause => Object.keys(clause).length > 0)
+      },
+      select: {
+        id: true,
+        name: true,
+        slug: true,
+        city: true,
+        countrySubdivisionDisplayCodeLevel2: true,
+        editions: {
+          where: { year: String(ffaYear) },
+          select: { id: true, year: true, startDate: true }
+        }
+      },
+      take: 20
+    })
+
+    if (exactMatchEvents.length > 0) {
+      console.log(`🔍 [PASSE 3] Ajouté ${exactMatchEvents.length} événements (nom+ville, date hors fenêtre)`);
+      allEvents = [...allEvents, ...exactMatchEvents]
+    }
+
     // Retourner les candidats bruts (le scoring sera fait par fuse.js dans matchCompetition)
     return allEvents
   } catch (error) {
