@@ -1173,9 +1173,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           onArchive={handleArchive}
           showUpdatesButton={hasUpdates}
           onViewUpdates={() => {
-            // Naviguer vers la page des updates avec le premier update du groupe
+            // Naviguer vers la vue groupée des updates
             if (relatedUpdates.length > 0) {
-              navigate(`/updates/${relatedUpdates[0].id}`)
+              navigate(`/updates/group/${relatedUpdates[0].id}`)
             }
           }}
           updatesCount={relatedUpdates.length}
