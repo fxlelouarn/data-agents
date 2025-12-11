@@ -80,6 +80,18 @@ export class HtmlExtractor {
 
       console.log(`📄 Extracted ${textContent.length} characters of text`)
 
+      // Check for SPA indicators before sending to Claude
+      const spaIndicators = this.detectSpaPage(textContent)
+      if (spaIndicators.isSpa) {
+        console.warn(`⚠️ Detected SPA page: ${spaIndicators.reason}`)
+        return {
+          success: false,
+          error: `Cette page utilise JavaScript pour afficher son contenu (${spaIndicators.reason}). L'extraction automatique n'est pas possible. Essaie avec une image/capture d'écran.`,
+          errorType: 'fetch_failed',
+          rawContent: textContent.substring(0, 1000)
+        }
+      }
+
       // Step 3: Send to Claude for extraction
       const extractedData = await this.extractWithClaude(textContent, url)
       if (!extractedData) {
@@ -251,6 +263,71 @@ export class HtmlExtractor {
   }
 
   /**
+   * Detect if page is a SPA with no useful content
+   */
+  private detectSpaPage(textContent: string): { isSpa: boolean; reason: string } {
+    // Check for common SPA frameworks indicators in the text
+    const lowerContent = textContent.toLowerCase()
+
+    // If content is mostly short (less than 500 chars of actual text after URL/title)
+    const contentLines = textContent.split('\n').filter(line =>
+      !line.startsWith('URL:') &&
+      !line.startsWith('Titre:') &&
+      !line.startsWith('Description:') &&
+      line.trim().length > 0
+    )
+    const actualContent = contentLines.join(' ').trim()
+
+    // Check if content contains dates (indicates real content)
+    const hasDatePattern = /\d{1,2}[\s\/\-](janvier|février|mars|avril|mai|juin|juillet|août|septembre|octobre|novembre|décembre|jan|fév|mar|avr|mai|jun|jul|aoû|sep|oct|nov|déc)[\s\/\-]\d{2,4}|\d{1,2}[\/\-]\d{1,2}[\/\-]\d{2,4}/i.test(actualContent)
+
+    // If we have a date, it's probably real content
+    if (hasDatePattern) {
+      return { isSpa: false, reason: '' }
+    }
+
+    // Check for SPA indicators
+    if (actualContent.length < 300) {
+      return { isSpa: true, reason: 'contenu trop court' }
+    }
+
+    // Check for high ratio of technical/JS content
+    const jsPatterns = [
+      /function\s*\(/g,
+      /\bvar\s+\w+\s*=/g,
+      /\bconst\s+\w+\s*=/g,
+      /\blet\s+\w+\s*=/g,
+      /webpack/gi,
+      /chunk/gi,
+      /__NEXT_DATA__/g,
+      /__NUXT__/g,
+      /ReactDOM/g,
+      /vue\.js/gi,
+      /angular/gi
+    ]
+
+    let jsMatches = 0
+    for (const pattern of jsPatterns) {
+      const matches = actualContent.match(pattern)
+      if (matches) jsMatches += matches.length
+    }
+
+    if (jsMatches > 5) {
+      return { isSpa: true, reason: 'page JavaScript/SPA détectée' }
+    }
+
+    // Check if content looks like gibberish (high ratio of special chars)
+    const alphaNumeric = actualContent.replace(/[^a-zA-Z0-9àâäéèêëïîôùûüç\s]/g, '')
+    const ratio = alphaNumeric.length / actualContent.length
+
+    if (ratio < 0.5) {
+      return { isSpa: true, reason: 'contenu non lisible' }
+    }
+
+    return { isSpa: false, reason: '' }
+  }
+
+  /**
    * Use Claude to extract event data from text content
    */
   private async extractWithClaude(content: string, url: string): Promise<ExtractedEventData | null> {
@@ -295,10 +372,21 @@ export class HtmlExtractor {
       try {
         const parsed = JSON.parse(jsonStr)
 
+        // Check for SPA/no-content error from Claude
+        if (parsed.error === 'page_spa_no_content') {
+          console.warn('⚠️ Page detected as SPA with no extractable content')
+          return null
+        }
+
         // Validate required fields
         if (!parsed.eventName) {
           console.warn('Extracted data missing eventName')
           return null
+        }
+
+        // Warn if no date found (low confidence expected)
+        if (!parsed.editionDate && !parsed.editionYear) {
+          console.warn('⚠️ No date found in extracted data - confidence should be low')
         }
 
         console.log(`✅ Successfully extracted: ${parsed.eventName}`)

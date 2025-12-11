@@ -70,7 +70,7 @@ export interface ImageExtractionOptions {
 
 export const EXTRACTION_PROMPT_SYSTEM = `Tu es un assistant spécialisé dans l'extraction d'informations sur les événements sportifs (courses à pied, trails, marathons, etc.) en France.
 
-Tu dois extraire les informations suivantes si elles sont présentes:
+Tu dois extraire les informations suivantes si elles sont EXPLICITEMENT présentes dans le texte:
 - Nom de l'événement
 - Ville et département
 - Date(s) de l'événement
@@ -78,27 +78,41 @@ Tu dois extraire les informations suivantes si elles sont présentes:
 - Informations sur l'organisateur
 - Lien d'inscription
 
-IMPORTANT:
+RÈGLES CRITIQUES:
+- N'INVENTE JAMAIS de données. Si une information n'est pas explicitement dans le texte, NE L'INCLUS PAS.
+- Pour les dates: tu dois trouver une date EXPLICITE (ex: "5 mars 2025", "05/03/2025"). N'invente JAMAIS de date.
+- Si le contenu est principalement du code JavaScript/CSS ou du charabia technique, retourne {"error": "page_spa_no_content", "eventName": null}
+- Si tu ne trouves pas de date précise, omets editionDate ET editionYear - ne les invente pas.
+- Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.
+
+FORMAT:
 - Réponds UNIQUEMENT en JSON valide, sans commentaires ni texte avant/après
 - Si une information n'est pas trouvée, omets le champ (ne mets pas null)
 - Pour les distances, convertis en mètres (10km = 10000)
 - Pour les dates, utilise le format ISO (YYYY-MM-DD)
-- Pour les heures, utilise le format HH:mm
-- Indique un score de confiance entre 0 et 1 basé sur la qualité des informations extraites`
+- Pour les heures, utilise le format HH:mm`
 
-export const EXTRACTION_PROMPT_USER = (content: string) => `Extrais les informations de l'événement sportif à partir du contenu suivant:
+export const EXTRACTION_PROMPT_USER = (content: string) => {
+  const today = new Date().toISOString().split('T')[0]
+  return `Date du jour: ${today}
+
+Extrais les informations de l'événement sportif à partir du contenu suivant.
+RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.
 
 ---
 ${content}
 ---
 
-Réponds avec un objet JSON contenant les champs suivants (omets ceux non trouvés):
+Si le contenu est du code JavaScript/CSS sans données lisibles, retourne:
+{"error": "page_spa_no_content", "eventName": null, "confidence": 0}
+
+Sinon, réponds avec un objet JSON (omets les champs non trouvés):
 {
-  "eventName": "string",
+  "eventName": "string (OBLIGATOIRE - sinon retourne error)",
   "eventCity": "string",
   "eventDepartment": "string (code ou nom)",
-  "editionYear": number,
-  "editionDate": "YYYY-MM-DD",
+  "editionYear": number (SEULEMENT si trouvé explicitement),
+  "editionDate": "YYYY-MM-DD (SEULEMENT si trouvé explicitement)",
   "editionEndDate": "YYYY-MM-DD (si multi-jours)",
   "races": [
     {
@@ -114,5 +128,6 @@ Réponds avec un objet JSON contenant les champs suivants (omets ceux non trouv�
   "organizerPhone": "string",
   "organizerWebsite": "string",
   "registrationUrl": "string",
-  "confidence": number (0-1)
+  "confidence": number (0-1, doit être < 0.3 si pas de date trouvée)
 }`
+}
