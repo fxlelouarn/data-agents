@@ -1,8 +1,5 @@
-// Import explicite du client généré pour ce schéma
-import { PrismaClient } from '../../../node_modules/.prisma/client'
+import { prisma } from '../src/prisma'
 import bcrypt from 'bcrypt'
-
-const prisma = new PrismaClient()
 
 async function main() {
   console.log('🌱 Seeding database...')

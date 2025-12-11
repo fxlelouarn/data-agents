@@ -10,7 +10,8 @@ import {
   Cancel as CancelIcon,
   Delete as KillIcon,
   Edit as EditIcon,
-  RestartAlt as ReviveIcon
+  RestartAlt as ReviveIcon,
+  Update as UpdateIcon
 } from '@mui/icons-material'
 
 interface ProposalNavigationProps {
@@ -30,6 +31,10 @@ interface ProposalNavigationProps {
   onKillEvent?: () => void
   showReviveEventButton?: boolean
   onReviveEvent?: () => void
+  // Lien vers les mises à jour
+  showUpdatesButton?: boolean
+  onViewUpdates?: () => void
+  updatesCount?: number
   disabled?: boolean
   // Bouton retour
   showBackButton?: boolean
@@ -52,6 +57,9 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
   onKillEvent,
   showReviveEventButton = false,
   onReviveEvent,
+  showUpdatesButton = false,
+  onViewUpdates,
+  updatesCount,
   disabled = false,
   showBackButton = true,
   onBack,
@@ -73,8 +81,8 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
     <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 2 }}>
       <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
         {showBackButton && (
-          <Button 
-            variant="outlined" 
+          <Button
+            variant="outlined"
             size="small"
             startIcon={<ChevronLeftIcon />}
             onClick={handleBack}
@@ -82,20 +90,20 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
             Retour
           </Button>
         )}
-        
+
         {/* Navigation entre propositions */}
         {navigation && (
           <>
-            <Button 
-              variant="outlined" 
+            <Button
+              variant="outlined"
               size="small"
               disabled={!navigation.hasPrevious}
               onClick={navigation.onPrevious}
             >
               Précédent
             </Button>
-            <Button 
-              variant="outlined" 
+            <Button
+              variant="outlined"
               size="small"
               disabled={!navigation.hasNext}
               onClick={navigation.onNext}
@@ -105,7 +113,7 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
           </>
         )}
       </Box>
-      
+
       <Box sx={{ display: 'flex', gap: 1 }}>
         {showEditButton && onEdit && (
           <Button
@@ -176,6 +184,17 @@ const ProposalNavigation: React.FC<ProposalNavigationProps> = ({
             disabled={disabled}
           >
             Archiver
+          </Button>
+        )}
+        {showUpdatesButton && onViewUpdates && (
+          <Button
+            variant="outlined"
+            color="info"
+            size="small"
+            startIcon={<UpdateIcon />}
+            onClick={onViewUpdates}
+          >
+            Voir les mises à jour{updatesCount !== undefined ? ` (${updatesCount})` : ''}
           </Button>
         )}
       </Box>

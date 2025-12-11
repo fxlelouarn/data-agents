@@ -428,7 +428,7 @@ export class FlexibleScheduler {
               error: lastRun.error,
             }
           : null,
-        nextRun: job?.nextRunAt || agent.nextRunAt || null,
+        nextRun: job?.nextRunAt || (agent as any).nextRunAt || null,
         frequency: formatFrequencyConfig(frequencyConfig),
         frequencyConfig,
       }

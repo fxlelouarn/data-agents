@@ -87,6 +87,7 @@ export class AutoValidatorAgent extends BaseAgent {
       totalProposalsAnalyzed: 0,
       totalProposalsValidated: 0,
       totalProposalsIgnored: 0,
+      totalEligibleProposals: 0,
       exclusionBreakdown: {
         featuredEvent: 0,
         premiumCustomer: 0,
@@ -124,27 +125,55 @@ export class AutoValidatorAgent extends BaseAgent {
 
   /**
    * Récupère les propositions éligibles pour la validation automatique
+   * Retourne les propositions (limitées) et le compte total
+   *
+   * IMPORTANT: On exclut les propositions avec racesToAdd car elles créent
+   * de nouvelles courses, ce que l'auto-validateur ne peut pas faire.
    */
   private async getEligibleProposals(
     ffaAgentId: string,
     config: AutoValidatorConfig
-  ): Promise<any[]> {
-    const proposals = await this.prisma.proposal.findMany({
-      where: {
-        status: 'PENDING',
-        type: 'EDITION_UPDATE',
-        agentId: ffaAgentId
-      },
-      orderBy: { createdAt: 'asc' },
-      take: config.maxProposalsPerRun,
-      include: {
-        agent: {
-          select: { name: true }
-        }
-      }
-    })
+  ): Promise<{ proposals: any[]; totalCount: number }> {
+    // Requête SQL brute pour exclure les propositions avec racesToAdd
+    // car Prisma ne supporte pas bien les requêtes JSONB complexes
+    const whereClause = `
+      p.status = 'PENDING'
+      AND p.type = 'EDITION_UPDATE'
+      AND p."agentId" = $1
+      AND (
+        p.changes->'racesToAdd' IS NULL
+        OR p.changes->'racesToAdd' = 'null'::jsonb
+        OR jsonb_array_length(COALESCE(p.changes->'racesToAdd'->'new', p.changes->'racesToAdd', '[]'::jsonb)) = 0
+      )
+    `
 
-    return proposals
+    // Compter le total de propositions éligibles (sans racesToAdd)
+    const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
+      `SELECT COUNT(*) as count FROM proposals p WHERE ${whereClause}`,
+      ffaAgentId
+    )
+    const totalCount = Number(countResult[0]?.count || 0)
+
+    // Récupérer les propositions avec limite
+    const proposals = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT p.*, a.name as "agentName"
+       FROM proposals p
+       LEFT JOIN agents a ON p."agentId" = a.id
+       WHERE ${whereClause}
+       ORDER BY p."createdAt" ASC
+       LIMIT $2`,
+      ffaAgentId,
+      config.maxProposalsPerRun
+    )
+
+    // Reformater pour correspondre à l'ancienne structure
+    return {
+      proposals: proposals.map(p => ({
+        ...p,
+        agent: { name: p.agentName }
+      })),
+      totalCount
+    }
   }
 
   /**
@@ -389,12 +418,17 @@ export class AutoValidatorAgent extends BaseAgent {
       context.logger.info(`📌 Agent FFA trouvé: ${ffaAgentId}`)
 
       // Récupérer les propositions éligibles
-      const proposals = await this.getEligibleProposals(ffaAgentId, config)
+      const { proposals, totalCount } = await this.getEligibleProposals(ffaAgentId, config)
       runResult.proposalsAnalyzed = proposals.length
 
-      context.logger.info(`📊 ${proposals.length} propositions EDITION_UPDATE en attente`)
+      context.logger.info(`📊 ${proposals.length}/${totalCount} propositions EDITION_UPDATE en attente`)
 
       if (proposals.length === 0) {
+        // Mettre à jour totalEligibleProposals même si aucune proposition
+        const stats = await this.loadStats()
+        stats.totalEligibleProposals = totalCount
+        await this.saveStats(stats)
+
         return {
           success: true,
           message: 'No eligible proposals to validate',
@@ -481,6 +515,7 @@ export class AutoValidatorAgent extends BaseAgent {
       stats.totalProposalsAnalyzed += runResult.proposalsAnalyzed
       stats.totalProposalsValidated += runResult.proposalsValidated
       stats.totalProposalsIgnored += runResult.proposalsIgnored
+      stats.totalEligibleProposals = totalCount  // Nombre actuel de propositions éligibles
       stats.exclusionBreakdown.featuredEvent += runResult.exclusionReasons.featuredEvent
       stats.exclusionBreakdown.premiumCustomer += runResult.exclusionReasons.premiumCustomer
       stats.exclusionBreakdown.newRaces += runResult.exclusionReasons.newRaces

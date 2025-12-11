@@ -14,7 +14,7 @@
     "migrate:deploy": "prisma migrate deploy",
     "push": "prisma db push",
     "studio": "prisma studio",
-    "seed": "ts-node prisma/seed.ts",
+    "seed": "tsx prisma/seed.ts",
     "seed:consensus": "ts-node seed-consensus-example.ts"
   },
   "dependencies": {
@@ -29,6 +29,7 @@
     "zod": "^4.1.12"
   },
   "devDependencies": {
+    "prisma": "^6.17.1",
     "tsx": "^4.0.0",
     "typescript": "^5.0.4"
   }

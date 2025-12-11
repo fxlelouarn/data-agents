@@ -124,7 +124,7 @@ const TestDynamicForm: React.FC = () => {
         <Typography variant="h4" gutterBottom>
           Test - Formulaire Dynamique de Configuration
         </Typography>
-        
+
         <Typography variant="body1" color="text.secondary" sx={{ mb: 4 }}>
           Démonstration du générateur de formulaires dynamique basé sur le schema de configuration JSON.
           Cet exemple utilise la configuration du GoogleSearchDateAgent.
@@ -143,16 +143,16 @@ const TestDynamicForm: React.FC = () => {
             />
 
             <Box sx={{ mt: 4, display: 'flex', gap: 2 }}>
-              <Button 
-                variant="contained" 
+              <Button
+                variant="contained"
                 onClick={handleSave}
                 size="large"
               >
                 Sauvegarder la configuration
               </Button>
-              
-              <Button 
-                variant="outlined" 
+
+              <Button
+                variant="outlined"
                 onClick={() => console.log('Valeurs actuelles:', values)}
                 size="large"
               >
@@ -167,10 +167,10 @@ const TestDynamicForm: React.FC = () => {
             <Typography variant="h6" sx={{ mb: 2 }}>
               JSON généré
             </Typography>
-            <Box 
-              component="pre" 
-              sx={{ 
-                backgroundColor: 'grey.100',
+            <Box
+              component="pre"
+              sx={{
+                bgcolor: 'action.hover',
                 p: 2,
                 borderRadius: 1,
                 overflow: 'auto',

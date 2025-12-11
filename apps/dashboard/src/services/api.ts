@@ -125,10 +125,10 @@ export const agentsApi = {
 
 // Proposals API
 export const proposalsApi = {
-  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0): Promise<PaginatedResponse<Proposal>> => {
+  getAll: (filters: ProposalFilters = {}, limit = 20, offset = 0, sort = 'created-desc'): Promise<PaginatedResponse<Proposal>> => {
     const start = Date.now()
-    console.log(`[📋 PROPOSALS] Frontend: Initiating GET /api/proposals (limit=${limit}, offset=${offset})`)
-    return api.get('/proposals', { params: { ...filters, limit, offset } }).then(res => {
+    console.log(`[📋 PROPOSALS] Frontend: Initiating GET /api/proposals (limit=${limit}, offset=${offset}, sort=${sort})`)
+    return api.get('/proposals', { params: { ...filters, limit, offset, sort } }).then(res => {
       const duration = Date.now() - start
       console.log(`[📋 PROPOSALS] Frontend: GET /api/proposals completed in ${duration}ms, received ${res.data.data?.length} proposals`)
       if (duration > 2000) {
@@ -280,6 +280,10 @@ export const proposalsApi = {
     changes: Record<string, any>
   ): Promise<ApiResponse<Proposal[]>> =>
     api.post('/proposals/validate-block-group', { proposalIds, block: blockKey, changes }).then(res => res.data),
+
+  // Compte les propositions éligibles pour l'auto-validation
+  getEligibleCount: (): Promise<ApiResponse<{ count: number }>> =>
+    api.get('/proposals/eligible-count').then(res => res.data),
 }
 
 // Runs API
@@ -629,6 +633,24 @@ export const statsApi = {
     }>
   }>> =>
     api.get('/stats/calendar-confirmations', { params: filters }).then(res => res.data),
+
+  getPendingConfirmations: (filters: {
+    startDate?: string
+    endDate?: string
+    granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  } = {}): Promise<ApiResponse<{
+    startDate: string
+    endDate: string
+    granularity: string
+    results: Array<{
+      date: string
+      confirmed: number
+      toBeConfirmed: number
+      total: number
+      timestamp: string
+    }>
+  }>> =>
+    api.get('/stats/pending-confirmations', { params: filters }).then(res => res.data),
 
   getProposalsCreated: (filters: {
     startDate?: string

@@ -4,6 +4,193 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-11 - Fix: Modifications manuelles des courses non prises en compte dans ProposalApplication ✅
+
+**Problème résolu** : Lors de la validation du bloc `races`, les modifications manuelles (heures de départ modifiées via l'interface) n'étaient pas fusionnées dans `racesToUpdate` de la `ProposalApplication`.
+
+#### Symptômes
+
+1. Utilisateur modifie l'heure de départ d'une course (ex: Trail 7km → 18h)
+2. La modification est stockée dans `userModifiedChanges.raceEdits` avec la clé du vrai raceId (ex: `"152860": {"startDate": "..."}`)
+3. Le backend cherche les modifications avec la clé `existing-{index}` (ex: `existing-2`)
+4. Aucune correspondance trouvée → modifications ignorées
+5. Résultat : la `ProposalApplication` contient les heures originales de l'agent, pas les heures modifiées
+
+#### Cause
+
+Le fix du 2025-12-10 a changé le frontend pour utiliser les vrais `raceId` comme clés dans `raceEdits`, mais le backend n'a pas été mis à jour et continuait à chercher les clés `existing-{index}`.
+
+#### Solution
+
+Modifier le backend pour chercher les modifications utilisateur par **raceId d'abord**, puis fallback sur `existing-{index}` pour rétro-compatibilité.
+
+```typescript
+// AVANT
+const key = `existing-${index}`
+const userEdits = raceEdits[key]
+
+// APRÈS
+const raceId = race.raceId?.toString()
+const userEdits = raceEdits[raceId] || raceEdits[`existing-${index}`]
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Section "Merger modifications utilisateur dans racesToUpdate" : Lookup par raceId + fallback
+  - Section "Construire racesToDelete" : Support des clés numériques (vrais raceId)
+
+---
+
+### 2025-12-10 - Fix: Mélange des noms de courses dans propositions groupées ✅
+
+**Problème résolu** : Dans les propositions groupées (même événement/édition), les noms de courses étaient mélangés dans l'affichage car les propositions du groupe avaient des ordres différents dans leur tableau `racesToUpdate`.
+
+#### Symptômes
+
+1. Proposition FFA a `racesToUpdate` avec l'ordre : [Trail solo, Randonnée, Trail duo]
+2. Proposition Google a `racesToUpdate` avec l'ordre : [Randonnée, Trail solo, Trail duo]
+3. Le frontend utilisait `existing-{index}` comme clé de consolidation
+4. `existing-0` de FFA (Trail solo) était écrasé par `existing-0` de Google (Randonnée)
+5. Résultat : affichage incohérent avec noms de courses inversés
+
+#### Cause
+
+Le frontend utilisait l'index du tableau `racesToUpdate` (`existing-{index}`) comme clé unique pour consolider les courses de plusieurs propositions, mais chaque proposition pouvait avoir un ordre différent.
+
+#### Solution
+
+Utiliser le **vrai `raceId`** (147544, 147545, 147546) comme clé de consolidation pour l'affichage, avec un mapping bidirectionnel vers `existing-{index}` pour la sauvegarde (le backend attend ce format).
+
+```typescript
+// AVANT
+const raceId = `existing-${index}`  // Problème: même index = courses différentes!
+
+// APRÈS
+const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
+// + mapping raceIdToIndexMap pour reconvertir à la sauvegarde
+```
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/hooks/useProposalEditor.ts`
+  - Ajout champ `raceIdToIndexMap` dans `WorkingProposalGroup`
+  - `extractRacesOriginalData()` : Utiliser vrai raceId
+  - `extractRaces()` : Utiliser vrai raceId + stocker `_originalIndex`
+  - `consolidateRacesFromProposals()` : Construire le mapping
+  - `initializeWorkingGroup()` : Convertir clés sauvegardées
+  - `buildGroupDiff()`, `getBlockPayload()`, `getPayload()` : Reconvertir à la sauvegarde
+
+- Frontend : `apps/dashboard/src/pages/proposals/detail/base/GroupedProposalDetailBase.tsx`
+  - Propagation des dates : Utiliser vrai raceId
+
+#### Documentation
+
+- `docs/fix-race-id-mapping-grouped-proposals/PLAN.md`
+- `docs/fix-race-id-mapping-grouped-proposals/IMPLEMENTATION.md`
+
+---
+
+### 2025-12-10 - Fix: Propositions ARCHIVED réapprouvées lors de validation groupée ✅
+
+**Problème résolu** : Lors de la validation d'un bloc pour une proposition groupée, les propositions ARCHIVED ou REJECTED du même groupe (même `eventId`/`editionId`) étaient réapprouvées par erreur.
+
+#### Symptômes
+
+1. Utilisateur archive la proposition A (status = `ARCHIVED`)
+2. Proposition B existe pour le même événement/édition (status = `PENDING`)
+3. Utilisateur valide un bloc de la proposition B
+4. Le système récupère **toutes** les propositions du groupe, y compris A (archivée)
+5. Le système met à jour **toutes** les propositions, y compris A
+6. Résultat : la proposition A passe de `ARCHIVED` à `APPROVED`
+
+#### Cause
+
+Deux problèmes dans `apps/api/src/routes/proposals.ts` :
+
+1. **`GET /api/proposals/group/:groupKey`** : Ne filtrait pas les propositions par statut, retournant les ARCHIVED/REJECTED
+2. **`POST /api/proposals/validate-block-group`** : Mettait à jour toutes les propositions reçues sans vérifier leur statut
+
+#### Solution
+
+```typescript
+// FIX 1: GET /api/proposals/group/:groupKey
+// Exclure les propositions ARCHIVED et REJECTED
+proposals = await db.prisma.proposal.findMany({
+  where: {
+    eventId,
+    editionId,
+    status: { notIn: ['ARCHIVED', 'REJECTED'] }  // ✅ Nouveau filtre
+  },
+  // ...
+})
+
+// FIX 2: POST /api/proposals/validate-block-group
+// Filtrer les propositions invalides même si le frontend les envoie
+const proposals = allProposals.filter((p: Proposal) => 
+  p.status !== 'ARCHIVED' && p.status !== 'REJECTED'
+)
+const validProposalIds = proposals.map((p: Proposal) => p.id)
+// Utiliser validProposalIds partout au lieu de proposalIds
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Endpoint `GET /api/proposals/group/:groupKey` : Ajout filtre `status: { notIn: ['ARCHIVED', 'REJECTED'] }`
+  - Endpoint `POST /api/proposals/validate-block-group` : Ajout filtrage des propositions invalides
+
+#### Données corrigées en production
+
+- Proposition `cmirhz7uv36h7lx1vsuaqgtz2` : Remise en statut `ARCHIVED`
+
+---
+
+### 2025-12-08 - Fix: Application races non créée lors de validation groupée ✅
+
+**Problème résolu** : Lors de la validation du bloc `races` pour une proposition groupée, si une autre proposition du groupe avait déjà une `ProposalApplication` de type `races` avec statut `APPLIED`, le système mettait à jour cette application existante au lieu d'en créer une nouvelle.
+
+#### Symptômes
+
+1. Utilisateur valide le bloc `races` pour la proposition A
+2. L'application `races` est créée et appliquée (`APPLIED`)
+3. Utilisateur valide le bloc `races` pour la proposition B (même groupe)
+4. Le système trouve l'application `APPLIED` de la proposition A
+5. Il **met à jour** cette application au lieu d'en créer une nouvelle
+6. Résultat : les courses de la proposition B ne sont jamais appliquées
+
+#### Cause
+
+La requête de détection d'application existante incluait `status: { in: ['PENDING', 'APPLIED'] }` au lieu de seulement `status: 'PENDING'`.
+
+#### Solution
+
+```typescript
+// AVANT (bug)
+const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+  where: {
+    proposalId: { in: proposalIds },
+    blockType: block,
+    status: { in: ['PENDING', 'APPLIED'] }  // ❌ Trouve les APPLIED
+  }
+})
+
+// APRÈS (fix)
+const existingPendingApp = await db.prisma.proposalApplication.findFirst({
+  where: {
+    proposalId: { in: proposalIds },
+    blockType: block,
+    status: 'PENDING'  // ✅ Seulement PENDING
+  }
+})
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts` (endpoint `validate-block-group`)
+
+---
+
 ### 2025-12-04 - Application automatique des mises à jour PENDING ✅
 
 **Fonctionnalité ajoutée** : Nouvelle option dans le panneau d'Administration permettant d'appliquer automatiquement et périodiquement les `ProposalApplication` en statut `PENDING`.

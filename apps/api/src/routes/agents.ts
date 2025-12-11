@@ -15,7 +15,8 @@ const scheduler = new FlexibleScheduler()
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {
   const errors = validationResult(req)
   if (!errors.isEmpty()) {
-    throw createError(400, 'Validation failed', 'VALIDATION_ERROR')
+    const errorMessages = errors.array().map(e => `${e.type === 'field' ? (e as any).path : 'unknown'}: ${e.msg}`).join(', ')
+    throw createError(400, `Validation failed: ${errorMessages}`, 'VALIDATION_ERROR')
   }
   next()
 }
@@ -269,10 +270,10 @@ router.get('/:id/state', [
       where: { agentId: id }
     })
 
-    const stateMap = states.reduce((acc, s) => {
+    const stateMap = states.reduce((acc: Record<string, unknown>, s: { key: string; value: unknown }) => {
       acc[s.key] = s.value
       return acc
-    }, {} as Record<string, any>)
+    }, {} as Record<string, unknown>)
 
     res.json({
       success: true,

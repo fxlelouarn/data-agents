@@ -211,16 +211,25 @@ export const useDeleteAgent = () => {
 }
 
 // Proposals hooks
-export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset = 0) => {
+export const useProposals = (filters: ProposalFilters = {}, limit = 20, offset = 0, sort = 'created-desc') => {
   return useQuery({
-    queryKey: ['proposals', filters, limit, offset],
-    queryFn: () => proposalsApi.getAll(filters, limit, offset),
+    queryKey: ['proposals', filters, limit, offset, sort],
+    queryFn: () => proposalsApi.getAll(filters, limit, offset, sort),
     staleTime: 60000, // ⏱️ 60s - éviter refetch inutiles au rafraîchissement
     gcTime: 300000, // 5 minutes (garde le cache plus longtemps)
     refetchInterval: 120000, // Auto-refresh toutes les 2 minutes
     refetchOnWindowFocus: false, // Désactiver pour éviter les refetch excessifs
     refetchOnMount: false, // ✅ Utiliser le cache si frais (< 60s)
     retry: 1, // Réessayer qu'une seule fois en cas d'échec
+  })
+}
+
+export const useEligibleProposalsCount = () => {
+  return useQuery({
+    queryKey: ['proposals', 'eligible-count'],
+    queryFn: () => proposalsApi.getEligibleCount(),
+    staleTime: 30000, // 30 secondes
+    refetchInterval: 60000, // Rafraîchir toutes les minutes
   })
 }
 
@@ -1071,6 +1080,18 @@ export const useCalendarConfirmations = (filters: {
   return useQuery({
     queryKey: ['stats', 'calendar-confirmations', filters],
     queryFn: () => statsApi.getCalendarConfirmations(filters),
+    staleTime: 300000, // 5 minutes
+  })
+}
+
+export const usePendingConfirmations = (filters: {
+  startDate?: string
+  endDate?: string
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+} = {}) => {
+  return useQuery({
+    queryKey: ['stats', 'pending-confirmations', filters],
+    queryFn: () => statsApi.getPendingConfirmations(filters),
     staleTime: 300000, // 5 minutes
   })
 }

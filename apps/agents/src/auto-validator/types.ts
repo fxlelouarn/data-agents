@@ -126,6 +126,9 @@ export interface AutoValidatorStats {
   /** Nombre total de propositions ignorées */
   totalProposalsIgnored: number
 
+  /** Nombre total de propositions éligibles (EDITION_UPDATE PENDING de FFA) */
+  totalEligibleProposals: number
+
   /** Répartition des exclusions */
   exclusionBreakdown: {
     featuredEvent: number

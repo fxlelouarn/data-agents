@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from 'react'
+import React, { useState, useMemo, useEffect } from 'react'
 import { useNavigate, Link } from 'react-router-dom'
 import {
   Box,
@@ -55,6 +55,15 @@ const UpdateList: React.FC = () => {
   const [rowsPerPage, setRowsPerPage] = useState(20)
   const [statusFilter, setStatusFilter] = useState<UpdateStatus | ''>("")
   const [searchQuery, setSearchQuery] = useState('')
+  const [debouncedSearchQuery, setDebouncedSearchQuery] = useState('')
+
+  // ✅ Debounce de 300ms sur la recherche
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedSearchQuery(searchQuery)
+    }, 300)
+    return () => clearTimeout(timer)
+  }, [searchQuery])
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [viewMode, setViewMode] = useState<'grouped' | 'table'>('grouped')  // ✅ Nouveau
   const [expandedGroups, setExpandedGroups] = useState<Set<string>>(new Set())  // ✅ Nouveau
@@ -67,7 +76,7 @@ const UpdateList: React.FC = () => {
   const { data: updatesData, isLoading, error } = useUpdates(
     {
       status: statusFilter || undefined,
-      search: searchQuery || undefined,
+      search: debouncedSearchQuery || undefined,
     },
     rowsPerPage,
     page * rowsPerPage
@@ -113,8 +122,8 @@ const UpdateList: React.FC = () => {
   }
 
   const handleSelectOne = (id: string) => {
-    setSelectedIds(prev => 
-      prev.includes(id) 
+    setSelectedIds(prev =>
+      prev.includes(id)
         ? prev.filter(selectedId => selectedId !== id)
         : [...prev, id]
     )
@@ -190,7 +199,7 @@ const UpdateList: React.FC = () => {
 
   const getUpdatePrimaryText = (update: DataUpdate) => {
     const { context, proposal } = update
-    
+
     // Pour EVENT_UPDATE, utiliser le nom enrichi de la proposition
     if (proposal.type === 'EVENT_UPDATE' && proposal.eventName) {
       const parts = [proposal.eventName]
@@ -199,14 +208,14 @@ const UpdateList: React.FC = () => {
       }
       return parts.join(' - ')
     }
-    
+
     // Pour les autres types, utiliser le context
     if (!context?.eventName) {
       return 'Mise à jour'
     }
 
     const parts = [context.eventName]
-    
+
     if (context.editionYear) {
       parts.push(context.editionYear)
     }
@@ -230,7 +239,7 @@ const UpdateList: React.FC = () => {
   // ✅ Groupement des applications par proposalIds (AVANT les returns conditionnels)
   const groupedUpdates = useMemo(() => {
     const groups = new Map<string, any[]>()
-    
+
     updates.forEach((app: any) => {
       const key = (app.proposalIds || [app.proposalId]).sort().join('-')
       if (!groups.has(key)) {
@@ -238,7 +247,7 @@ const UpdateList: React.FC = () => {
       }
       groups.get(key)!.push(app)
     })
-    
+
     return Array.from(groups.values()).map(apps => ({
       id: `group-${(apps[0].proposalIds || [apps[0].proposalId]).join('-')}`,
       applications: apps,
@@ -246,7 +255,7 @@ const UpdateList: React.FC = () => {
       eventName: apps[0].context?.eventName || apps[0].proposal?.eventName || 'Mise à jour',
       editionYear: apps[0].context?.editionYear,
       blocks: apps.map(a => a.blockType).filter(Boolean),
-      status: (apps.some(a => a.status === 'PENDING') ? 'PENDING' : 
+      status: (apps.some(a => a.status === 'PENDING') ? 'PENDING' :
               apps.every(a => a.status === 'APPLIED') ? 'APPLIED' : 'FAILED') as UpdateStatus
     }))
   }, [updates])
@@ -263,7 +272,7 @@ const UpdateList: React.FC = () => {
             <Alert severity="info">
               <Typography variant="h6" gutterBottom>Fonctionnalité en cours de développement</Typography>
               <Typography variant="body2">
-                L'API des mises à jour n'est pas encore implémentée dans le backend. 
+                L'API des mises à jour n'est pas encore implémentée dans le backend.
                 Cette fonctionnalité sera disponible prochainement.
               </Typography>
             </Alert>
@@ -304,7 +313,7 @@ const UpdateList: React.FC = () => {
         <Typography variant="h4" sx={{ fontWeight: 600 }}>
           Mises à jour
         </Typography>
-        
+
         {/* View Mode Toggle */}
         <Box sx={{ display: 'flex', border: 1, borderColor: 'divider', borderRadius: 1 }}>
           <Button
@@ -327,7 +336,7 @@ const UpdateList: React.FC = () => {
           </Button>
         </Box>
       </Box>
-      
+
       {/* Filtres */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
@@ -414,9 +423,9 @@ const UpdateList: React.FC = () => {
               const isExpanded = expandedGroups.has(group.id)
               const allAppsIds = group.applications.map((a: any) => a.id)
               const hasSelection = allAppsIds.some(id => selectedIds.includes(id))
-              
+
               return (
-                <Accordion 
+                <Accordion
                   key={group.id}
                   expanded={isExpanded}
                   onChange={(e) => handleToggleGroup(group.id, e as any)}
@@ -452,7 +461,7 @@ const UpdateList: React.FC = () => {
                           }
                         }}
                       />
-                      
+
                       {/* Nom événement */}
                       <Box sx={{ flex: 1, minWidth: 0 }}>
                         <Typography variant="h6" sx={{ fontWeight: 600 }}>
@@ -463,7 +472,7 @@ const UpdateList: React.FC = () => {
                             </Typography>
                           )}
                         </Typography>
-                        
+
                         {/* Chips des blocs */}
                         <Box sx={{ display: 'flex', gap: 0.5, mt: 1, flexWrap: 'wrap' }}>
                           {group.blocks.map((block: string) => (
@@ -479,7 +488,7 @@ const UpdateList: React.FC = () => {
                           )}
                         </Box>
                       </Box>
-                      
+
                       {/* Statut global du groupe */}
                       <Chip
                         label={getStatusLabel(group.status)}
@@ -488,8 +497,8 @@ const UpdateList: React.FC = () => {
                       />
                     </Box>
                   </AccordionSummary>
-                  
-                  <AccordionDetails sx={{ bgcolor: 'grey.50' }}>
+
+                  <AccordionDetails sx={{ bgcolor: 'action.hover' }}>
                     {/* Liste des applications individuelles */}
                     <List disablePadding>
                       {group.applications.map((app: any, index: number) => (
@@ -520,7 +529,7 @@ const UpdateList: React.FC = () => {
                                   size="small"
                                 />
                               </Box>
-                              
+
                               {/* Dates */}
                               <Box sx={{ display: 'flex', gap: 3, mt: 1 }}>
                                 <Box>
@@ -546,7 +555,7 @@ const UpdateList: React.FC = () => {
                                 )}
                               </Box>
                             </Box>
-                            
+
                             {/* Actions */}
                             <Box sx={{ display: 'flex', gap: 1, ml: 2 }}>
                               <Tooltip title="Voir les détails">
@@ -557,7 +566,7 @@ const UpdateList: React.FC = () => {
                                   <ViewIcon fontSize="small" />
                                 </IconButton>
                               </Tooltip>
-                              
+
                               {app.status === 'PENDING' && (
                                 <Tooltip title="Appliquer maintenant">
                                   <IconButton
@@ -570,7 +579,7 @@ const UpdateList: React.FC = () => {
                                   </IconButton>
                                 </Tooltip>
                               )}
-                              
+
                               {app.status === 'APPLIED' && (
                                 <Tooltip title="Supprimer">
                                   <IconButton
@@ -588,7 +597,7 @@ const UpdateList: React.FC = () => {
                         </React.Fragment>
                       ))}
                     </List>
-                    
+
                     {/* Actions groupées en bas de l'accordion */}
                     <Box sx={{ display: 'flex', gap: 1, justifyContent: 'flex-end', mt: 2, pt: 2, borderTop: 1, borderColor: 'divider' }}>
                       <Button
@@ -649,14 +658,14 @@ const UpdateList: React.FC = () => {
                       </TableCell>
                       <TableCell>
                         <Box component={Link} to={`/proposals/${update.proposalId}`} sx={{ textDecoration: 'none', display: 'block' }}>
-                          <Typography 
-                            variant="body1" 
+                          <Typography
+                            variant="body1"
                             sx={{ color: 'primary.main', fontWeight: 600, mb: 0.5 }}
                           >
                             {getUpdatePrimaryText(update)}
                           </Typography>
-                          <Typography 
-                            variant="caption" 
+                          <Typography
+                            variant="caption"
                             sx={{ color: 'text.secondary' }}
                           >
                             {getUpdateSecondaryText(update)}
@@ -704,7 +713,7 @@ const UpdateList: React.FC = () => {
                               <ViewIcon fontSize="small" />
                             </IconButton>
                           </Tooltip>
-                          
+
                           {update.status === 'PENDING' && (
                             <Tooltip title="Appliquer maintenant">
                               <span>
@@ -719,7 +728,7 @@ const UpdateList: React.FC = () => {
                               </span>
                             </Tooltip>
                           )}
-                          
+
                           {update.status === 'APPLIED' && (
                             <Tooltip title="Supprimer">
                               <span>
@@ -751,7 +760,7 @@ const UpdateList: React.FC = () => {
                 </TableBody>
               </Table>
             </TableContainer>
-            
+
             <TablePagination
               rowsPerPageOptions={[10, 20, 50]}
               component="div"
@@ -774,7 +783,7 @@ const UpdateList: React.FC = () => {
         </DialogTitle>
         <DialogContent>
           <DialogContentText>
-            {confirmDialog.action === 'delete' 
+            {confirmDialog.action === 'delete'
               ? `Êtes-vous sûr de vouloir supprimer ${confirmDialog.count} mise(s) à jour ? Cette action est irréversible.`
               : `Êtes-vous sûr de vouloir appliquer ${numPendingSelected} mise(s) à jour en attente ?`
             }
@@ -782,8 +791,8 @@ const UpdateList: React.FC = () => {
         </DialogContent>
         <DialogActions>
           <Button onClick={cancelBulkAction}>Annuler</Button>
-          <Button 
-            onClick={confirmBulkAction} 
+          <Button
+            onClick={confirmBulkAction}
             color={confirmDialog.action === 'delete' ? 'error' : 'primary'}
             variant="contained"
             disabled={bulkApplyMutation.isPending || bulkDeleteMutation.isPending}

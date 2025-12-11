@@ -210,7 +210,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
 
       // Extract structured data
       const agentId = options.agentName || (await this.getAgentIdFromContext())
@@ -433,7 +433,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericEventId = parseInt(eventId)
 
       if (isNaN(numericEventId)) {
@@ -477,7 +477,7 @@ export class ProposalDomainService {
         racesKeys: changes.races && typeof changes.races === 'object' ? Object.keys(changes.races) : 'N/A'
       })
 
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericEditionId = parseInt(editionId)
 
       if (isNaN(numericEditionId)) {
@@ -738,9 +738,9 @@ export class ProposalDomainService {
           }
 
           // ✅ MERGER les modifications utilisateur (raceEdits) qui ont priorité
-          // Structure : raceEdits["existing-0"] = { startDate: "...", distance: "..." }
-          const editKey = `existing-${i}`
-          const userEdits = raceEdits[editKey] || {}
+          // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+          // Chercher d'abord par raceId, puis fallback sur existing-{index} (rétro-compatibilité)
+          const userEdits = raceEdits[raceId.toString()] || raceEdits[`existing-${i}`] || {}
 
           if (Object.keys(userEdits).length > 0) {
             this.logger.info(`  📝 Modifications utilisateur détectées pour course index ${i}:`, userEdits)
@@ -988,14 +988,28 @@ export class ProposalDomainService {
         raceEdits: JSON.stringify(raceEdits, null, 2)
       })
 
+      // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+      // Supporter les deux formats: existing-{index} (ancien) et {raceId} (nouveau)
       const existingRaceEdits = Object.keys(raceEdits)
-        .filter(key => key.startsWith('existing-') && !raceEdits[key]._deleted)
-        .map(key => ({ index: parseInt(key.replace('existing-', '')), edits: raceEdits[key] }))
+        .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && !raceEdits[key]._deleted)
+        .map(key => {
+          if (key.startsWith('existing-')) {
+            return { index: parseInt(key.replace('existing-', '')), raceId: null, edits: raceEdits[key] }
+          } else {
+            return { index: null, raceId: parseInt(key), edits: raceEdits[key] }
+          }
+        })
 
       // ✅ FIX: Construire racesToDelete depuis raceEdits._deleted
       const racesToDeleteFromEdits = Object.keys(raceEdits)
-        .filter(key => key.startsWith('existing-') && raceEdits[key]._deleted === true)
-        .map(key => parseInt(key.replace('existing-', '')))
+        .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && raceEdits[key]._deleted === true)
+        .map(key => {
+          if (key.startsWith('existing-')) {
+            return { index: parseInt(key.replace('existing-', '')), raceId: null }
+          } else {
+            return { index: null, raceId: parseInt(key) }
+          }
+        })
 
       this.logger.info(`🐞 [DEBUG] Edits+Deletes counts:`, {
         existingRaceEdits: existingRaceEdits.length,
@@ -1025,15 +1039,19 @@ export class ProposalDomainService {
         if (racesToDeleteFromEdits.length > 0) {
           this.logger.info(`🗑️  Suppression de ${racesToDeleteFromEdits.length} course(s) (via raceEdits._deleted)`)
 
-          for (const index of racesToDeleteFromEdits) {
-            const raceId = indexToRaceId.get(index)
+          for (const item of racesToDeleteFromEdits) {
+            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
+            let raceId: number | null = item.raceId
+            if (!raceId && item.index !== null) {
+              raceId = indexToRaceId.get(item.index) || null
+            }
             if (!raceId) {
-              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
+              this.logger.warn(`  ⚠️  Course ${item.raceId || `index ${item.index}`} non trouvé`)
               continue
             }
 
             await milesRepo.deleteRace(raceId)
-            this.logger.info(`  ✅ Course ${raceId} (index ${index}) supprimée`)
+            this.logger.info(`  ✅ Course ${raceId} supprimée`)
           }
         }
 
@@ -1041,10 +1059,14 @@ export class ProposalDomainService {
         if (existingRaceEdits.length > 0) {
           this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
 
-          for (const { index, edits } of existingRaceEdits) {
-            const raceId = indexToRaceId.get(index)
+          for (const { index, raceId: directRaceId, edits } of existingRaceEdits) {
+            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
+            let raceId: number | null = directRaceId
+            if (!raceId && index !== null) {
+              raceId = indexToRaceId.get(index) || null
+            }
             if (!raceId) {
-              this.logger.warn(`  ⚠️  Course index ${index} non trouvé dans racesToUpdate`)
+              this.logger.warn(`  ⚠️  Course ${directRaceId || `index ${index}`} non trouvé`)
               continue
             }
 
@@ -1073,7 +1095,7 @@ export class ProposalDomainService {
 
             if (Object.keys(updateData).length > 0) {
               await milesRepo.updateRace(raceId, updateData)
-              this.logger.info(`  ✅ Course ${raceId} (index ${index}) mise à jour via edits utilisateur:`, updateData)
+              this.logger.info(`  ✅ Course ${raceId} mise à jour via edits utilisateur:`, updateData)
             }
           }
         }
@@ -1118,7 +1140,7 @@ export class ProposalDomainService {
     options: ApplyOptions = {}
   ): Promise<ProposalApplicationResult> {
     try {
-      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName)
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
       const numericRaceId = parseInt(raceId)
 
       if (isNaN(numericRaceId)) {
@@ -1402,18 +1424,20 @@ export class ProposalDomainService {
     selectedChanges: Record<string, any>,
     blockType: string
   ): Record<string, any> {
+    // ✅ FIX 2025-12-11: Pour NEW_EVENT, le champ 'edition' contient TOUT (dates, races, organizer)
+    // Il faut l'inclure dans tous les blocs pour que extractEditionsData/extractRacesData fonctionnent
     const blockFields: Record<string, string[]> = {
       event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
               'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
               'countrySubdivisionDisplayCodeLevel1', 'countrySubdivisionDisplayCodeLevel2',
               'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
               'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'],
-      edition: ['year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
+      edition: ['edition', 'year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
                 'calendarStatus', 'clientStatus', 'status', 'currency', 'medusaVersion', 'customerType',
                 'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
                 'volunteerCode', 'confirmedAt'],
-      organizer: ['organizer', 'organizerId'],
-      races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
+      organizer: ['edition', 'organizer', 'organizerId'],
+      races: ['edition', 'races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
     }
 
     const fields = blockFields[blockType] || []
@@ -1441,9 +1465,9 @@ export class ProposalDomainService {
   /**
    * Get Miles Republic repository (with connection)
    */
-  private async getMilesRepublicRepository(databaseId?: string, agentName: string = 'data-agents'): Promise<MilesRepublicRepository> {
+  private async getMilesRepublicRepository(databaseId?: string, agentName: string = 'data-agents', userEmail?: string): Promise<MilesRepublicRepository> {
     const milesDb = await this.getMilesRepublicConnection(databaseId)
-    return new MilesRepublicRepository(milesDb, agentName)
+    return new MilesRepublicRepository(milesDb, agentName, userEmail)
   }
 
   /**
@@ -1554,7 +1578,7 @@ export class ProposalDomainService {
         // Statuts
         calendarStatus: editionData.calendarStatus || 'CONFIRMED',
         clientStatus: editionData.clientStatus,
-        status: editionData.status || 'DRAFT',
+        status: editionData.status || 'LIVE',  // ✅ FIX 2025-12-11: LIVE par défaut (pas DRAFT)
 
         // Configuration
         currency: editionData.currency || 'EUR',
@@ -1598,7 +1622,7 @@ export class ProposalDomainService {
         // Statuts
         calendarStatus: this.extractNewValue(selectedChanges.calendarStatus) || 'CONFIRMED',
         clientStatus: this.extractNewValue(selectedChanges.clientStatus),
-        status: this.extractNewValue(selectedChanges.status) || 'DRAFT',
+        status: this.extractNewValue(selectedChanges.status) || 'LIVE',  // ✅ FIX 2025-12-11: LIVE par défaut
 
         // Configuration
         currency: this.extractNewValue(selectedChanges.currency) || 'EUR',
@@ -1639,7 +1663,7 @@ export class ProposalDomainService {
     return editions.length > 0 ? editions : [{
       year: new Date().getFullYear().toString(),
       calendarStatus: 'CONFIRMED',
-      status: 'DRAFT'
+      status: 'LIVE'  // ✅ FIX 2025-12-11: LIVE par défaut
     }]
   }
 

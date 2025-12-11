@@ -1,6 +1,7 @@
 generator client {
   provider      = "prisma-client-js"
   binaryTargets = ["native", "debian-openssl-3.0.x"]
+  output        = "../../../node_modules/.prisma/client"
 }
 
 datasource db {
@@ -80,21 +81,23 @@ model Proposal {
   changes             Json
   justification       Json
   confidence          Float?
+  // Champs de contexte pour affichage
+  eventName           String?
+  eventCity           String?
+  editionYear         Int?
+  raceName            String?
+  // Champ dénormalisé pour tri par date d'événement proposée
+  proposedStartDate   DateTime?
   createdAt           DateTime              @default(now())
   updatedAt           DateTime              @updatedAt
   reviewedAt          DateTime?
-  reviewedBy          String?
-  editionYear         Int?
-  eventCity           String?
-  eventName           String?
-  raceName            String?
+  reviewedBy          String?               // User ID du validateur
+  appliedBy           String?               // User ID de l'exécuteur
   modificationReason  String?
   modifiedAt          DateTime?
   modifiedBy          String?
   userModifiedChanges Json?
   approvedBlocks      Json?                 @default("{}")
-  appliedBy           String?
-  proposedStartDate   DateTime?
   applications        ProposalApplication[]
   agent               Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
 

@@ -31,6 +31,34 @@ const agentTypeLabels: Record<string, string> = {
   AUTO_VALIDATOR: 'Auto Validator Agent',
 }
 
+// Options de fréquence prédéfinies
+const frequencyOptions = [
+  {
+    label: 'Toutes les 2 heures',
+    value: { type: 'interval' as const, intervalMinutes: 120, jitterMinutes: 30 }
+  },
+  {
+    label: 'Toutes les 4 heures',
+    value: { type: 'interval' as const, intervalMinutes: 240, jitterMinutes: 60 }
+  },
+  {
+    label: '1x par jour (02h-05h)',
+    value: { type: 'daily' as const, windowStart: '02:00', windowEnd: '05:00' }
+  },
+  {
+    label: '1x par jour (06h-09h)',
+    value: { type: 'daily' as const, windowStart: '06:00', windowEnd: '09:00' }
+  },
+  {
+    label: '1x par jour (nuit, 00h-06h)',
+    value: { type: 'daily' as const, windowStart: '00:00', windowEnd: '06:00' }
+  },
+  {
+    label: 'Lun-Ven (08h-10h)',
+    value: { type: 'weekly' as const, windowStart: '08:00', windowEnd: '10:00', daysOfWeek: [1, 2, 3, 4, 5] }
+  },
+]
+
 // Schémas de configuration par type d'agent
 const agentConfigSchemas: Record<string, any> = {
   FFA_SCRAPER: {
@@ -215,10 +243,10 @@ const AgentCreate: React.FC = () => {
   const createMutation = useCreateAgent()
 
   const [selectedAgentType, setSelectedAgentType] = useState<string>('')
+  const [selectedFrequencyIndex, setSelectedFrequencyIndex] = useState<number>(2) // Default: 1x par jour (02h-05h)
   const [formData, setFormData] = useState({
     name: '',
     description: '',
-    frequency: '0 2 * * *', // Default: tous les jours à 2h du matin
     isActive: true,
     config: {} as Record<string, any>,
   })
@@ -278,7 +306,7 @@ const AgentCreate: React.FC = () => {
     if (!selectedAgentType) {
       newErrors.agentType = 'Le type d\'agent est requis'
     }
-    if (!formData.frequency.trim()) {
+    if (selectedFrequencyIndex < 0 || selectedFrequencyIndex >= frequencyOptions.length) {
       newErrors.frequency = 'La fréquence est requise'
     }
 
@@ -326,7 +354,7 @@ const AgentCreate: React.FC = () => {
       name: formData.name,
       description: formData.description || undefined,
       type: agentTypeMapping[selectedAgentType] || 'EXTRACTOR',
-      frequency: formData.frequency,
+      frequency: frequencyOptions[selectedFrequencyIndex].value,
       config: {
         ...formData.config,
         agentType: selectedAgentType,
@@ -419,14 +447,20 @@ const AgentCreate: React.FC = () => {
             </Grid>
 
             <Grid item xs={12} md={6}>
-              <TextField
-                fullWidth
-                label="Fréquence (cron) *"
-                value={formData.frequency}
-                onChange={(e) => setFormData({ ...formData, frequency: e.target.value })}
-                error={Boolean(errors.frequency)}
-                helperText={errors.frequency || 'Expression cron (ex: 0 2 * * * pour tous les jours à 2h)'}
-              />
+              <FormControl fullWidth>
+                <InputLabel>Fréquence *</InputLabel>
+                <Select
+                  value={selectedFrequencyIndex}
+                  label="Fréquence *"
+                  onChange={(e) => setSelectedFrequencyIndex(e.target.value as number)}
+                >
+                  {frequencyOptions.map((option, index) => (
+                    <MenuItem key={index} value={index}>
+                      {option.label}
+                    </MenuItem>
+                  ))}
+                </Select>
+              </FormControl>
             </Grid>
 
             <Grid item xs={12} md={6}>

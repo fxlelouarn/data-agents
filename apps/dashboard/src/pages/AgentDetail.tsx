@@ -28,6 +28,7 @@ import {
 import { useAgent, useRunAgent, useAgents, useFailureReport, useToggleAgent, useDeleteAgent } from '@/hooks/useApi'
 import AgentNavigation from '@/components/agents/AgentNavigation'
 import ScraperProgressCard from '@/components/ScraperProgressCard'
+import ValidatorStatsCard from '@/components/ValidatorStatsCard'
 import DynamicConfigDisplay from '@/components/DynamicConfigDisplay'
 import type { FrequencyConfig } from '@data-agents/types'
 
@@ -441,9 +442,14 @@ const AgentDetail: React.FC = () => {
             </CardContent>
           </Card>
 
-          {/* Progression du scraping (pour agents scraper) */}
-          {(agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
+          {/* Progression du scraping (pour agents scraper, pas pour VALIDATOR) */}
+          {agent.type !== 'VALIDATOR' && (agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
             <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
+          )}
+
+          {/* Statistiques (pour agents validator) */}
+          {agent.type === 'VALIDATOR' && (
+            <ValidatorStatsCard agentId={agent.id} agentName={agent.name} />
           )}
         </Grid>
       </Grid>
@@ -511,7 +517,7 @@ const AgentDetail: React.FC = () => {
               <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Message</Typography>
               <Box
                 sx={{
-                  backgroundColor: '#f5f5f5',
+                  bgcolor: 'action.hover',
                   padding: 2,
                   borderRadius: 1,
                   fontFamily: 'monospace',
@@ -529,7 +535,7 @@ const AgentDetail: React.FC = () => {
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Données additionnelles</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',
@@ -549,7 +555,7 @@ const AgentDetail: React.FC = () => {
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Métadonnées</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',

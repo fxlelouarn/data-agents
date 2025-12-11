@@ -7,6 +7,7 @@ services:
     buildCommand: |-
       npm ci && \
       npm run prisma:generate:all && \
+      cd packages/database && npx prisma generate && cd ../.. && \
       turbo build && \
       npm run db:migrate:deploy && \
       npm run db:seed && \
@@ -26,9 +27,9 @@ services:
           name: data-agents-db
           property: connectionString
       - key: MILES_REPUBLIC_DATABASE_URL
-        sync: false  # À configurer manuellement dans Render Dashboard
+        sync: false # À configurer manuellement dans Render Dashboard
       - key: MILES_REPUBLIC_DATABASE_DIRECT_URL
-        sync: false  # À configurer manuellement dans Render Dashboard
+        sync: false # À configurer manuellement dans Render Dashboard
       - key: FRONTEND_URL
         value: https://data-agents-dashboard.onrender.com
       - key: CORS_ORIGIN
@@ -40,13 +41,14 @@ services:
     env: static
     buildCommand: |-
       npm ci && \
+      npm run prisma:generate:all && \
       turbo build --filter=@data-agents/dashboard
     staticPublishPath: ./apps/dashboard/dist
     envVars:
       - key: VITE_API_URL
         value: https://data-agents-api.onrender.com/api
       - key: VITE_MUI_LICENSE_KEY
-        sync: false  # À configurer manuellement dans Render Dashboard
+        sync: false # À configurer manuellement dans Render Dashboard
     headers:
       - path: /*
         name: X-Frame-Options
@@ -67,4 +69,4 @@ databases:
     region: frankfurt
     databaseName: data_agents
     user: data_agents_user
-    plan: free
+    plan: basic-256mb

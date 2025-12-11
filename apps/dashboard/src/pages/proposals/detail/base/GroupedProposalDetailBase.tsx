@@ -31,7 +31,8 @@ import {
   useUpdateProposal,
   useBulkArchiveProposals,
   useUnapproveProposal,
-  useProposalGroup
+  useProposalGroup,
+  useUpdates
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
 import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
@@ -142,8 +143,13 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     currentEditionDate: string
     newRaceDate: string
     raceName: string
-    raceIndex: number
+    raceId: string  // ✅ Fix: utiliser raceId au lieu de raceIndex
   } | null>(null)
+
+  // ✅ Flag pour désactiver la cascade automatique lors de la mise à jour de date d'édition depuis une course
+  // Quand on modifie une course qui sort des bornes de l'édition et qu'on accepte d'ajuster l'édition,
+  // on ne veut PAS que toutes les autres courses soient affectées
+  const [skipDateCascade, setSkipDateCascade] = useState(false)
 
   // Hooks API (DOIT être déclaré AVANT proposalIds qui l'utilise)
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
@@ -264,6 +270,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // Si pas de modification manuelle, retourner les courses SANS cascade
     if (!editionStartDate) return workingGroup.consolidatedRaces
 
+    // ✅ Si skipDateCascade est activé, ne PAS propager aux courses
+    // Ce flag est activé quand on ajuste la date d'édition depuis une modification de course
+    if (skipDateCascade) return workingGroup.consolidatedRaces
+
     // Propager startDate aux courses
     return workingGroup.consolidatedRaces.map(raceChange => ({
       ...raceChange,
@@ -308,7 +318,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         return { ...acc, [fieldName]: fieldData }
       }, {})
     }))
-  }, [workingGroup])
+  }, [workingGroup, skipDateCascade])
 
   // Handler pour la modification de Edition.startDate (déclaré en premier car utilisé par handleSelectField)
   const handleEditionStartDateChange = (fieldName: string, newValue: any) => {
@@ -384,7 +394,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentStartDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex: 0
+          raceId  // ✅ Fix: passer le vrai raceId
         })
         return
       }
@@ -397,7 +407,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           currentEditionDate: currentEndDate,
           newRaceDate: newValue,
           raceName,
-          raceIndex: 0
+          raceId  // ✅ Fix: passer le vrai raceId
         })
         return
       }
@@ -432,7 +442,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             updateProposalMutation.mutate({
               id: option.proposalId,
               status: 'APPROVED',
-              reviewedBy: 'Utilisateur',
               appliedChanges: { [fieldName]: selectedValue }
             }, {
               onSuccess: () => resolve(),
@@ -441,8 +450,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           } else {
             updateProposalMutation.mutate({
               id: option.proposalId,
-              status: 'REJECTED',
-              reviewedBy: 'Utilisateur'
+              status: 'REJECTED'
             }, {
               onSuccess: () => resolve(),
               onError: reject
@@ -540,7 +548,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             await updateProposalMutation.mutateAsync({
               id: proposal.id,
               status: 'APPROVED',
-              reviewedBy: 'Utilisateur',
               appliedChanges: { [`races[${raceData.raceId}]`]: raceInProposal }
             })
           }
@@ -570,7 +577,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               await updateProposalMutation.mutateAsync({
                 id: proposal.id,
                 status: 'APPROVED',
-                reviewedBy: 'Utilisateur',
                 appliedChanges: { [`races[${raceChange.raceId}]`]: raceInProposal }
               })
             }
@@ -593,8 +599,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       for (const proposal of concernedProposals) {
         await updateProposalMutation.mutateAsync({
           id: proposal.id,
-          status: 'REJECTED',
-          reviewedBy: 'Utilisateur'
+          status: 'REJECTED'
         })
       }
 
@@ -638,11 +643,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               updateProposalMutation.mutate({
                 id: option.proposalId,
                 status: 'APPROVED',
-                reviewedBy: 'Utilisateur',
                 appliedChanges: { [fieldName]: selectedValue },
                 userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
-                modificationReason: 'Modifications manuelles appliquées',
-                modifiedBy: 'Utilisateur'
+                modificationReason: 'Modifications manuelles appliquées'
               }, {
                 onSuccess: () => resolve(),
                 onError: reject
@@ -650,8 +653,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             } else {
               updateProposalMutation.mutate({
                 id: option.proposalId,
-                status: 'REJECTED',
-                reviewedBy: 'Utilisateur'
+                status: 'REJECTED'
               }, {
                 onSuccess: () => resolve(),
                 onError: reject
@@ -676,8 +678,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         new Promise<void>((resolve, reject) => {
           updateProposalMutation.mutate({
             id: proposal.id,
-            status: 'REJECTED',
-            reviewedBy: 'Utilisateur'
+            status: 'REJECTED'
           }, {
             onSuccess: () => resolve(),
             onError: reject
@@ -697,7 +698,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       const proposalIds = groupProposals.map(p => p.id)
       await bulkArchiveMutation.mutateAsync({
         proposalIds,
-        reviewedBy: 'Utilisateur',
         archiveReason: undefined // Pas de raison requise
       })
     } catch (error) {
@@ -721,7 +721,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           updateProposalMutation.mutate({
             id: proposal.id,
             status: 'REJECTED',
-            reviewedBy: 'Utilisateur',
             modificationReason: 'Événement tué',
             killEvent: true // ✅ Marquer pour kill lors de l'application
           }, {
@@ -820,10 +819,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     if (Array.isArray(racesToUpdate)) {
       console.log(`🔄 [DATE PROPAGATION] racesToUpdate: ${racesToUpdate.length} courses`)
       racesToUpdate.forEach((raceUpdate: any, index: number) => {
-        // ✅ Utiliser existing-{index} comme clé (convention backend)
-        // Le backend mappe cet index vers existingRaces[index] pour récupérer le vrai raceId
-        const key = `existing-${index}`
-        console.log(`  ✅ Propagation vers course existing-${index}:`, {
+        // ✅ FIX 2025-12-10: Utiliser le vrai raceId pour éviter mélange dans propositions groupées
+        // Fallback vers existing-{index} si raceId absent (compatibilité)
+        const key = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
+        console.log(`  ✅ Propagation vers course ${key}:`, {
           key,
           raceId: raceUpdate.raceId,
           raceName: raceUpdate.raceName,
@@ -857,13 +856,17 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const confirmEditionDateUpdate = () => {
     if (!editionDateUpdateModal) return
 
-    const { dateType, newRaceDate, raceIndex } = editionDateUpdateModal
+    const { dateType, newRaceDate, raceId } = editionDateUpdateModal
+
+    // ✅ Activer le flag pour désactiver la cascade automatique
+    // On ne veut PAS que la modification de l'édition propage à toutes les courses
+    setSkipDateCascade(true)
 
     // Mettre à jour la date de l'édition via le hook
     updateFieldEditor(dateType, newRaceDate)
 
     // Appliquer aussi la modification de la course via le hook
-    updateRaceEditor(raceIndex.toString(), 'startDate', newRaceDate)
+    updateRaceEditor(raceId, 'startDate', newRaceDate)
 
     setEditionDateUpdateModal(null)
   }
@@ -873,6 +876,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const eventId = firstProposal?.eventId
   const eventStatus = firstProposal?.eventStatus
   const isFeatured = firstProposal?.isFeatured
+
+  // ✅ Récupérer les ProposalApplications liées à ce groupe
+  const firstProposalId = firstProposal?.id
+  const { data: updatesData } = useUpdates(
+    { proposalId: firstProposalId },
+    100, // Limit
+    0
+  )
+  const relatedUpdates = updatesData?.data || []
+  const hasUpdates = relatedUpdates.length > 0
   // ✅ Événement mort si Event.status = DEAD OU si au moins une proposition est marquée killEvent OU si tué localement
   const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
   const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
@@ -1147,6 +1160,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           onReviveEvent={handleReviveEvent}
           showArchiveButton={hasPending}
           onArchive={handleArchive}
+          showUpdatesButton={hasUpdates}
+          onViewUpdates={() => {
+            // Naviguer vers la vue groupée des updates
+            if (relatedUpdates.length > 0) {
+              navigate(`/updates/group/${relatedUpdates[0].id}`)
+            }
+          }}
+          updatesCount={relatedUpdates.length}
           disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
           showBackButton={true}
         />

@@ -4,6 +4,7 @@ import { getDatabaseServiceSync } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
 import pLimit from 'p-limit'
+import type { Proposal, ProposalApplication, Prisma } from '@data-agents/database'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -16,6 +17,42 @@ const validateRequest = (req: Request, res: Response, next: NextFunction) => {
   }
   next()
 }
+
+// GET /api/proposals/eligible-count - Compte les propositions éligibles pour l'auto-validation
+// IMPORTANT: Cette route doit être AVANT /:id pour éviter le conflit
+router.get('/eligible-count', asyncHandler(async (req: Request, res: Response) => {
+  // Trouver l'agent FFA Scraper
+  const ffaAgent = await db.prisma.agent.findFirst({
+    where: {
+      OR: [
+        { name: { contains: 'FFA', mode: 'insensitive' } },
+        { name: { contains: 'Scraper', mode: 'insensitive' } }
+      ],
+      type: { not: 'VALIDATOR' }
+    }
+  })
+
+  if (!ffaAgent) {
+    return res.json({
+      success: true,
+      data: { count: 0, message: 'FFA Scraper agent not found' }
+    })
+  }
+
+  // Compter les propositions EDITION_UPDATE PENDING de l'agent FFA
+  const count = await db.prisma.proposal.count({
+    where: {
+      status: 'PENDING',
+      type: 'EDITION_UPDATE',
+      agentId: ffaAgent.id
+    }
+  })
+
+  res.json({
+    success: true,
+    data: { count }
+  })
+}))
 
 // POST /api/proposals - Create a manual proposal
 router.post('/', [
@@ -663,43 +700,208 @@ router.get('/', [
   query('type').optional().isIn(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE']),
   query('eventId').optional().isString(),
   query('editionId').optional().isString(),
+  query('categoryLevel1').optional().isString(),
+  query('categoryLevel2').optional().isString(),
+  query('search').optional().isString(),
+  query('sort').optional().isIn(['date-asc', 'date-desc', 'created-desc']),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, search, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
 
-  const findStart = Date.now()
-  const proposals = await db.prisma.proposal.findMany({
-    where: {
-      status: (status as string | undefined) ? (status as any) : undefined,
-      type: (type as string | undefined) ? (type as any) : undefined,
-      eventId: (eventId as string | undefined) || undefined,
-      editionId: (editionId as string | undefined) || undefined
-    },
-    include: {
-      agent: {
-        select: { name: true, type: true }
-      }
-    },
-    orderBy: { createdAt: 'desc' },
-    take: parseInt(String(limit)),
-    skip: parseInt(String(offset))
-  })
-  console.log(`[PROPOSALS] Prisma findMany took ${Date.now() - findStart}ms (returned ${proposals.length})`)
+  // Déterminer l'ordre de tri selon le paramètre
+  let orderBy: any
+  switch (sort) {
+    case 'date-asc':
+      // proposedStartDate croissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'asc', nulls: 'last' } },
+        { createdAt: 'desc' }  // Secondaire pour départager
+      ]
+      break
+    case 'date-desc':
+      // proposedStartDate décroissant, nulls à la fin
+      orderBy = [
+        { proposedStartDate: { sort: 'desc', nulls: 'last' } },
+        { createdAt: 'desc' }
+      ]
+      break
+    case 'created-desc':
+    default:
+      orderBy = { createdAt: 'desc' }
+      break
+  }
 
-  const countStart = Date.now()
-  const total = await db.prisma.proposal.count({
-    where: {
-      status: (status as string | undefined) ? (status as any) : undefined,
-      type: (type as string | undefined) ? (type as any) : undefined,
-      eventId: (eventId as string | undefined) || undefined,
-      editionId: (editionId as string | undefined) || undefined
+  // Construire le filtre de base Prisma
+  const searchTerm = (search as string | undefined)?.trim()
+  const baseWhere: any = {
+    status: (status as string | undefined) ? (status as any) : undefined,
+    type: (type as string | undefined) ? (type as any) : undefined,
+    eventId: (eventId as string | undefined) || undefined,
+    editionId: (editionId as string | undefined) || undefined
+  }
+
+  // Ajouter la recherche textuelle si présente (Prisma)
+  if (searchTerm) {
+    baseWhere.OR = [
+      { eventName: { contains: searchTerm, mode: 'insensitive' } },
+      { eventCity: { contains: searchTerm, mode: 'insensitive' } },
+      { editionYear: !isNaN(parseInt(searchTerm)) ? parseInt(searchTerm) : undefined }
+    ].filter(condition => {
+      // Filtrer les conditions invalides (editionYear undefined)
+      const values = Object.values(condition)
+      return values.every(v => v !== undefined)
+    })
+  }
+
+  // Si on filtre par catégorie ou recherche, on doit utiliser une requête SQL brute
+  // car Prisma ne supporte pas les requêtes JSONB imbriquées
+  const hasCategoryFilter = categoryLevel1 || categoryLevel2
+  const hasSearchFilter = !!searchTerm
+
+  let proposals: any[]
+  let total: number
+
+  const findStart = Date.now()
+
+  if (hasCategoryFilter) {
+    // Requête SQL brute pour filtrer par catégorie dans le JSONB
+    // Les catégories peuvent être dans plusieurs emplacements :
+    // - NEW_EVENT: changes->'edition'->'new'->'races'
+    // - EDITION_UPDATE: changes->'racesToAdd'->'new' ou changes->'racesToUpdate'->'new'
+
+    const categoryConditions: string[] = []
+    const params: any[] = []
+    let paramIndex = 1
+
+    // Conditions de base
+    const baseConditions: string[] = []
+    if (status) {
+      // Cast explicite pour l'enum PostgreSQL
+      baseConditions.push(`status = $${paramIndex}::"ProposalStatus"`)
+      params.push(status)
+      paramIndex++
     }
-  })
-  console.log(`[PROPOSALS] Prisma count took ${Date.now() - countStart}ms`)
+    if (type) {
+      // Cast explicite pour l'enum PostgreSQL
+      baseConditions.push(`type = $${paramIndex}::"ProposalType"`)
+      params.push(type)
+      paramIndex++
+    }
+    if (eventId) {
+      baseConditions.push(`"eventId" = $${paramIndex}`)
+      params.push(eventId)
+      paramIndex++
+    }
+    if (editionId) {
+      baseConditions.push(`"editionId" = $${paramIndex}`)
+      params.push(editionId)
+      paramIndex++
+    }
+
+    // Condition pour categoryLevel1
+    if (categoryLevel1) {
+      categoryConditions.push(`(
+        EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'edition'->'new'->'races') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToAdd'->'new') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToUpdate'->'new') AS race WHERE race->'updates'->'categoryLevel1'->>'new' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'races'->'new') AS race WHERE race->>'categoryLevel1' = $${paramIndex})
+      )`)
+      params.push(categoryLevel1)
+      paramIndex++
+    }
+
+    // Condition pour categoryLevel2
+    if (categoryLevel2) {
+      categoryConditions.push(`(
+        EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'edition'->'new'->'races') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToAdd'->'new') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'racesToUpdate'->'new') AS race WHERE race->'updates'->'categoryLevel2'->>'new' = $${paramIndex})
+        OR EXISTS (SELECT 1 FROM jsonb_array_elements(changes->'races'->'new') AS race WHERE race->>'categoryLevel2' = $${paramIndex})
+      )`)
+      params.push(categoryLevel2)
+      paramIndex++
+    }
+
+    // Condition pour la recherche textuelle
+    if (searchTerm) {
+      const searchConditions = [`"eventName" ILIKE $${paramIndex}`, `"eventCity" ILIKE $${paramIndex}`]
+      // Ajouter la recherche par année si c'est un nombre
+      if (!isNaN(parseInt(searchTerm))) {
+        searchConditions.push(`"editionYear" = ${parseInt(searchTerm)}`)
+      }
+      categoryConditions.push(`(${searchConditions.join(' OR ')})`)
+      params.push(`%${searchTerm}%`)
+      paramIndex++
+    }
+
+    const allConditions = [...baseConditions, ...categoryConditions]
+    const whereClause = allConditions.length > 0 ? `WHERE ${allConditions.join(' AND ')}` : ''
+
+    // Déterminer ORDER BY pour SQL
+    let orderByClause: string
+    switch (sort) {
+      case 'date-asc':
+        orderByClause = 'ORDER BY "proposedStartDate" ASC NULLS LAST, "createdAt" DESC'
+        break
+      case 'date-desc':
+        orderByClause = 'ORDER BY "proposedStartDate" DESC NULLS LAST, "createdAt" DESC'
+        break
+      case 'created-desc':
+      default:
+        orderByClause = 'ORDER BY "createdAt" DESC'
+        break
+    }
+
+    // Ajouter limit et offset
+    params.push(parseInt(String(limit)))
+    const limitParam = paramIndex++
+    params.push(parseInt(String(offset)))
+    const offsetParam = paramIndex++
+
+    const query = `
+      SELECT p.*,
+             json_build_object('name', a.name, 'type', a.type) as agent
+      FROM proposals p
+      LEFT JOIN agents a ON p."agentId" = a.id
+      ${whereClause}
+      ${orderByClause}
+      LIMIT $${limitParam} OFFSET $${offsetParam}
+    `
+
+    const countQuery = `
+      SELECT COUNT(*) as count
+      FROM proposals
+      ${whereClause}
+    `
+
+    console.log(`[PROPOSALS] Executing raw SQL with category filter: ${categoryLevel1 || ''} / ${categoryLevel2 || ''}`)
+
+    proposals = await db.prisma.$queryRawUnsafe(query, ...params)
+    const countResult = await db.prisma.$queryRawUnsafe(countQuery, ...params.slice(0, -2)) as any[]
+    total = parseInt(countResult[0].count)
+
+  } else {
+    // Requête Prisma standard (sans filtre catégorie)
+    proposals = await db.prisma.proposal.findMany({
+      where: baseWhere,
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        }
+      },
+      orderBy,
+      take: parseInt(String(limit)),
+      skip: parseInt(String(offset))
+    })
+
+    total = await db.prisma.proposal.count({ where: baseWhere })
+  }
+
+  console.log(`[PROPOSALS] Prisma findMany took ${Date.now() - findStart}ms (returned ${proposals.length})`)
 
   // Enrichir chaque proposition avec les infos contextuelles (concurrence limitée)
   const enrichStart = Date.now()
@@ -761,10 +963,13 @@ router.get('/group/:groupKey', [
     }
 
     // Get all proposals for this event/edition combination
+    // ⚠️ FIX 2025-12-10: Exclure les propositions ARCHIVED et REJECTED pour éviter
+    // qu'elles soient réapprouvées lors de la validation groupée
     proposals = await db.prisma.proposal.findMany({
       where: {
         eventId,
-        editionId
+        editionId,
+        status: { notIn: ['ARCHIVED', 'REJECTED'] }
       },
       include: {
         agent: {
@@ -920,7 +1125,7 @@ router.put('/:id', requireAuth, [
         include: { proposal: true }
       })
 
-      const duplicateApp = allPendingApplications.find(app => {
+      const duplicateApp = allPendingApplications.find((app: ProposalApplication & { proposal: Proposal }) => {
         // Check if same type and same target (event/edition/race)
         if (app.proposal.type !== proposal.type) return false
         if (app.proposal.eventId !== proposal.eventId) return false
@@ -1038,7 +1243,7 @@ function filterChangesByBlock(changes: Record<string, any>, blockType: string): 
 }
 
 // POST /api/proposals/validate-block-group - Validate a block for multiple proposals (grouped mode)
-router.post('/validate-block-group', [
+router.post('/validate-block-group', requireAuth, [
   body('proposalIds').isArray().withMessage('proposalIds must be an array'),
   body('proposalIds.*').isString().withMessage('Each proposalId must be a string'),
   body('block').isString().notEmpty().withMessage('block is required'),
@@ -1046,6 +1251,7 @@ router.post('/validate-block-group', [
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { proposalIds, block, changes } = req.body
+  const userId = req.user!.userId
 
   // Log pour debug
   console.log('\ud83d\udce6 validate-block-group appelé avec:', {
@@ -1055,16 +1261,33 @@ router.post('/validate-block-group', [
   })
 
   // Vérifier que les propositions existent et sont du même groupe
-  const proposals = await db.prisma.proposal.findMany({
+  const allProposals = await db.prisma.proposal.findMany({
     where: { id: { in: proposalIds } }
   })
 
-  if (proposals.length !== proposalIds.length) {
+  if (allProposals.length !== proposalIds.length) {
     throw createError(404, 'Some proposals not found', 'PROPOSALS_NOT_FOUND')
   }
 
+  // ⚠️ FIX 2025-12-10: Filtrer les propositions ARCHIVED et REJECTED
+  // Elles ne doivent pas être réapprouvées lors de la validation groupée
+  const proposals = allProposals.filter((p: Proposal) =>
+    p.status !== 'ARCHIVED' && p.status !== 'REJECTED'
+  )
+
+  if (proposals.length === 0) {
+    throw createError(400, 'No valid proposals to validate (all are archived or rejected)', 'NO_VALID_PROPOSALS')
+  }
+
+  // Mettre à jour proposalIds pour ne garder que les valides
+  const validProposalIds = proposals.map((p: Proposal) => p.id)
+
+  if (validProposalIds.length < proposalIds.length) {
+    console.log(`⚠️ validate-block-group: Filtered out ${proposalIds.length - validProposalIds.length} ARCHIVED/REJECTED proposals`)
+  }
+
   // Vérifier la cohérence du groupe selon le type
-  const proposalTypes = [...new Set(proposals.map(p => p.type))]
+  const proposalTypes = [...new Set(proposals.map((p: Proposal) => p.type))]
 
   // NEW_EVENT : Pas besoin d'editionId (pas encore créée)
   if (proposalTypes.includes('NEW_EVENT')) {
@@ -1073,7 +1296,7 @@ router.post('/validate-block-group', [
     console.log('✅ NEW_EVENT détecté - Pas de validation editionId requise')
   } else {
     // EDITION_UPDATE, EVENT_UPDATE, RACE_UPDATE : Doivent cibler la même édition
-    const editionIds = [...new Set(proposals.map(p => p.editionId).filter(Boolean))]
+    const editionIds = [...new Set(proposals.map((p: Proposal) => p.editionId).filter(Boolean))]
     if (editionIds.length !== 1) {
       throw createError(400, 'Proposals must target the same edition', 'INVALID_PROPOSAL_GROUP')
     }
@@ -1113,10 +1336,20 @@ router.post('/validate-block-group', [
     // Essayer d'extraire existingRaces depuis les changes (racesToUpdate)
     const existingRacesFromChanges = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
 
+    // ✅ FIX 2025-12-11: Construire un index par raceId pour lookup rapide
+    const racesByRaceId: Record<string, any> = {}
+    if (Array.isArray(existingRacesFromChanges)) {
+      existingRacesFromChanges.forEach((race: any) => {
+        if (race.raceId) {
+          racesByRaceId[race.raceId.toString()] = race
+        }
+      })
+    }
+
     Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
       if (mods._deleted === true) {
         if (key.startsWith('existing-')) {
-          // Course existante supprimée
+          // Course existante supprimée (ancien format)
           const index = parseInt(key.replace('existing-', ''))
           const race = existingRacesFromChanges[index]
           if (race) {
@@ -1138,6 +1371,20 @@ router.post('/validate-block-group', [
             raceId: key,
             raceName: `Nouvelle course ${index}`
           })
+        } else if (/^\d+$/.test(key)) {
+          // ✅ FIX 2025-12-11: Nouveau format - clé est le vrai raceId
+          const race = racesByRaceId[key]
+          if (race) {
+            racesToDelete.push({
+              raceId: parseInt(key),
+              raceName: race.raceName || race.name || `Course ${key}`
+            })
+          } else {
+            racesToDelete.push({
+              raceId: parseInt(key),
+              raceName: `Course ${key}`
+            })
+          }
         }
       }
     })
@@ -1145,6 +1392,23 @@ router.post('/validate-block-group', [
     if (racesToDelete.length > 0) {
       baseChanges.racesToDelete = racesToDelete
       console.log('🗑️ Courses à supprimer:', racesToDelete.map(r => `${r.raceName} (${r.raceId})`))
+    }
+
+    // ✅ FIX 2025-12-11: Construire racesToAddFiltered pour éviter de créer puis supprimer des courses
+    // Collecter les indices des nouvelles courses (new-X) marquées comme supprimées
+    const racesToAddFiltered: number[] = []
+    Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
+      if (mods._deleted === true && key.startsWith('new-')) {
+        const index = parseInt(key.replace('new-', ''))
+        if (!isNaN(index) && index < 1000000) { // Exclure les courses ajoutées manuellement (timestamp)
+          racesToAddFiltered.push(index)
+        }
+      }
+    })
+
+    if (racesToAddFiltered.length > 0) {
+      baseChanges.racesToAddFiltered = racesToAddFiltered
+      console.log('🚫 Nouvelles courses à ne PAS créer (indices):', racesToAddFiltered)
     }
   }
 
@@ -1155,8 +1419,10 @@ router.post('/validate-block-group', [
       const racesToUpdate = baseChanges.racesToUpdate.new || baseChanges.racesToUpdate
       if (Array.isArray(racesToUpdate)) {
         racesToUpdate.forEach((race: any, index: number) => {
-          const key = `existing-${index}`
-          const userEdits = raceEdits[key]
+          // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
+          // Chercher d'abord par raceId, puis fallback sur existing-{index} (rétro-compatibilité)
+          const raceId = race.raceId?.toString()
+          const userEdits = raceEdits[raceId] || raceEdits[`existing-${index}`]
 
           if (userEdits && !userEdits._deleted) {
             if (!race.updates) race.updates = {}
@@ -1223,18 +1489,28 @@ router.post('/validate-block-group', [
     hasRaceEdits: !!finalPayload.raceEdits
   })
 
-  // Mettre à jour TOUTES les propositions avec le même payload
+  // ✅ FIX 2025-12-11: Construire userModifiedChanges à partir de finalPayload (pas juste changes)
+  // Cela inclut racesToAddFiltered et racesToDelete construits à partir de raceEdits
+  const userModifiedChangesToSave = { ...changes }
+  if (baseChanges.racesToAddFiltered) {
+    userModifiedChangesToSave.racesToAddFiltered = baseChanges.racesToAddFiltered
+  }
+  if (baseChanges.racesToDelete) {
+    userModifiedChangesToSave.racesToDelete = baseChanges.racesToDelete
+  }
+
+  // Mettre à jour les propositions valides avec le même payload
   const updatedProposals = await Promise.all(
-    proposalIds.map(async (proposalId: string) => {
-      const proposal = proposals.find(p => p.id === proposalId)!
+    validProposalIds.map(async (proposalId: string) => {
+      const proposal = proposals.find((p: Proposal) => p.id === proposalId)!
       const existingApprovedBlocks = (proposal.approvedBlocks as Record<string, boolean>) || {}
       const existingUserModifiedChanges = (proposal.userModifiedChanges as Record<string, any>) || {}
 
       return db.updateProposal(proposalId, {
         approvedBlocks: { ...existingApprovedBlocks, ...approvedBlocks },
-        userModifiedChanges: { ...existingUserModifiedChanges, ...changes },
+        userModifiedChanges: { ...existingUserModifiedChanges, ...userModifiedChangesToSave },
         modifiedAt: new Date(),
-        modifiedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+        modifiedBy: userId
       })
     })
   )
@@ -1286,19 +1562,21 @@ router.post('/validate-block-group', [
   })
 
   // ✅ NOUVEAU : Créer une application PAR BLOC validé
-  // Vérifier si une application existe déjà pour CE bloc spécifique
-  const existingAppForBlock = await db.prisma.proposalApplication.findFirst({
+  // Vérifier si une application PENDING existe déjà pour CE bloc spécifique
+  // ⚠️ FIX 2025-12-08 : Ne PAS chercher les applications APPLIED, sinon on les met à jour
+  // au lieu de créer une nouvelle application pour la proposition courante
+  const existingPendingApp = await db.prisma.proposalApplication.findFirst({
     where: {
-      proposalId: { in: proposalIds },
-      blockType: block,  // ✅ Filtrer par bloc
-      status: { in: ['PENDING', 'APPLIED'] }
+      proposalId: { in: validProposalIds },
+      blockType: block,
+      status: 'PENDING'  // ✅ FIX: Seulement PENDING, pas APPLIED
     }
   })
 
-  if (existingAppForBlock) {
-    console.log(`ℹ️ Application déjà existante pour bloc "${block}":`, {
-      applicationId: existingAppForBlock.id,
-      proposalIds,
+  if (existingPendingApp) {
+    console.log(`ℹ️ Application PENDING existante pour bloc "${block}":`, {
+      applicationId: existingPendingApp.id,
+      validProposalIds,
       block
     })
 
@@ -1311,7 +1589,7 @@ router.post('/validate-block-group', [
     })
 
     await db.prisma.proposalApplication.update({
-      where: { id: existingAppForBlock.id },
+      where: { id: existingPendingApp.id },
       data: {
         appliedChanges: filteredPayload,
         updatedAt: new Date()
@@ -1323,11 +1601,11 @@ router.post('/validate-block-group', [
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Block "${block}" application updated with final payload for proposals [${proposalIds.join(', ')}]`,
+      message: `Block "${block}" PENDING application updated with final payload for proposals [${validProposalIds.join(', ')}]`,
       data: {
-        proposalIds,
+        validProposalIds,
         block,
-        existingApplicationId: existingAppForBlock.id,
+        existingApplicationId: existingPendingApp.id,
         payloadKeys: Object.keys(finalPayload)
       }
     })
@@ -1347,8 +1625,8 @@ router.post('/validate-block-group', [
     await db.prisma.proposalApplication.create({
       data: {
         id: applicationId,
-        proposalId: proposalIds[0],
-        proposalIds: proposalIds,
+        proposalId: validProposalIds[0],
+        proposalIds: validProposalIds,
         blockType: block,
         status: 'PENDING',
         appliedChanges: filteredPayload,  // ✅ Payload FILTRÉ par bloc
@@ -1359,9 +1637,9 @@ router.post('/validate-block-group', [
     await db.createLog({
       agentId: firstProposal.agentId,
       level: 'INFO',
-      message: `Application created for block "${block}" with final payload - proposals [${proposalIds.join(', ')}]`,
+      message: `Application created for block "${block}" with final payload - proposals [${validProposalIds.join(', ')}]`,
       data: {
-        proposalIds,
+        validProposalIds,
         applicationId,
         block,
         payloadKeys: Object.keys(finalPayload)
@@ -1375,17 +1653,17 @@ router.post('/validate-block-group', [
   if (allBlocksValidated) {
     // Tous les blocs validés → APPROVED
     const approvedProposals = await Promise.all(
-      proposalIds.map((proposalId: string) =>
+      validProposalIds.map((proposalId: string) =>
         db.updateProposal(proposalId, {
           status: 'APPROVED',
           reviewedAt: new Date(),
-          reviewedBy: 'system' // TODO: Récupérer l'utilisateur connecté
+          reviewedBy: userId
         })
       )
     )
 
     console.log('✅ Tous les blocs validés - Statut mis à jour à APPROVED:', {
-      proposalIds,
+      validProposalIds,
       statuses: approvedProposals.map(p => ({ id: p.id, status: p.status }))
     })
   } else {
@@ -1394,17 +1672,17 @@ router.post('/validate-block-group', [
 
     if (validatedBlocksCount > 0) {
       const partiallyApprovedProposals = await Promise.all(
-        proposalIds.map((proposalId: string) =>
+        validProposalIds.map((proposalId: string) =>
           db.updateProposal(proposalId, {
             status: 'PARTIALLY_APPROVED',
             reviewedAt: new Date(),
-            reviewedBy: 'system'
+            reviewedBy: userId
           })
         )
       )
 
       console.log(`🔶 ${validatedBlocksCount} bloc(s) validé(s) - Statut mis à jour à PARTIALLY_APPROVED:`, {
-        proposalIds,
+        validProposalIds,
         validatedBlocks: Object.keys(approvedBlocksObj).filter(k => approvedBlocksObj[k]),
         statuses: partiallyApprovedProposals.map(p => ({ id: p.id, status: p.status }))
       })
@@ -1414,10 +1692,10 @@ router.post('/validate-block-group', [
   // Récupérer les propositions finales avec le statut mis à jour
   // On doit recharger depuis la DB car le statut a été changé après updatedProposals
   const finalProposals = await db.prisma.proposal.findMany({
-    where: { id: { in: proposalIds } }
+    where: { id: { in: validProposalIds } }
   })
 
-  console.log('✅ Propositions mises à jour:', finalProposals.map(p => ({ id: p.id, status: p.status })))
+  console.log('✅ Propositions mises à jour:', finalProposals.map((p: Proposal) => ({ id: p.id, status: p.status })))
 
   // ✅ AUTO-ARCHIVAGE : Archiver les autres propositions PENDING du même groupe
   // Quand une proposition est validée, les autres du même groupe deviennent obsolètes
@@ -1469,7 +1747,7 @@ router.post('/validate-block-group', [
   res.json({
     success: true,
     data: finalProposals,
-    message: `Block "${block}" validated for ${proposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}${archivedCount > 0 ? ` - ${archivedCount} other proposal(s) auto-archived` : ''}`
+    message: `Block "${block}" validated for ${validProposalIds.length} proposals${allBlocksValidated ? ' - Proposals approved' : ''}${archivedCount > 0 ? ` - ${archivedCount} other proposal(s) auto-archived` : ''}`
   })
 }))
 
@@ -1620,14 +1898,14 @@ router.post('/:id/unapprove', requireAuth, [
   }
 
   // Supprimer les applications PENDING
-  const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+  const pendingApplications = proposal.applications.filter((app: ProposalApplication) => app.status === 'PENDING')
 
-  await db.prisma.$transaction(async (tx) => {
+  await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Supprimer les applications en attente
     if (pendingApplications.length > 0) {
       await tx.proposalApplication.deleteMany({
         where: {
-          id: { in: pendingApplications.map(app => app.id) }
+          id: { in: pendingApplications.map((app: ProposalApplication) => app.id) }
         }
       })
     }
@@ -2270,7 +2548,7 @@ router.post('/:id/unapprove-block', [
   // Vérifier si CE BLOC SPÉCIFIQUE a déjà été appliqué
   // Un bloc appliqué ne peut plus être annulé (les changements sont déjà en base)
   const appliedBlockApplication = proposal.applications.find(
-    app => app.status === 'APPLIED' && app.blockType === block
+    (app: ProposalApplication) => app.status === 'APPLIED' && app.blockType === block
   )
   if (appliedBlockApplication) {
     throw createError(400, `Cannot unapprove block "${block}" that has already been applied`, 'BLOCK_ALREADY_APPLIED')
@@ -2300,15 +2578,15 @@ router.post('/:id/unapprove-block', [
   const hasRemainingApprovedBlocks = Object.values(approvedBlocks).some(v => v === true)
   const newStatus = hasRemainingApprovedBlocks ? 'APPROVED' : 'PENDING'
 
-  await db.prisma.$transaction(async (tx) => {
+  await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // Si on repasse à PENDING, supprimer les applications en attente
     if (newStatus === 'PENDING') {
-      const pendingApplications = proposal.applications.filter(app => app.status === 'PENDING')
+      const pendingApplications = proposal.applications.filter((app: ProposalApplication) => app.status === 'PENDING')
 
       if (pendingApplications.length > 0) {
         await tx.proposalApplication.deleteMany({
           where: {
-            id: { in: pendingApplications.map(app => app.id) }
+            id: { in: pendingApplications.map((app: ProposalApplication) => app.id) }
           }
         })
       }
@@ -2473,7 +2751,7 @@ router.post('/bulk-approve', [
   const { proposalIds, reviewedBy, block } = req.body
 
   // Use transaction to approve proposals and create applications atomically
-  const result = await db.prisma.$transaction(async (tx) => {
+  const result = await db.prisma.$transaction(async (tx: Prisma.TransactionClient) => {
     // First, get all pending proposals that will be approved
     const pendingProposals = await tx.proposal.findMany({
       where: {
@@ -2502,7 +2780,7 @@ router.post('/bulk-approve', [
       // Approbation globale standard
       await tx.proposal.updateMany({
         where: {
-          id: { in: pendingProposals.map(p => p.id) }
+          id: { in: pendingProposals.map((p: Proposal) => p.id) }
         },
         data: {
           status: 'APPROVED',
@@ -2544,7 +2822,7 @@ router.post('/bulk-approve', [
         include: { proposal: true }
       })
 
-      const duplicateApp = allPendingApplications.find(app => {
+      const duplicateApp = allPendingApplications.find((app: ProposalApplication & { proposal: Proposal }) => {
         if (app.proposal.type !== proposal.type) return false
         if (app.proposal.eventId !== proposal.eventId) return false
         if (app.proposal.editionId !== proposal.editionId) return false

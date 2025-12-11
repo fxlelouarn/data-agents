@@ -175,7 +175,7 @@ export class FFAScraperAgent extends BaseAgent {
       ligues.push(FFA_LIGUES[currentLigueIndex + i])
     }
 
-    // Déterminer les mois à traiter
+    // Déterminer les mois à traiter en évitant ceux déjà complétés
     let currentMonthIndex = allMonths.indexOf(progress.currentMonth)
 
     // Si le mois actuel n'est plus dans la fenêtre (expiré), recommencer au premier mois
@@ -185,10 +185,42 @@ export class FFAScraperAgent extends BaseAgent {
       progress.currentMonth = allMonths[0]
     }
 
+    // Trouver les mois non complétés pour les ligues sélectionnées
+    // On cherche les mois qui n'ont pas été complétés pour AU MOINS une des ligues
     const months: string[] = []
 
-    for (let i = 0; i < config.monthsPerRun && currentMonthIndex + i < allMonths.length; i++) {
-      months.push(allMonths[currentMonthIndex + i])
+    for (let i = currentMonthIndex; i < allMonths.length && months.length < config.monthsPerRun; i++) {
+      const month = allMonths[i]
+      // Vérifier si ce mois n'est pas complété pour au moins une des ligues sélectionnées
+      const needsProcessing = ligues.some(ligue => {
+        const completedForLigue = progress.completedMonths[ligue] || []
+        return !completedForLigue.includes(month)
+      })
+
+      if (needsProcessing) {
+        months.push(month)
+      } else {
+        this.logger.debug?.(`⏭️  Mois ${month} déjà complété pour toutes les ligues [${ligues.join(', ')}], skip`)
+      }
+    }
+
+    // Si tous les mois sont complétés pour ces ligues, passer aux ligues suivantes
+    if (months.length === 0 && ligues.length > 0) {
+      const lastLigueIndex = FFA_LIGUES.indexOf(ligues[ligues.length - 1] as any)
+      if (lastLigueIndex + 1 < FFA_LIGUES.length) {
+        // Avancer aux prochaines ligues
+        this.logger.info(`✅ Toutes les ligues [${ligues.join(', ')}] ont complété tous les mois, passage aux suivantes`)
+        progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
+        progress.currentMonth = allMonths[0]
+        // Récursion pour obtenir les vraies prochaines cibles
+        return this.getNextTargets(progress, config)
+      }
+    }
+
+    // Mettre à jour currentMonth si on a sauté des mois déjà complétés
+    if (months.length > 0 && months[0] !== progress.currentMonth) {
+      this.logger.info(`⏭️  Avance au mois ${months[0]} (${progress.currentMonth} déjà complété)`)
+      progress.currentMonth = months[0]
     }
 
     return { ligues, months }
@@ -447,20 +479,86 @@ export class FFAScraperAgent extends BaseAgent {
       const racesToAdd: any[] = []
       const racesToUpdate: any[] = []
 
+      // FIX: Set pour tracker les courses DB déjà matchées
+      // Évite qu'une même course DB soit matchée par plusieurs courses FFA de même distance
+      const matchedDbRaceIds = new Set<number>()
+
       for (const ffaRace of ffaData.races) {
+        // Inférer la catégorie de la course FFA pour un meilleur matching
+        const [ffaCategoryLevel1] = this.inferRaceCategories(
+          ffaRace.name,
+          ffaRace.distance ? ffaRace.distance / 1000 : undefined
+        )
+
+        // Calculer la date de la course FFA (pour événements multi-jours)
+        const ffaRaceDate = this.calculateRaceStartDate(ffaData, ffaRace)
+        const ffaRaceDayStr = ffaRaceDate.toISOString().split('T')[0]
+
         const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
+          // FIX: Ignorer les courses déjà matchées
+          if (matchedDbRaceIds.has(dbRace.id)) {
+            return false
+          }
+
           // Utiliser la distance totale déjà convertie en mètres
           const totalDistance = dbRace.totalDistanceMeters
 
-          // Si la course FFA a une distance, matcher principalement sur la distance
+          // Si la course FFA a une distance, matcher sur distance + catégorie + date
           if (ffaRace.distance && ffaRace.distance > 0) {
             // Utiliser la tolérance configurée (config.distanceTolerancePercent)
             const tolerancePercent = (this.config.config as FFAScraperConfig).distanceTolerancePercent
             const tolerance = ffaRace.distance * tolerancePercent
             const distanceDiff = Math.abs(totalDistance - ffaRace.distance)
 
-            // Match si la distance est dans la tolérance
-            return distanceDiff <= tolerance
+            // La distance doit être dans la tolérance
+            if (distanceDiff > tolerance) {
+              return false
+            }
+
+            // FIX: Pour les événements multi-jours, vérifier aussi la catégorie
+            // Ex: "Marche nordique 9km" (WALK) ne doit pas matcher "Trail 9km" (TRAIL)
+            if (dbRace.categoryLevel1 && ffaCategoryLevel1) {
+              const categoryMatch = dbRace.categoryLevel1 === ffaCategoryLevel1
+              if (!categoryMatch) {
+                // Catégories différentes - vérifier si la date correspond
+                // Si même jour, c'est probablement la même course malgré catégorie différente
+                // Si jour différent, ce sont des courses distinctes
+                if (dbRace.startDate) {
+                  const dbRaceDayStr = dbRace.startDate.toISOString().split('T')[0]
+                  if (dbRaceDayStr !== ffaRaceDayStr) {
+                    // Jour différent + catégorie différente = courses distinctes
+                    return false
+                  }
+                }
+              }
+            }
+
+            // FIX: Pour les événements multi-jours, vérifier la date
+            // Si plusieurs courses ont la même distance, privilégier celle du même jour
+            if (dbRace.startDate) {
+              const dbRaceDayStr = dbRace.startDate.toISOString().split('T')[0]
+              // Si jour différent et qu'il existe une autre course de même distance le bon jour,
+              // ce n'est pas un match
+              const sameDayRaceExists = existingRacesWithMeters.some((otherRace: any) => {
+                if (otherRace.id === dbRace.id || matchedDbRaceIds.has(otherRace.id)) return false
+                const otherDistanceDiff = Math.abs(otherRace.totalDistanceMeters - (ffaRace.distance || 0))
+                if (otherDistanceDiff > tolerance) return false
+                if (!otherRace.startDate) return false
+                const otherDayStr = otherRace.startDate.toISOString().split('T')[0]
+                // Vérifier aussi la catégorie si disponible
+                if (otherRace.categoryLevel1 && ffaCategoryLevel1 && otherRace.categoryLevel1 !== ffaCategoryLevel1) {
+                  return false
+                }
+                return otherDayStr === ffaRaceDayStr
+              })
+
+              if (dbRaceDayStr !== ffaRaceDayStr && sameDayRaceExists) {
+                // Il existe une meilleure correspondance le même jour
+                return false
+              }
+            }
+
+            return true
           }
 
           // Si pas de distance FFA, fallback sur le matching de nom
@@ -468,6 +566,11 @@ export class FFAScraperAgent extends BaseAgent {
                             ffaRace.name.toLowerCase().includes(dbRace.name?.toLowerCase())
           return nameMatch
         })
+
+        // FIX: Marquer cette course DB comme matchée pour éviter les doublons
+        if (matchingRace) {
+          matchedDbRaceIds.add(matchingRace.id)
+        }
 
         if (!matchingRace) {
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
@@ -703,31 +806,27 @@ export class FFAScraperAgent extends BaseAgent {
       // 6bis. Mettre à jour les courses existantes non matchées avec la FFA
       // Si on a déjà proposé un changement de startDate pour l'édition, on doit aussi
       // mettre à jour les courses existantes qui n'ont pas été matchées
+      // MAIS on doit conserver l'heure précise si la course en a une (non-minuit)
       const matchedRaceIds = new Set(racesToUpdate.map(r => r.raceId))
       const unmatchedExistingRaces = existingRaces.filter((r: any) => !matchedRaceIds.has(r.id))
 
       if (unmatchedExistingRaces.length > 0) {
         const ffaStartDate = this.calculateEditionStartDate(ffaData)
+        const unmatchedExpectedTimeZone = this.getTimezoneIANA(ffaData.competition.ligue)
 
         // Proposer de mettre à jour la startDate de chaque course non matchée vers la nouvelle date d'édition
         unmatchedExistingRaces.forEach((race: any) => {
-          // Vérifier si la course a vraiment besoin d'être mise à jour
-          const raceDateDiff = race.startDate
-            ? Math.abs(ffaStartDate.getTime() - race.startDate.getTime())
-            : Infinity
-
-          // Mettre à jour si différence > 30 minutes
-          if (raceDateDiff > 1800000) { // 30 min en ms
+          if (!race.startDate) {
+            // Pas de date existante -> ajouter la date FFA
             racesToUpdate.push({
               raceId: race.id,
               raceName: race.name,
               updates: {
                 startDate: {
-                  old: race.startDate,
+                  old: null,
                   new: ffaStartDate
                 }
               },
-              // ✅ Ajouter les données actuelles pour affichage complet
               currentData: {
                 name: race.name,
                 startDate: race.startDate,
@@ -741,7 +840,73 @@ export class FFAScraperAgent extends BaseAgent {
                 timeZone: race.timeZone
               }
             })
+            return
           }
+
+          const raceTimeZone = race.timeZone || unmatchedExpectedTimeZone
+          const isRaceMidnight = this.isMidnightInTimezone(race.startDate, raceTimeZone)
+          const isSameDate = this.isSameDateInTimezone(race.startDate, ffaStartDate, raceTimeZone)
+
+          if (isSameDate) {
+            // Même date -> pas de mise à jour nécessaire
+            this.logger.debug(`⏭️  Course non matchée "${race.name}" déjà à la bonne date`)
+            return
+          }
+
+          // Date différente -> proposer mise à jour
+          let newStartDate: Date
+
+          if (isRaceMidnight) {
+            // Course à minuit -> utiliser ffaStartDate directement
+            newStartDate = ffaStartDate
+            this.logger.info(`📅 Course non matchée "${race.name}" (minuit) → nouvelle date édition`)
+          } else {
+            // Course avec heure précise -> CONSERVER l'heure, changer seulement la DATE
+            // Extraire l'heure de la course existante et l'appliquer à la nouvelle date FFA
+            const raceLocalTime = new Intl.DateTimeFormat('en-US', {
+              timeZone: raceTimeZone,
+              hour: '2-digit',
+              minute: '2-digit',
+              second: '2-digit',
+              hour12: false
+            }).format(race.startDate)
+
+            const ffaLocalDate = new Intl.DateTimeFormat('en-CA', {
+              timeZone: raceTimeZone,
+              year: 'numeric',
+              month: '2-digit',
+              day: '2-digit'
+            }).format(ffaStartDate)
+
+            // Reconstruire la date avec l'heure conservée
+            const newLocalDateTimeStr = `${ffaLocalDate}T${raceLocalTime}`
+            newStartDate = fromZonedTime(newLocalDateTimeStr, raceTimeZone)
+
+            this.logger.info(`📅 Course non matchée "${race.name}" (heure conservée: ${raceLocalTime}) → nouvelle date édition`)
+          }
+
+          racesToUpdate.push({
+            raceId: race.id,
+            raceName: race.name,
+            updates: {
+              startDate: {
+                old: race.startDate,
+                new: newStartDate
+              }
+            },
+            currentData: {
+              name: race.name,
+              startDate: race.startDate,
+              runDistance: race.runDistance,
+              walkDistance: race.walkDistance,
+              swimDistance: race.swimDistance,
+              bikeDistance: race.bikeDistance,
+              runPositiveElevation: race.runPositiveElevation,
+              categoryLevel1: race.categoryLevel1,
+              categoryLevel2: race.categoryLevel2,
+              timeZone: race.timeZone
+            }
+          })
         })
 
         // Mettre à jour les changements racesToUpdate si des courses ont été ajoutées
@@ -955,7 +1120,7 @@ export class FFAScraperAgent extends BaseAgent {
     if (lowerName.includes('ultra cycling') || (lowerName.includes('ultra') && bikeDistance && bikeDistance > 200)) {
       return ['CYCLING', 'ULTRA_CYCLING']
     }
-    if (lowerName.includes('contre-la-montre') || lowerName.includes('clm') || lowerName.includes('time trial') || lowerName.includes('tt')) {
+    if (lowerName.includes('contre-la-montre') || lowerName.includes('clm') || lowerName.includes('time trial') || /\btt\b/.test(lowerName)) {
       return ['CYCLING', 'TIME_TRIAL']
     }
     if (lowerName.includes('touring') || lowerName.includes('cyclo')) return ['CYCLING', 'CYCLE_TOURING']

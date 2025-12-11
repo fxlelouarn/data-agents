@@ -45,6 +45,10 @@ export interface WorkingProposalGroup {
   userModifiedChanges: Record<string, any>
   userModifiedRaceChanges: Record<string, any>
 
+  // ✅ FIX 2025-12-10: Mapping raceId → existing-{index} pour la sauvegarde
+  // Le backend attend des clés existing-{index} dans raceEdits
+  raceIdToIndexMap: Record<string, string> // ex: { "147544": "existing-0", "147546": "existing-1" }
+
   // Blocs validés (agrégés de toutes les propositions PENDING)
   approvedBlocks: Record<string, boolean>
 
@@ -61,6 +65,7 @@ export interface ConsolidatedChange {
   options: Array<{
     proposalId: string
     agentName: string
+    agentType?: string
     proposedValue: any
     confidence: number
     createdAt: string
@@ -262,19 +267,36 @@ export function useProposalEditor(
 
     // ✅ Consolidation (PENDING en priorité, sinon APPROVED en lecture seule)
     const consolidatedChanges = consolidateChangesFromProposals(proposalsToConsolidate)
-    const consolidatedRaces = consolidateRacesFromProposals(proposalsToConsolidate)
+    // ✅ FIX 2025-12-10: Récupérer aussi le mapping raceId → existing-{index}
+    const { races: consolidatedRaces, raceIdToIndexMap } = consolidateRacesFromProposals(proposalsToConsolidate)
 
     // ✅ Blocs approuvés (PENDING ou APPROVED)
+    // Un bloc est validé si AU MOINS UNE proposition du groupe l'a validé
+    // (pas toutes, car certaines propositions peuvent ne pas avoir ce bloc dans leurs changes)
     const approvedBlocks: Record<string, boolean> = {}
     const allBlockKeys = new Set<string>()
     proposalsToConsolidate.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
     allBlockKeys.forEach(blockKey => {
-      approvedBlocks[blockKey] = proposalsToConsolidate.every(p => p.approvedBlocks?.[blockKey])
+      approvedBlocks[blockKey] = proposalsToConsolidate.some(p => p.approvedBlocks?.[blockKey])
     })
 
     // Extraire userModifiedChanges depuis la première proposition (PENDING ou APPROVED)
     const firstProposal = proposalsToConsolidate[0]
-    const userModifiedRaceChanges = firstProposal?.userModifiedChanges?.raceEdits || {}
+    const savedRaceEdits = firstProposal?.userModifiedChanges?.raceEdits || {}
+
+    // ✅ FIX 2025-12-10: Convertir les clés existing-{index} en vrais raceId
+    // Les userModifiedChanges sauvegardées utilisent existing-{index} mais notre consolidation utilise les vrais raceId
+    const indexToRaceIdMap: Record<string, string> = {}
+    Object.entries(raceIdToIndexMap).forEach(([raceId, indexKey]) => {
+      indexToRaceIdMap[indexKey] = raceId
+    })
+
+    const userModifiedRaceChanges: Record<string, any> = {}
+    Object.entries(savedRaceEdits).forEach(([key, value]) => {
+      // Convertir existing-{index} en vrai raceId si possible
+      const convertedKey = indexToRaceIdMap[key] || key
+      userModifiedRaceChanges[convertedKey] = value
+    })
 
     // Extraire les autres modifications utilisateur (hors raceEdits)
     const userModifiedChanges: Record<string, any> = {}
@@ -314,6 +336,7 @@ export function useProposalEditor(
       consolidatedRaces: finalConsolidatedRaces,  // ✅ Inclut les courses manuelles
       userModifiedChanges, // ✅ Préserver les modifs édition sauvegardées
       userModifiedRaceChanges, // ✅ Préserver les modifs de courses sauvegardées
+      raceIdToIndexMap, // ✅ FIX 2025-12-10: Mapping pour convertir raceId → existing-{index} à la sauvegarde
       approvedBlocks,
       isDirty: false,
       lastSaved: pendingProposals.length > 0
@@ -450,6 +473,7 @@ export function useProposalEditor(
         entry.options.push({
           proposalId: p.id,
           agentName: (p as any).agentName || (p as any).agent?.name || 'Agent',
+          agentType: (p as any).agent?.type,
           proposedValue: value,
           confidence: (p as any).confidence || 0,
           createdAt: p.createdAt as any
@@ -472,8 +496,10 @@ export function useProposalEditor(
       const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
       if (Array.isArray(racesToUpdateObj)) {
         racesToUpdateObj.forEach((raceUpdate: any, index: number) => {
-          // ✅ FIX 2025-11-18: Utiliser existing-{index} pour matcher avec extractRaces()
-          const raceId = `existing-${index}`
+          // ✅ FIX 2025-12-10: Utiliser le vrai raceId pour éviter mélange dans propositions groupées
+          // Les propositions du même groupe peuvent avoir des ordres différents dans racesToUpdate
+          // Fallback vers existing-{index} si raceId absent (compatibilité)
+          const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
 
           // ✅ Utiliser currentData si disponible (FFA Scraper enrichi + Google Agent)
           if (raceUpdate.currentData && typeof raceUpdate.currentData === 'object') {
@@ -539,8 +565,17 @@ export function useProposalEditor(
   /**
    * Consolider les courses de plusieurs propositions
    */
-  const consolidateRacesFromProposals = (proposals: Proposal[]): ConsolidatedRaceChange[] => {
+  /**
+   * ✅ FIX 2025-12-10: Retourne aussi le mapping raceId → existing-{index}
+   * Ce mapping est nécessaire pour convertir les clés lors de la sauvegarde
+   * car le backend attend des clés existing-{index} dans raceEdits
+   */
+  const consolidateRacesFromProposals = (proposals: Proposal[]): {
+    races: ConsolidatedRaceChange[],
+    raceIdToIndexMap: Record<string, string>
+  } => {
     const raceMap = new Map<string, ConsolidatedRaceChange>()
+    const raceIdToIndexMap: Record<string, string> = {}
 
     proposals.forEach(p => {
       // ✅ Extraire les valeurs ORIGINALES depuis currentData ou old values
@@ -551,6 +586,16 @@ export function useProposalEditor(
       const races = extractRaces(merged, p, false) // false = extractNew
 
       Object.entries(races).forEach(([raceId, raceData]) => {
+        // ✅ FIX 2025-12-10: Construire le mapping raceId → existing-{index}
+        // Utiliser _originalIndex stocké dans extractRaces()
+        const originalIndex = (raceData as any)._originalIndex
+        if (originalIndex !== undefined && !raceId.startsWith('new-')) {
+          // Ne pas écraser si déjà mappé (prendre le premier)
+          if (!raceIdToIndexMap[raceId]) {
+            raceIdToIndexMap[raceId] = `existing-${originalIndex}`
+          }
+        }
+
         if (!raceMap.has(raceId)) {
           raceMap.set(raceId, {
             raceId,
@@ -567,7 +612,10 @@ export function useProposalEditor(
       })
     })
 
-    return Array.from(raceMap.values())
+    return {
+      races: Array.from(raceMap.values()),
+      raceIdToIndexMap
+    }
   }
 
   /**
@@ -672,14 +720,17 @@ export function useProposalEditor(
       const racesToUpdateObj = extractNewValue(changes.racesToUpdate)
       if (Array.isArray(racesToUpdateObj)) {
         racesToUpdateObj.forEach((raceUpdate: any, index: number) => {
-          // ✅ Utiliser existing-{index} comme clé (convention backend)
-          // Le backend mappe cet index vers existingRaces[index] pour récupérer le vrai raceId
-          const raceId = `existing-${index}`
+          // ✅ FIX 2025-12-10: Utiliser le vrai raceId pour éviter mélange dans propositions groupées
+          // Les propositions du même groupe peuvent avoir des ordres différents dans racesToUpdate
+          // Fallback vers existing-{index} si raceId absent (compatibilité)
+          const raceId = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
           // ✅ NOUVEAU: Ne mettre dans raceData QUE les champs qui ont des updates
           // Les autres champs (currentData) seront dans originalFields
           const raceData: any = {
             id: raceId,
-            name: raceUpdate.raceName || 'Course'
+            name: raceUpdate.raceName || 'Course',
+            // ✅ Stocker l'index original pour le mapping vers userModifiedChanges
+            _originalIndex: index
           }
 
           // ✅ Appliquer UNIQUEMENT les updates (champs qui changent)
@@ -1102,6 +1153,10 @@ export function useProposalEditor(
       const racesToDelete: number[] = []
 
       Object.entries(working.userModifiedRaceChanges).forEach(([raceId, changes]) => {
+        // ✅ FIX 2025-12-10: Convertir le vrai raceId en existing-{index} pour le backend
+        // Le backend attend des clés existing-{index} dans raceEdits
+        const saveKey = working.raceIdToIndexMap?.[raceId] || raceId
+
         if (changes._deleted) {
           // Course marquée pour suppression
           const numericId = parseInt(raceId)
@@ -1109,10 +1164,11 @@ export function useProposalEditor(
             // ID numérique = course existante à supprimer
             racesToDelete.push(numericId)
           }
-          // Si c'est new-X, on l'ignore simplement (pas créée)
+          // ✅ FIX: Aussi ajouter dans raceEdits avec _deleted pour le backend
+          raceEdits[saveKey] = changes
         } else {
           // Course avec modifications (pas supprimée)
-          raceEdits[raceId] = changes
+          raceEdits[saveKey] = changes
         }
       })
 
@@ -1282,9 +1338,14 @@ export function useProposalEditor(
           }
         }
       })
-      // Races
+      // Races - ✅ FIX 2025-12-10: Convertir les clés raceId en existing-{index}
       if (blockKey === 'races' && workingGroup.userModifiedRaceChanges) {
-        payload.races = workingGroup.userModifiedRaceChanges
+        const convertedRaces: Record<string, any> = {}
+        Object.entries(workingGroup.userModifiedRaceChanges).forEach(([raceId, changes]) => {
+          const saveKey = workingGroup.raceIdToIndexMap?.[raceId] || raceId
+          convertedRaces[saveKey] = changes
+        })
+        payload.races = convertedRaces
       }
       return payload
     }
@@ -1327,8 +1388,14 @@ export function useProposalEditor(
         const value = workingGroup.userModifiedChanges[c.field] ?? c.selectedValue
         if (value !== undefined) base[c.field] = value
       })
+      // ✅ FIX 2025-12-10: Convertir les clés raceId en existing-{index}
       if (workingGroup.userModifiedRaceChanges && Object.keys(workingGroup.userModifiedRaceChanges).length > 0) {
-        base.raceEdits = workingGroup.userModifiedRaceChanges
+        const convertedRaceEdits: Record<string, any> = {}
+        Object.entries(workingGroup.userModifiedRaceChanges).forEach(([raceId, changes]) => {
+          const saveKey = workingGroup.raceIdToIndexMap?.[raceId] || raceId
+          convertedRaceEdits[saveKey] = changes
+        })
+        base.raceEdits = convertedRaceEdits
       }
       return base
     }
