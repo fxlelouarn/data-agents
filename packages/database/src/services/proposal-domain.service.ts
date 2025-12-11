@@ -1424,18 +1424,20 @@ export class ProposalDomainService {
     selectedChanges: Record<string, any>,
     blockType: string
   ): Record<string, any> {
+    // ✅ FIX 2025-12-11: Pour NEW_EVENT, le champ 'edition' contient TOUT (dates, races, organizer)
+    // Il faut l'inclure dans tous les blocs pour que extractEditionsData/extractRacesData fonctionnent
     const blockFields: Record<string, string[]> = {
       event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'twitterUrl',
               'countrySubdivisionNameLevel1', 'countrySubdivisionNameLevel2',
               'countrySubdivisionDisplayCodeLevel1', 'countrySubdivisionDisplayCodeLevel2',
               'fullAddress', 'latitude', 'longitude', 'coverImage', 'images',
               'peyceReview', 'isPrivate', 'isFeatured', 'isRecommended', 'toUpdate', 'dataSource'],
-      edition: ['year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
+      edition: ['edition', 'year', 'startDate', 'endDate', 'timeZone', 'registrationOpeningDate', 'registrationClosingDate',
                 'calendarStatus', 'clientStatus', 'status', 'currency', 'medusaVersion', 'customerType',
                 'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
                 'volunteerCode', 'confirmedAt'],
-      organizer: ['organizer', 'organizerId'],
-      races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
+      organizer: ['edition', 'organizer', 'organizerId'],
+      races: ['edition', 'races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
     }
 
     const fields = blockFields[blockType] || []
@@ -1576,7 +1578,7 @@ export class ProposalDomainService {
         // Statuts
         calendarStatus: editionData.calendarStatus || 'CONFIRMED',
         clientStatus: editionData.clientStatus,
-        status: editionData.status || 'DRAFT',
+        status: editionData.status || 'LIVE',  // ✅ FIX 2025-12-11: LIVE par défaut (pas DRAFT)
 
         // Configuration
         currency: editionData.currency || 'EUR',
@@ -1620,7 +1622,7 @@ export class ProposalDomainService {
         // Statuts
         calendarStatus: this.extractNewValue(selectedChanges.calendarStatus) || 'CONFIRMED',
         clientStatus: this.extractNewValue(selectedChanges.clientStatus),
-        status: this.extractNewValue(selectedChanges.status) || 'DRAFT',
+        status: this.extractNewValue(selectedChanges.status) || 'LIVE',  // ✅ FIX 2025-12-11: LIVE par défaut
 
         // Configuration
         currency: this.extractNewValue(selectedChanges.currency) || 'EUR',
@@ -1661,7 +1663,7 @@ export class ProposalDomainService {
     return editions.length > 0 ? editions : [{
       year: new Date().getFullYear().toString(),
       calendarStatus: 'CONFIRMED',
-      status: 'DRAFT'
+      status: 'LIVE'  // ✅ FIX 2025-12-11: LIVE par défaut
     }]
   }
 
