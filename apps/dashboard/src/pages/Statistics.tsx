@@ -19,7 +19,8 @@ import {
   TableRow,
   Paper,
   Chip,
-  Avatar
+  Avatar,
+  useTheme
 } from '@mui/material'
 import {
   LineChart,
@@ -45,6 +46,8 @@ import { proposalTypeLabels, proposalTypeColors } from '@/constants/proposals'
 type TimeGranularity = 'day' | 'week' | 'month' | 'quarter' | 'year'
 
 const Statistics: React.FC = () => {
+  const theme = useTheme()
+
   // Filtres pour confirmations calendrier
   const [confirmationsGranularity, setConfirmationsGranularity] = useState<TimeGranularity>('month')
   const [confirmationsStartDate, setConfirmationsStartDate] = useState(
@@ -286,7 +289,7 @@ const Statistics: React.FC = () => {
                   <LabelList
                     dataKey="Total"
                     position="top"
-                    style={{ fill: '#374151', fontWeight: 'bold', fontSize: 12 }}
+                    style={{ fill: theme.palette.text.primary, fontWeight: 'bold', fontSize: 12 }}
                   />
                 </Bar>
               </BarChart>
@@ -362,7 +365,7 @@ const Statistics: React.FC = () => {
                   <LabelList
                     dataKey="Total"
                     position="top"
-                    style={{ fill: '#374151', fontWeight: 'bold', fontSize: 12 }}
+                    style={{ fill: theme.palette.text.primary, fontWeight: 'bold', fontSize: 12 }}
                   />
                 </Bar>
               </BarChart>

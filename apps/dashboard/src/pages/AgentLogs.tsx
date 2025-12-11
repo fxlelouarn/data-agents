@@ -1,11 +1,11 @@
 import React, { useState } from 'react'
 import { useParams, useNavigate } from 'react-router-dom'
-import { 
-  Box, 
-  Typography, 
-  Card, 
-  CardContent, 
-  LinearProgress, 
+import {
+  Box,
+  Typography,
+  Card,
+  CardContent,
+  LinearProgress,
   Button,
   List,
   ListItem,
@@ -24,7 +24,7 @@ import {
   DialogContent,
   DialogActions
 } from '@mui/material'
-import { 
+import {
   ArrowBack as ArrowBackIcon
 } from '@mui/icons-material'
 import { useAgent, useLogs } from '@/hooks/useApi'
@@ -37,18 +37,18 @@ const AgentLogs: React.FC = () => {
   const [searchFilter, setSearchFilter] = useState('')
   const [selectedLog, setSelectedLog] = useState<any>(null)
   const [logDetailDialogOpen, setLogDetailDialogOpen] = useState(false)
-  
+
   const pageSize = 20
   const offset = (page - 1) * pageSize
 
   const { data: agentData, isLoading: agentLoading } = useAgent(id!)
   const { data: logsData, isLoading: logsLoading } = useLogs(
-    { 
+    {
       agentId: id,
       level: levelFilter ? levelFilter as any : undefined,
       search: searchFilter || undefined
-    }, 
-    pageSize, 
+    },
+    pageSize,
     offset
   )
 
@@ -111,7 +111,7 @@ const AgentLogs: React.FC = () => {
             Retour à l'agent
           </Button>
         </Box>
-        
+
         <Typography variant="h4" sx={{ fontWeight: 600 }}>
           Logs - {agent.name}
         </Typography>
@@ -135,7 +135,7 @@ const AgentLogs: React.FC = () => {
                 <MenuItem value="ERROR">ERROR</MenuItem>
               </Select>
             </FormControl>
-            
+
             <TextField
               size="small"
               label="Rechercher dans les messages"
@@ -144,7 +144,7 @@ const AgentLogs: React.FC = () => {
               onChange={handleSearchChange}
               sx={{ flexGrow: 1, maxWidth: 400 }}
             />
-            
+
             <Typography variant="body2" color="text.secondary">
               {totalLogs} log{totalLogs > 1 ? 's' : ''} au total
             </Typography>
@@ -165,11 +165,11 @@ const AgentLogs: React.FC = () => {
             <>
               <List>
                 {logs.map((log: any, index: number) => (
-                  <ListItem 
-                    key={log.id} 
+                  <ListItem
+                    key={log.id}
                     component="div"
                     onClick={() => handleLogClick(log)}
-                    sx={{ 
+                    sx={{
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' },
                       borderBottom: index < logs.length - 1 ? '1px solid' : 'none',
@@ -180,10 +180,10 @@ const AgentLogs: React.FC = () => {
                       primary={
                         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
                           <Chip
-                            size="small" 
+                            size="small"
                             label={log.level}
-                            color={log.level === 'ERROR' ? 'error' : 
-                                   log.level === 'WARN' ? 'warning' : 
+                            color={log.level === 'ERROR' ? 'error' :
+                                   log.level === 'WARN' ? 'warning' :
                                    log.level === 'DEBUG' ? 'default' : 'info'}
                           />
                           <Typography variant="body2" color="text.secondary">
@@ -211,7 +211,7 @@ const AgentLogs: React.FC = () => {
               {/* Pagination */}
               {totalPages > 1 && (
                 <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
-                  <Pagination 
+                  <Pagination
                     count={totalPages}
                     page={page}
                     onChange={handlePageChange}
@@ -237,9 +237,9 @@ const AgentLogs: React.FC = () => {
             Détails du log
             {selectedLog && (
               <Chip
-                size="small" 
+                size="small"
                 label={selectedLog.level}
-                color={selectedLog.level === 'ERROR' ? 'error' : 
+                color={selectedLog.level === 'ERROR' ? 'error' :
                        selectedLog.level === 'WARN' ? 'warning' : 'info'}
               />
             )}
@@ -252,8 +252,8 @@ const AgentLogs: React.FC = () => {
               <Typography variant="h6" gutterBottom>Informations générales</Typography>
               <List dense>
                 <ListItem>
-                  <ListItemText 
-                    primary="Horodatage" 
+                  <ListItemText
+                    primary="Horodatage"
                     secondary={new Date(selectedLog.timestamp).toLocaleString('fr-FR', {
                       year: 'numeric',
                       month: 'long',
@@ -271,12 +271,12 @@ const AgentLogs: React.FC = () => {
                   <ListItemText primary="Run ID" secondary={selectedLog.runId || 'Non spécifié'} />
                 </ListItem>
               </List>
-              
+
               {/* Message */}
               <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Message</Typography>
               <Box
                 sx={{
-                  backgroundColor: '#f5f5f5',
+                  bgcolor: 'action.hover',
                   padding: 2,
                   borderRadius: 1,
                   fontFamily: 'monospace',
@@ -287,14 +287,14 @@ const AgentLogs: React.FC = () => {
               >
                 {selectedLog.message}
               </Box>
-              
+
               {/* Données additionnelles */}
               {selectedLog.data && Object.keys(selectedLog.data).length > 0 && (
                 <>
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Données additionnelles</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',
@@ -307,14 +307,14 @@ const AgentLogs: React.FC = () => {
                   </Box>
                 </>
               )}
-              
+
               {/* Métadonnées */}
               {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
                 <>
                   <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Métadonnées</Typography>
                   <Box
                     sx={{
-                      backgroundColor: '#f5f5f5',
+                      bgcolor: 'action.hover',
                       padding: 2,
                       borderRadius: 1,
                       fontFamily: 'monospace',

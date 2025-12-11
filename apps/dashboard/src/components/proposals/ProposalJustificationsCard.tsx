@@ -49,9 +49,9 @@ interface ProposalJustificationsCardProps {
   confidence?: number
 }
 
-const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({ 
+const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
   justifications,
-  confidence 
+  confidence
 }) => {
   const [expandedIndex, setExpandedIndex] = useState<number | false>(0)
 
@@ -93,11 +93,11 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
     // Si c'est une URL, la rendre cliquable
     if (type === 'url' || (type === 'text' && content.match(/^https?:\/\//))) {
       return (
-        <Link 
-          href={content} 
-          target="_blank" 
+        <Link
+          href={content}
+          target="_blank"
           rel="noopener noreferrer"
-          sx={{ 
+          sx={{
             wordBreak: 'break-all',
             fontSize: '0.875rem'
           }}
@@ -111,7 +111,7 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
     if (type === 'image') {
       if (content.startsWith('data:') || content.match(/\.(jpg|jpeg|png|gif|webp)$/i)) {
         return (
-          <Box 
+          <Box
             component="img"
             src={content}
             alt="Justification"
@@ -136,10 +136,10 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
     // Si c'est du HTML
     if (type === 'html') {
       return (
-        <Paper 
-          sx={{ 
-            p: 2, 
-            bgcolor: 'grey.50',
+        <Paper
+          sx={{
+            p: 2,
+            bgcolor: 'action.hover',
             maxHeight: 300,
             overflow: 'auto',
             fontFamily: 'monospace',
@@ -170,7 +170,7 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
           <CheckCircleIcon fontSize="small" />
           Détails de la date extraite
         </Typography>
-        
+
         {dateDetails.date && (
           <Box sx={{ mb: 1 }}>
             <Typography variant="caption" color="text.secondary">Date:</Typography>
@@ -179,12 +179,12 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
             </Typography>
           </Box>
         )}
-        
+
         {dateDetails.confidence !== undefined && (
           <Box sx={{ mb: 1 }}>
             <Typography variant="caption" color="text.secondary">Confiance:</Typography>
-            <Chip 
-              size="small" 
+            <Chip
+              size="small"
               label={`${Math.round(dateDetails.confidence * 100)}%`}
               color={dateDetails.confidence >= 0.8 ? 'success' : dateDetails.confidence >= 0.6 ? 'warning' : 'error'}
               sx={{ ml: 1, height: 20 }}
@@ -200,18 +200,18 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
             </Typography>
             {dateDetails.sources.map((sourceInfo: any, idx: number) => (
               <Paper key={idx} sx={{ p: 1.5, mb: 1.5, bgcolor: 'background.paper' }}>
-                <Link 
-                  href={sourceInfo.source} 
-                  target="_blank" 
+                <Link
+                  href={sourceInfo.source}
+                  target="_blank"
                   rel="noopener noreferrer"
                   sx={{ fontSize: '0.75rem', display: 'block', mb: 1 }}
                 >
                   {sourceInfo.source}
                 </Link>
-                <Paper sx={{ 
-                  p: 1, 
-                  bgcolor: 'grey.50', 
-                  borderLeft: 2, 
+                <Paper sx={{
+                  p: 1,
+                  bgcolor: 'action.hover',
+                  borderLeft: 2,
                   borderColor: 'info.main',
                   fontSize: '0.75rem',
                   fontStyle: 'italic'
@@ -229,19 +229,19 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
             <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
               Source:
             </Typography>
-            <Link 
-              href={dateDetails.source} 
-              target="_blank" 
+            <Link
+              href={dateDetails.source}
+              target="_blank"
               rel="noopener noreferrer"
               sx={{ fontSize: '0.75rem', display: 'block', mb: 1 }}
             >
               {dateDetails.source}
             </Link>
             {dateDetails.snippet && (
-              <Paper sx={{ 
-                p: 1, 
-                bgcolor: 'grey.50', 
-                borderLeft: 2, 
+              <Paper sx={{
+                p: 1,
+                bgcolor: 'action.hover',
+                borderLeft: 2,
                 borderColor: 'info.main',
                 fontSize: '0.75rem',
                 fontStyle: 'italic'
@@ -271,9 +271,9 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
       // Si c'est une string qui ressemble à une URL
       if (typeof value === 'string' && value.match(/^https?:\/\//)) {
         return (
-          <Link 
-            href={value} 
-            target="_blank" 
+          <Link
+            href={value}
+            target="_blank"
             rel="noopener noreferrer"
             sx={{ wordBreak: 'break-all', fontSize: '0.75rem' }}
           >
@@ -281,12 +281,12 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
           </Link>
         )
       }
-      
+
       // Si c'est un objet, le formater en JSON
       if (typeof value === 'object') {
         return JSON.stringify(value, null, 2)
       }
-      
+
       // Sinon, afficher la valeur telle quelle
       return String(value)
     }
@@ -296,7 +296,7 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
         <Typography variant="caption" color="text.secondary" sx={{ display: 'block', mb: 1 }}>
           Métadonnées additionnelles:
         </Typography>
-        <Paper sx={{ p: 1.5, bgcolor: 'grey.50' }}>
+        <Paper sx={{ p: 1.5, bgcolor: 'action.hover' }}>
           {displayableMetadata.map(([key, value]) => (
             <Box key={key} sx={{ mb: 0.5, display: 'flex', gap: 1 }}>
               <Typography variant="caption" sx={{ fontWeight: 600, minWidth: 120 }}>
@@ -339,15 +339,15 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
             Justifications
           </Typography>
           <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>
-            <Chip 
-              size="small" 
+            <Chip
+              size="small"
               label={`${justifications.length} source${justifications.length > 1 ? 's' : ''}`}
               color="primary"
               variant="outlined"
             />
             {confidence !== undefined && (
-              <Chip 
-                size="small" 
+              <Chip
+                size="small"
                 label={`Confiance: ${Math.round(confidence * 100)}%`}
                 color={confidence >= 0.8 ? 'success' : confidence >= 0.6 ? 'warning' : 'error'}
               />
@@ -360,19 +360,19 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
         </Typography>
 
         {justifications.map((justification, index) => (
-          <Accordion 
+          <Accordion
             key={index}
             expanded={expandedIndex === index}
             onChange={handleAccordionChange(index)}
-            sx={{ 
+            sx={{
               mb: 1,
               '&:before': { display: 'none' },
               boxShadow: 1
             }}
           >
-            <AccordionSummary 
+            <AccordionSummary
               expandIcon={<ExpandMoreIcon />}
-              sx={{ 
+              sx={{
                 bgcolor: expandedIndex === index ? 'action.hover' : 'transparent',
                 '&:hover': { bgcolor: 'action.hover' }
               }}
@@ -391,9 +391,9 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
                         target="_blank"
                         rel="noopener noreferrer"
                         onClick={(e) => e.stopPropagation()} // Éviter d'ouvrir l'accordéon
-                        sx={{ 
-                          display: 'flex', 
-                          alignItems: 'center', 
+                        sx={{
+                          display: 'flex',
+                          alignItems: 'center',
                           gap: 0.5,
                           fontSize: '0.7rem',
                           ml: 1
@@ -405,15 +405,15 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
                     )}
                   </Box>
                   <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-                    <Chip 
-                      size="small" 
+                    <Chip
+                      size="small"
                       label={getTypeLabel(justification.type)}
                       variant="outlined"
                       sx={{ height: 20, fontSize: '0.7rem' }}
                     />
                     {justification.metadata?.raceName && (
-                      <Chip 
-                        size="small" 
+                      <Chip
+                        size="small"
                         label={justification.metadata.raceName}
                         color="info"
                         variant="outlined"
@@ -421,8 +421,8 @@ const ProposalJustificationsCard: React.FC<ProposalJustificationsCardProps> = ({
                       />
                     )}
                     {justification.metadata?.agentName && (
-                      <Chip 
-                        size="small" 
+                      <Chip
+                        size="small"
                         label={justification.metadata.agentName}
                         color="secondary"
                         variant="outlined"
