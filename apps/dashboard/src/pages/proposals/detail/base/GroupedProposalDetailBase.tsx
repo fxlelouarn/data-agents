@@ -442,7 +442,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             updateProposalMutation.mutate({
               id: option.proposalId,
               status: 'APPROVED',
-              reviewedBy: 'Utilisateur',
               appliedChanges: { [fieldName]: selectedValue }
             }, {
               onSuccess: () => resolve(),
@@ -451,8 +450,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           } else {
             updateProposalMutation.mutate({
               id: option.proposalId,
-              status: 'REJECTED',
-              reviewedBy: 'Utilisateur'
+              status: 'REJECTED'
             }, {
               onSuccess: () => resolve(),
               onError: reject
@@ -550,7 +548,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             await updateProposalMutation.mutateAsync({
               id: proposal.id,
               status: 'APPROVED',
-              reviewedBy: 'Utilisateur',
               appliedChanges: { [`races[${raceData.raceId}]`]: raceInProposal }
             })
           }
@@ -580,7 +577,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               await updateProposalMutation.mutateAsync({
                 id: proposal.id,
                 status: 'APPROVED',
-                reviewedBy: 'Utilisateur',
                 appliedChanges: { [`races[${raceChange.raceId}]`]: raceInProposal }
               })
             }
@@ -603,8 +599,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       for (const proposal of concernedProposals) {
         await updateProposalMutation.mutateAsync({
           id: proposal.id,
-          status: 'REJECTED',
-          reviewedBy: 'Utilisateur'
+          status: 'REJECTED'
         })
       }
 
@@ -648,11 +643,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
               updateProposalMutation.mutate({
                 id: option.proposalId,
                 status: 'APPROVED',
-                reviewedBy: 'Utilisateur',
                 appliedChanges: { [fieldName]: selectedValue },
                 userModifiedChanges: Object.keys(allUserModifications).length > 0 ? allUserModifications : undefined,
-                modificationReason: 'Modifications manuelles appliquées',
-                modifiedBy: 'Utilisateur'
+                modificationReason: 'Modifications manuelles appliquées'
               }, {
                 onSuccess: () => resolve(),
                 onError: reject
@@ -660,8 +653,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
             } else {
               updateProposalMutation.mutate({
                 id: option.proposalId,
-                status: 'REJECTED',
-                reviewedBy: 'Utilisateur'
+                status: 'REJECTED'
               }, {
                 onSuccess: () => resolve(),
                 onError: reject
@@ -686,8 +678,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         new Promise<void>((resolve, reject) => {
           updateProposalMutation.mutate({
             id: proposal.id,
-            status: 'REJECTED',
-            reviewedBy: 'Utilisateur'
+            status: 'REJECTED'
           }, {
             onSuccess: () => resolve(),
             onError: reject
@@ -707,7 +698,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       const proposalIds = groupProposals.map(p => p.id)
       await bulkArchiveMutation.mutateAsync({
         proposalIds,
-        reviewedBy: 'Utilisateur',
         archiveReason: undefined // Pas de raison requise
       })
     } catch (error) {
@@ -731,7 +721,6 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           updateProposalMutation.mutate({
             id: proposal.id,
             status: 'REJECTED',
-            reviewedBy: 'Utilisateur',
             modificationReason: 'Événement tué',
             killEvent: true // ✅ Marquer pour kill lors de l'application
           }, {

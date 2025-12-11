@@ -356,8 +356,7 @@ const ProposalList: React.FC = () => {
   const handleBulkApprove = async () => {
     if (selectedRows.length === 0) return
     await bulkApproveMutation.mutateAsync({
-      proposalIds: selectedRows as string[],
-      reviewedBy: 'Utilisateur'
+      proposalIds: selectedRows as string[]
     })
     setSelectedRows([])
   }
@@ -365,8 +364,7 @@ const ProposalList: React.FC = () => {
   const handleBulkReject = async () => {
     if (selectedRows.length === 0) return
     await bulkRejectMutation.mutateAsync({
-      proposalIds: selectedRows as string[],
-      reviewedBy: 'Utilisateur'
+      proposalIds: selectedRows as string[]
     })
     setSelectedRows([])
   }
@@ -376,7 +374,6 @@ const ProposalList: React.FC = () => {
     const count = selectedRows.length
     await bulkArchiveMutation.mutateAsync({
       proposalIds: selectedRows as string[],
-      reviewedBy: 'Utilisateur',
       archiveReason: 'Archivage en lot depuis la liste des propositions'
     })
     setSelectedRows([])
@@ -391,8 +388,7 @@ const ProposalList: React.FC = () => {
     }
     const count = selectedRows.length
     await bulkDeleteMutation.mutateAsync({
-      proposalIds: selectedRows as string[],
-      reviewedBy: 'Utilisateur'
+      proposalIds: selectedRows as string[]
     })
     setSelectedRows([])
     console.log(`${count} propositions supprimées définitivement de la base de données`)
@@ -401,7 +397,6 @@ const ProposalList: React.FC = () => {
   const handleSingleArchive = async (proposalId: string) => {
     await bulkArchiveMutation.mutateAsync({
       proposalIds: [proposalId],
-      reviewedBy: 'Utilisateur',
       archiveReason: 'Archivage individuel depuis la liste des propositions'
     })
   }

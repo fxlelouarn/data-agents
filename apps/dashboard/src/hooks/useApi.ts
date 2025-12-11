@@ -1084,6 +1084,18 @@ export const useCalendarConfirmations = (filters: {
   })
 }
 
+export const usePendingConfirmations = (filters: {
+  startDate?: string
+  endDate?: string
+  granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+} = {}) => {
+  return useQuery({
+    queryKey: ['stats', 'pending-confirmations', filters],
+    queryFn: () => statsApi.getPendingConfirmations(filters),
+    staleTime: 300000, // 5 minutes
+  })
+}
+
 export const useProposalsCreated = (filters: {
   startDate?: string
   endDate?: string
