@@ -1393,6 +1393,23 @@ router.post('/validate-block-group', requireAuth, [
       baseChanges.racesToDelete = racesToDelete
       console.log('🗑️ Courses à supprimer:', racesToDelete.map(r => `${r.raceName} (${r.raceId})`))
     }
+
+    // ✅ FIX 2025-12-11: Construire racesToAddFiltered pour éviter de créer puis supprimer des courses
+    // Collecter les indices des nouvelles courses (new-X) marquées comme supprimées
+    const racesToAddFiltered: number[] = []
+    Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
+      if (mods._deleted === true && key.startsWith('new-')) {
+        const index = parseInt(key.replace('new-', ''))
+        if (!isNaN(index) && index < 1000000) { // Exclure les courses ajoutées manuellement (timestamp)
+          racesToAddFiltered.push(index)
+        }
+      }
+    })
+
+    if (racesToAddFiltered.length > 0) {
+      baseChanges.racesToAddFiltered = racesToAddFiltered
+      console.log('🚫 Nouvelles courses à ne PAS créer (indices):', racesToAddFiltered)
+    }
   }
 
   // 3. ✅ Merger modifications utilisateur dans racesToUpdate
@@ -1472,6 +1489,16 @@ router.post('/validate-block-group', requireAuth, [
     hasRaceEdits: !!finalPayload.raceEdits
   })
 
+  // ✅ FIX 2025-12-11: Construire userModifiedChanges à partir de finalPayload (pas juste changes)
+  // Cela inclut racesToAddFiltered et racesToDelete construits à partir de raceEdits
+  const userModifiedChangesToSave = { ...changes }
+  if (baseChanges.racesToAddFiltered) {
+    userModifiedChangesToSave.racesToAddFiltered = baseChanges.racesToAddFiltered
+  }
+  if (baseChanges.racesToDelete) {
+    userModifiedChangesToSave.racesToDelete = baseChanges.racesToDelete
+  }
+
   // Mettre à jour les propositions valides avec le même payload
   const updatedProposals = await Promise.all(
     validProposalIds.map(async (proposalId: string) => {
@@ -1481,7 +1508,7 @@ router.post('/validate-block-group', requireAuth, [
 
       return db.updateProposal(proposalId, {
         approvedBlocks: { ...existingApprovedBlocks, ...approvedBlocks },
-        userModifiedChanges: { ...existingUserModifiedChanges, ...changes },
+        userModifiedChanges: { ...existingUserModifiedChanges, ...userModifiedChangesToSave },
         modifiedAt: new Date(),
         modifiedBy: userId
       })

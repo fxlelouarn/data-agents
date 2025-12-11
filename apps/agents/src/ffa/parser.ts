@@ -301,8 +301,10 @@ export function parseRaces(html: string): FFARace[] {
       }
     }
 
-    // Extraire distance depuis les détails ou le titre
-    const distance = parseDistance(raceDetails || raceTitle)
+    // Extraire distance depuis les détails OU le titre (essayer les deux)
+    // Certaines pages FFA ont la distance dans les détails (ex: "21000 m")
+    // D'autres l'ont uniquement dans le titre (ex: "52km - Course HS non officielle")
+    const distance = parseDistance(raceDetails) || parseDistance(raceTitle)
 
     // Extraire dénivelé depuis les détails
     const positiveElevation = parseElevation(raceDetails)
