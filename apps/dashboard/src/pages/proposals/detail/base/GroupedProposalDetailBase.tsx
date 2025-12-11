@@ -31,7 +31,8 @@ import {
   useUpdateProposal,
   useBulkArchiveProposals,
   useUnapproveProposal,
-  useProposalGroup
+  useProposalGroup,
+  useUpdates
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
 import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
@@ -886,6 +887,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const eventId = firstProposal?.eventId
   const eventStatus = firstProposal?.eventStatus
   const isFeatured = firstProposal?.isFeatured
+
+  // ✅ Récupérer les ProposalApplications liées à ce groupe
+  const firstProposalId = firstProposal?.id
+  const { data: updatesData } = useUpdates(
+    { proposalId: firstProposalId },
+    100, // Limit
+    0
+  )
+  const relatedUpdates = updatesData?.data || []
+  const hasUpdates = relatedUpdates.length > 0
   // ✅ Événement mort si Event.status = DEAD OU si au moins une proposition est marquée killEvent OU si tué localement
   const hasKillMarker = groupProposals.some(p => (p as any).killEvent === true)
   const isEventDead = isKilledLocally || eventStatus === 'DEAD' || hasKillMarker
@@ -1160,6 +1171,14 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           onReviveEvent={handleReviveEvent}
           showArchiveButton={hasPending}
           onArchive={handleArchive}
+          showUpdatesButton={hasUpdates}
+          onViewUpdates={() => {
+            // Naviguer vers la page des updates avec le premier update du groupe
+            if (relatedUpdates.length > 0) {
+              navigate(`/updates/${relatedUpdates[0].id}`)
+            }
+          }}
+          updatesCount={relatedUpdates.length}
           disabled={updateProposalMutation.isPending || bulkArchiveMutation.isPending}
           showBackButton={true}
         />
