@@ -1,6 +1,6 @@
 import { Router, Request, Response } from 'express'
 import { slackService, SlackMessage } from '../services/slack/SlackService'
-import { eventDataExtractor, ExtractedEventData } from '../services/slack/extractors'
+import { eventDataExtractor, ExtractedEventData, ApiCreditError, ApiRateLimitError } from '../services/slack/extractors'
 
 const router = Router()
 
@@ -258,9 +258,25 @@ async function handleBotMention(message: SlackMessage) {
     await slackService.removeReaction(message.channel, message.ts, 'eyes')
     await slackService.addReaction(message.channel, message.ts, 'x')
 
+    // Customize error message based on error type
+    let errorMessage = "❌ Une erreur est survenue lors du traitement de ta demande."
+
+    if (error instanceof ApiCreditError) {
+      errorMessage = "💳 *Erreur de crédits API*\n\n" +
+        "Le service d'extraction n'est pas disponible car les crédits API Anthropic sont insuffisants.\n\n" +
+        "👉 Un administrateur doit recharger les crédits sur https://console.anthropic.com/"
+      console.error('API CREDIT ERROR: Anthropic credits exhausted')
+    } else if (error instanceof ApiRateLimitError) {
+      errorMessage = "⏱️ *Limite de requêtes atteinte*\n\n" +
+        "Trop de requêtes ont été envoyées à l'API d'extraction.\n\n" +
+        "👉 Réessaie dans quelques minutes."
+    } else {
+      errorMessage += " Réessaie plus tard ou contacte un admin."
+    }
+
     await slackService.postMessage(
       message.channel,
-      "❌ Une erreur est survenue lors du traitement de ta demande. Réessaie plus tard ou contacte un admin.",
+      errorMessage,
       { thread_ts: message.ts }
     )
   }

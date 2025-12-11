@@ -52,6 +52,7 @@ export interface ExtractionResult {
   success: boolean
   data?: ExtractedEventData
   error?: string
+  errorType?: 'api_credit' | 'api_rate_limit' | 'fetch_failed' | 'parse_failed' | 'extraction_failed' | 'not_implemented'
   rawContent?: string
 }
 

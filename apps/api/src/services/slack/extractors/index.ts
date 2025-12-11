@@ -1,3 +1,3 @@
 export * from './types'
-export * from './HtmlExtractor'
+export { HtmlExtractor, htmlExtractor, ApiCreditError, ApiRateLimitError } from './HtmlExtractor'
 export * from './EventDataExtractor'
