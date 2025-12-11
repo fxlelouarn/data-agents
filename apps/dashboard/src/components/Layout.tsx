@@ -35,9 +35,12 @@ import {
   Logout as LogoutIcon,
   People as PeopleIcon,
   BarChart as StatisticsIcon,
+  LightMode as LightModeIcon,
+  DarkMode as DarkModeIcon,
 } from '@mui/icons-material'
 import { useProposals, useDatabases } from '@/hooks/useApi'
 import { useAuth } from '@/context/AuthContext'
+import { useThemeMode } from '@/context/ThemeContext'
 
 interface LayoutProps {
   children: React.ReactNode
@@ -60,8 +63,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const theme = useTheme()
   const isMobile = useMediaQuery(theme.breakpoints.down('lg'))
   const location = useLocation()
-  
+
   const { user, logout, hasRole } = useAuth()
+  const { mode, toggleTheme } = useThemeMode()
   const { data: proposalsData } = useProposals({ status: 'PENDING' })
   const { data: databasesData } = useDatabases()
   const pendingProposals = proposalsData?.meta?.total || 0
@@ -71,15 +75,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
   const handleDrawerToggle = () => {
     setMobileOpen(!mobileOpen)
   }
-  
+
   const handleMenuOpen = (event: React.MouseEvent<HTMLElement>) => {
     setAnchorEl(event.currentTarget)
   }
-  
+
   const handleMenuClose = () => {
     setAnchorEl(null)
   }
-  
+
   const handleLogout = () => {
     handleMenuClose()
     logout()
@@ -94,7 +98,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
     { text: 'Utilisateurs', icon: <PeopleIcon />, path: '/users' },
     { text: 'Administration', icon: <SettingsIcon />, path: '/settings' },
   ]
-  
+
   const navItems = allNavItems.filter(item => {
     if (item.path === '/proposals') return hasRole('VALIDATOR', 'EXECUTOR', 'ADMIN')
     if (item.path === '/updates') return hasRole('EXECUTOR', 'ADMIN')
@@ -127,7 +131,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 to={item.path}
                 selected={isActive}
                 sx={{
-                  borderRadius: 2, 
+                  borderRadius: 2,
                   mx: collapsed ? 0.5 : 1,
                   height: 48, // Hauteur fixe pour harmoniser
                   justifyContent: collapsed ? 'center' : 'flex-start',
@@ -141,9 +145,9 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 }}
                 onClick={isMobile ? handleDrawerToggle : undefined}
               >
-                <ListItemIcon sx={{ 
-                  color: isActive ? theme.palette.primary.main : 'inherit', 
-                  minWidth: collapsed ? 0 : 40, 
+                <ListItemIcon sx={{
+                  color: isActive ? theme.palette.primary.main : 'inherit',
+                  minWidth: collapsed ? 0 : 40,
                   justifyContent: 'center',
                   display: 'flex',
                   alignItems: 'center'
@@ -151,8 +155,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                   {item.badge ? <Badge badgeContent={item.badge} color="error">{item.icon}</Badge> : item.icon}
                 </ListItemIcon>
                 {!collapsed && (
-                  <ListItemText 
-                    primary={item.text} 
+                  <ListItemText
+                    primary={item.text}
                     primaryTypographyProps={{ fontWeight: isActive ? 600 : 400 }}
                     sx={{ ml: 1 }}
                   />
@@ -160,8 +164,8 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
               </ListItemButton>
           )
           return (
-            <ListItem key={item.path} disablePadding sx={{ 
-              mb: 0.5, 
+            <ListItem key={item.path} disablePadding sx={{
+              mb: 0.5,
               height: 48, // Même hauteur que le bouton
               display: 'flex',
               alignItems: 'center',
@@ -193,19 +197,19 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
           </Typography>
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
             <Box sx={{ display: 'flex', alignItems: 'center' }}>
-              <HealthIcon sx={{ 
-                mr: 0.5, 
-                fontSize: 16, 
-                color: hasActiveDatabases ? theme.palette.success.main : theme.palette.warning.main 
+              <HealthIcon sx={{
+                mr: 0.5,
+                fontSize: 16,
+                color: hasActiveDatabases ? theme.palette.success.main : theme.palette.warning.main
               }} />
               <Typography variant="body2" color="text.secondary">
-                {hasActiveDatabases 
-                  ? `${activeDatabases.length} base${activeDatabases.length > 1 ? 's' : ''} connectée${activeDatabases.length > 1 ? 's' : ''}` 
+                {hasActiveDatabases
+                  ? `${activeDatabases.length} base${activeDatabases.length > 1 ? 's' : ''} connectée${activeDatabases.length > 1 ? 's' : ''}`
                   : 'Aucune base de données connectée'
                 }
               </Typography>
             </Box>
-            
+
             {/* User menu */}
             <Button
               onClick={handleMenuOpen}
@@ -219,7 +223,7 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
             >
               {user?.firstName} {user?.lastName}
             </Button>
-            
+
             <Menu
               anchorEl={anchorEl}
               open={Boolean(anchorEl)}
@@ -242,6 +246,15 @@ const Layout: React.FC<LayoutProps> = ({ children }) => {
                 <Typography variant="body2" color="text.secondary">
                   Rôle: {user?.role === 'ADMIN' ? 'Administrateur' : user?.role === 'VALIDATOR' ? 'Validateur' : 'Exécuteur'}
                 </Typography>
+              </MenuItem>
+              <Divider />
+              <MenuItem onClick={toggleTheme}>
+                {mode === 'light' ? (
+                  <DarkModeIcon sx={{ mr: 1 }} fontSize="small" />
+                ) : (
+                  <LightModeIcon sx={{ mr: 1 }} fontSize="small" />
+                )}
+                {mode === 'light' ? 'Mode sombre' : 'Mode clair'}
               </MenuItem>
               <Divider />
               <MenuItem onClick={handleLogout}>
