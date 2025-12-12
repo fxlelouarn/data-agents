@@ -2,6 +2,8 @@
 
 > Dernière mise à jour : 2025-12-12
 
+**Tech Debt** : Voir [TECH-DEBT.md](./TECH-DEBT.md) - Tech debt Phase 3 résolue le 2025-12-12.
+
 ## Vue d'ensemble
 
 | Phase | Description | Statut |
@@ -9,8 +11,8 @@
 | Phase 1 | Infrastructure Slack | ✅ Complète |
 | Phase 2 | Extraction de données | ✅ Complète |
 | Phase 2.5 | Migration vers architecture Agent | ✅ Complète |
-| Phase 3 | Création de Proposals | ⏳ Non commencée |
-| Phase 4 | Interactions Slack (boutons) | ⏳ Non commencée |
+| Phase 3 | Création de Proposals | ✅ Complète |
+| Phase 4 | Interactions Slack (boutons) | ⏳ Partielle |
 | Phase 5 | Système de relances | ⏳ Non commencée |
 | Phase 6 | Notifications retour | ⏳ Non commencée |
 | Phase 7 | Tests et polish | ⏳ Non commencée |
@@ -65,6 +67,7 @@
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
 SLACK_CHANNEL_ID=C...
+MILES_REPUBLIC_DATABASE_URL=postgresql://...
 ```
 
 ---
@@ -147,11 +150,6 @@ Transformer le service Slack actuel (Express) en un vrai Agent pour bénéficier
 - [x] Script de seed `scripts/seed-slack-agent.ts`
 - [x] Schéma de configuration pour le dashboard
 
-### Reporté à Phase 3
-
-- [ ] Ajouter les métriques (messages traités, proposals créées, erreurs)
-- [ ] Intégration complète avec extracteurs (actuellement en service séparé)
-
 ### Structure config Agent
 
 Pattern identique à GoogleSearchDateAgent : config JSON prioritaire, fallback sur variables d'env.
@@ -182,53 +180,102 @@ Pattern identique à GoogleSearchDateAgent : config JSON prioritaire, fallback s
 }
 ```
 
-**Avantage** : Permet le multi-workspace Slack (un agent par workspace avec ses propres credentials).
-
-### Services partagés à créer
-
-Avant Phase 3, mutualiser les services de matching :
-
-| Service | Source actuelle | Destination |
-|---------|-----------------|-------------|
-| EventMatchingService | `apps/agents/src/ffa/matcher.ts` | `packages/agent-framework/src/services/` |
-| RaceMatchingService | `packages/agent-framework/src/matching-utils.ts` | (déjà partagé) |
-
-Cela permettra à SlackEventAgent de réutiliser l'algorithme de matching FFA.
-
-### Fichiers à créer/modifier
-
-| Fichier | Action | Statut |
-|---------|--------|--------|
-| `apps/agents/src/SlackEventAgent.ts` | Créer | ✅ |
-| `apps/agents/src/SlackEventAgent.configSchema.ts` | Créer | ✅ |
-| `packages/types/src/agent-versions.ts` | Ajouter version | ✅ |
-| `apps/api/src/routes/slack.ts` | Vérifier agent actif | ✅ |
-| `scripts/seed-slack-agent.ts` | Créer | ✅ |
-| `packages/agent-framework/src/services/EventMatchingService.ts` | Mutualiser | ⏳ Phase 3 |
-
 ---
 
-## Phase 3 : Création de Proposals ⏳
+## Phase 3 : Création de Proposals ✅
 
-**Statut** : Non commencée
+**Complétée le** : 2025-12-12
 
-### À implémenter
+### Objectif
 
-- [ ] Intégrer l'algorithme de matching existant (`apps/agents/src/ffa/matcher.ts`)
-- [ ] Créer les Proposals en base avec `sourceMetadata`
-- [ ] Gérer les types : NEW_EVENT, EDITION_UPDATE
-- [ ] Calculer la confiance basée sur le matching
+Intégrer le matching d'événements et créer des Proposals en base de données avec métadonnées Slack.
+
+### Implémenté
+
+- [x] **Mutualisation du service de matching** dans `packages/agent-framework/src/services/event-matching/`
+  - `types.ts` - Types génériques pour le matching
+  - `stopwords.ts` - Mots à ignorer lors du matching
+  - `departments.ts` - Mapping départements français
+  - `event-matcher.ts` - Algorithme de matching (fuse.js)
+  - `index.ts` - Exports du service
+- [x] **Wrapper FFA** - `apps/agents/src/ffa/matcher.ts` réécrit pour utiliser le service mutualisé
+- [x] **Service SlackProposalService** - `apps/api/src/services/slack/SlackProposalService.ts`
+  - Connexion à Miles Republic via Prisma
+  - Conversion des données extraites en input de matching
+  - Création de Proposals (NEW_EVENT ou EDITION_UPDATE)
+  - Stockage de `sourceMetadata` avec infos Slack
+  - Calcul de confiance basé sur le matching
+- [x] **Migration Prisma** - Ajout du champ `sourceMetadata` à la table `proposals`
+- [x] **Intégration dans le webhook** - `apps/api/src/routes/slack.ts`
+  - Appel au service de création de Proposals
+  - Affichage du type de match (nouveau/mise à jour)
+  - Affichage du score de confiance
+  - Boutons d'action avec proposalId réel
+
+### Fichiers créés/modifiés
+
+| Fichier | Action |
+|---------|--------|
+| `packages/agent-framework/src/services/event-matching/types.ts` | Créé |
+| `packages/agent-framework/src/services/event-matching/stopwords.ts` | Créé |
+| `packages/agent-framework/src/services/event-matching/departments.ts` | Créé |
+| `packages/agent-framework/src/services/event-matching/event-matcher.ts` | Créé |
+| `packages/agent-framework/src/services/event-matching/index.ts` | Créé |
+| `packages/agent-framework/src/index.ts` | Modifié (exports) |
+| `apps/agents/src/ffa/matcher.ts` | Réécrit (wrapper) |
+| `apps/agents/src/FFAScraperAgent.ts` | Modifié (imports) |
+| `apps/api/src/services/slack/SlackProposalService.ts` | Créé |
+| `apps/api/src/routes/slack.ts` | Modifié (intégration) |
+| `packages/database/prisma/schema.prisma` | Modifié (+sourceMetadata) |
+| `packages/database/prisma/migrations/20251212120000_add_source_metadata/` | Créé |
+
+### Structure sourceMetadata
+
+```typescript
+interface SlackSourceMetadata {
+  type: 'SLACK'
+  workspaceId: string
+  workspaceName: string
+  channelId: string
+  channelName: string
+  messageTs: string
+  threadTs?: string
+  userId: string
+  userName: string
+  messageLink: string
+  sourceUrl?: string
+  imageUrls?: string[]
+  extractedAt: string
+}
+```
+
+### Logique de matching
+
+1. **Conversion** des données extraites en `EventMatchInput`
+2. **Matching** avec les événements existants dans Miles Republic
+3. **Décision** basée sur le score :
+   - Score < 0.75 → NEW_EVENT (nouvel événement)
+   - Score >= 0.75 → EDITION_UPDATE (mise à jour d'édition existante)
+4. **Calcul de confiance** :
+   - NEW_EVENT : confiance inversée (moins de match = plus confiant)
+   - EDITION_UPDATE : confiance ajustée selon le match
+5. **Création** de la Proposal avec justifications et rejectedMatches
 
 ---
 
 ## Phase 4 : Interactions Slack ⏳
 
-**Statut** : Non commencée
+**Statut** : Partielle
+
+### Implémenté
+
+- [x] Boutons "Valider" et "Voir dashboard" affichés
+- [x] Bouton "Voir dashboard" fonctionnel (URL avec proposalId)
+- [x] Route `/api/slack/interactions` pour recevoir les clics
 
 ### À implémenter
 
 - [ ] Rendre le bouton "Valider" fonctionnel (approuver tous les blocs)
-- [ ] Lier le clic au vrai proposalId créé en Phase 3
 - [ ] Mise à jour du message après validation
 - [ ] Gestion des erreurs de validation
 
@@ -283,15 +330,27 @@ Cela permettra à SlackEventAgent de réutiliser l'algorithme de matching FFA.
 | 2025-12-12 | `253c72e` | Phase 2 complète - Extraction images et texte |
 | 2025-12-12 | `157f5bb` | Redimensionnement auto images + plan Phase 2.5 |
 | 2025-12-12 | `e9c7e46` | Phase 2.5 complète - Migration vers architecture Agent |
+| 2025-12-12 | `TBD` | Phase 3 complète - Matching mutualisé + création Proposals |
 
 ---
 
 ## Architecture des fichiers
 
 ```
+packages/agent-framework/src/
+└── services/
+    └── event-matching/             # Service de matching mutualisé
+        ├── index.ts
+        ├── types.ts
+        ├── stopwords.ts
+        ├── departments.ts
+        └── event-matcher.ts
+
 apps/agents/src/
 ├── SlackEventAgent.ts              # Agent principal (extends BaseAgent)
-└── SlackEventAgent.configSchema.ts # Schéma config pour dashboard
+├── SlackEventAgent.configSchema.ts # Schéma config pour dashboard
+└── ffa/
+    └── matcher.ts                  # Wrapper utilisant le service mutualisé
 
 apps/api/src/
 ├── routes/
@@ -299,6 +358,7 @@ apps/api/src/
 └── services/
     └── slack/
         ├── SlackService.ts         # Client Slack wrapper
+        ├── SlackProposalService.ts # Création de Proposals avec matching
         └── extractors/
             ├── index.ts            # Exports
             ├── types.ts            # Types et prompts
@@ -306,6 +366,11 @@ apps/api/src/
             ├── ImageExtractor.ts   # Extraction images (Vision)
             ├── TextExtractor.ts    # Extraction texte brut
             └── EventDataExtractor.ts  # Orchestrateur
+
+packages/database/prisma/
+├── schema.prisma                   # +sourceMetadata sur Proposal
+└── migrations/
+    └── 20251212120000_add_source_metadata/
 
 packages/types/src/
 └── agent-versions.ts               # SLACK_EVENT_AGENT version
