@@ -165,6 +165,7 @@ const RACE_FIELDS: RaceField[] = [
   { key: 'categoryLevel2', label: 'Catégorie 2' },
   { key: 'runDistance', label: 'Distance course (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'bikeDistance', label: 'Distance vélo (km)', format: (v) => v ? `${v} km` : '-' },
+  { key: 'swimDistance', label: 'Distance natation (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'walkDistance', label: 'Distance marche (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'runPositiveElevation', label: 'D+ (m)', format: (v) => v ? `${v} m` : '-' },
   { key: 'price', label: 'Prix', format: (v) => v != null ? `${v} €` : '-' },
