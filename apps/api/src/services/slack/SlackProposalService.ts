@@ -1,6 +1,6 @@
 /**
  * Service de création de Proposals depuis les données Slack
- * 
+ *
  * Phase 3 de l'agent Slack:
  * - Match les données extraites avec Miles Republic
  * - Crée des Proposals (NEW_EVENT ou EDITION_UPDATE)
@@ -68,16 +68,40 @@ const logger = createConsoleLogger('SlackProposalService', 'slack-proposal-servi
 const connectionManager = new ConnectionManager()
 
 /**
+ * Récupère l'ID de la base source depuis la config de l'agent Slack
+ */
+async function getSlackAgentSourceDatabaseId(): Promise<string> {
+  const slackAgent = await prisma.agent.findFirst({
+    where: {
+      config: { path: ['agentType'], equals: 'SLACK_EVENT' }
+    },
+    select: { config: true }
+  })
+
+  if (!slackAgent?.config) {
+    throw new Error('Agent Slack non trouvé ou config manquante')
+  }
+
+  const config = slackAgent.config as Record<string, any>
+  const sourceDbId = config.sourceDatabase
+
+  if (!sourceDbId) {
+    throw new Error('sourceDatabase non configuré dans l\'agent Slack')
+  }
+
+  return sourceDbId
+}
+
+/**
  * Récupère la connexion à la base Miles Republic via ConnectionManager
  * Utilise le pattern standard des agents du framework
  */
 async function getSourceDatabase(): Promise<PrismaClientType> {
   const dbManager = DatabaseManager.getInstance(logger)
-  
-  // L'ID 'miles-republic' doit correspondre à la configuration en base
-  // Si pas trouvé, on essaie avec l'ID par défaut des agents
-  const sourceDbId = 'miles-republic'
-  
+
+  // Récupérer l'ID depuis la config de l'agent Slack (comme les autres agents)
+  const sourceDbId = await getSlackAgentSourceDatabaseId()
+
   try {
     const sourceDb = await connectionManager.connectToSource(
       sourceDbId,
@@ -86,9 +110,9 @@ async function getSourceDatabase(): Promise<PrismaClientType> {
     )
     return sourceDb
   } catch (error: any) {
-    logger.error('Erreur connexion Miles Republic via ConnectionManager', { 
+    logger.error('Erreur connexion Miles Republic via ConnectionManager', {
       error: error.message,
-      sourceDbId 
+      sourceDbId
     })
     throw new Error(`Failed to connect to Miles Republic: ${error.message}`)
   }
@@ -101,7 +125,7 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
   if (!data.eventName) {
     return null
   }
-  
+
   // Parser la date d'édition
   let editionDate: Date
   if (data.editionDate) {
@@ -113,7 +137,7 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
     // Pas de date = on ne peut pas matcher
     return null
   }
-  
+
   return {
     eventName: data.eventName,
     eventCity: data.eventCity || '',
@@ -140,7 +164,7 @@ function buildNewEventChanges(data: ExtractedEventData) {
       endDate: data.editionEndDate || data.editionDate
     }
   }
-  
+
   // Ajouter les courses si présentes
   if (data.races && data.races.length > 0) {
     changes.races = data.races.map(race => ({
@@ -152,7 +176,7 @@ function buildNewEventChanges(data: ExtractedEventData) {
       categoryLevel2: race.categoryLevel2
     }))
   }
-  
+
   // Ajouter l'organisateur si présent
   if (data.organizerName || data.organizerEmail || data.organizerWebsite) {
     changes.organizer = {
@@ -162,12 +186,12 @@ function buildNewEventChanges(data: ExtractedEventData) {
       websiteUrl: data.organizerWebsite
     }
   }
-  
+
   // Ajouter l'URL d'inscription si présente
   if (data.registrationUrl) {
     changes.edition.registrationUrl = data.registrationUrl
   }
-  
+
   return changes
 }
 
@@ -179,7 +203,7 @@ function buildEditionUpdateChanges(
   matchResult: EventMatchResult
 ) {
   const changes: any = {}
-  
+
   // Mettre à jour la date si différente
   if (data.editionDate) {
     changes.startDate = {
@@ -187,14 +211,14 @@ function buildEditionUpdateChanges(
       new: new Date(data.editionDate)
     }
   }
-  
+
   if (data.editionEndDate) {
     changes.endDate = {
       old: null,
       new: new Date(data.editionEndDate)
     }
   }
-  
+
   // Ajouter les courses si présentes
   if (data.races && data.races.length > 0) {
     changes.racesToAdd = {
@@ -209,7 +233,7 @@ function buildEditionUpdateChanges(
       }))
     }
   }
-  
+
   // Ajouter l'organisateur si présent
   if (data.organizerName || data.organizerEmail || data.organizerWebsite) {
     changes.organizer = {
@@ -222,7 +246,7 @@ function buildEditionUpdateChanges(
       }
     }
   }
-  
+
   // URL d'inscription
   if (data.registrationUrl) {
     changes.registrationUrl = {
@@ -230,13 +254,13 @@ function buildEditionUpdateChanges(
       new: data.registrationUrl
     }
   }
-  
+
   return changes
 }
 
 /**
  * Construit les justifications pour la Proposal
- * 
+ *
  * Note: Les infos de source Slack sont stockées dans sourceMetadata (champ dédié).
  * On ne duplique plus dans justification pour éviter la redondance.
  * Le dashboard utilisera sourceMetadata pour afficher les infos Slack.
@@ -247,7 +271,7 @@ function buildJustifications(
   sourceMetadata: SlackSourceMetadata
 ) {
   const justifications: any[] = []
-  
+
   // Si on a une URL source
   if (sourceMetadata.sourceUrl) {
     justifications.push({
@@ -258,7 +282,7 @@ function buildJustifications(
       }
     })
   }
-  
+
   // Si matching avec événement existant
   if (matchResult.type !== 'NO_MATCH' && matchResult.event) {
     justifications.push({
@@ -274,7 +298,7 @@ function buildJustifications(
       }
     })
   }
-  
+
   // Top 3 des matches rejetés (pour NEW_EVENT)
   if (matchResult.rejectedMatches && matchResult.rejectedMatches.length > 0) {
     justifications.push({
@@ -285,7 +309,7 @@ function buildJustifications(
       }
     })
   }
-  
+
   return justifications
 }
 
@@ -299,7 +323,7 @@ export async function createProposalFromSlack(
   try {
     // 1. Convertir en input pour le matcher
     const matchInput = extractedDataToMatchInput(extractedData)
-    
+
     if (!matchInput) {
       return {
         success: false,
@@ -307,10 +331,10 @@ export async function createProposalFromSlack(
         error: 'Données insuffisantes pour le matching (nom ou date manquant)'
       }
     }
-    
+
     // 2. Récupérer la connexion à la base source via ConnectionManager
     const sourceDb = await getSourceDatabase()
-    
+
     // 3. Effectuer le matching
     const matchResult = await matchEvent(
       matchInput,
@@ -318,14 +342,14 @@ export async function createProposalFromSlack(
       DEFAULT_MATCHING_CONFIG,
       logger
     )
-    
+
     logger.info(`Match result: ${matchResult.type}`, { confidence: matchResult.confidence })
-    
+
     // 4. Récupérer l'agent Slack pour l'ID
     const agent = await prisma.agent.findFirst({
       where: { name: 'Slack Event Agent' }
     })
-    
+
     if (!agent) {
       return {
         success: false,
@@ -333,15 +357,15 @@ export async function createProposalFromSlack(
         error: 'Slack Event Agent not found'
       }
     }
-    
+
     // 5. Déterminer le type de Proposal
     let proposalType: ProposalType
     let changes: any
     let confidence: number
-    
+
     const hasOrganizerInfo = !!(extractedData.organizerEmail || extractedData.organizerWebsite)
     const raceCount = extractedData.races?.length || 0
-    
+
     if (matchResult.type === 'NO_MATCH' || matchResult.confidence < DEFAULT_MATCHING_CONFIG.similarityThreshold) {
       // Pas de match ou match trop faible → NEW_EVENT
       proposalType = ProposalType.NEW_EVENT
@@ -363,10 +387,10 @@ export async function createProposalFromSlack(
         raceCount
       )
     }
-    
+
     // 6. Construire les justifications (sans doublon slack_source)
     const justifications = buildJustifications(extractedData, matchResult, sourceMetadata)
-    
+
     // 7. Créer la Proposal
     const proposal = await prisma.proposal.create({
       data: {
@@ -384,9 +408,9 @@ export async function createProposalFromSlack(
         sourceMetadata: sourceMetadata as any
       }
     })
-    
+
     logger.info(`Proposal created: ${proposal.id}`, { type: proposalType })
-    
+
     return {
       success: true,
       proposalId: proposal.id,
@@ -402,7 +426,7 @@ export async function createProposalFromSlack(
       } : undefined,
       confidence
     }
-    
+
   } catch (error: any) {
     logger.error('Error creating proposal', { error: error.message })
     return {
@@ -423,13 +447,13 @@ export async function getProposalWithSlackMetadata(proposalId: string) {
       agent: true
     }
   })
-  
+
   if (!proposal) {
     return null
   }
-  
+
   const sourceMetadata = proposal.sourceMetadata as SlackSourceMetadata | null
-  
+
   return {
     ...proposal,
     isFromSlack: sourceMetadata?.type === 'SLACK',
