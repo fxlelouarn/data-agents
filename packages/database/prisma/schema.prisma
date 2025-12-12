@@ -98,6 +98,8 @@ model Proposal {
   modifiedBy          String?
   userModifiedChanges Json?
   approvedBlocks      Json?                 @default("{}")
+  // Métadonnées source (Slack, etc.)
+  sourceMetadata      Json?
   applications        ProposalApplication[]
   agent               Agent                 @relation(fields: [agentId], references: [id], onDelete: Cascade)
 
