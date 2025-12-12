@@ -29,6 +29,7 @@ const agentTypeLabels: Record<string, string> = {
   GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
   FFA_SCRAPER: 'FFA Scraper Agent',
   AUTO_VALIDATOR: 'Auto Validator Agent',
+  SLACK_EVENT: 'Slack Event Agent',
 }
 
 // Options de fréquence prédéfinies
@@ -208,6 +209,80 @@ const agentConfigSchemas: Record<string, any> = {
       order: 7,
     },
   },
+  SLACK_EVENT: {
+    sourceDatabase: {
+      type: 'database_select',
+      label: 'Base de données source',
+      description: 'Base de données Miles Republic pour le matching',
+      required: true,
+      category: 'Base de données',
+      order: 1,
+    },
+    'extraction.preferredModel': {
+      type: 'select',
+      label: 'Modèle préféré',
+      description: 'Modèle Claude à utiliser en priorité',
+      required: true,
+      default: 'haiku',
+      options: [
+        { value: 'haiku', label: 'Claude Haiku (rapide, économique)' },
+        { value: 'sonnet', label: 'Claude Sonnet (plus précis)' },
+      ],
+      category: 'Extraction',
+      order: 2,
+    },
+    'extraction.fallbackToSonnet': {
+      type: 'switch',
+      label: 'Fallback vers Sonnet',
+      description: 'Utiliser Sonnet si Haiku échoue',
+      required: false,
+      default: true,
+      category: 'Extraction',
+      order: 3,
+    },
+    'extraction.maxImageSizeMB': {
+      type: 'number',
+      label: 'Taille max image (MB)',
+      description: 'Taille maximale des images en mégaoctets',
+      required: false,
+      default: 20,
+      min: 1,
+      max: 50,
+      category: 'Extraction',
+      order: 4,
+    },
+    'reminders.enabled': {
+      type: 'switch',
+      label: 'Activer les relances',
+      description: 'Envoyer des relances si pas de validation',
+      required: false,
+      default: true,
+      category: 'Relances',
+      order: 5,
+    },
+    'reminders.delayHours': {
+      type: 'number',
+      label: 'Délai avant relance (heures)',
+      description: 'Nombre d\'heures avant la première relance',
+      required: false,
+      default: 24,
+      min: 1,
+      max: 168,
+      category: 'Relances',
+      order: 6,
+    },
+    'reminders.maxReminders': {
+      type: 'number',
+      label: 'Nombre max de relances',
+      description: 'Nombre maximum de relances avant abandon',
+      required: false,
+      default: 2,
+      min: 0,
+      max: 5,
+      category: 'Relances',
+      order: 7,
+    },
+  },
 }
 
 // Mapping des types d'agents registrés vers les types AgentType
@@ -215,6 +290,7 @@ const agentTypeMapping: Record<string, AgentType> = {
   GOOGLE_SEARCH_DATE: 'EXTRACTOR',
   FFA_SCRAPER: 'EXTRACTOR',
   AUTO_VALIDATOR: 'VALIDATOR',
+  SLACK_EVENT: 'EXTRACTOR',
 }
 
 interface TabPanelProps {

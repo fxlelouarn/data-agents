@@ -130,22 +130,9 @@ async function processSlackEvent(event: any) {
     return
   }
 
-  // Handle direct messages in channel (if we want to process all messages)
-  if (type === 'message' && !subtype) {
-    // Check if bot is mentioned
-    const isMentioned = await slackService.isBotMentioned(text || '')
-    if (isMentioned) {
-      await handleBotMention({
-        type: 'message',
-        user,
-        text,
-        ts,
-        channel,
-        thread_ts,
-        files
-      })
-    }
-  }
+  // Note: On ne traite PAS les événements 'message' avec mention ici
+  // car Slack envoie déjà un événement 'app_mention' séparé.
+  // Traiter les deux causerait un double traitement du même message.
 }
 
 /**
