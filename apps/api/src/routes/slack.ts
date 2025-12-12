@@ -1,8 +1,23 @@
 import { Router, Request, Response } from 'express'
 import { slackService, SlackMessage } from '../services/slack/SlackService'
 import { eventDataExtractor, ExtractedEventData, ApiCreditError, ApiRateLimitError } from '../services/slack/extractors'
+import { prisma } from '@data-agents/database'
 
 const router = Router()
+
+/**
+ * Récupère l'agent Slack depuis la base de données
+ * L'agent est chargé dynamiquement pour permettre la configuration à chaud
+ */
+async function getSlackAgent() {
+  const agent = await prisma.agent.findFirst({
+    where: {
+      name: 'Slack Event Agent',
+      isActive: true
+    }
+  })
+  return agent
+}
 
 /**
  * Middleware to verify Slack request signature
@@ -137,6 +152,25 @@ async function processSlackEvent(event: any) {
  */
 async function handleBotMention(message: SlackMessage) {
   console.log(`📨 Bot mentioned by user ${message.user} in channel ${message.channel}`)
+
+  // Vérifier si l'agent Slack est actif
+  const slackAgent = await getSlackAgent()
+  if (!slackAgent) {
+    console.warn('⚠️ Slack Event Agent not found or not active - processing anyway with defaults')
+    // On continue quand même pour rétro-compatibilité
+  } else {
+    console.log(`🤖 Using Slack Event Agent: ${slackAgent.name} (v${(slackAgent.config as any)?.version || 'unknown'})`)
+
+    // Vérifier si le channel est configuré dans l'agent
+    const agentConfig = slackAgent.config as any
+    const channels = agentConfig?.channels || []
+    const channelConfig = channels.find((ch: any) => ch.id === message.channel)
+
+    if (channels.length > 0 && !channelConfig) {
+      console.log(`⏭️ Channel ${message.channel} not in agent config, skipping`)
+      return
+    }
+  }
 
   // Add "eyes" reaction to indicate processing
   await slackService.addReaction(message.channel, message.ts, 'eyes')

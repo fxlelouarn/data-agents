@@ -8,7 +8,7 @@
 |-------|-------------|--------|
 | Phase 1 | Infrastructure Slack | ✅ Complète |
 | Phase 2 | Extraction de données | ✅ Complète |
-| Phase 2.5 | Migration vers architecture Agent | ⏳ Non commencée |
+| Phase 2.5 | Migration vers architecture Agent | ✅ Complète |
 | Phase 3 | Création de Proposals | ⏳ Non commencée |
 | Phase 4 | Interactions Slack (boutons) | ⏳ Non commencée |
 | Phase 5 | Système de relances | ⏳ Non commencée |
@@ -126,9 +126,9 @@ Les prompts Claude incluent des règles strictes :
 
 ---
 
-## Phase 2.5 : Migration vers architecture Agent ⏳
+## Phase 2.5 : Migration vers architecture Agent ✅
 
-**Statut** : Non commencée
+**Statut** : Complète (2025-12-12)
 
 ### Objectif
 
@@ -138,14 +138,19 @@ Transformer le service Slack actuel (Express) en un vrai Agent pour bénéficier
 - Métriques et historique des runs
 - État persistant
 
-### À implémenter
+### Implémenté
 
-- [ ] Créer `apps/agents/src/SlackEventAgent.ts` (extends BaseAgent)
-- [ ] Définir le type d'agent `SLACK_EVENT` 
-- [ ] Déplacer la config des variables d'env vers la config JSON de l'agent
-- [ ] Adapter le webhook API pour appeler l'agent au lieu du service
+- [x] Créer `apps/agents/src/SlackEventAgent.ts` (extends BaseAgent)
+- [x] Ajouter version dans `packages/types/src/agent-versions.ts`
+- [x] Config JSON avec credentials (pattern GoogleSearchDateAgent)
+- [x] Adapter le webhook API pour vérifier l'agent actif
+- [x] Script de seed `scripts/seed-slack-agent.ts`
+- [x] Schéma de configuration pour le dashboard
+
+### Reporté à Phase 3
+
 - [ ] Ajouter les métriques (messages traités, proposals créées, erreurs)
-- [ ] Migrer les extractors vers `apps/agents/` ou les garder partagés
+- [ ] Intégration complète avec extracteurs (actuellement en service séparé)
 
 ### Structure config Agent
 
@@ -192,13 +197,14 @@ Cela permettra à SlackEventAgent de réutiliser l'algorithme de matching FFA.
 
 ### Fichiers à créer/modifier
 
-| Fichier | Action |
-|---------|--------|
-| `apps/agents/src/SlackEventAgent.ts` | Créer |
-| `apps/agents/src/slack/extractors/*` | Déplacer ou importer depuis API |
-| `apps/api/src/routes/slack.ts` | Modifier (appeler l'agent) |
-| `packages/database/prisma/schema.prisma` | Ajouter type agent |
-| `packages/agent-framework/src/services/EventMatchingService.ts` | Créer (mutualiser depuis ffa/matcher.ts) |
+| Fichier | Action | Statut |
+|---------|--------|--------|
+| `apps/agents/src/SlackEventAgent.ts` | Créer | ✅ |
+| `apps/agents/src/SlackEventAgent.configSchema.ts` | Créer | ✅ |
+| `packages/types/src/agent-versions.ts` | Ajouter version | ✅ |
+| `apps/api/src/routes/slack.ts` | Vérifier agent actif | ✅ |
+| `scripts/seed-slack-agent.ts` | Créer | ✅ |
+| `packages/agent-framework/src/services/EventMatchingService.ts` | Mutualiser | ⏳ Phase 3 |
 
 ---
 
