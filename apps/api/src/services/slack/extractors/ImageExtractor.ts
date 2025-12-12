@@ -9,6 +9,7 @@
  */
 
 import Anthropic from '@anthropic-ai/sdk'
+import sharp from 'sharp'
 import {
   ExtractionResult,
   ExtractedEventData,
@@ -19,6 +20,9 @@ import {
 import { ApiCreditError, ApiRateLimitError } from './HtmlExtractor'
 
 const MAX_IMAGE_SIZE = 20 * 1024 * 1024 // 20MB max for Claude Vision
+const RESIZE_THRESHOLD = 5 * 1024 * 1024 // Start resizing above 5MB for efficiency
+const MAX_DIMENSION = 2048 // Max width/height after resize
+const JPEG_QUALITY = 85 // Good balance between size and readability
 
 export class ImageExtractor {
   private anthropic: Anthropic | null = null
@@ -56,17 +60,15 @@ export class ImageExtractor {
       let imageData: { type: 'base64'; media_type: string; data: string } | { type: 'url'; url: string }
 
       if (imageBuffer) {
-        // Use provided buffer
-        const base64 = imageBuffer.toString('base64')
-        const detectedMimeType = mimeType || this.detectMimeType(imageBuffer)
+        // Use provided buffer, resize if needed
+        let processedBuffer = imageBuffer
         
-        if (imageBuffer.length > MAX_IMAGE_SIZE) {
-          return {
-            success: false,
-            error: 'Image trop volumineuse (max 20MB)',
-            errorType: 'extraction_failed'
-          }
+        if (imageBuffer.length > RESIZE_THRESHOLD) {
+          processedBuffer = await this.resizeImage(imageBuffer)
         }
+        
+        const base64 = processedBuffer.toString('base64')
+        const detectedMimeType = this.detectMimeType(processedBuffer)
 
         imageData = {
           type: 'base64',
@@ -76,18 +78,18 @@ export class ImageExtractor {
       } else if (imageUrl) {
         // Download image from URL
         const downloadResult = await this.downloadImage(imageUrl)
-        if (!downloadResult) {
+        if (!downloadResult.success) {
           return {
             success: false,
-            error: 'Impossible de télécharger l\'image',
+            error: downloadResult.error || 'Impossible de télécharger l\'image',
             errorType: 'fetch_failed'
           }
         }
 
         imageData = {
           type: 'base64',
-          media_type: downloadResult.mimeType,
-          data: downloadResult.base64
+          media_type: downloadResult.mimeType!,
+          data: downloadResult.base64!
         }
       } else {
         return {
@@ -138,7 +140,7 @@ export class ImageExtractor {
   private async downloadImage(
     imageUrl: string,
     authToken?: string
-  ): Promise<{ base64: string; mimeType: string } | null> {
+  ): Promise<{ success: true; base64: string; mimeType: string } | { success: false; error: string }> {
     try {
       const headers: Record<string, string> = {
         'User-Agent': 'Mozilla/5.0 (compatible; DataAgentsBot/1.0)'
@@ -159,25 +161,66 @@ export class ImageExtractor {
 
       if (!response.ok) {
         console.error(`Failed to download image: HTTP ${response.status}`)
-        return null
+        return { success: false, error: `Erreur HTTP ${response.status} lors du téléchargement` }
       }
 
-      const contentType = response.headers.get('content-type') || 'image/jpeg'
-      const buffer = Buffer.from(await response.arrayBuffer())
+      let buffer: Buffer = Buffer.from(await response.arrayBuffer())
+      const originalSize = buffer.length
 
-      if (buffer.length > MAX_IMAGE_SIZE) {
-        console.error('Image too large:', buffer.length)
-        return null
+      // Resize if image is too large
+      if (buffer.length > RESIZE_THRESHOLD) {
+        buffer = await this.resizeImage(buffer) as Buffer
+        console.log(`📐 Image redimensionnée: ${(originalSize / 1024 / 1024).toFixed(1)} MB → ${(buffer.length / 1024 / 1024).toFixed(1)} MB`)
       }
 
       return {
+        success: true,
         base64: buffer.toString('base64'),
-        mimeType: this.normalizeMimeType(contentType)
+        mimeType: this.detectMimeType(buffer)
       }
 
     } catch (error: any) {
       console.error('Error downloading image:', error.message)
-      return null
+      return { success: false, error: `Erreur lors du téléchargement: ${error.message}` }
+    }
+  }
+
+  /**
+   * Resize image to reduce file size while maintaining readability
+   */
+  private async resizeImage(buffer: Buffer): Promise<Buffer> {
+    try {
+      const image = sharp(buffer)
+      const metadata = await image.metadata()
+      
+      console.log(`📐 Redimensionnement image: ${metadata.width}x${metadata.height}, ${(buffer.length / 1024 / 1024).toFixed(1)} MB`)
+
+      // Resize and convert to JPEG for consistent compression
+      const resized = await image
+        .resize(MAX_DIMENSION, MAX_DIMENSION, {
+          fit: 'inside',
+          withoutEnlargement: true
+        })
+        .jpeg({ quality: JPEG_QUALITY })
+        .toBuffer()
+
+      console.log(`✅ Image réduite à ${(resized.length / 1024 / 1024).toFixed(1)} MB`)
+
+      // If still too large after resize, reduce quality further
+      if (resized.length > MAX_IMAGE_SIZE) {
+        console.log('⚠️ Image encore trop volumineuse, réduction qualité supplémentaire...')
+        return await sharp(buffer)
+          .resize(1024, 1024, { fit: 'inside', withoutEnlargement: true })
+          .jpeg({ quality: 70 })
+          .toBuffer()
+      }
+
+      return resized
+
+    } catch (error: any) {
+      console.error('Error resizing image:', error.message)
+      // Return original buffer if resize fails
+      return buffer
     }
   }
 
@@ -200,26 +243,6 @@ export class ImageExtractor {
     }
 
     // Default to JPEG
-    return 'image/jpeg'
-  }
-
-  /**
-   * Normalize MIME type for Claude Vision API
-   */
-  private normalizeMimeType(contentType: string): string {
-    const mimeType = contentType.split(';')[0].trim().toLowerCase()
-    
-    // Claude Vision supports: image/jpeg, image/png, image/gif, image/webp
-    const supportedTypes = ['image/jpeg', 'image/png', 'image/gif', 'image/webp']
-    
-    if (supportedTypes.includes(mimeType)) {
-      return mimeType
-    }
-
-    // Map common variations
-    if (mimeType === 'image/jpg') return 'image/jpeg'
-    
-    // Default to JPEG for unknown types
     return 'image/jpeg'
   }
 

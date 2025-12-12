@@ -8,11 +8,26 @@
 |-------|-------------|--------|
 | Phase 1 | Infrastructure Slack | ✅ Complète |
 | Phase 2 | Extraction de données | ✅ Complète |
+| Phase 2.5 | Migration vers architecture Agent | ⏳ Non commencée |
 | Phase 3 | Création de Proposals | ⏳ Non commencée |
 | Phase 4 | Interactions Slack (boutons) | ⏳ Non commencée |
 | Phase 5 | Système de relances | ⏳ Non commencée |
 | Phase 6 | Notifications retour | ⏳ Non commencée |
 | Phase 7 | Tests et polish | ⏳ Non commencée |
+
+## Décision architecturale (2025-12-12)
+
+**Décision** : Migrer l'intégration Slack vers l'architecture Agent (`@data-agents/agent-framework`)
+
+**Raisons** :
+- Activation/désactivation via dashboard (sans redéploiement)
+- Configuration modifiable à chaud (channels, comportements)
+- Visibilité dans la liste des agents
+- Métriques et statistiques (runs, succès, erreurs)
+- Historique des exécutions (`agent_runs`)
+- État persistant (`agent_states`)
+
+**Impact** : Phase 2.5 ajoutée avant Phase 3
 
 ---
 
@@ -111,6 +126,82 @@ Les prompts Claude incluent des règles strictes :
 
 ---
 
+## Phase 2.5 : Migration vers architecture Agent ⏳
+
+**Statut** : Non commencée
+
+### Objectif
+
+Transformer le service Slack actuel (Express) en un vrai Agent pour bénéficier de :
+- Toggle activation dans le dashboard
+- Configuration JSON modifiable à chaud
+- Métriques et historique des runs
+- État persistant
+
+### À implémenter
+
+- [ ] Créer `apps/agents/src/SlackEventAgent.ts` (extends BaseAgent)
+- [ ] Définir le type d'agent `SLACK_EVENT` 
+- [ ] Déplacer la config des variables d'env vers la config JSON de l'agent
+- [ ] Adapter le webhook API pour appeler l'agent au lieu du service
+- [ ] Ajouter les métriques (messages traités, proposals créées, erreurs)
+- [ ] Migrer les extractors vers `apps/agents/` ou les garder partagés
+
+### Structure config Agent
+
+Pattern identique à GoogleSearchDateAgent : config JSON prioritaire, fallback sur variables d'env.
+
+```json
+{
+  "slackBotToken": "xoxb-...",
+  "slackSigningSecret": "...",
+  "anthropicApiKey": "sk-ant-...",
+  "channels": [
+    {
+      "id": "C123456",
+      "name": "data-events",
+      "autoCreateProposal": true,
+      "notifyOnValidation": true
+    }
+  ],
+  "extraction": {
+    "preferredModel": "haiku",
+    "fallbackToSonnet": true,
+    "maxImageSizeMB": 20
+  },
+  "reminders": {
+    "enabled": true,
+    "delayHours": 24,
+    "maxReminders": 2
+  }
+}
+```
+
+**Avantage** : Permet le multi-workspace Slack (un agent par workspace avec ses propres credentials).
+
+### Services partagés à créer
+
+Avant Phase 3, mutualiser les services de matching :
+
+| Service | Source actuelle | Destination |
+|---------|-----------------|-------------|
+| EventMatchingService | `apps/agents/src/ffa/matcher.ts` | `packages/agent-framework/src/services/` |
+| RaceMatchingService | `packages/agent-framework/src/matching-utils.ts` | (déjà partagé) |
+
+Cela permettra à SlackEventAgent de réutiliser l'algorithme de matching FFA.
+
+### Fichiers à créer/modifier
+
+| Fichier | Action |
+|---------|--------|
+| `apps/agents/src/SlackEventAgent.ts` | Créer |
+| `apps/agents/src/slack/extractors/*` | Déplacer ou importer depuis API |
+| `apps/api/src/routes/slack.ts` | Modifier (appeler l'agent) |
+| `packages/database/prisma/schema.prisma` | Ajouter type agent |
+| `packages/agent-framework/src/services/EventMatchingService.ts` | Créer (mutualiser depuis ffa/matcher.ts) |
+
+---
+
 ## Phase 3 : Création de Proposals ⏳
 
 **Statut** : Non commencée
@@ -183,7 +274,7 @@ Les prompts Claude incluent des règles strictes :
 | 2025-12-11 | `4fd0636` | Phase 2 - Extraction de données depuis URLs |
 | 2025-12-11 | `e318b92` | Gestion des erreurs de crédits API Anthropic |
 | 2025-12-11 | `e1b17df` | Amélioration extraction - détection SPA et anti-hallucination |
-| 2025-12-12 | (à venir) | Phase 2 complète - Extraction images et texte |
+| 2025-12-12 | `253c72e` | Phase 2 complète - Extraction images et texte |
 
 ---
 
