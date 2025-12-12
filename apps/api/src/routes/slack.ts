@@ -1,6 +1,7 @@
 import { Router, Request, Response } from 'express'
 import { slackService, SlackMessage } from '../services/slack/SlackService'
 import { eventDataExtractor, ExtractedEventData, ApiCreditError, ApiRateLimitError } from '../services/slack/extractors'
+import { createProposalFromSlack, SlackSourceMetadata } from '../services/slack/SlackProposalService'
 import { prisma } from '@data-agents/database'
 
 const router = Router()
@@ -239,17 +240,50 @@ async function handleBotMention(message: SlackMessage) {
 
     // Format and send response
     const formattedText = eventDataExtractor.formatForSlack(extractedData)
-
-    // Add success reaction
-    await slackService.addReaction(message.channel, message.ts, 'white_check_mark')
-
-    // Post extracted data with action buttons
-    // TODO: Phase 4 - Add actual proposal creation and buttons
     const dashboardUrl = process.env.FRONTEND_URL || 'https://data-agents-dashboard.onrender.com'
 
+    // Phase 3: Create Proposal with matching
+    console.log('🔍 Starting matching and proposal creation...')
+    const proposalResult = await createProposalFromSlack(
+      extractedData,
+      sourceMetadata as SlackSourceMetadata
+    )
+
+    await slackService.removeReaction(message.channel, message.ts, 'eyes')
+
+    if (!proposalResult.success) {
+      // Proposal creation failed
+      await slackService.addReaction(message.channel, message.ts, 'warning')
+
+      await slackService.postMessage(
+        message.channel,
+        `${formattedText}\n\n⚠️ *Impossible de créer la proposition*\n${proposalResult.error || 'Erreur inconnue'}`,
+        { thread_ts: message.ts }
+      )
+      return
+    }
+
+    // Proposal created successfully!
+    await slackService.addReaction(message.channel, message.ts, 'white_check_mark')
+
+    // Build response message based on proposal type
+    let matchInfo = ''
+    if (proposalResult.proposalType === 'NEW_EVENT') {
+      matchInfo = '🆕 *Nouvel événement* - Aucun événement existant correspondant trouvé'
+    } else if (proposalResult.matchedEvent) {
+      matchInfo = `🔄 *Mise à jour* de "${proposalResult.matchedEvent.name}" (${proposalResult.matchedEvent.city})`
+      if (proposalResult.matchedEdition) {
+        matchInfo += ` - Édition ${proposalResult.matchedEdition.year}`
+      }
+    }
+
+    const proposalUrl = `${dashboardUrl}/proposals/${proposalResult.proposalId}`
+    const confidencePercent = Math.round(proposalResult.confidence * 100)
+
+    // Post message with action buttons
     await slackService.postMessage(
       message.channel,
-      formattedText + '\n\n_Création de la proposition en cours..._',
+      `${formattedText}\n\n${matchInfo}\n📊 Confiance: ${confidencePercent}%`,
       {
         thread_ts: message.ts,
         blocks: [
@@ -264,27 +298,53 @@ async function handleBotMention(message: SlackMessage) {
             type: 'divider'
           },
           {
-            type: 'context',
+            type: 'section',
+            text: {
+              type: 'mrkdwn',
+              text: `${matchInfo}\n📊 *Confiance:* ${confidencePercent}%`
+            }
+          },
+          {
+            type: 'actions',
             elements: [
               {
-                type: 'mrkdwn',
-                text: `📍 Source: ${extractedData.sourceUrl || 'Message Slack'} | 🔧 Méthode: ${extractedData.extractionMethod}`
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '✅ Valider',
+                  emoji: true
+                },
+                style: 'primary',
+                action_id: 'approve_proposal',
+                value: proposalResult.proposalId
+              },
+              {
+                type: 'button',
+                text: {
+                  type: 'plain_text',
+                  text: '📝 Voir sur le dashboard',
+                  emoji: true
+                },
+                url: proposalUrl,
+                action_id: 'view_dashboard'
               }
             ]
           },
           {
-            type: 'section',
-            text: {
-              type: 'mrkdwn',
-              text: '⏳ *Phase 4 à venir:* Création automatique de la Proposal avec boutons de validation'
-            }
+            type: 'context',
+            elements: [
+              {
+                type: 'mrkdwn',
+                text: `📍 Source: ${extractedData.sourceUrl || 'Message Slack'} | 🔧 Méthode: ${extractedData.extractionMethod} | 🆔 ${proposalResult.proposalId}`
+              }
+            ]
           }
         ]
       }
     )
 
+    console.log('📋 Proposal created:', proposalResult.proposalId)
     console.log('📋 Source metadata:', JSON.stringify(sourceMetadata, null, 2))
-    console.log('📋 Extracted data:', JSON.stringify(extractedData, null, 2))
 
   } catch (error) {
     console.error('Error handling bot mention:', error)

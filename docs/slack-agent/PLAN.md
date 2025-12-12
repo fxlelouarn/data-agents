@@ -366,16 +366,19 @@ Dans `PUT /api/proposals/:id` et `POST /api/proposals/bulk-approve` :
 5. ~~Script de seed `scripts/seed-slack-agent.ts`~~
 6. ~~Schéma de configuration pour le dashboard~~
 
-### Phase 3 : Création de Proposals ⏳
-1. Intégrer l'algorithme de matching existant (`apps/agents/src/ffa/matcher.ts`)
-2. Créer les Proposals avec `sourceMetadata`
-3. Gérer les types : NEW_EVENT, EDITION_UPDATE
-4. Calculer la confiance basée sur le matching
+### Phase 3 : Création de Proposals ✅
+1. ~~Mutualiser le service de matching dans `packages/agent-framework/src/services/event-matching/`~~
+2. ~~Créer `SlackProposalService.ts` avec connexion Miles Republic~~
+3. ~~Créer les Proposals avec `sourceMetadata`~~
+4. ~~Gérer les types : NEW_EVENT, EDITION_UPDATE~~
+5. ~~Calculer la confiance basée sur le matching~~
+6. ~~Ajouter migration Prisma pour `sourceMetadata`~~
 
 ### Phase 4 : Interactions Slack ⏳
-1. Implémenter les boutons interactifs
-2. Gérer le clic "Valider" → approuve tous les blocs
-3. Gérer le clic "Voir dashboard" → lien direct
+1. ~~Boutons "Valider" et "Voir dashboard" affichés~~
+2. ~~Bouton "Voir dashboard" fonctionnel~~
+3. Implémenter le clic "Valider" → approuve tous les blocs
+4. Mise à jour du message après validation
 
 ### Phase 5 : Système de relances ⏳
 1. Tracker les Proposals non validées (champ dans agent_states)
@@ -477,7 +480,10 @@ message.channels      # Messages dans les canaux publics
 3. [x] ~~Phase 1 : Infrastructure Slack~~
 4. [x] ~~Phase 2 : Extraction de données~~
 5. [x] ~~Phase 2.5 : Migration vers architecture Agent~~
-6. [ ] **Phase 3 : Création de Proposals** ← PROCHAINE ÉTAPE
-   - Mutualiser EventMatchingService
-   - Intégrer matching dans SlackEventAgent
-   - Créer Proposals avec sourceMetadata
+6. [x] ~~Phase 3 : Création de Proposals~~
+   - ~~Mutualiser EventMatchingService~~
+   - ~~Intégrer matching dans SlackEventAgent~~
+   - ~~Créer Proposals avec sourceMetadata~~
+7. [ ] **Phase 4 : Interactions Slack** ← PROCHAINE ÉTAPE
+   - Rendre le bouton "Valider" fonctionnel
+   - Mise à jour du message après validation
