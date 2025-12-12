@@ -168,14 +168,21 @@ async function handleBotMention(message: SlackMessage) {
     const urls = slackService.extractUrls(message.text)
     const hasImages = message.files && message.files.some(f => f.mimetype.startsWith('image/'))
 
-    if (urls.length === 0 && !hasImages) {
-      // No URL or image provided
+    // Check if there's enough text content for extraction (after removing bot mention)
+    const cleanText = message.text
+      ?.replace(/<@[A-Z0-9]+>/g, '') // Remove bot mentions
+      .replace(/<https?:\/\/[^|>]+(?:\|[^>]+)?>/g, '') // Remove Slack-formatted URLs
+      .trim() || ''
+    const hasTextContent = cleanText.length >= 50
+
+    if (urls.length === 0 && !hasImages && !hasTextContent) {
+      // No URL, no image, and not enough text content
       await slackService.removeReaction(message.channel, message.ts, 'eyes')
       await slackService.addReaction(message.channel, message.ts, 'question')
 
       await slackService.postMessage(
         message.channel,
-        "Je n'ai pas trouvé de lien ou d'image dans ton message. Peux-tu me donner un lien vers la page de l'événement ou une image avec les informations ?",
+        "Je n'ai pas trouvé de lien, d'image, ou suffisamment de texte dans ton message. Peux-tu me donner un lien vers la page de l'événement, une image avec les informations, ou décrire l'événement en détail ?",
         { thread_ts: message.ts }
       )
       return
