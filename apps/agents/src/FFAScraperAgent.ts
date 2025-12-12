@@ -35,7 +35,7 @@ import {
 } from './ffa/scraper'
 import { parseCompetitionsList, parseCompetitionDetails, normalizeFFARaceName, classifyOrganizerUrl } from './ffa/parser'
 import { matchCompetition, calculateAdjustedConfidence, calculateNewEventConfidence } from './ffa/matcher'
-import { getDepartmentName, normalizeDepartmentCode } from './ffa/departments'
+import { getDepartmentName, normalizeDepartmentCode } from '@data-agents/agent-framework'
 import { hasIdenticalPendingProposal, hasNewInformation, filterNewChanges } from './ffa/deduplication'
 import { fromZonedTime, getTimezoneOffset as getTzOffset } from 'date-fns-tz'
 

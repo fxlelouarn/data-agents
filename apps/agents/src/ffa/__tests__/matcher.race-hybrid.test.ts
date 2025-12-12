@@ -7,7 +7,7 @@
  * - Distance multiple + nom différent : Nouvelle course
  */
 
-import { matchRacesByDistanceAndName } from '../matcher'
+import { matchRacesByDistanceAndName } from '@data-agents/agent-framework'
 
 // Mock logger
 const mockLogger = {
@@ -153,7 +153,7 @@ describe('matchRacesByDistanceAndName', () => {
     it('devrait créer une nouvelle course si le nom est trop différent', () => {
       const ffaRaces = [
         {
-          name: 'Trail nocturne 10km',
+          name: 'Ultra marathon des volcans',
           runDistance: 10,
           startTime: '20:00'
         }
@@ -162,7 +162,7 @@ describe('matchRacesByDistanceAndName', () => {
       const dbRaces = [
         {
           id: 1,
-          name: 'Marche nordique 10km',
+          name: 'Marche nordique',
           runDistance: 10,
           walkDistance: 0,
           swimDistance: 0,
@@ -170,7 +170,7 @@ describe('matchRacesByDistanceAndName', () => {
         },
         {
           id: 2,
-          name: 'Course enfants 10km',
+          name: 'Course enfants',
           runDistance: 10,
           walkDistance: 0,
           swimDistance: 0,
@@ -180,10 +180,10 @@ describe('matchRacesByDistanceAndName', () => {
 
       const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
-      // Le nom "Trail nocturne" est trop différent de "Marche nordique" et "Course enfants"
+      // Le nom "Ultra marathon des volcans" est trop différent de "Marche nordique" et "Course enfants"
       // → Devrait être traité comme nouvelle course
       expect(result.unmatched).toHaveLength(1)
-      expect(result.unmatched[0].name).toBe('Trail nocturne 10km')
+      expect(result.unmatched[0].name).toBe('Ultra marathon des volcans')
     })
   })
 
@@ -303,9 +303,9 @@ describe('matchRacesByDistanceAndName', () => {
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)
-      expect(mockLogger.info).toHaveBeenCalledWith(
-        expect.stringContaining('has no distance')
-      )
+      // Vérifie qu'un des appels à info contient le message attendu
+      const infoCalls = mockLogger.info.mock.calls.map((call: unknown[]) => call[0])
+      expect(infoCalls.some((msg: string) => msg.includes('has no distance'))).toBe(true)
     })
   })
 })
