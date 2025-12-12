@@ -1,4 +1,4 @@
-import { useState, useMemo, useCallback } from 'react'
+import React, { useState, useMemo, useCallback } from 'react'
 import {
   Schedule as ScheduleIcon,
   LocationOn as LocationIcon,
@@ -181,8 +181,9 @@ export function useChangesTable({
    * Détermine le type d'input pour un champ
    */
   const getFieldType = useCallback((fieldName: string): 'text' | 'number' | 'date' | 'datetime-local' => {
-    if (fieldName.includes('Date')) return 'datetime-local'
-    if (fieldName.includes('Distance') || fieldName.includes('Elevation') || fieldName.includes('price')) return 'number'
+    const lowerFieldName = fieldName.toLowerCase()
+    if (lowerFieldName.includes('date')) return 'datetime-local'
+    if (lowerFieldName.includes('distance') || lowerFieldName.includes('elevation') || lowerFieldName.includes('price')) return 'number'
     return 'text'
   }, [])
 

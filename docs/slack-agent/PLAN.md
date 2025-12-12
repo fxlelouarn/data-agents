@@ -106,43 +106,125 @@ Agent qui surveille le canal Slack `#data-events`, lit les messages mentionnant 
 
 ## Architecture technique
 
-### Nouveau fichier agent
+### Décision : Architecture Agent (2025-12-12)
+
+L'intégration Slack utilise l'architecture Agent (`@data-agents/agent-framework`) plutôt qu'un simple service Express.
+
+**Avantages** :
+| Aspect | Service Express | Agent Framework |
+|--------|-----------------|-----------------|
+| Activation/Désactivation | Redéploiement | ✅ Toggle dashboard |
+| Configuration | Variables d'env | ✅ JSON modifiable à chaud |
+| Visibilité | Logs serveur | ✅ Liste agents dashboard |
+| Métriques | Aucune | ✅ Stats (runs, succès, erreurs) |
+| État | Aucun | ✅ `agent_states` persistant |
+| Historique | Aucun | ✅ `agent_runs` |
+| Multi-channel | Hardcodé | ✅ Config par channel |
+
+### Structure des fichiers
+
 ```
 apps/agents/src/
-├── SlackDataBot.ts              # Agent principal
-├── slack/
-│   ├── SlackClient.ts           # Wrapper Bolt SDK
-│   ├── MessageParser.ts         # Parse les messages Slack
-│   └── InteractiveHandler.ts    # Gère les boutons/interactions
-├── extractors/
-│   ├── HtmlExtractor.ts         # Extraction depuis HTML
-│   ├── ImageExtractor.ts        # OCR + analyse image
-│   └── TextExtractor.ts         # Parsing texte brut
-└── services/
-    └── EventDataExtractor.ts    # Orchestre l'extraction
+├── SlackEventAgent.ts           # Agent principal (extends BaseAgent)
+└── slack/
+    └── extractors/              # Réutilise ceux de l'API ou duplique
+        ├── HtmlExtractor.ts
+        ├── ImageExtractor.ts
+        ├── TextExtractor.ts
+        └── EventDataExtractor.ts
+
+apps/api/src/
+├── routes/slack.ts              # Webhook → appelle l'agent
+└── services/slack/
+    ├── SlackService.ts          # Client Slack (conservé)
+    └── extractors/              # Extracteurs existants (Phase 2)
 ```
 
-### Dépendances à ajouter
-```json
-{
-  "@slack/bolt": "^3.x",
-  "@slack/web-api": "^6.x"
+### Configuration Agent (JSON)
+
+Pattern identique à GoogleSearchDateAgent : **config JSON prioritaire, fallback sur variables d'env**.
+
+```typescript
+// Dans SlackEventAgent.ts
+const config = {
+  slackBotToken: agentConfig.slackBotToken || process.env.SLACK_BOT_TOKEN,
+  slackSigningSecret: agentConfig.slackSigningSecret || process.env.SLACK_SIGNING_SECRET,
+  anthropicApiKey: agentConfig.anthropicApiKey || process.env.ANTHROPIC_API_KEY,
+  // ...
 }
 ```
 
-### Variables d'environnement
+```json
+{
+  "slackBotToken": "xoxb-...",
+  "slackSigningSecret": "...",
+  "anthropicApiKey": "sk-ant-...",
+  "channels": [
+    {
+      "id": "C123456",
+      "name": "data-events",
+      "autoCreateProposal": true,
+      "notifyOnValidation": true
+    }
+  ],
+  "extraction": {
+    "preferredModel": "haiku",
+    "fallbackToSonnet": true,
+    "maxImageSizeMB": 20
+  },
+  "reminders": {
+    "enabled": true,
+    "delayHours": 24,
+    "maxReminders": 2
+  }
+}
+```
+
+**Avantages** :
+- Multi-workspace Slack possible (un agent par workspace)
+- Modification à chaud via dashboard
+- Pas besoin de redéployer pour changer de channel
+
+### Dépendances
+```json
+{
+  "@slack/web-api": "^6.x",
+  "sharp": "^0.33.x"
+}
+```
+
+### Variables d'environnement (fallback uniquement)
 ```bash
-# Slack App
+# Utilisées si non définies dans la config JSON de l'agent
 SLACK_BOT_TOKEN=xoxb-...
 SLACK_SIGNING_SECRET=...
-SLACK_APP_TOKEN=xapp-...  # Pour Socket Mode (dev)
-
-# Canal cible
-SLACK_CHANNEL_ID=C...     # ID de #data-events
-
-# API IA pour extraction
-ANTHROPIC_API_KEY=...     # Déjà existant
+ANTHROPIC_API_KEY=...
 ```
+
+---
+
+### Services partagés à mutualiser
+
+Actuellement, le matching d'événements est dans `apps/agents/src/ffa/matcher.ts` et ne peut pas être réutilisé par d'autres agents.
+
+**Avant Phase 3**, créer un service partagé :
+
+```
+packages/agent-framework/src/services/
+├── EventMatchingService.ts    # Depuis ffa/matcher.ts
+├── RaceMatchingService.ts     # Renommer matching-utils.ts
+└── index.ts
+```
+
+| Service | Fonctionnalité |
+|---------|----------------|
+| `EventMatchingService` | Matching événements par nom/ville/date (fuse.js) |
+| `RaceMatchingService` | Matching courses par distance + nom |
+
+Cela permettra :
+- SlackEventAgent d'utiliser le même algorithme que FFA
+- GoogleSearchDateAgent de bénéficier du matching (si besoin)
+- Maintenance centralisée de l'algorithme
 
 ---
 
@@ -253,47 +335,63 @@ Dans `PUT /api/proposals/:id` et `POST /api/proposals/bulk-approve` :
 
 ## Phases d'implémentation
 
-### Phase 1 : Infrastructure Slack
-1. Créer l'app Slack dans le workspace
-2. Configurer les permissions (scopes)
-3. Implémenter `SlackClient.ts` avec Bolt SDK
-4. Tester la connexion et la réception de messages
+### Phase 1 : Infrastructure Slack ✅
+1. ~~Créer l'app Slack dans le workspace~~
+2. ~~Configurer les permissions (scopes)~~
+3. ~~Implémenter `SlackService.ts` avec @slack/web-api~~
+4. ~~Routes webhooks `/api/slack/events` et `/api/slack/interactions`~~
+5. ~~Tester la connexion et la réception de messages~~
 
-### Phase 2 : Extraction de données
-1. Implémenter `HtmlExtractor.ts`
-   - Fetch HTML de la page
-   - Parse avec Cheerio pour structure
-   - Si trop complexe → screenshot avec Puppeteer
-   - Envoyer à Claude Haiku pour extraction
-2. Implémenter `ImageExtractor.ts`
-   - Recevoir image depuis Slack
-   - Envoyer à Claude Haiku pour OCR + analyse
-   - Fallback Sonnet si échec
-3. Implémenter `TextExtractor.ts`
-   - Parser le texte brut avec Claude
+### Phase 2 : Extraction de données ✅
+1. ~~Implémenter `HtmlExtractor.ts`~~
+   - ~~Fetch HTML de la page~~
+   - ~~Parse avec Cheerio pour structure~~
+   - ~~Détection pages SPA (anti-hallucination)~~
+   - ~~Envoyer à Claude Haiku pour extraction~~
+   - ~~Fallback Sonnet si échec~~
+2. ~~Implémenter `ImageExtractor.ts`~~
+   - ~~Recevoir image depuis Slack (authentifié)~~
+   - ~~Redimensionnement auto avec sharp (> 5MB)~~
+   - ~~Envoyer à Claude Vision pour analyse~~
+   - ~~Fallback Sonnet si échec~~
+3. ~~Implémenter `TextExtractor.ts`~~
+   - ~~Parser le texte brut avec Claude~~
+   - ~~Nettoyage mentions/URLs Slack~~
 
-### Phase 3 : Création de Proposals
-1. Intégrer l'algorithme de matching existant
-2. Créer les Proposals avec `sourceMetadata`
-3. Stocker le lien message Slack ↔ Proposal
+### Phase 2.5 : Migration vers architecture Agent ✅
+1. ~~Créer `SlackEventAgent.ts` (extends BaseAgent)~~
+2. ~~Ajouter version dans `packages/types/src/agent-versions.ts`~~
+3. ~~Déplacer la config vers JSON (channels, extraction, reminders)~~
+4. ~~Adapter le webhook pour vérifier l'agent actif~~
+5. ~~Script de seed `scripts/seed-slack-agent.ts`~~
+6. ~~Schéma de configuration pour le dashboard~~
 
-### Phase 4 : Interactions Slack
-1. Implémenter les boutons interactifs
-2. Gérer le clic "Valider" → approuve tous les blocs
-3. Gérer le clic "Voir dashboard" → lien direct
+### Phase 3 : Création de Proposals ✅
+1. ~~Mutualiser le service de matching dans `packages/agent-framework/src/services/event-matching/`~~
+2. ~~Créer `SlackProposalService.ts` avec connexion Miles Republic~~
+3. ~~Créer les Proposals avec `sourceMetadata`~~
+4. ~~Gérer les types : NEW_EVENT, EDITION_UPDATE~~
+5. ~~Calculer la confiance basée sur le matching~~
+6. ~~Ajouter migration Prisma pour `sourceMetadata`~~
 
-### Phase 5 : Système de relances
-1. Créer une table ou champ pour tracker les relances
-2. Job schedulé pour vérifier les Proposals non validées
+### Phase 4 : Interactions Slack ⏳
+1. ~~Boutons "Valider" et "Voir dashboard" affichés~~
+2. ~~Bouton "Voir dashboard" fonctionnel~~
+3. Implémenter le clic "Valider" → approuve tous les blocs
+4. Mise à jour du message après validation
+
+### Phase 5 : Système de relances ⏳
+1. Tracker les Proposals non validées (champ dans agent_states)
+2. Job schedulé pour vérifier les Proposals à relancer
 3. Envoyer relance @channel à 24h
-4. Marquer après 2 relances
+4. Maximum 2 relances puis abandon
 
-### Phase 6 : Notifications retour
+### Phase 6 : Notifications retour ⏳
 1. Hook sur validation depuis dashboard
 2. Poster message dans thread Slack original
 3. Affichage `SlackSourceCard` dans le dashboard
 
-### Phase 7 : Tests et polish
+### Phase 7 : Tests et polish ⏳
 1. Tests unitaires extracteurs
 2. Tests d'intégration Slack
 3. Gestion des erreurs robuste
@@ -341,15 +439,16 @@ message.channels      # Messages dans les canaux publics
 
 ## Estimation de complexité
 
-| Phase | Complexité | Dépendances |
-|-------|------------|-------------|
-| Phase 1 | Moyenne | Création app Slack |
-| Phase 2 | Haute | API Anthropic, Puppeteer |
-| Phase 3 | Moyenne | Matching existant |
-| Phase 4 | Moyenne | Bolt SDK |
-| Phase 5 | Faible | Scheduler existant |
-| Phase 6 | Faible | API existante |
-| Phase 7 | Moyenne | - |
+| Phase | Complexité | Statut | Dépendances |
+|-------|------------|--------|-------------|
+| Phase 1 | Moyenne | ✅ | Création app Slack |
+| Phase 2 | Haute | ✅ | API Anthropic, sharp |
+| Phase 2.5 | Moyenne | ✅ | agent-framework |
+| Phase 3 | Moyenne | ⏳ | Matching existant |
+| Phase 4 | Moyenne | ⏳ | @slack/web-api |
+| Phase 5 | Faible | ⏳ | Scheduler existant |
+| Phase 6 | Faible | ⏳ | API existante |
+| Phase 7 | Moyenne | ⏳ | - |
 
 ---
 
@@ -376,6 +475,15 @@ message.channels      # Messages dans les canaux publics
 
 ## Prochaines étapes
 
-1. [ ] Créer l'app Slack dans le workspace
-2. [ ] Obtenir les tokens et configurer les variables d'environnement
-3. [ ] Commencer Phase 1 : Infrastructure Slack
+1. [x] ~~Créer l'app Slack dans le workspace~~
+2. [x] ~~Obtenir les tokens et configurer les variables d'environnement~~
+3. [x] ~~Phase 1 : Infrastructure Slack~~
+4. [x] ~~Phase 2 : Extraction de données~~
+5. [x] ~~Phase 2.5 : Migration vers architecture Agent~~
+6. [x] ~~Phase 3 : Création de Proposals~~
+   - ~~Mutualiser EventMatchingService~~
+   - ~~Intégrer matching dans SlackEventAgent~~
+   - ~~Créer Proposals avec sourceMetadata~~
+7. [ ] **Phase 4 : Interactions Slack** ← PROCHAINE ÉTAPE
+   - Rendre le bouton "Valider" fonctionnel
+   - Mise à jour du message après validation

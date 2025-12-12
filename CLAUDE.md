@@ -870,6 +870,49 @@ Les agents sont des processus qui :
 - S'exécutent selon un calendrier défini
 - Peuvent être activés/désactivés depuis l'interface d'administration
 
+### ⚠️ IMPORTANT - Registry des agents
+
+**Tout nouvel agent DOIT être enregistré dans le registry** pour être visible dans l'application.
+
+**Fichiers à modifier** :
+
+1. **Créer le fichier registry** : `apps/agents/src/registry/<agent-name>.ts`
+   ```typescript
+   import { MonAgent } from '../MonAgent'
+   import { MonAgentConfigSchema } from '../MonAgent.configSchema'
+   import { agentRegistry } from '@data-agents/agent-framework'
+
+   const DEFAULT_CONFIG = {
+     name: 'Mon Agent',
+     description: '...',
+     type: 'EXTRACTOR' as const,
+     frequency: '0 */12 * * *',
+     isActive: true,
+     config: {
+       agentType: 'MON_AGENT',
+       configSchema: MonAgentConfigSchema
+     }
+   }
+
+   agentRegistry.register('MON_AGENT', MonAgent)
+   export { MonAgent, DEFAULT_CONFIG }
+   ```
+
+2. **Mettre à jour l'index** : `apps/agents/src/index.ts`
+   ```typescript
+   import { MonAgent, MON_AGENT_VERSION } from './MonAgent'
+   
+   agentRegistry.register('MON_AGENT', MonAgent)
+   
+   export { MonAgent, MON_AGENT_VERSION }
+   ```
+
+**Agents actuellement enregistrés** :
+- `FFA_SCRAPER` - Scraping calendrier FFA
+- `GOOGLE_SEARCH_DATE` - Recherche dates via Google
+- `AUTO_VALIDATOR` - Validation automatique
+- `SLACK_EVENT` - Traitement messages Slack @databot
+
 ### Agent FFA
 
 L'agent FFA scrape les compétitions depuis le site de la Fédération Française d'Athlétisme et utilise un **algorithme de matching avancé** pour les associer aux événements existants dans Miles Republic.
