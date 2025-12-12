@@ -197,6 +197,122 @@ const agentConfigSchemas: Record<string, ConfigSchema> = {
         helpText: "Utile pour tester la configuration avant activation"
       }
     ]
+  },
+  SLACK_EVENT: {
+    title: "Configuration Slack Event Agent",
+    description: "Agent qui traite les messages Slack @databot pour extraire des événements",
+    categories: [
+      { id: "credentials", label: "Identifiants" },
+      { id: "channels", label: "Channels Slack" },
+      { id: "extraction", label: "Extraction" },
+      { id: "reminders", label: "Relances" },
+      { id: "database", label: "Base de données" }
+    ],
+    fields: [
+      {
+        name: "slackBotToken",
+        label: "Slack Bot Token",
+        type: "password",
+        category: "credentials",
+        description: "Token du bot Slack (xoxb-...). Fallback: SLACK_BOT_TOKEN",
+        required: false
+      },
+      {
+        name: "slackSigningSecret",
+        label: "Slack Signing Secret",
+        type: "password",
+        category: "credentials",
+        description: "Secret de signature Slack. Fallback: SLACK_SIGNING_SECRET",
+        required: false
+      },
+      {
+        name: "anthropicApiKey",
+        label: "Anthropic API Key",
+        type: "password",
+        category: "credentials",
+        description: "Clé API Anthropic pour Claude. Fallback: ANTHROPIC_API_KEY",
+        required: false
+      },
+      {
+        name: "channels",
+        label: "Channels",
+        type: "textarea",
+        category: "channels",
+        description: "Liste des channels à surveiller (format JSON)",
+        helpText: "Ex: [{\"id\": \"C123\", \"name\": \"data-events\", \"autoCreateProposal\": true}]",
+        required: true,
+        defaultValue: "[]"
+      },
+      {
+        name: "extraction.preferredModel",
+        label: "Modèle préféré",
+        type: "select",
+        category: "extraction",
+        description: "Modèle Claude à utiliser en priorité",
+        required: true,
+        defaultValue: "haiku",
+        options: [
+          { value: "haiku", label: "Claude Haiku (rapide, économique)" },
+          { value: "sonnet", label: "Claude Sonnet (plus précis)" }
+        ]
+      },
+      {
+        name: "extraction.fallbackToSonnet",
+        label: "Fallback vers Sonnet",
+        type: "switch",
+        category: "extraction",
+        description: "Utiliser Sonnet si Haiku échoue",
+        required: true,
+        defaultValue: true
+      },
+      {
+        name: "extraction.maxImageSizeMB",
+        label: "Taille max image (MB)",
+        type: "number",
+        category: "extraction",
+        description: "Taille maximale des images en mégaoctets",
+        required: true,
+        defaultValue: 20,
+        validation: { min: 1, max: 50 }
+      },
+      {
+        name: "reminders.enabled",
+        label: "Activer les relances",
+        type: "switch",
+        category: "reminders",
+        description: "Envoyer des relances si pas de validation",
+        required: true,
+        defaultValue: true
+      },
+      {
+        name: "reminders.delayHours",
+        label: "Délai avant relance (heures)",
+        type: "number",
+        category: "reminders",
+        description: "Nombre d'heures avant la première relance",
+        required: true,
+        defaultValue: 24,
+        validation: { min: 1, max: 168 }
+      },
+      {
+        name: "reminders.maxReminders",
+        label: "Nombre max de relances",
+        type: "number",
+        category: "reminders",
+        description: "Nombre maximum de relances avant abandon",
+        required: true,
+        defaultValue: 2,
+        validation: { min: 0, max: 5 }
+      },
+      {
+        name: "sourceDatabase",
+        label: "Base de données source",
+        type: "select",
+        category: "database",
+        description: "Base de données Miles Republic pour le matching",
+        required: true
+      }
+    ]
   }
 }
 
@@ -216,6 +332,10 @@ function loadAgentMetadata(): Record<string, AgentMetadata> {
     'auto-validator-agent': {
       version: AGENT_VERSIONS.AUTO_VALIDATOR_AGENT,
       description: `Agent qui valide automatiquement les propositions EDITION_UPDATE FFA pour les événements non-premium (v${AGENT_VERSIONS.AUTO_VALIDATOR_AGENT})`
+    },
+    'slack-event-agent': {
+      version: AGENT_VERSIONS.SLACK_EVENT_AGENT,
+      description: `Agent qui traite les messages Slack @databot pour extraire et créer des propositions d'événements (v${AGENT_VERSIONS.SLACK_EVENT_AGENT})`
     }
   }
 }
@@ -242,6 +362,10 @@ function detectAgentType(name: string, config?: Record<string, any>): string | n
 
   if (lowerName.includes('auto') && lowerName.includes('validator')) {
     return 'AUTO_VALIDATOR'
+  }
+
+  if (lowerName.includes('slack')) {
+    return 'SLACK_EVENT'
   }
 
   return null
