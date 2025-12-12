@@ -1,9 +1,4 @@
-/**
- * Schéma de configuration pour SlackEventAgent
- * Utilisé par le dashboard pour afficher un formulaire de configuration
- */
-
-import { ConfigSchema } from '@data-agents/agent-framework'
+import { ConfigSchema } from '../config.js'
 
 export const SlackEventAgentConfigSchema: ConfigSchema = {
   title: "Configuration Slack Event Agent",
@@ -108,10 +103,7 @@ export const SlackEventAgentConfigSchema: ConfigSchema = {
       description: 'Taille maximale des images en mégaoctets',
       required: true,
       defaultValue: 20,
-      validation: {
-        min: 1,
-        max: 50
-      }
+      validation: { min: 1, max: 50 }
     },
 
     // Reminders
@@ -132,10 +124,7 @@ export const SlackEventAgentConfigSchema: ConfigSchema = {
       description: 'Nombre d\'heures avant la première relance',
       required: true,
       defaultValue: 24,
-      validation: {
-        min: 1,
-        max: 168
-      }
+      validation: { min: 1, max: 168 }
     },
     {
       name: 'reminders.maxReminders',
@@ -145,10 +134,7 @@ export const SlackEventAgentConfigSchema: ConfigSchema = {
       description: 'Nombre maximum de relances avant abandon',
       required: true,
       defaultValue: 2,
-      validation: {
-        min: 0,
-        max: 5
-      }
+      validation: { min: 0, max: 5 }
     },
 
     // Database
@@ -162,5 +148,3 @@ export const SlackEventAgentConfigSchema: ConfigSchema = {
     }
   ]
 }
-
-export default SlackEventAgentConfigSchema

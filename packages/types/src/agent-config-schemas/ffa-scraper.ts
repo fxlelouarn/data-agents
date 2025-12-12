@@ -1,4 +1,4 @@
-import { ConfigSchema } from '@data-agents/agent-framework'
+import { ConfigSchema } from '../config.js'
 
 export const FFAScraperAgentConfigSchema: ConfigSchema = {
   title: "Configuration FFA Scraper Agent",
@@ -169,5 +169,3 @@ export const FFAScraperAgentConfigSchema: ConfigSchema = {
     }
   ]
 }
-
-export default FFAScraperAgentConfigSchema

@@ -1,5 +1,5 @@
 import { AutoValidatorAgent } from '../AutoValidatorAgent'
-import { AutoValidatorAgentConfigSchema } from '../AutoValidatorAgent.configSchema'
+import { AutoValidatorAgentConfigSchema } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**

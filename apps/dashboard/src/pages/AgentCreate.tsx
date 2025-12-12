@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
 import {
   Box,
@@ -18,19 +18,12 @@ import {
   Tabs,
   Tab,
   CircularProgress,
+  Skeleton,
 } from '@mui/material'
 import { Save as SaveIcon, Cancel as CancelIcon } from '@mui/icons-material'
-import { useCreateAgent } from '@/hooks/useApi'
+import { useCreateAgent, useAvailableAgents } from '@/hooks/useApi'
 import DynamicConfigForm from '@/components/DynamicConfigForm'
 import { AgentType } from '@/types'
-
-// Types d'agents disponibles avec leurs configurations
-const agentTypeLabels: Record<string, string> = {
-  GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
-  FFA_SCRAPER: 'FFA Scraper Agent',
-  AUTO_VALIDATOR: 'Auto Validator Agent',
-  SLACK_EVENT: 'Slack Event Agent',
-}
 
 // Options de fréquence prédéfinies
 const frequencyOptions = [
@@ -60,239 +53,6 @@ const frequencyOptions = [
   },
 ]
 
-// Schémas de configuration par type d'agent
-const agentConfigSchemas: Record<string, any> = {
-  FFA_SCRAPER: {
-    sourceDatabase: {
-      type: 'database_select',
-      label: 'Base de données',
-      description: 'Base de données Miles Republic à utiliser',
-      required: true,
-      category: 'Configuration générale',
-      order: 1,
-    },
-    ligues: {
-      type: 'text',
-      label: 'Ligues FFA',
-      description: 'Codes des ligues FFA séparés par des virgules (ex: ARA,IDF,PAC) ou "*" pour toutes',
-      required: true,
-      default: '*',
-      category: 'Configuration générale',
-      order: 2,
-      placeholder: '* (toutes les ligues)',
-    },
-    monthsAhead: {
-      type: 'number',
-      label: 'Nombre de mois à scraper',
-      description: 'Nombre de mois à scraper à partir d\'aujourd\'hui',
-      required: false,
-      default: 3,
-      min: 1,
-      max: 12,
-      category: 'Configuration générale',
-      order: 3,
-    },
-    batchSize: {
-      type: 'number',
-      label: 'Taille des lots',
-      description: 'Nombre de compétitions à traiter par lot',
-      required: false,
-      default: 10,
-      min: 1,
-      max: 100,
-      category: 'Performance',
-      order: 4,
-    },
-  },
-  GOOGLE_SEARCH_DATE: {
-    sourceDatabase: {
-      type: 'database_select',
-      label: 'Base de données',
-      description: 'Base de données Miles Republic à utiliser',
-      required: true,
-      category: 'Configuration générale',
-      order: 1,
-    },
-    googleApiKey: {
-      type: 'password',
-      label: 'Clé API Google',
-      description: 'Clé d\'API Google Custom Search',
-      required: true,
-      category: 'Configuration générale',
-      order: 2,
-    },
-    searchEngineId: {
-      type: 'text',
-      label: 'Search Engine ID',
-      description: 'ID du moteur de recherche personnalisé Google',
-      required: true,
-      category: 'Configuration générale',
-      order: 3,
-    },
-    batchSize: {
-      type: 'number',
-      label: 'Taille des lots',
-      description: 'Nombre d\'événements à traiter par lot',
-      required: false,
-      default: 10,
-      min: 1,
-      max: 50,
-      category: 'Performance',
-      order: 4,
-    },
-  },
-  AUTO_VALIDATOR: {
-    milesRepublicDatabase: {
-      type: 'database_select',
-      label: 'Base Miles Republic',
-      description: 'Connexion à Miles Republic pour vérifier isFeatured et customerType',
-      required: true,
-      category: 'Validation',
-      order: 1,
-    },
-    minConfidence: {
-      type: 'number',
-      label: 'Confiance minimale',
-      description: 'Confiance minimale requise pour auto-valider (0.5 à 1.0)',
-      required: true,
-      default: 0.7,
-      min: 0.5,
-      max: 1.0,
-      category: 'Validation',
-      order: 2,
-    },
-    maxProposalsPerRun: {
-      type: 'number',
-      label: 'Propositions max par run',
-      description: 'Nombre maximum de propositions à traiter par exécution',
-      required: false,
-      default: 100,
-      min: 10,
-      max: 500,
-      category: 'Validation',
-      order: 3,
-    },
-    enableEditionBlock: {
-      type: 'switch',
-      label: 'Valider bloc Edition',
-      description: 'Valider automatiquement les modifications d\'édition (dates, URLs)',
-      required: false,
-      default: true,
-      category: 'Blocs',
-      order: 4,
-    },
-    enableOrganizerBlock: {
-      type: 'switch',
-      label: 'Valider bloc Organisateur',
-      description: 'Valider automatiquement les modifications d\'organisateur',
-      required: false,
-      default: true,
-      category: 'Blocs',
-      order: 5,
-    },
-    enableRacesBlock: {
-      type: 'switch',
-      label: 'Valider bloc Courses',
-      description: 'Valider les modifications de courses existantes (jamais de nouvelles courses)',
-      required: false,
-      default: true,
-      category: 'Blocs',
-      order: 6,
-    },
-    dryRun: {
-      type: 'switch',
-      label: 'Mode simulation',
-      description: 'Simuler sans appliquer les validations (pour tester)',
-      required: false,
-      default: false,
-      category: 'Avancé',
-      order: 7,
-    },
-  },
-  SLACK_EVENT: {
-    sourceDatabase: {
-      type: 'database_select',
-      label: 'Base de données source',
-      description: 'Base de données Miles Republic pour le matching',
-      required: true,
-      category: 'Base de données',
-      order: 1,
-    },
-    'extraction.preferredModel': {
-      type: 'select',
-      label: 'Modèle préféré',
-      description: 'Modèle Claude à utiliser en priorité',
-      required: true,
-      default: 'haiku',
-      options: [
-        { value: 'haiku', label: 'Claude Haiku (rapide, économique)' },
-        { value: 'sonnet', label: 'Claude Sonnet (plus précis)' },
-      ],
-      category: 'Extraction',
-      order: 2,
-    },
-    'extraction.fallbackToSonnet': {
-      type: 'switch',
-      label: 'Fallback vers Sonnet',
-      description: 'Utiliser Sonnet si Haiku échoue',
-      required: false,
-      default: true,
-      category: 'Extraction',
-      order: 3,
-    },
-    'extraction.maxImageSizeMB': {
-      type: 'number',
-      label: 'Taille max image (MB)',
-      description: 'Taille maximale des images en mégaoctets',
-      required: false,
-      default: 20,
-      min: 1,
-      max: 50,
-      category: 'Extraction',
-      order: 4,
-    },
-    'reminders.enabled': {
-      type: 'switch',
-      label: 'Activer les relances',
-      description: 'Envoyer des relances si pas de validation',
-      required: false,
-      default: true,
-      category: 'Relances',
-      order: 5,
-    },
-    'reminders.delayHours': {
-      type: 'number',
-      label: 'Délai avant relance (heures)',
-      description: 'Nombre d\'heures avant la première relance',
-      required: false,
-      default: 24,
-      min: 1,
-      max: 168,
-      category: 'Relances',
-      order: 6,
-    },
-    'reminders.maxReminders': {
-      type: 'number',
-      label: 'Nombre max de relances',
-      description: 'Nombre maximum de relances avant abandon',
-      required: false,
-      default: 2,
-      min: 0,
-      max: 5,
-      category: 'Relances',
-      order: 7,
-    },
-  },
-}
-
-// Mapping des types d'agents registrés vers les types AgentType
-const agentTypeMapping: Record<string, AgentType> = {
-  GOOGLE_SEARCH_DATE: 'EXTRACTOR',
-  FFA_SCRAPER: 'EXTRACTOR',
-  AUTO_VALIDATOR: 'VALIDATOR',
-  SLACK_EVENT: 'EXTRACTOR',
-}
-
 interface TabPanelProps {
   children?: React.ReactNode
   index: number
@@ -314,9 +74,50 @@ function TabPanel(props: TabPanelProps) {
   )
 }
 
+/**
+ * Convertit le ConfigSchema du backend vers le format attendu par DynamicConfigForm
+ */
+function convertConfigSchemaForForm(configSchema: {
+  fields: Array<{
+    name: string
+    label: string
+    type: string
+    category?: string
+    required?: boolean
+    defaultValue?: any
+    description?: string
+    helpText?: string
+    placeholder?: string
+    options?: Array<{ value: string; label: string }>
+    validation?: { required?: boolean; min?: number; max?: number; step?: number }
+  }>
+}): Record<string, any> {
+  const result: Record<string, any> = {}
+
+  configSchema.fields.forEach((field, index) => {
+    result[field.name] = {
+      type: field.type === 'select' ? 'select' : field.type,
+      label: field.label,
+      description: field.description || field.helpText,
+      required: field.required || field.validation?.required,
+      default: field.defaultValue,
+      category: field.category || 'Configuration générale',
+      order: index + 1,
+      placeholder: field.placeholder,
+      options: field.options,
+      min: field.validation?.min,
+      max: field.validation?.max,
+      step: field.validation?.step,
+    }
+  })
+
+  return result
+}
+
 const AgentCreate: React.FC = () => {
   const navigate = useNavigate()
   const createMutation = useCreateAgent()
+  const { data: availableAgentsResponse, isLoading: isLoadingAgents, error: agentsError } = useAvailableAgents()
 
   const [selectedAgentType, setSelectedAgentType] = useState<string>('')
   const [selectedFrequencyIndex, setSelectedFrequencyIndex] = useState<number>(2) // Default: 1x par jour (02h-05h)
@@ -329,6 +130,39 @@ const AgentCreate: React.FC = () => {
   const [tabValue, setTabValue] = useState(0)
   const [errors, setErrors] = useState<Record<string, string>>({})
   const [touched, setTouched] = useState<Record<string, boolean>>({})
+
+  // Données des agents disponibles depuis l'API
+  const availableAgents = availableAgentsResponse?.data || []
+
+  // Construire les maps pour accès rapide
+  const agentTypeLabels = useMemo(() => {
+    const labels: Record<string, string> = {}
+    availableAgents.forEach(agent => {
+      labels[agent.type] = agent.label
+    })
+    return labels
+  }, [availableAgents])
+
+  const agentTypeMapping = useMemo(() => {
+    const mapping: Record<string, AgentType> = {}
+    availableAgents.forEach(agent => {
+      mapping[agent.type] = agent.agentType as AgentType
+    })
+    return mapping
+  }, [availableAgents])
+
+  const agentConfigSchemas = useMemo(() => {
+    const schemas: Record<string, any> = {}
+    availableAgents.forEach(agent => {
+      schemas[agent.type] = convertConfigSchemaForForm(agent.configSchema)
+    })
+    return schemas
+  }, [availableAgents])
+
+  // Agent sélectionné
+  const selectedAgent = useMemo(() => {
+    return availableAgents.find(a => a.type === selectedAgentType)
+  }, [availableAgents, selectedAgentType])
 
   const handleAgentTypeChange = (agentType: string) => {
     setSelectedAgentType(agentType)
@@ -345,7 +179,7 @@ const AgentCreate: React.FC = () => {
       })
     }
 
-    console.log('🔧 Initializing config with defaults:', defaultConfig)
+    console.log('Initializing config with defaults:', defaultConfig)
 
     setFormData({
       ...formData,
@@ -372,9 +206,6 @@ const AgentCreate: React.FC = () => {
   const validateForm = (): boolean => {
     const newErrors: Record<string, string> = {}
 
-    console.log('🔍 Validation - formData:', formData)
-    console.log('🔍 Validation - selectedAgentType:', selectedAgentType)
-
     // Validation des champs généraux
     if (!formData.name.trim()) {
       newErrors.name = 'Le nom est requis'
@@ -391,14 +222,13 @@ const AgentCreate: React.FC = () => {
     if (schema) {
       Object.entries(schema).forEach(([fieldName, fieldConfig]: [string, any]) => {
         const value = formData.config[fieldName]
-        console.log(`🔍 Checking field ${fieldName}:`, value, 'required:', fieldConfig.required)
         if (fieldConfig.required && !value) {
           newErrors[fieldName] = `${fieldConfig.label} est requis`
         }
       })
     }
 
-    // Traiter les ligues (convertir en array)
+    // Traiter les ligues (convertir en array) - spécifique FFA_SCRAPER
     if (selectedAgentType === 'FFA_SCRAPER' && formData.config.ligues) {
       if (typeof formData.config.ligues === 'string') {
         const liguesStr = formData.config.ligues.trim()
@@ -411,20 +241,14 @@ const AgentCreate: React.FC = () => {
       }
     }
 
-    console.log('🔍 Validation errors:', newErrors)
     setErrors(newErrors)
     return Object.keys(newErrors).length === 0
   }
 
   const handleSubmit = async () => {
-    console.log('🚀 handleSubmit called')
-
     if (!validateForm()) {
-      console.log('❌ Validation failed')
       return
     }
-
-    console.log('✅ Validation passed')
 
     const agentData = {
       name: formData.name,
@@ -437,12 +261,8 @@ const AgentCreate: React.FC = () => {
       },
     }
 
-    console.log('📦 Agent data to send:', agentData)
-
     try {
-      console.log('🔄 Calling createMutation.mutateAsync...')
       const response = await createMutation.mutateAsync(agentData)
-      console.log('✅ Response received:', response)
       // Rediriger vers la page de détails de l'agent créé
       if (response.data?.id) {
         navigate(`/agents/${response.data.id}`)
@@ -451,12 +271,59 @@ const AgentCreate: React.FC = () => {
       }
     } catch (error) {
       // L'erreur est gérée par le hook useCreateAgent
-      console.error('❌ Erreur lors de la création:', error)
+      console.error('Erreur lors de la création:', error)
     }
   }
 
   const handleCancel = () => {
     navigate('/agents')
+  }
+
+  // État de chargement
+  if (isLoadingAgents) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            Créer un agent
+          </Typography>
+        </Box>
+        <Card>
+          <CardContent>
+            <Grid container spacing={3}>
+              <Grid item xs={12}>
+                <Skeleton variant="text" width="40%" height={40} />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Skeleton variant="rectangular" height={56} />
+              </Grid>
+              <Grid item xs={12} md={6}>
+                <Skeleton variant="rectangular" height={56} />
+              </Grid>
+              <Grid item xs={12}>
+                <Skeleton variant="rectangular" height={80} />
+              </Grid>
+            </Grid>
+          </CardContent>
+        </Card>
+      </Box>
+    )
+  }
+
+  // Erreur de chargement
+  if (agentsError) {
+    return (
+      <Box>
+        <Box sx={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', mb: 3 }}>
+          <Typography variant="h4" sx={{ fontWeight: 600 }}>
+            Créer un agent
+          </Typography>
+        </Box>
+        <Alert severity="error">
+          Erreur lors du chargement des types d'agents disponibles. Veuillez réessayer.
+        </Alert>
+      </Box>
+    )
   }
 
   return (
@@ -485,9 +352,16 @@ const AgentCreate: React.FC = () => {
                   label="Type d'agent *"
                   onChange={(e) => handleAgentTypeChange(e.target.value)}
                 >
-                  {Object.entries(agentTypeLabels).map(([type, label]) => (
-                    <MenuItem key={type} value={type}>
-                      {label}
+                  {availableAgents.map((agent) => (
+                    <MenuItem key={agent.type} value={agent.type}>
+                      {agent.label}
+                      <Typography
+                        component="span"
+                        variant="caption"
+                        sx={{ ml: 1, color: 'text.secondary' }}
+                      >
+                        v{agent.version}
+                      </Typography>
                     </MenuItem>
                   ))}
                 </Select>
@@ -509,6 +383,14 @@ const AgentCreate: React.FC = () => {
                 helperText={errors.name}
               />
             </Grid>
+
+            {selectedAgent && (
+              <Grid item xs={12}>
+                <Alert severity="info" sx={{ mb: 0 }}>
+                  {selectedAgent.description}
+                </Alert>
+              </Grid>
+            )}
 
             <Grid item xs={12}>
               <TextField
@@ -586,7 +468,7 @@ const AgentCreate: React.FC = () => {
                         try {
                           const config = JSON.parse(e.target.value)
                           setFormData({ ...formData, config })
-                        } catch (error) {
+                        } catch {
                           // Invalid JSON, keep current value
                         }
                       }}

@@ -77,8 +77,38 @@ api.interceptors.response.use(
   }
 )
 
+// Available agent types (for creation)
+export interface AvailableAgentInfo {
+  type: string
+  label: string
+  description: string
+  version: string
+  agentType: 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER'
+  configSchema: {
+    title: string
+    description?: string
+    categories?: Array<{ id: string; label: string; description?: string }>
+    fields: Array<{
+      name: string
+      label: string
+      type: 'text' | 'number' | 'password' | 'select' | 'textarea' | 'switch' | 'boolean' | 'slider' | 'multiselect' | 'database_select'
+      category?: string
+      required?: boolean
+      defaultValue?: any
+      description?: string
+      helpText?: string
+      placeholder?: string
+      options?: Array<{ value: string; label: string }>
+      validation?: { required?: boolean; min?: number; max?: number; step?: number }
+    }>
+  }
+}
+
 // Agents API
 export const agentsApi = {
+  getAvailable: (): Promise<ApiResponse<AvailableAgentInfo[]>> =>
+    api.get('/agents/available').then(res => res.data),
+
   getAll: (filters: AgentFilters = {}): Promise<ApiResponse<Agent[]>> =>
     api.get('/agents', { params: filters }).then(res => res.data),
 

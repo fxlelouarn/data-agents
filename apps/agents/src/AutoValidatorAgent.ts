@@ -10,10 +10,9 @@
  * @see docs/feature-auto-validator-agent/PLAN.md
  */
 
-import { AGENT_VERSIONS } from '@data-agents/types'
+import { AGENT_VERSIONS, AutoValidatorAgentConfigSchema } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
-import { AutoValidatorAgentConfigSchema } from './AutoValidatorAgent.configSchema'
 import {
   AutoValidatorConfig,
   AutoValidatorRunResult,

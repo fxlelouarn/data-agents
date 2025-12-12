@@ -1,4 +1,4 @@
-import { ConfigSchema } from '@data-agents/agent-framework'
+import { ConfigSchema } from '../config.js'
 
 export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
   title: "Configuration Google Search Date Agent",
@@ -11,7 +11,7 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
     },
     {
       id: "google",
-      label: "Google Search API", 
+      label: "Google Search API",
       description: "Paramètres de l'API Google Custom Search"
     },
     {
@@ -36,11 +36,8 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
       defaultValue: "",
       description: "Base de données contenant les événements à traiter",
       helpText: "Sélectionnez la base de données configurée dans les Settings qui contient les événements TO_BE_CONFIRMED",
-      options: [
-      ],
-      validation: {
-        required: true
-      }
+      options: [],
+      validation: { required: true }
     },
 
     // Traitement
@@ -53,13 +50,8 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
       defaultValue: 10,
       description: "Nombre d'événements à traiter par exécution",
       helpText: "Plus la valeur est élevée, plus l'agent traitera d'événements par run, mais plus l'exécution sera longue",
-      validation: {
-        required: true,
-        min: 1,
-        max: 100
-      }
+      validation: { required: true, min: 1, max: 100 }
     },
-    
     {
       name: "cooldownDays",
       label: "Cooldown (jours)",
@@ -69,30 +61,21 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
       defaultValue: 14,
       description: "Nombre de jours d'attente avant de retraiter un événement",
       helpText: "Évite les recherches Google répétitives. 14 jours = 2 semaines d'attente minimum entre les traitements d'un même événement",
-      validation: {
-        required: true,
-        min: 1,
-        max: 90
-      }
+      validation: { required: true, min: 1, max: 90 }
     },
-    
+
     // Google API
     {
       name: "googleResultsCount",
       label: "Nombre de résultats Google",
-      type: "number", 
+      type: "number",
       category: "google",
       required: true,
       defaultValue: 5,
       description: "Nombre de résultats Google à analyser par recherche",
       helpText: "Plus de résultats = plus de chances de trouver des dates, mais plus lent et plus de consommation API",
-      validation: {
-        required: true,
-        min: 1,
-        max: 10
-      }
+      validation: { required: true, min: 1, max: 10 }
     },
-    
     {
       name: "googleApiKey",
       label: "Clé API Google",
@@ -103,9 +86,8 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
       helpText: "Si non fournie, utilise la variable d'environnement GOOGLE_API_KEY",
       placeholder: "Votre clé API Google Custom Search"
     },
-    
     {
-      name: "googleSearchEngineId", 
+      name: "googleSearchEngineId",
       label: "ID du moteur de recherche",
       type: "text",
       category: "google",
@@ -125,43 +107,30 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
       defaultValue: 0.6,
       description: "Seuil minimum de confiance pour retenir une date extraite",
       helpText: "Entre 0 et 1. Plus élevé = plus strict mais moins de résultats",
-      validation: {
-        min: 0,
-        max: 1,
-        step: 0.1
-      }
+      validation: { min: 0, max: 1, step: 0.1 }
     },
-    
     {
       name: "maxDatesPerEvent",
       label: "Dates max par événement",
       type: "number",
-      category: "advanced", 
+      category: "advanced",
       required: false,
       defaultValue: 5,
       description: "Nombre maximum de dates à proposer par événement",
       helpText: "Limite le nombre de propositions générées par événement",
-      validation: {
-        min: 1,
-        max: 20
-      }
+      validation: { min: 1, max: 20 }
     },
-    
     {
       name: "searchTimeoutMs",
       label: "Timeout recherche (ms)",
       type: "number",
       category: "advanced",
-      required: false, 
+      required: false,
       defaultValue: 10000,
       description: "Timeout en millisecondes pour les recherches Google",
       helpText: "Augmenter si les recherches échouent par timeout",
-      validation: {
-        min: 1000,
-        max: 60000
-      }
+      validation: { min: 1000, max: 60000 }
     },
-    
     {
       name: "onlyFrenchEvents",
       label: "Événements français uniquement",
@@ -174,5 +143,3 @@ export const GoogleSearchDateAgentConfigSchema: ConfigSchema = {
     }
   ]
 }
-
-export default GoogleSearchDateAgentConfigSchema

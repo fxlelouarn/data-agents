@@ -4,12 +4,23 @@ import { getDatabaseServiceSync } from '../services/database'
 import { validateFrequencyConfig } from '@data-agents/database'
 import { FlexibleScheduler } from '../services/flexible-scheduler'
 import { asyncHandler, createError } from '../middleware/error-handler'
-import { enrichAgentWithMetadata } from '../services/agent-metadata'
+import { enrichAgentWithMetadata, getAvailableAgentsForUI } from '../services/agent-metadata'
 import type { FrequencyConfig } from '@data-agents/types'
 
 const router = Router()
 const db = getDatabaseServiceSync()
 const scheduler = new FlexibleScheduler()
+
+// GET /api/agents/available - List available agent types for creation
+// IMPORTANT: This route must be defined BEFORE /:id to avoid conflicts
+router.get('/available', asyncHandler(async (_req: Request, res: Response) => {
+  const availableAgents = getAvailableAgentsForUI()
+
+  res.json({
+    success: true,
+    data: availableAgents
+  })
+}))
 
 // Validation middleware
 const validateRequest = (req: Request, res: Response, next: NextFunction) => {

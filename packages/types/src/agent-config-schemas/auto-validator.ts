@@ -1,8 +1,4 @@
-/**
- * Schéma de configuration pour l'interface Dashboard de l'agent Auto-Validateur
- */
-
-import type { ConfigSchema } from '@data-agents/types'
+import { ConfigSchema } from '../config.js'
 
 export const AutoValidatorAgentConfigSchema: ConfigSchema = {
   title: "Configuration Auto Validator Agent",
@@ -34,7 +30,7 @@ export const AutoValidatorAgentConfigSchema: ConfigSchema = {
       required: true,
       description: "Connexion à Miles Republic pour vérifier les critères",
       helpText: "Utilisée pour vérifier isFeatured et customerType",
-      options: [], // Rempli dynamiquement avec les connexions disponibles
+      options: [],
       validation: { required: true }
     },
     {

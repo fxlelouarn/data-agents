@@ -1,5 +1,5 @@
 import { SlackEventAgent } from '../SlackEventAgent'
-import { SlackEventAgentConfigSchema } from '../SlackEventAgent.configSchema'
+import { SlackEventAgentConfigSchema } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -15,32 +15,32 @@ const DEFAULT_CONFIG = {
   isActive: true,
   config: {
     agentType: 'SLACK_EVENT',
-    
+
     // Credentials (fallback sur env vars)
     slackBotToken: null,
     slackSigningSecret: null,
     anthropicApiKey: null,
-    
+
     // Channels
     channels: [],
-    
+
     // Extraction
     extraction: {
       preferredModel: 'haiku',
       fallbackToSonnet: true,
       maxImageSizeMB: 20
     },
-    
+
     // Relances
     reminders: {
       enabled: true,
       delayHours: 24,
       maxReminders: 2
     },
-    
+
     // Source database pour matching
     sourceDatabase: null,
-    
+
     // Schéma de configuration pour l'interface dynamique
     configSchema: SlackEventAgentConfigSchema
   }

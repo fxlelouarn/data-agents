@@ -12,10 +12,9 @@
  * - Notifications dans le thread Slack
  */
 
-import { AGENT_VERSIONS } from '@data-agents/types'
+import { AGENT_VERSIONS, SlackEventAgentConfigSchema } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
-import { SlackEventAgentConfigSchema } from './SlackEventAgent.configSchema'
 
 // Version exportée depuis le package types (source unique de vérité)
 export const SLACK_EVENT_AGENT_VERSION = AGENT_VERSIONS.SLACK_EVENT_AGENT
@@ -306,7 +305,7 @@ export class SlackEventAgent extends BaseAgent {
     try {
       // Priorité: URL > Image > Texte
       const urls = this.extractUrls(message.text)
-      
+
       if (urls.length > 0) {
         this.logger.info(`🌐 Found ${urls.length} URL(s), trying HTML extraction`)
         // TODO: Appeler HtmlExtractor

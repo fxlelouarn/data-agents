@@ -24,6 +24,14 @@ import {
 } from '@/types'
 
 // Agents hooks
+export const useAvailableAgents = () => {
+  return useQuery({
+    queryKey: ['agents', 'available'],
+    queryFn: () => agentsApi.getAvailable(),
+    staleTime: 300000, // 5 minutes - agent types don't change often
+  })
+}
+
 export const useAgents = (filters: AgentFilters = {}) => {
   return useQuery({
     queryKey: ['agents', filters],

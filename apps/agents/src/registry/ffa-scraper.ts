@@ -1,5 +1,5 @@
 import { FFAScraperAgent } from '../FFAScraperAgent'
-import { FFAScraperAgentConfigSchema } from '../FFAScraperAgent.configSchema'
+import { FFAScraperAgentConfigSchema } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
   isActive: true,
   config: {
     agentType: 'FFA_SCRAPER',
-    
+
     // Valeurs par défaut
     sourceDatabase: null,
     liguesPerRun: 2,
@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
     distanceTolerancePercent: 0.1,
     confidenceBase: 0.9,
     maxCompetitionsPerMonth: 500,
-    
+
     // Schéma de configuration pour l'interface dynamique
     configSchema: FFAScraperAgentConfigSchema
   }

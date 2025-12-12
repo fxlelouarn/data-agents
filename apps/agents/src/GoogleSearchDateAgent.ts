@@ -1,4 +1,4 @@
-import { AGENT_VERSIONS } from '@data-agents/types'
+import { AGENT_VERSIONS, GoogleSearchDateAgentConfigSchema } from '@data-agents/types'
 import { BaseAgent, AgentType } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -6,7 +6,6 @@ export const GOOGLE_SEARCH_DATE_AGENT_VERSION = AGENT_VERSIONS.GOOGLE_SEARCH_DAT
 import { IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
-import { GoogleSearchDateAgentConfigSchema } from './GoogleSearchDateAgent.configSchema'
 import axios from 'axios'
 import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { format } from 'date-fns'
@@ -15,7 +14,7 @@ import { fr } from 'date-fns/locale'
 // Interface pour la configuration spécifique de l'agent
 interface GoogleSearchDateConfig {
   batchSize: number // Nombre d'événements à traiter par batch (défaut: 10)
-  googleResultsCount: number // Nombre de résultats Google à récupérer (défaut: 5) 
+  googleResultsCount: number // Nombre de résultats Google à récupérer (défaut: 5)
   googleApiKey?: string // Clé API Google
   googleSearchEngineId?: string // ID du moteur de recherche personnalisé Google
   sourceDatabase: string // ID de la base de données source pour lire les événements
@@ -122,11 +121,11 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
   async run(context: AgentContext): Promise<AgentRunResult> {
     const config = this.config.config as GoogleSearchDateConfig
-    
+
     try {
       // Récupérer l'offset persistant
       const offset = await this.stateService.getState<number>(this.config.id, 'offset') || 0
-      
+
       context.logger.info(`🚀 Démarrage Google Search Date Agent v${GOOGLE_SEARCH_DATE_AGENT_VERSION}`, {
         version: GOOGLE_SEARCH_DATE_AGENT_VERSION,
         batchSize: config.batchSize,
@@ -144,9 +143,9 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // 1. Récupérer les événements TO_BE_CONFIRMED par batch
       context.logger.info(`📋 Récupération des événements TO_BE_CONFIRMED (batch: ${config.batchSize}, offset: ${offset})`)
       const events = await this.getToBeConfirmedEvents(config.batchSize, offset)
-      
+
       context.logger.info(`📊 Nombre d'événements récupérés: ${events.length}`)
-      
+
       if (events.length === 0) {
         // Fin du parcours, recommencer du début
         await this.stateService.setState(this.config.id, 'offset', 0)
@@ -160,18 +159,18 @@ export class GoogleSearchDateAgent extends BaseAgent {
       const proposals: ProposalData[] = []
       let eventsProcessed = 0
       let eventsSkipped = 0
-      
+
       context.logger.info(`📋 Début du traitement de ${events.length} événement(s)...`)
-      
+
       // 2. Traiter chaque événement
       for (let i = 0; i < events.length; i++) {
         const event = events[i]
         context.logger.info(`🏃 [Événement ${i + 1}/${events.length}] Traitement: ${event.name} (${event.city})`)
-        
+
         try {
           // 3.1. Vérifier le cooldown avant de traiter
           const isInCooldown = await this.isEventInCooldown(event.id, config.cooldownDays)
-          
+
           if (isInCooldown) {
             context.logger.info(`⏸️ Événement en cooldown (${config.cooldownDays} jours) - ignoré: ${event.name}`)
             eventsSkipped++
@@ -182,14 +181,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
           const searchQuery = this.buildSearchQuery(event)
           context.logger.info(`🔍 Recherche Google: "${searchQuery}"`)
           eventsProcessed++
-          
+
           const searchResults = await this.performGoogleSearch(searchQuery, config)
 
           if (!searchResults?.items?.length) {
             context.logger.warn(`⚠️ Aucun résultat Google trouvé pour: ${searchQuery}`)
             continue
           }
-          
+
           context.logger.info(`📋 ${searchResults.items.length} résultat(s) Google obtenus`)
 
           // 5. Extraire les dates des snippets
@@ -205,7 +204,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
           proposals.push(...eventProposals)
 
           context.logger.info(`${eventProposals.length} proposition(s) créée(s) pour l'événement: ${event.name}`)
-          
+
           // 7. Marquer l'événement comme traité (même si aucune proposition)
           await this.markEventAsProcessed(event.id)
 
@@ -224,7 +223,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       for (const proposal of proposals) {
         // Utiliser la confiance calculée de la proposition au lieu du 0.7 codé en dur
         const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
-        
+
         await this.createProposal(
           proposal.type,
           proposal.changes,
@@ -270,30 +269,30 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
   private async getToBeConfirmedEvents(batchSize: number, offset: number = 0): Promise<NextProdEvent[]> {
     const config = this.config.config as GoogleSearchDateConfig
-    
+
     try {
       this.logger.info(`🔍 Récupération des événements TO_BE_CONFIRMED...`, {
         sourceDbStatus: this.sourceDb ? 'connecté' : 'non-connecté',
         batchSize,
         offset: offset
       })
-      
+
       // Si pas de connexion source, échouer
       if (!this.sourceDb) {
         throw new Error('Pas de connexion source - impossible de continuer')
       }
-      
+
       this.logger.info('📊 Exécution de la requête Prisma...')
-      
+
       // Vérifier que this.sourceDb a bien la méthode event (minuscule - modèle Prisma)
       if (!this.sourceDb || !this.sourceDb.event) {
         throw new Error('La base source ne contient pas le modèle "event" - vérifiez la configuration de la base de données')
       }
-      
+
       // Calculer les années à traiter (année courante et suivante)
       const currentYear = new Date().getFullYear().toString()
       const nextYear = (new Date().getFullYear() + 1).toString()
-      
+
       let events
       try {
         this.logger.info('🔍 Paramètres de la requête Prisma:', {
@@ -302,42 +301,42 @@ export class GoogleSearchDateAgent extends BaseAgent {
           years: [currentYear, nextYear],
           filter: 'Events avec éditions TO_BE_CONFIRMED qui sont currentEdition'
         })
-        
-        // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED 
+
+        // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED
         // ordonnés par la date future estimée pour un traitement déterministe
         // IMPORTANT: On filtre les éditions dont la startDate est dans le futur OU null (à confirmer)
         this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée, futur uniquement)')
         const now = new Date()
         const eventIds = await this.sourceDb.$queryRaw<{id: number, estimatedDate: Date | null}[]>`
-          SELECT DISTINCT e.id, 
+          SELECT DISTINCT e.id,
                  ed."startDate" as "estimatedDate",
                  e."createdAt"
-          FROM "Event" e 
-          INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id 
+          FROM "Event" e
+          INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id
           WHERE ed."calendarStatus" = 'TO_BE_CONFIRMED'
             AND ed."status" = 'LIVE'
             AND e.status = 'LIVE'
             AND ed.year IN (${currentYear}, ${nextYear})
             AND (ed."startDate" IS NULL OR ed."startDate" >= ${now})
-          ORDER BY 
+          ORDER BY
             ed."startDate" ASC NULLS LAST,  -- Date estimée en premier (nulls à la fin)
             e."createdAt" ASC               -- Puis par date de création comme fallback
           LIMIT ${batchSize} OFFSET ${offset}
         `
-        
+
         this.logger.info(`📊 Étape 1 terminée: ${eventIds.length} Event IDs récupérés`)
-        
+
         if (eventIds.length === 0) {
           this.logger.info('Aucun Event trouvé, retour d\'un tableau vide')
           return []
         }
-        
+
         // Étape 2: Récupérer les Events complets avec leurs éditions
         // et maintenir l'ordre déterministe de la requête principale
         this.logger.info('🔍 Étape 2: Récupération des Events complets avec éditions')
         const eventIdNumbers = eventIds.map((row: {id: number, estimatedDate: Date | null}) => row.id)
         const eventOrderMap = new Map<number, number>(eventIds.map((row: {id: number, estimatedDate: Date | null}, index: number) => [row.id, index]))
-        
+
         const eventsFromDb = await this.sourceDb.event.findMany({
           where: {
             id: {
@@ -376,14 +375,14 @@ export class GoogleSearchDateAgent extends BaseAgent {
             }
           }
         })
-        
+
         // Trier les événements selon l'ordre original (date estimée -> createdAt)
         events = eventsFromDb.sort((a: any, b: any) => {
           const orderA = eventOrderMap.get(a.id) || 999999
           const orderB = eventOrderMap.get(b.id) || 999999
           return orderA - orderB
         })
-        
+
         this.logger.info('📋 Détails des événements Prisma bruts:', {
           totalEvents: events.length,
           eventDetails: events.map((e: any, i: number) => ({
@@ -413,16 +412,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
         // Séparer édition TO_BE_CONFIRMED et éditions historiques
         const currentYearInt = parseInt(currentYear)
         const nextYearInt = parseInt(nextYear)
-        
-        const currentEdition = event.editions.find((ed: any) => 
-          ed.calendarStatus === 'TO_BE_CONFIRMED' && 
+
+        const currentEdition = event.editions.find((ed: any) =>
+          ed.calendarStatus === 'TO_BE_CONFIRMED' &&
           (parseInt(ed.year) === currentYearInt || parseInt(ed.year) === nextYearInt)
         )
-        
+
         const historicalEditions = event.editions
-          .filter((ed: any) => 
+          .filter((ed: any) =>
             ed.calendarStatus === 'CONFIRMED' && // Seulement les éditions confirmées
-            ed.startDate && 
+            ed.startDate &&
             parseInt(ed.year) < currentYearInt
           )
           .map((ed: any) => ({
@@ -432,7 +431,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
             calendarStatus: ed.calendarStatus // Pour info/debug
           }))
           .sort((a: any, b: any) => parseInt(b.year) - parseInt(a.year)) // Plus récent en premier
-        
+
         return {
           id: event.id.toString(),
           name: event.name,
@@ -460,7 +459,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
           historicalEditions // Ajouter l'historique pour l'analyse de confiance
         }
       })
-      
+
       this.logger.info(`🎆 Événements traités: ${processedEvents.length}`)
       return processedEvents
 
@@ -474,13 +473,13 @@ export class GoogleSearchDateAgent extends BaseAgent {
   private buildSearchQuery(event: NextProdEvent): string {
     // Format: "<Event.name> <Event.city> <Edition.year>"
     let year = event.edition?.year || new Date().getFullYear().toString()
-    
+
     // Si l'édition a une date de début et qu'elle est déjà passée,
     // chercher l'année suivante (reconduction de l'événement)
     if (event.edition?.startDate) {
       const now = new Date()
       const editionDate = new Date(event.edition.startDate)
-      
+
       if (editionDate < now) {
         // L'édition est passée, chercher l'année suivante
         const nextYear = parseInt(year) + 1
@@ -488,7 +487,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
         this.logger.info(`📅 Édition ${event.edition.year} déjà passée (${editionDate.toLocaleDateString('fr-FR')}), recherche pour l'année ${year}`)
       }
     }
-    
+
     return `"${event.name}" "${event.city}" ${year}`
   }
 
@@ -499,16 +498,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
     try {
       const lastProcessedKey = `lastProcessed_${eventId}`
       const lastProcessedTimestamp = await this.stateService.getState<number>(this.config.id, lastProcessedKey)
-      
+
       if (!lastProcessedTimestamp) {
         // Jamais traité, pas de cooldown
         return false
       }
-      
+
       const lastProcessedDate = new Date(lastProcessedTimestamp)
       const now = new Date()
       const daysDiff = Math.floor((now.getTime() - lastProcessedDate.getTime()) / (1000 * 60 * 60 * 24))
-      
+
       return daysDiff < cooldownDays
     } catch (error) {
       this.logger.warn(`Erreur lors de la vérification du cooldown pour l'événement ${eventId}:`, { error: String(error) })
@@ -536,7 +535,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
   private calculateWeekdayConfidence(proposedDate: Date, event: NextProdEvent, baseConfidence: number): number {
     let adjustedConfidence = baseConfidence
     const dayOfWeek = proposedDate.getDay() // 0 = dimanche, 6 = samedi
-    
+
     // Bonus pour le week-end (samedi = 6, dimanche = 0)
     if (dayOfWeek === 0) { // Dimanche
       adjustedConfidence += 0.1 // +10% pour dimanche
@@ -550,15 +549,15 @@ export class GoogleSearchDateAgent extends BaseAgent {
         adjustedConfidence -= 0.05 // -5% pour jour de semaine normal
       }
     }
-    
+
     // Bonus basé sur la proximité avec les éditions précédentes
     if (event.historicalEditions && event.historicalEditions.length > 0) {
       const lastEdition = event.historicalEditions[0] // Plus récente
       const lastDayOfWeek = lastEdition.startDate.getDay()
-      
+
       // Calculer la distance en jours (hors année) entre la date proposée et l'édition précédente
       const daysDiff = this.calculateDayOfYearDistance(proposedDate, lastEdition.startDate)
-      
+
       // Bonus basé sur la proximité de date (uniquement si ≤ 14 jours)
       if (daysDiff <= 7) {
         // Très proche (même semaine) : fort bonus
@@ -574,36 +573,36 @@ export class GoogleSearchDateAgent extends BaseAgent {
         this.logger.debug(`⚠️ Date éloignée de l'édition précédente (${daysDiff} jours) : -15% confiance`)
       }
       // Entre 14 et 60 jours : pas de bonus ni de pénalité
-      
+
       // Bonus supplémentaire si même jour de la semaine
       if (dayOfWeek === lastDayOfWeek) {
         adjustedConfidence += 0.15 // +15% si même jour que l'édition précédente
       }
-      
+
       // Vérifier la cohérence avec plusieurs éditions précédentes
       const recentEditions = event.historicalEditions.slice(0, 3) // 3 dernières
       const consistentDay = recentEditions.every(ed => ed.startDate.getDay() === dayOfWeek)
-      
+
       if (consistentDay && recentEditions.length >= 2) {
         adjustedConfidence += 0.1 // +10% si cohérent avec plusieurs éditions
       }
-      
+
       // Vérifier si la date est cohérente avec plusieurs éditions (distance similaire)
       if (recentEditions.length >= 2) {
         const distances = recentEditions.map(ed => this.calculateDayOfYearDistance(proposedDate, ed.startDate))
         const avgDistance = distances.reduce((sum, d) => sum + d, 0) / distances.length
-        
+
         if (avgDistance <= 14) {
           adjustedConfidence += 0.15 // +15% si cohérent avec plusieurs éditions
           this.logger.debug(`✨ Date cohérente avec ${recentEditions.length} éditions (avg: ${Math.round(avgDistance)} jours) : +15% confiance`)
         }
       }
     }
-    
+
     // S'assurer que la confiance reste dans [0, 1]
     return Math.min(Math.max(adjustedConfidence, 0), 1)
   }
-  
+
   /**
    * Calcule la distance en jours entre deux dates (hors année)
    * Ex: 28 septembre vs 1 octobre = 3 jours
@@ -612,18 +611,18 @@ export class GoogleSearchDateAgent extends BaseAgent {
     // Normaliser les deux dates à la même année pour comparer uniquement jour/mois
     const normalized1 = new Date(2000, date1.getMonth(), date1.getDate())
     const normalized2 = new Date(2000, date2.getMonth(), date2.getDate())
-    
+
     // Différence en millisecondes
     const diffMs = Math.abs(normalized1.getTime() - normalized2.getTime())
-    
+
     // Convertir en jours
     const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24))
-    
+
     // Gérer le cas où la différence traverse le nouvel an (ex: 28 déc vs 5 jan)
     // Dans ce cas, calculer aussi la distance "dans l'autre sens" et prendre le minimum
     const daysInYear = 365
     const alternativeDiff = daysInYear - diffDays
-    
+
     return Math.min(diffDays, alternativeDiff)
   }
 
@@ -632,18 +631,18 @@ export class GoogleSearchDateAgent extends BaseAgent {
    */
   private isSameDateInTimezone(date1: Date | null, date2: Date, timezone: string): boolean {
     if (!date1) return false
-    
+
     // Formatter les deux dates dans la timezone donnée (format ISO YYYY-MM-DD)
-    const formatter = new Intl.DateTimeFormat('en-CA', { 
+    const formatter = new Intl.DateTimeFormat('en-CA', {
       timeZone: timezone,
       year: 'numeric',
       month: '2-digit',
       day: '2-digit'
     })
-    
+
     const date1Str = formatter.format(date1) // "2025-02-01"
     const date2Str = formatter.format(date2) // "2025-02-01"
-    
+
     return date1Str === date2Str
   }
 
@@ -662,7 +661,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
     const month = date.getMonth() + 1 // 1-12
     const day = date.getDate()
     const year = date.getFullYear()
-    
+
     // Jours fériés fixes
     const fixedHolidays = [
       { month: 1, day: 1 },   // Nouvel An
@@ -674,11 +673,11 @@ export class GoogleSearchDateAgent extends BaseAgent {
       { month: 11, day: 11 }, // Armistice
       { month: 12, day: 25 }  // Noël
     ]
-    
-    return fixedHolidays.some(holiday => 
+
+    return fixedHolidays.some(holiday =>
       holiday.month === month && holiday.day === day
     )
-    
+
     // Note: On pourrait ajouter Pâques, Ascension, Pentecôte (dates variables)
     // mais c'est plus complexe à calculer
   }
@@ -686,7 +685,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
   private async performGoogleSearch(query: string, config: GoogleSearchDateConfig): Promise<GoogleSearchResult | null> {
     try {
       const { googleApiKey, googleSearchEngineId, googleResultsCount } = config
-      
+
       // Support legacy config field name (searchEngineId without "google" prefix)
       const searchEngineId = googleSearchEngineId || (config as any).searchEngineId
 
@@ -761,7 +760,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const monthName = match[2].toLowerCase()
               const year = parseInt(match[3])
               const month = monthNames[monthName as keyof typeof monthNames]
-              
+
               if (month && year >= currentYear && year <= nextYear + 1) {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
@@ -769,13 +768,13 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 date = fromZonedTime(localDateStr, timezone)
                 confidence = 0.8 // Haute confiance pour les dates explicites
               } else continue
-              
+
             } else if (pattern.source.includes('janvier|') && pattern.source.includes('(?![')) {
               // Pattern "04 janvier" sans année - utiliser l'année de l'édition
               const day = parseInt(match[1])
               const monthName = match[2].toLowerCase()
               const month = monthNames[monthName as keyof typeof monthNames]
-              
+
               if (month) {
                 // Utiliser l'année de l'édition ou l'année suivante
                 const editionYear = event.edition?.year ? parseInt(event.edition.year) : nextYear
@@ -791,7 +790,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const day = parseInt(match[1])
               const month = parseInt(match[2])
               const year = parseInt(match[3])
-              
+
               if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
@@ -805,7 +804,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const year = parseInt(match[1])
               const month = parseInt(match[2])
               const day = parseInt(match[3])
-              
+
               if (year >= currentYear && year <= nextYear + 1 && month >= 1 && month <= 12) {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
@@ -819,7 +818,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const monthName = match[1].toLowerCase()
               const year = parseInt(match[2])
               const month = monthNames[monthName as keyof typeof monthNames]
-              
+
               if (month && year >= currentYear && year <= nextYear + 1) {
                 // ✅ Créer date en heure locale française (minuit du 1er) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
@@ -834,7 +833,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
               const now = new Date()
               const oneYearAgo = new Date(now.getFullYear() - 1, 0, 1) // Début année précédente
               const twoYearsFromNow = new Date(now.getFullYear() + 2, 11, 31)
-              
+
               // Accepter les dates de l'année précédente jusqu'à +2 ans
               if (date >= oneYearAgo && date <= twoYearsFromNow) {
                 // Ajuster la confiance si la date est passée (probablement édition précédente)
@@ -844,7 +843,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                   adjustedConfidence = confidence * 0.5
                   this.logger.debug(`Date passée détectée: ${date.toLocaleDateString('fr-FR')} - confiance réduite à ${adjustedConfidence}`)
                 }
-                
+
                 dates.push({
                   date,
                   confidence: adjustedConfidence,
@@ -861,7 +860,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
     }
 
     // Supprimer les doublons et trier par confiance
-    const uniqueDates = dates.filter((date, index, self) => 
+    const uniqueDates = dates.filter((date, index, self) =>
       index === self.findIndex(d => d.date.getTime() === date.date.getTime())
     ).sort((a, b) => b.confidence - a.confidence)
 
@@ -869,8 +868,8 @@ export class GoogleSearchDateAgent extends BaseAgent {
   }
 
   private async createDateProposals(
-    event: NextProdEvent, 
-    extractedDates: ExtractedDate[], 
+    event: NextProdEvent,
+    extractedDates: ExtractedDate[],
     searchResults: GoogleSearchResult
   ): Promise<ProposalData[]> {
     const proposals: ProposalData[] = []
@@ -879,7 +878,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
 
     // Grouper les dates extraites par date pour créer une proposition consolidée
     const dateGroups = new Map<string, ExtractedDate[]>()
-    
+
     // Regrouper les dates identiques (même jour)
     for (const extractedDate of extractedDates) {
       const dateKey = extractedDate.date.toDateString()
@@ -893,16 +892,16 @@ export class GoogleSearchDateAgent extends BaseAgent {
     for (const [dateKey, datesGroup] of dateGroups.entries()) {
       const primaryDate = datesGroup[0] // Date principale (meilleure confiance)
       const allSources = datesGroup.map(d => ({ source: d.source, snippet: d.context }))
-      
+
       // Calculer la confiance moyenne des sources
       const avgConfidence = datesGroup.reduce((sum, d) => sum + d.confidence, 0) / datesGroup.length
-      
+
       // Améliorer la confiance basée sur le jour de la semaine et l'historique
       const enhancedConfidence = this.calculateWeekdayConfidence(primaryDate.date, event, avgConfidence)
-      
+
       // ✅ Déclarer le timezone de l'édition ici pour l'utiliser dans la justification
       const editionTimezone = event.edition.timeZone || 'Europe/Paris'
-      
+
       // Créer une justification consolidée avec toutes les sources
       // ✅ Utiliser le timezone de l'édition pour formatter correctement la date
       const consolidatedJustification = {
@@ -933,7 +932,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       const currentStartDate = event.edition.startDate
       const proposedDate = primaryDate.date
       // editionTimezone déjà déclaré ci-dessus
-      
+
       // Ne créer une proposition que si la date est réellement différente
       // Comparer dans la timezone de l'édition pour gérer correctement les DOM-TOM
       const isSameDate = this.isSameDateInTimezone(
@@ -941,13 +940,13 @@ export class GoogleSearchDateAgent extends BaseAgent {
         proposedDate,
         editionTimezone
       )
-      
+
       if (isSameDate) {
         // Date identique à l'existant, pas de proposition à créer
         this.logger.debug(`⏭️  Date identique ignorée (${editionTimezone}): ${proposedDate.toLocaleDateString('fr-FR')} (événement: ${event.name})`)
         continue
       }
-      
+
       // Créer une seule proposition EDITION_UPDATE qui inclut les courses
       const changes: any = {
         startDate: {
@@ -972,7 +971,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
       // ✅ Par défaut, utiliser la date proposée (celle avec la confiance la plus élevée)
       if (event.edition.races && event.edition.races.length > 0) {
         const racesToUpdate = []
-        
+
         for (const race of event.edition.races) {
           // Vérifier si la race a déjà cette date pour éviter les doublons
           // Utiliser la timezone de la course si disponible, sinon celle de l'édition
@@ -983,7 +982,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
             proposedDate,
             raceTimezone
           )
-          
+
           if (!isRaceDateSame) {
             // ✅ Structure compatible avec applyEditionUpdate : racesToUpdate.updates.field
             // La date proposée est celle avec la confiance la plus élevée (primaryDate)
@@ -1014,7 +1013,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
             })
           }
         }
-        
+
         // Utiliser racesToUpdate (pas races) pour cohérence avec FFA
         if (racesToUpdate.length > 0) {
           changes.racesToUpdate = {
@@ -1043,7 +1042,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
     if (!baseValid) return false
 
     const config = this.config.config as GoogleSearchDateConfig
-    
+
     // Vérifier les paramètres requis
     if (!config.batchSize || config.batchSize <= 0) {
       this.logger.error('batchSize doit être un nombre positif')
@@ -1059,19 +1058,19 @@ export class GoogleSearchDateAgent extends BaseAgent {
     try {
       const sourceDbId = config.sourceDatabase
       const available = await this.dbManager.getAvailableDatabases()
-      
+
       if (!available.find(db => db.id === sourceDbId)) {
         this.logger.error(`Base de données source non disponible: ${sourceDbId}`)
         return false
       }
-      
+
       // Test de connexion
       const testResult = await this.dbManager.testConnection(sourceDbId)
       if (!testResult) {
         this.logger.error(`Test de connexion échoué pour: ${sourceDbId}`)
         return false
       }
-      
+
     } catch (error) {
       this.logger.error('Impossible de se connecter à la base Next Prod', { error: String(error) })
       return false

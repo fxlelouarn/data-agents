@@ -1,5 +1,5 @@
 import { GoogleSearchDateAgent } from '../GoogleSearchDateAgent'
-import { GoogleSearchDateAgentConfigSchema } from '../GoogleSearchDateAgent.configSchema'
+import { GoogleSearchDateAgentConfigSchema } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -15,7 +15,7 @@ const DEFAULT_CONFIG = {
   isActive: true,
   config: {
     agentType: 'GOOGLE_SEARCH_DATE',
-    
+
     // Valeurs par défaut
     batchSize: 10,
     googleResultsCount: 5,
@@ -28,7 +28,7 @@ const DEFAULT_CONFIG = {
     onlyFrenchEvents: true,
     excludeWeekends: false,
     cooldownDays: 14,
-    
+
     // Schéma de configuration pour l'interface dynamique
     configSchema: GoogleSearchDateAgentConfigSchema
   }
