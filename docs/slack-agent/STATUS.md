@@ -281,15 +281,21 @@ Cela permettra à SlackEventAgent de réutiliser l'algorithme de matching FFA.
 | 2025-12-11 | `e318b92` | Gestion des erreurs de crédits API Anthropic |
 | 2025-12-11 | `e1b17df` | Amélioration extraction - détection SPA et anti-hallucination |
 | 2025-12-12 | `253c72e` | Phase 2 complète - Extraction images et texte |
+| 2025-12-12 | `157f5bb` | Redimensionnement auto images + plan Phase 2.5 |
+| 2025-12-12 | `e9c7e46` | Phase 2.5 complète - Migration vers architecture Agent |
 
 ---
 
 ## Architecture des fichiers
 
 ```
+apps/agents/src/
+├── SlackEventAgent.ts              # Agent principal (extends BaseAgent)
+└── SlackEventAgent.configSchema.ts # Schéma config pour dashboard
+
 apps/api/src/
 ├── routes/
-│   └── slack.ts                    # Routes webhooks Slack
+│   └── slack.ts                    # Routes webhooks Slack (appelle l'agent)
 └── services/
     └── slack/
         ├── SlackService.ts         # Client Slack wrapper
@@ -300,4 +306,10 @@ apps/api/src/
             ├── ImageExtractor.ts   # Extraction images (Vision)
             ├── TextExtractor.ts    # Extraction texte brut
             └── EventDataExtractor.ts  # Orchestrateur
+
+packages/types/src/
+└── agent-versions.ts               # SLACK_EVENT_AGENT version
+
+scripts/
+└── seed-slack-agent.ts             # Script de seed pour créer l'agent
 ```

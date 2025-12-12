@@ -358,13 +358,13 @@ Dans `PUT /api/proposals/:id` et `POST /api/proposals/bulk-approve` :
    - ~~Parser le texte brut avec Claude~~
    - ~~Nettoyage mentions/URLs Slack~~
 
-### Phase 2.5 : Migration vers architecture Agent ⏳
-1. Créer `SlackEventAgent.ts` (extends BaseAgent)
-2. Définir le type d'agent `SLACK_EVENT` dans le schéma
-3. Déplacer la config vers JSON (channels, extraction, reminders)
-4. Adapter le webhook pour appeler l'agent
-5. Ajouter métriques et historique des runs
-6. Script de seed pour créer l'agent en base
+### Phase 2.5 : Migration vers architecture Agent ✅
+1. ~~Créer `SlackEventAgent.ts` (extends BaseAgent)~~
+2. ~~Ajouter version dans `packages/types/src/agent-versions.ts`~~
+3. ~~Déplacer la config vers JSON (channels, extraction, reminders)~~
+4. ~~Adapter le webhook pour vérifier l'agent actif~~
+5. ~~Script de seed `scripts/seed-slack-agent.ts`~~
+6. ~~Schéma de configuration pour le dashboard~~
 
 ### Phase 3 : Création de Proposals ⏳
 1. Intégrer l'algorithme de matching existant (`apps/agents/src/ffa/matcher.ts`)
@@ -440,7 +440,7 @@ message.channels      # Messages dans les canaux publics
 |-------|------------|--------|-------------|
 | Phase 1 | Moyenne | ✅ | Création app Slack |
 | Phase 2 | Haute | ✅ | API Anthropic, sharp |
-| Phase 2.5 | Moyenne | ⏳ | agent-framework |
+| Phase 2.5 | Moyenne | ✅ | agent-framework |
 | Phase 3 | Moyenne | ⏳ | Matching existant |
 | Phase 4 | Moyenne | ⏳ | @slack/web-api |
 | Phase 5 | Faible | ⏳ | Scheduler existant |
@@ -476,5 +476,8 @@ message.channels      # Messages dans les canaux publics
 2. [x] ~~Obtenir les tokens et configurer les variables d'environnement~~
 3. [x] ~~Phase 1 : Infrastructure Slack~~
 4. [x] ~~Phase 2 : Extraction de données~~
-5. [ ] **Phase 2.5 : Migration vers architecture Agent** ← EN COURS
-6. [ ] Phase 3 : Création de Proposals (matching + stockage BDD)
+5. [x] ~~Phase 2.5 : Migration vers architecture Agent~~
+6. [ ] **Phase 3 : Création de Proposals** ← PROCHAINE ÉTAPE
+   - Mutualiser EventMatchingService
+   - Intégrer matching dans SlackEventAgent
+   - Créer Proposals avec sourceMetadata
