@@ -10,7 +10,7 @@
  * @see docs/feature-auto-validator-agent/PLAN.md
  */
 
-import { AGENT_VERSIONS, AutoValidatorAgentConfigSchema } from '@data-agents/types'
+import { AGENT_VERSIONS, AutoValidatorAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import {
@@ -33,7 +33,7 @@ export class AutoValidatorAgent extends BaseAgent {
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
       id: config.id || 'auto-validator-agent',
-      name: config.name || 'Auto Validator Agent',
+      name: config.name || getAgentName('AUTO_VALIDATOR'),
       description: `Agent qui valide automatiquement les propositions FFA sous certaines conditions (v${AUTO_VALIDATOR_AGENT_VERSION})`,
       type: 'VALIDATOR' as AgentType,
       frequency: config.frequency || '0 * * * *', // Toutes les heures par défaut
@@ -106,20 +106,19 @@ export class AutoValidatorAgent extends BaseAgent {
   }
 
   /**
-   * Récupère l'ID de l'agent FFA Scraper
+   * Récupère l'ID de l'agent FFA Scraper par agentType
    */
   private async getFFAScraperAgentId(): Promise<string | null> {
-    const ffaAgent = await this.prisma.agent.findFirst({
+    const ffaAgents = await this.prisma.agent.findMany({
       where: {
-        OR: [
-          { name: 'FFA Scraper Agent' },
-          { name: 'FFA Scraper' },
-          { id: 'ffa-scraper-agent' }
-        ]
+        config: {
+          path: ['agentType'],
+          equals: 'FFA_SCRAPER'
+        }
       },
       select: { id: true }
     })
-    return ffaAgent?.id || null
+    return ffaAgents.length > 0 ? ffaAgents[0].id : null
   }
 
   /**

@@ -1,5 +1,5 @@
 import { SlackEventAgent } from '../SlackEventAgent'
-import { SlackEventAgentConfigSchema } from '@data-agents/types'
+import { SlackEventAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -8,7 +8,7 @@ import { agentRegistry } from '@data-agents/agent-framework'
 
 // Configuration par défaut de l'agent
 const DEFAULT_CONFIG = {
-  name: 'Slack Event Agent',
+  name: getAgentName('SLACK_EVENT'),
   description: 'Traite les messages Slack @databot pour extraire des événements',
   type: 'EXTRACTOR' as const,
   frequency: '0 0 31 2 *', // 31 février = jamais (webhook-driven)

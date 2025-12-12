@@ -7,17 +7,20 @@ import { prisma } from '@data-agents/database'
 const router = Router()
 
 /**
- * Récupère l'agent Slack depuis la base de données
- * L'agent est chargé dynamiquement pour permettre la configuration à chaud
+ * Récupère l'agent Slack depuis la base de données par son agentType
+ * Permet de renommer l'agent via l'interface sans casser le code
  */
 async function getSlackAgent() {
-  const agent = await prisma.agent.findFirst({
+  const agents = await prisma.agent.findMany({
     where: {
-      name: 'Slack Event Agent',
+      config: {
+        path: ['agentType'],
+        equals: 'SLACK_EVENT'
+      },
       isActive: true
     }
   })
-  return agent
+  return agents.length > 0 ? agents[0] : null
 }
 
 /**

@@ -21,16 +21,16 @@ const validateRequest = (req: Request, res: Response, next: NextFunction) => {
 // GET /api/proposals/eligible-count - Compte les propositions éligibles pour l'auto-validation
 // IMPORTANT: Cette route doit être AVANT /:id pour éviter le conflit
 router.get('/eligible-count', asyncHandler(async (req: Request, res: Response) => {
-  // Trouver l'agent FFA Scraper
-  const ffaAgent = await db.prisma.agent.findFirst({
+  // Trouver l'agent FFA Scraper par agentType
+  const ffaAgents = await db.prisma.agent.findMany({
     where: {
-      OR: [
-        { name: { contains: 'FFA', mode: 'insensitive' } },
-        { name: { contains: 'Scraper', mode: 'insensitive' } }
-      ],
-      type: { not: 'VALIDATOR' }
+      config: {
+        path: ['agentType'],
+        equals: 'FFA_SCRAPER'
+      }
     }
   })
+  const ffaAgent = ffaAgents.length > 0 ? ffaAgents[0] : null
 
   if (!ffaAgent) {
     return res.json({

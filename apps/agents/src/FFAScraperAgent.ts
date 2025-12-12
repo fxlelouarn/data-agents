@@ -7,7 +7,7 @@
  * - Créer des propositions de création/modification d'événements, éditions et courses
  */
 
-import { AGENT_VERSIONS, FFAScraperAgentConfigSchema } from '@data-agents/types'
+import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -46,7 +46,7 @@ export class FFAScraperAgent extends BaseAgent {
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
       id: config.id || 'ffa-scraper-agent',
-      name: config.name || 'FFA Scraper Agent',
+      name: config.name || getAgentName('FFA_SCRAPER'),
       description: `Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied (v${FFA_SCRAPER_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */12 * * *', // Toutes les 12 heures par défaut

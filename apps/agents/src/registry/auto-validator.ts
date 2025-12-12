@@ -1,5 +1,5 @@
 import { AutoValidatorAgent } from '../AutoValidatorAgent'
-import { AutoValidatorAgentConfigSchema } from '@data-agents/types'
+import { AutoValidatorAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -8,7 +8,7 @@ import { agentRegistry } from '@data-agents/agent-framework'
 
 // Configuration par défaut de l'agent
 const DEFAULT_CONFIG = {
-  name: 'Auto Validator Agent',
+  name: getAgentName('AUTO_VALIDATOR'),
   description: 'Valide automatiquement les propositions FFA sous certaines conditions',
   type: 'VALIDATOR' as const,
   frequency: '0 * * * *', // Toutes les heures

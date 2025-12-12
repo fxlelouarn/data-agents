@@ -1,5 +1,5 @@
 import { FFAScraperAgent } from '../FFAScraperAgent'
-import { FFAScraperAgentConfigSchema } from '@data-agents/types'
+import { FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -8,7 +8,7 @@ import { agentRegistry } from '@data-agents/agent-framework'
 
 // Configuration par défaut de l'agent
 const DEFAULT_CONFIG = {
-  name: 'FFA Scraper Agent',
+  name: getAgentName('FFA_SCRAPER'),
   description: 'Scrape automatique du calendrier FFA pour extraire les compétitions de course à pied',
   type: 'EXTRACTOR' as const,
   frequency: '0 */12 * * *', // Toutes les 12 heures

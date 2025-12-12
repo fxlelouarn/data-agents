@@ -345,16 +345,22 @@ export async function createProposalFromSlack(
 
     logger.info(`Match result: ${matchResult.type}`, { confidence: matchResult.confidence })
 
-    // 4. Récupérer l'agent Slack pour l'ID
-    const agent = await prisma.agent.findFirst({
-      where: { name: 'Slack Event Agent' }
+    // 4. Récupérer l'agent Slack pour l'ID (par agentType, pas par nom)
+    const agents = await prisma.agent.findMany({
+      where: {
+        config: {
+          path: ['agentType'],
+          equals: 'SLACK_EVENT'
+        }
+      }
     })
+    const agent = agents.length > 0 ? agents[0] : null
 
     if (!agent) {
       return {
         success: false,
         confidence: matchResult.confidence,
-        error: 'Slack Event Agent not found'
+        error: 'Agent with agentType "SLACK_EVENT" not found'
       }
     }
 

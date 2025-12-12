@@ -8,6 +8,7 @@
 import {
   AGENT_VERSIONS,
   AGENT_CONFIG_SCHEMAS,
+  AGENT_NAMES,
   ConfigSchema
 } from '@data-agents/types'
 
@@ -186,12 +187,16 @@ const agentTypeCategories: Record<string, 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATO
 
 /**
  * Labels lisibles pour les types d'agents
+ * Réexporté depuis @data-agents/types pour rétro-compatibilité
  */
-const agentTypeLabels: Record<string, string> = {
-  FFA_SCRAPER: 'FFA Scraper Agent',
-  GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
-  AUTO_VALIDATOR: 'Auto Validator Agent',
-  SLACK_EVENT: 'Slack Event Agent'
+export const agentTypeLabels = AGENT_NAMES
+
+/**
+ * Récupère le nom d'un agent depuis son type
+ * À utiliser partout où on a besoin du nom d'un agent
+ */
+export function getAgentNameByType(agentType: string): string {
+  return AGENT_NAMES[agentType as keyof typeof AGENT_NAMES] || agentType
 }
 
 /**
@@ -207,7 +212,7 @@ export function getAvailableAgentsForUI(): AvailableAgentInfo[] {
 
     result.push({
       type,
-      label: agentTypeLabels[type] || type,
+      label: (agentTypeLabels as Record<string, string>)[type] || type,
       description: schema.description || '',
       version,
       agentType: agentTypeCategories[type] || 'EXTRACTOR',

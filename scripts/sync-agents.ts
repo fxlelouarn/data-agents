@@ -15,6 +15,7 @@
  */
 
 import { prisma } from "@data-agents/database";
+import { getAgentName } from "@data-agents/types";
 import { FFA_SCRAPER_AGENT_VERSION } from "../apps/agents/src/FFAScraperAgent";
 import { GOOGLE_SEARCH_DATE_AGENT_VERSION } from "../apps/agents/src/GoogleSearchDateAgent";
 import { DEFAULT_CONFIG as FFA_DEFAULT_CONFIG } from "../apps/agents/src/registry/ffa-scraper";
@@ -41,7 +42,7 @@ const AGENT_DEFINITIONS: Record<string, AgentDefinition> = {
   FFA_SCRAPER: {
     agentType: "FFA_SCRAPER",
     defaultId: "ffa-scraper-agent",
-    name: "FFA Scraper Agent",
+    name: getAgentName("FFA_SCRAPER"),
     description: `Agent qui scrape le calendrier FFA pour extraire les compétitions de course à pied (v${FFA_SCRAPER_AGENT_VERSION})`,
     version: FFA_SCRAPER_AGENT_VERSION,
     type: "EXTRACTOR",
@@ -51,7 +52,7 @@ const AGENT_DEFINITIONS: Record<string, AgentDefinition> = {
   GOOGLE_SEARCH_DATE: {
     agentType: "GOOGLE_SEARCH_DATE",
     defaultId: "google-search-date-agent",
-    name: "Google Search Date Agent",
+    name: getAgentName("GOOGLE_SEARCH_DATE"),
     description: `Agent qui recherche les dates d'événements via Google Search et propose des mises à jour (v${GOOGLE_SEARCH_DATE_AGENT_VERSION})`,
     version: GOOGLE_SEARCH_DATE_AGENT_VERSION,
     type: "EXTRACTOR",

@@ -1,4 +1,4 @@
-import { AGENT_VERSIONS, GoogleSearchDateAgentConfigSchema } from '@data-agents/types'
+import { AGENT_VERSIONS, GoogleSearchDateAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { BaseAgent, AgentType } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -83,7 +83,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
       id: config.id || 'google-search-date-agent',
-      name: config.name || 'Google Search Date Agent',
+      name: config.name || getAgentName('GOOGLE_SEARCH_DATE'),
       description: `Agent qui recherche les dates d'événements via Google Search et propose des mises à jour (v${GOOGLE_SEARCH_DATE_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */6 * * *', // Toutes les 6 heures par défaut

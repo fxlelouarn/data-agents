@@ -1,5 +1,5 @@
 import { GoogleSearchDateAgent } from '../GoogleSearchDateAgent'
-import { GoogleSearchDateAgentConfigSchema } from '@data-agents/types'
+import { GoogleSearchDateAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { agentRegistry } from '@data-agents/agent-framework'
 
 /**
@@ -8,7 +8,7 @@ import { agentRegistry } from '@data-agents/agent-framework'
 
 // Configuration par défaut de l'agent
 const DEFAULT_CONFIG = {
-  name: 'Google Search Date Agent',
+  name: getAgentName('GOOGLE_SEARCH_DATE'),
   description: 'Recherche automatique des dates d\'événements sportifs via Google Search',
   type: 'EXTRACTOR' as const,
   frequency: '0 */6 * * *', // Toutes les 6 heures

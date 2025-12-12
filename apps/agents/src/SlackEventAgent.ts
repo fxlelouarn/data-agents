@@ -12,7 +12,7 @@
  * - Notifications dans le thread Slack
  */
 
-import { AGENT_VERSIONS, SlackEventAgentConfigSchema } from '@data-agents/types'
+import { AGENT_VERSIONS, SlackEventAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 
@@ -112,7 +112,7 @@ export class SlackEventAgent extends BaseAgent {
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
       id: config.id || 'slack-event-agent',
-      name: config.name || 'Slack Event Agent',
+      name: config.name || getAgentName('SLACK_EVENT'),
       description: `Agent qui traite les messages Slack @databot pour extraire des événements (v${SLACK_EVENT_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       // Pas de fréquence cron - déclenché par webhook

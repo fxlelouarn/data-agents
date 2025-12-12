@@ -1,7 +1,7 @@
 /**
- * Versions centralisées des agents
+ * Versions et noms centralisés des agents
  *
- * Ce fichier est la source unique de vérité pour les versions des agents.
+ * Ce fichier est la source unique de vérité pour les versions et noms des agents.
  * Il est importé par :
  * - Les agents eux-mêmes (pour exporter la version)
  * - L'API (pour enrichir les métadonnées)
@@ -19,3 +19,27 @@ export const AGENT_VERSIONS = {
 } as const
 
 export type AgentVersionKey = keyof typeof AGENT_VERSIONS
+
+/**
+ * Identifiants techniques des agents (clés du registry)
+ */
+export type AgentTypeKey = 'FFA_SCRAPER' | 'GOOGLE_SEARCH_DATE' | 'AUTO_VALIDATOR' | 'SLACK_EVENT'
+
+/**
+ * Noms lisibles des agents (utilisés en base de données)
+ * Source unique de vérité pour les noms d'agents
+ */
+export const AGENT_NAMES: Record<AgentTypeKey, string> = {
+  FFA_SCRAPER: 'FFA Scraper Agent',
+  GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
+  AUTO_VALIDATOR: 'Auto Validator Agent',
+  SLACK_EVENT: 'Slack Event Agent'
+} as const
+
+/**
+ * Récupère le nom d'un agent depuis son type
+ * À utiliser partout où on a besoin du nom d'un agent
+ */
+export function getAgentName(agentType: AgentTypeKey): string {
+  return AGENT_NAMES[agentType]
+}
