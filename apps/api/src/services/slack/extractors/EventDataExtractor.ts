@@ -3,11 +3,13 @@
  *
  * Orchestrates extraction from different sources:
  * - URLs (via HtmlExtractor)
- * - Images (via ImageExtractor - Phase 3)
- * - Text (direct parsing)
+ * - Images (via ImageExtractor)
+ * - Text (via TextExtractor)
  */
 
 import { htmlExtractor } from './HtmlExtractor'
+import { imageExtractor } from './ImageExtractor'
+import { textExtractor } from './TextExtractor'
 import { ExtractionResult, ExtractedEventData } from './types'
 import { SlackMessage, SlackFile, slackService } from '../SlackService'
 
@@ -20,6 +22,7 @@ export interface ExtractionContext {
 export class EventDataExtractor {
   /**
    * Extract event data from a Slack message
+   * Priority: URL > Image > Text
    */
   async extractFromMessage(context: ExtractionContext): Promise<ExtractionResult> {
     const { urls, hasImages, message } = context
@@ -34,9 +37,15 @@ export class EventDataExtractor {
         return urlResult
       }
       console.warn(`⚠️ URL extraction failed: ${urlResult.error}`)
+      
+      // If URL failed and we have images, try images next
+      // Otherwise, return the URL error (more specific than generic text error)
+      if (!hasImages && (!message.text || message.text.length < 50)) {
+        return urlResult
+      }
     }
 
-    // Priority 2: Try image extraction (Phase 3 - not implemented yet)
+    // Priority 2: Try image extraction
     if (hasImages && message.files) {
       const imageFiles = message.files.filter(f => f.mimetype.startsWith('image/'))
       if (imageFiles.length > 0) {
@@ -49,16 +58,21 @@ export class EventDataExtractor {
       }
     }
 
-    // Priority 3: Try text extraction from message (Phase 3)
-    if (message.text && message.text.length > 50) {
-      // Remove bot mention from text
-      const cleanText = message.text.replace(/<@[A-Z0-9]+>/g, '').trim()
-      if (cleanText.length > 50) {
+    // Priority 3: Try text extraction from message
+    if (message.text && message.text.length > 30) {
+      // Remove bot mention and URLs from text
+      let cleanText = message.text
+        .replace(/<@[A-Z0-9]+>/g, '') // Remove mentions
+        .replace(/<https?:\/\/[^|>]+(?:\|[^>]+)?>/g, '') // Remove Slack-formatted URLs
+        .trim()
+      
+      if (cleanText.length > 30) {
         const textResult = await this.extractFromText(cleanText)
         if (textResult.success && textResult.data) {
           console.log(`✅ Text extraction successful: ${textResult.data.eventName}`)
           return textResult
         }
+        console.warn(`⚠️ Text extraction failed: ${textResult.error}`)
       }
     }
 
@@ -76,29 +90,34 @@ export class EventDataExtractor {
   }
 
   /**
-   * Extract event data from an image (Phase 3 placeholder)
+   * Extract event data from an image
    */
   async extractFromImage(file: SlackFile): Promise<ExtractionResult> {
-    // TODO: Phase 3 - Implement image extraction with Claude Vision
-    console.log(`🖼️ Image extraction not yet implemented for: ${file.name}`)
+    console.log(`🖼️ Extracting from image: ${file.name}`)
 
-    return {
-      success: false,
-      error: 'L\'extraction depuis les images n\'est pas encore implémentée'
+    // Download the image from Slack (requires authentication)
+    const imageBuffer = await slackService.downloadFile(file.url_private)
+    
+    if (!imageBuffer) {
+      return {
+        success: false,
+        error: 'Impossible de télécharger l\'image depuis Slack',
+        errorType: 'fetch_failed'
+      }
     }
+
+    return imageExtractor.extract({
+      imageBuffer,
+      mimeType: file.mimetype,
+      imageUrl: file.url_private
+    })
   }
 
   /**
-   * Extract event data from plain text (Phase 3 placeholder)
+   * Extract event data from plain text
    */
   async extractFromText(text: string): Promise<ExtractionResult> {
-    // TODO: Phase 3 - Implement text extraction with Claude
-    console.log(`📝 Text extraction not yet implemented`)
-
-    return {
-      success: false,
-      error: 'L\'extraction depuis le texte n\'est pas encore implémentée'
-    }
+    return textExtractor.extract(text)
   }
 
   /**
@@ -137,6 +156,8 @@ export class EventDataExtractor {
         text += ` - ${endDate.toLocaleDateString('fr-FR', { day: 'numeric', month: 'long' })}`
       }
       text += '\n'
+    } else if (data.editionYear) {
+      text += `📅 ${data.editionYear}\n`
     }
 
     if (data.races && data.races.length > 0) {
@@ -172,6 +193,22 @@ export class EventDataExtractor {
     text += `\n${confidenceEmoji} Confiance: ${Math.round(data.confidence * 100)}%`
 
     return text
+  }
+
+  /**
+   * Get extraction method label for display
+   */
+  getExtractionMethodLabel(method: string): string {
+    switch (method) {
+      case 'html':
+        return 'Page web'
+      case 'image':
+        return 'Image (OCR)'
+      case 'text':
+        return 'Texte'
+      default:
+        return method
+    }
   }
 }
 
