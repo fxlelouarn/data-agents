@@ -99,6 +99,12 @@ export const EXTRACTION_PROMPT_USER = (content: string) => {
 Extrais les informations de l'événement sportif à partir du contenu suivant.
 RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.
 
+IMPORTANT pour les courses: inclus TOUTES les épreuves mentionnées, y compris:
+  * Les trails/courses principales
+  * Les randonnées (rando, marche)
+  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
+  * Les formats ultra ou spéciaux
+
 ---
 ${content}
 ---
@@ -120,7 +126,8 @@ Sinon, réponds avec un objet JSON (omets les champs non trouvés):
       "distance": number (en mètres),
       "elevation": number (D+ en mètres),
       "startTime": "HH:mm",
-      "price": number (en euros)
+      "price": number (en euros),
+      "type": "trail" | "rando" | "marche" | "ultra" | "autre"
     }
   ],
   "organizerName": "string",

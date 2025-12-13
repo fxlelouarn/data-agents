@@ -196,11 +196,16 @@ export class TextExtractor {
     const today = new Date().toISOString().split('T')[0]
     return `Date du jour: ${today}
 
-Analyse ce texte décrivant un événement sportif (course à pied, trail, marathon, etc.) et extrais les informations présentes.
+Analyse ce texte décrivant un événement sportif et extrais TOUTES les informations présentes.
 
 RÈGLES CRITIQUES:
 - N'INVENTE JAMAIS de données. Extrait UNIQUEMENT ce qui est EXPLICITEMENT mentionné.
 - Pour les dates: cherche une date EXPLICITE. N'invente JAMAIS.
+- IMPORTANT pour les courses: inclus TOUTES les épreuves mentionnées, y compris:
+  * Les trails/courses principales
+  * Les randonnées (rando, marche)
+  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
+  * Les formats ultra ou spéciaux
 - Si une information n'est pas présente, ne l'inclus pas dans le JSON.
 - Le score de confiance doit refléter la qualité/complétude des informations trouvées.
 
@@ -222,7 +227,8 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):
       "distance": number (en mètres),
       "elevation": number (D+ en mètres),
       "startTime": "HH:mm",
-      "price": number (en euros)
+      "price": number (en euros),
+      "type": "trail" | "rando" | "marche" | "ultra" | "autre"
     }
   ],
   "organizerName": "string",
