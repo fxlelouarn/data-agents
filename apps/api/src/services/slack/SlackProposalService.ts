@@ -205,6 +205,23 @@ async function getSourceDatabase(): Promise<PrismaClientType> {
 }
 
 /**
+ * Normalise l'année d'édition depuis les données extraites
+ * Priorité : editionYear explicite > dérivé de editionDate > undefined
+ */
+function normalizeEditionYear(data: ExtractedEventData): number | undefined {
+  if (data.editionYear) {
+    return data.editionYear
+  }
+  if (data.editionDate) {
+    const date = new Date(data.editionDate)
+    if (!isNaN(date.getTime())) {
+      return date.getFullYear()
+    }
+  }
+  return undefined
+}
+
+/**
  * Convertit les données extraites en input pour le matcher
  */
 function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | null {
@@ -236,6 +253,10 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
 /**
  * Construit les changements pour une proposition NEW_EVENT
  * Enrichit automatiquement les courses avec catégories et dates/heures
+ *
+ * Structure alignée sur le FFA Scraper :
+ * - Champs event au niveau racine avec { new, confidence }
+ * - Edition imbriquée dans edition.new avec races et organizer
  */
 function buildNewEventChanges(data: ExtractedEventData) {
   // Déterminer la timezone depuis la localisation
@@ -243,6 +264,10 @@ function buildNewEventChanges(data: ExtractedEventData) {
     department: data.eventDepartment,
     country: data.eventCountry,
   })
+
+  // Normaliser l'année depuis editionYear ou editionDate
+  const normalizedYear = normalizeEditionYear(data)
+  const confidence = data.confidence || 0.5
 
   // Calculer les dates de l'édition avec timezone
   let editionStartDate: Date | undefined
@@ -261,24 +286,17 @@ function buildNewEventChanges(data: ExtractedEventData) {
     editionEndDate = calculateRaceStartDate(endDateStr, lastRaceTime, timeZone)
   }
 
-  const changes: any = {
-    event: {
-      name: data.eventName,
-      city: data.eventCity,
-      country: data.eventCountry || 'France',
-      department: data.eventDepartment
-    },
-    edition: {
-      year: data.editionYear?.toString() || new Date().getFullYear().toString(),
-      startDate: editionStartDate,
-      endDate: editionEndDate,
-      timeZone
-    }
+  // Construire l'objet edition.new (contient races et organizer)
+  const editionNew: any = {
+    year: normalizedYear?.toString(),
+    startDate: editionStartDate,
+    endDate: editionEndDate,
+    timeZone
   }
 
-  // Ajouter les courses si présentes - avec enrichissement
+  // Ajouter les courses dans edition.new.races - avec enrichissement
   if (data.races && data.races.length > 0) {
-    changes.races = data.races.map(race => {
+    editionNew.races = data.races.map(race => {
       // Enrichir avec les catégories si non définies
       const enrichedRace = enrichRaceWithCategories(race)
 
@@ -298,9 +316,9 @@ function buildNewEventChanges(data: ExtractedEventData) {
     })
   }
 
-  // Ajouter l'organisateur si présent
+  // Ajouter l'organisateur dans edition.new.organizer
   if (data.organizerName || data.organizerEmail || data.organizerWebsite) {
-    changes.organizer = {
+    editionNew.organizer = {
       name: data.organizerName,
       email: data.organizerEmail,
       phone: data.organizerPhone,
@@ -308,9 +326,22 @@ function buildNewEventChanges(data: ExtractedEventData) {
     }
   }
 
-  // Ajouter l'URL d'inscription si présente
+  // Ajouter l'URL d'inscription
   if (data.registrationUrl) {
-    changes.edition.registrationUrl = data.registrationUrl
+    editionNew.registrationUrl = data.registrationUrl
+  }
+
+  // Structure alignée sur FFA Scraper : champs au niveau racine avec { new, confidence }
+  const changes: any = {
+    name: { new: data.eventName, confidence },
+    city: { new: data.eventCity, confidence },
+    country: { new: data.eventCountry || 'France', confidence },
+    edition: { new: editionNew, confidence }
+  }
+
+  // Ajouter le département si présent
+  if (data.eventDepartment) {
+    changes.department = { new: data.eventDepartment, confidence }
   }
 
   return changes
@@ -564,16 +595,19 @@ export async function createProposalFromSlack(
     const genericSourceMetadata = convertToSourceMetadata(sourceMetadata)
 
     // 8. Créer la Proposal
+    // Pour NEW_EVENT, on ne stocke PAS eventId/editionId car c'est un nouvel événement
+    const isNewEvent = proposalType === ProposalType.NEW_EVENT
+
     const proposal = await prisma.proposal.create({
       data: {
         agentId: agent.id,
         type: proposalType,
         status: ProposalStatus.PENDING,
-        eventId: matchResult.event?.id?.toString(),
-        editionId: matchResult.edition?.id?.toString(),
+        eventId: isNewEvent ? undefined : matchResult.event?.id?.toString(),
+        editionId: isNewEvent ? undefined : matchResult.edition?.id?.toString(),
         eventName: extractedData.eventName,
         eventCity: extractedData.eventCity,
-        editionYear: extractedData.editionYear,
+        editionYear: normalizeEditionYear(extractedData),
         changes,
         justification: justifications as any,
         confidence,
