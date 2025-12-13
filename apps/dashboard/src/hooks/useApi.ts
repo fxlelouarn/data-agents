@@ -483,6 +483,36 @@ export const useConvertToEditionUpdate = () => {
   })
 }
 
+export const useChangeTarget = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (data: {
+      proposalId: string
+      eventId: number
+      editionId: number
+      eventName: string
+      eventSlug: string
+      editionYear: string
+    }) => proposalsApi.changeTarget(data.proposalId, data),
+    onSuccess: (response, { eventName }) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['proposal'] })
+      enqueueSnackbar(
+        response.message || `Cible modifiée : ${eventName}`,
+        { variant: 'success' }
+      )
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors du changement de cible',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useCreateManualProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

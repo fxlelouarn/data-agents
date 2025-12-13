@@ -7,6 +7,7 @@ import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
 import RacesChangesTable from '@/components/proposals/edition-update/RacesChangesTable'
+import { AlternativeMatchesCard } from '@/components/proposals/edition-update/AlternativeMatchesCard'
 
 interface EditionUpdateGroupedDetailProps {
   groupKey: string
@@ -252,8 +253,28 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
 
         const firstProposal = groupProposals[0]
 
+        // Extraire les rejectedMatches de la justification (pour alternatives de matching)
+        const rejectedMatches = useMemo(() => {
+          if (!firstProposal?.justification) return []
+          const justifications = firstProposal.justification as any[]
+          const matchEntry = justifications?.find(
+            (j: any) => j.type === 'rejected_matches' || j.metadata?.rejectedMatches
+          )
+          return matchEntry?.metadata?.rejectedMatches || []
+        }, [firstProposal?.justification])
+
         return (
           <>
+            {/* Alternatives de matching si disponibles */}
+            {firstProposal && rejectedMatches.length > 0 && (
+              <AlternativeMatchesCard
+                proposalId={firstProposal.id}
+                currentEventId={firstProposal.eventId}
+                currentEventName={firstProposal.eventName}
+                rejectedMatches={rejectedMatches}
+              />
+            )}
+
             {/* Informations contextuelles de l'édition */}
             {firstProposal && (
               <EditionContextInfo

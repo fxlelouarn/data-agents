@@ -283,6 +283,18 @@ export const proposalsApi = {
   }>> =>
     api.post(`/proposals/${id}/convert-to-edition-update`, data).then(res => res.data),
 
+  changeTarget: (
+    id: string,
+    data: {
+      eventId: number
+      editionId: number
+      eventName: string
+      eventSlug: string
+      editionYear: string
+    }
+  ): Promise<ApiResponse<any>> =>
+    api.post(`/proposals/${id}/change-target`, data).then(res => res.data),
+
   // Édition de propositions (pour useProposalEditor)
   updateUserModifications: (
     id: string,

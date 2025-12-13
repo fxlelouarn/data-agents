@@ -6,6 +6,7 @@ import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import OrganizerSection from '@/components/proposals/edition-update/OrganizerSection'
 import RacesChangesTable from '@/components/proposals/edition-update/RacesChangesTable'
+import { AlternativeMatchesCard } from '@/components/proposals/edition-update/AlternativeMatchesCard'
 
 interface EditionUpdateDetailProps {
   proposalId: string
@@ -48,17 +49,17 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
           isBlockPending,
           blockProposals
         } = context
-        
+
         // Séparer les champs standards des champs spéciaux
-        const standardChanges = consolidatedChanges.filter(c => 
+        const standardChanges = consolidatedChanges.filter(c =>
           !['organizer', 'racesToAdd'].includes(c.field)
         )
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
         const racesToAddChange = consolidatedChanges.find(c => c.field === 'racesToAdd')
-        
+
         const hasRealEditionChanges = standardChanges.length > 0
         const hasRaceChanges = consolidatedRaceChanges.length > 0
-        
+
         return (
           <>
             {hasRealEditionChanges && (
@@ -86,7 +87,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 showActions={false}
               />
             )}
-            
+
             {organizerChange && (
               <OrganizerSection
                 change={organizerChange}
@@ -104,7 +105,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 showActions={false}
               />
             )}
-            
+
             {hasRaceChanges && (
               <RacesChangesTable
                 consolidatedRaces={consolidatedRaceChanges}
@@ -121,7 +122,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 showDeleteAction={false}
               />
             )}
-            
+
             <ProposalJustificationsCard
               justifications={proposal.justification || []}
               confidence={proposal.confidence}
@@ -130,22 +131,27 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
         )
       }}
       renderSidebar={(context) => {
-        const { 
-          proposal, 
-          getEditionYear, 
-          selectedChanges, 
+        const {
+          proposal,
+          getEditionYear,
+          selectedChanges,
           userModifiedChanges
         } = context
-        
+
+        // Extraire les rejectedMatches de la justification
+        const rejectedMatches = (proposal.justification as any[])?.find(
+          (j: any) => j.type === 'rejected_matches' || j.metadata?.rejectedMatches
+        )?.metadata?.rejectedMatches || []
+
         return (
           <>
             {proposal && (
               <EditionContextInfo
                 currentCalendarStatus={
-                  userModifiedChanges['calendarStatus'] || 
-                  selectedChanges['calendarStatus'] || 
-                  (typeof proposal.changes.calendarStatus === 'string' 
-                    ? proposal.changes.calendarStatus 
+                  userModifiedChanges['calendarStatus'] ||
+                  selectedChanges['calendarStatus'] ||
+                  (typeof proposal.changes.calendarStatus === 'string'
+                    ? proposal.changes.calendarStatus
                     : (proposal.changes.calendarStatus as any)?.current || (proposal.changes.calendarStatus as any)?.proposed)
                 }
                 currentEditionYear={getEditionYear(proposal) ? parseInt(getEditionYear(proposal)!) : undefined}
@@ -156,7 +162,16 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 eventSlug={(proposal as any).eventSlug}
               />
             )}
-            
+
+            {rejectedMatches.length > 0 && (
+              <AlternativeMatchesCard
+                proposalId={proposal.id}
+                currentEventId={proposal.eventId}
+                currentEventName={proposal.eventName}
+                rejectedMatches={rejectedMatches}
+              />
+            )}
+
             <AgentCard
               agent={{
                 name: proposal.agent.name,

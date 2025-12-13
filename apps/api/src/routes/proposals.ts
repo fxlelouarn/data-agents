@@ -2286,6 +2286,114 @@ router.post('/:id/convert-to-edition-update', [
   })
 }))
 
+// POST /api/proposals/:id/change-target - Change the target event/edition of an EDITION_UPDATE proposal
+router.post('/:id/change-target', [
+  param('id').isString().notEmpty(),
+  body('eventId').isInt().withMessage('eventId must be an integer'),
+  body('editionId').isInt().withMessage('editionId must be an integer'),
+  body('eventName').isString().notEmpty().withMessage('eventName is required'),
+  body('eventSlug').isString().notEmpty().withMessage('eventSlug is required'),
+  body('editionYear').isString().notEmpty().withMessage('editionYear is required'),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { eventId, editionId, eventName, eventSlug, editionYear } = req.body
+
+  // 1. Récupérer la proposition
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id },
+    include: { agent: true }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+
+  // Seulement pour EDITION_UPDATE (pour NEW_EVENT, utiliser convert-to-edition-update)
+  if (proposal.type !== 'EDITION_UPDATE') {
+    throw createError(400, 'Can only change target for EDITION_UPDATE proposals. Use convert-to-edition-update for NEW_EVENT.', 'INVALID_PROPOSAL_TYPE')
+  }
+
+  if (proposal.status !== 'PENDING' && proposal.status !== 'PARTIALLY_APPROVED') {
+    throw createError(400, 'Can only change target for PENDING or PARTIALLY_APPROVED proposals', 'INVALID_PROPOSAL_STATUS')
+  }
+
+  // 2. Stocker les anciennes valeurs pour la justification
+  const previousEventId = proposal.eventId
+  const previousEditionId = proposal.editionId
+  const previousEventName = proposal.eventName
+
+  // 3. Mettre à jour la proposition avec la nouvelle cible
+  const updatedProposal = await db.prisma.proposal.update({
+    where: { id },
+    data: {
+      eventId: eventId.toString(),
+      editionId: editionId.toString(),
+      eventName,
+      editionYear: parseInt(editionYear),
+      // Réinitialiser les blocs validés car la cible a changé
+      approvedBlocks: {},
+      status: 'PENDING',
+      reviewedAt: null,
+      reviewedBy: null,
+      // Ajouter une justification expliquant le changement
+      justification: [
+        {
+          type: 'text',
+          content: `Cible modifiée manuellement : ${previousEventName} → ${eventName}`,
+          metadata: {
+            action: 'change_target',
+            previousEventId,
+            previousEditionId,
+            previousEventName,
+            newEventId: eventId,
+            newEditionId: editionId,
+            newEventName: eventName,
+            newEventSlug: eventSlug,
+            newEditionYear: editionYear,
+            timestamp: new Date().toISOString()
+          }
+        },
+        ...(proposal.justification as any[] || [])
+      ]
+    },
+    include: { agent: true }
+  })
+
+  // 4. Supprimer les ProposalApplications PENDING existantes (car la cible a changé)
+  const deletedApps = await db.prisma.proposalApplication.deleteMany({
+    where: {
+      proposalId: id,
+      status: 'PENDING'
+    }
+  })
+
+  // 5. Logger l'action
+  await db.createLog({
+    agentId: proposal.agentId,
+    level: 'INFO',
+    message: `Proposal ${id} target changed: ${previousEventName} → ${eventName}`,
+    data: {
+      proposalId: id,
+      previousEventId,
+      previousEditionId,
+      previousEventName,
+      newEventId: eventId,
+      newEditionId: editionId,
+      newEventName: eventName,
+      newEditionYear: editionYear,
+      deletedApplications: deletedApps.count,
+      timestamp: new Date().toISOString()
+    }
+  })
+
+  res.json({
+    success: true,
+    data: updatedProposal,
+    message: `Cible modifiée : ${previousEventName} → ${eventName}`
+  })
+}))
+
 // POST /api/proposals/edition-update-complete - Create a complete EDITION_UPDATE proposal with current values
 router.post('/edition-update-complete', [
   body('editionId').isString().notEmpty().withMessage('editionId is required'),

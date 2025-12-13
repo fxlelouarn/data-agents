@@ -1,9 +1,9 @@
 /**
  * Event Matching Service
- * 
+ *
  * Service mutualisé pour le matching d'événements sportifs.
  * Utilisé par les agents FFA, Slack, et autres.
- * 
+ *
  * Ce module gère :
  * - Calcul de similarité entre noms d'événements (fuse.js)
  * - Matching de courses par distance et nom
@@ -36,7 +36,7 @@ export const DEFAULT_MATCHING_CONFIG: MatchingConfig = {
 
 /**
  * Match an event against a database of existing events
- * 
+ *
  * @param input - Event data to match
  * @param sourceDb - Prisma client for source database (Miles Republic)
  * @param config - Matching configuration
@@ -207,7 +207,7 @@ export async function matchEvent(
     const searchKeywords = extractKeywords(searchNameKeywords)
 
     const scoredCandidates = Array.from(scoreMap.values()).map(candidate => {
-      const bestNameScore = Math.max(candidate.nameScore, candidate.keywordScore)
+      let bestNameScore = Math.max(candidate.nameScore, candidate.keywordScore)
 
       // Anti-false-positive validation
       if (candidate.keywordScore > candidate.nameScore && candidate.nameScore < 0.5) {
@@ -220,7 +220,26 @@ export async function matchEvent(
         }
       }
 
-      const validatedBestScore = Math.max(candidate.nameScore, candidate.keywordScore)
+      // Bonus si le nameScore est très élevé (nom quasi-identique = signal fort)
+      if (candidate.nameScore >= 0.9) {
+        // Le nom est quasi-identique, on boost pour éviter qu'un keywordScore le dépasse
+        bestNameScore = Math.max(bestNameScore, candidate.nameScore * 1.1)
+        logger.debug(`  High nameScore bonus for "${candidate.event.name}" (${candidate.nameScore.toFixed(3)} → ${bestNameScore.toFixed(3)})`)
+      }
+
+      // Bonus si on a matché plusieurs keywords (plus fiable qu'un seul)
+      const candidateKeywords = extractKeywords(candidate.event.nameKeywords)
+      const commonKeywords = searchKeywords.filter(sk =>
+        candidateKeywords.some(ck => sk === ck || sk.includes(ck) || ck.includes(sk))
+      )
+      if (commonKeywords.length >= 2) {
+        // Plus de keywords matchés = plus fiable (+5% par keyword supplémentaire, max +10%)
+        const keywordCountBonus = Math.min(0.1, (commonKeywords.length - 1) * 0.05)
+        bestNameScore = Math.min(1.0, bestNameScore + keywordCountBonus)
+        logger.debug(`  Keyword count bonus for "${candidate.event.name}" (+${(keywordCountBonus * 100).toFixed(0)}% for ${commonKeywords.length} keywords)`)
+      }
+
+      const validatedBestScore = Math.max(candidate.nameScore, candidate.keywordScore, bestNameScore)
       const departmentBonus = candidate.departmentMatch && candidate.cityScore < 0.9 ? 0.15 : 0
       const departmentPenalty = !candidate.departmentMatch && validatedBestScore >= 0.85
         ? 0.25 * validatedBestScore
@@ -316,7 +335,7 @@ export async function matchEvent(
 
 /**
  * Match races by distance and name using hybrid algorithm
- * 
+ *
  * Strategy:
  * 1. Group DB races by distance (with tolerance)
  * 2. For each input race:
@@ -422,11 +441,11 @@ export function matchRaces(
 
 /**
  * Legacy wrapper for matchRaces with FFA-style signature
- * 
+ *
  * @deprecated Use matchRaces directly with RaceMatchInput[]
- * 
+ *
  * This function provides backwards compatibility for code that uses
- * the old matchRacesByDistanceAndName signature with `runDistance` 
+ * the old matchRacesByDistanceAndName signature with `runDistance`
  * instead of `distance`, and returns `{ ffa, db }` instead of `{ input, db }`.
  */
 export function matchRacesByDistanceAndName(
@@ -501,7 +520,7 @@ export function calculateAdjustedConfidence(
 
 /**
  * Calculate confidence for NEW_EVENT proposals
- * 
+ *
  * Inverted logic: Lower match = higher confidence to create new event
  */
 export function calculateNewEventConfidence(
