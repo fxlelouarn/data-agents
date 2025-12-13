@@ -15,7 +15,7 @@ import {
   ExtractedEventData,
   ImageExtractionOptions,
   EXTRACTION_PROMPT_SYSTEM,
-  EXTRACTION_PROMPT_USER
+  buildExtractionPrompt
 } from './types'
 import { ApiCreditError, ApiRateLimitError } from './HtmlExtractor'
 
@@ -288,7 +288,7 @@ export class ImageExtractor {
               imageContent,
               {
                 type: 'text',
-                text: this.buildImagePrompt()
+                text: buildExtractionPrompt('', 'image')
               }
             ]
           }
@@ -362,7 +362,7 @@ export class ImageExtractor {
               imageContent,
               {
                 type: 'text',
-                text: this.buildImagePrompt()
+                text: buildExtractionPrompt('', 'image')
               }
             ]
           }
@@ -387,52 +387,6 @@ export class ImageExtractor {
 
       return null
     }
-  }
-
-  /**
-   * Build prompt specific to image extraction
-   */
-  private buildImagePrompt(): string {
-    const today = new Date().toISOString().split('T')[0]
-    return `Date du jour: ${today}
-
-Analyse cette image d'un événement sportif et extrais TOUTES les informations visibles.
-
-RÈGLES CRITIQUES:
-- N'INVENTE JAMAIS de données. Extrait UNIQUEMENT ce qui est VISIBLE dans l'image.
-- Pour les dates: cherche une date EXPLICITE visible dans l'image. N'invente JAMAIS.
-- IMPORTANT pour les courses: inclus TOUTES les épreuves visibles, y compris:
-  * Les trails/courses principales
-  * Les randonnées (rando, marche)
-  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
-  * Les formats ultra ou spéciaux
-- Le score de confiance doit refléter la lisibilité de l'image.
-
-Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):
-{
-  "eventName": "string (OBLIGATOIRE)",
-  "eventCity": "string",
-  "eventDepartment": "string (code ou nom)",
-  "editionYear": number (SEULEMENT si visible),
-  "editionDate": "YYYY-MM-DD (SEULEMENT si visible)",
-  "editionEndDate": "YYYY-MM-DD (si multi-jours)",
-  "races": [
-    {
-      "name": "string",
-      "distance": number (en mètres),
-      "elevation": number (D+ en mètres),
-      "startTime": "HH:mm",
-      "price": number (en euros),
-      "type": "trail" | "rando" | "marche" | "ultra" | "autre"
-    }
-  ],
-  "organizerName": "string",
-  "organizerEmail": "string",
-  "organizerPhone": "string",
-  "organizerWebsite": "string",
-  "registrationUrl": "string",
-  "confidence": number (0-1, basé sur lisibilité de l'image)
-}`
   }
 
   /**

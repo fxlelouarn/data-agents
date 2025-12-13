@@ -92,29 +92,11 @@ FORMAT:
 - Pour les dates, utilise le format ISO (YYYY-MM-DD)
 - Pour les heures, utilise le format HH:mm`
 
-export const EXTRACTION_PROMPT_USER = (content: string) => {
-  const today = new Date().toISOString().split('T')[0]
-  return `Date du jour: ${today}
-
-Extrais les informations de l'événement sportif à partir du contenu suivant.
-RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.
-
-IMPORTANT pour les courses: inclus TOUTES les épreuves mentionnées, y compris:
-  * Les trails/courses principales
-  * Les randonnées (rando, marche)
-  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
-  * Les formats ultra ou spéciaux
-
----
-${content}
----
-
-Si le contenu est du code JavaScript/CSS sans données lisibles, retourne:
-{"error": "page_spa_no_content", "eventName": null, "confidence": 0}
-
-Sinon, réponds avec un objet JSON (omets les champs non trouvés):
-{
-  "eventName": "string (OBLIGATOIRE - sinon retourne error)",
+/**
+ * Structure JSON attendue pour l'extraction (partagée par tous les extracteurs)
+ */
+const EXTRACTION_JSON_SCHEMA = `{
+  "eventName": "string (OBLIGATOIRE)",
   "eventCity": "string",
   "eventDepartment": "string (code ou nom)",
   "editionYear": number (SEULEMENT si trouvé explicitement),
@@ -137,4 +119,60 @@ Sinon, réponds avec un objet JSON (omets les champs non trouvés):
   "registrationUrl": "string",
   "confidence": number (0-1, doit être < 0.3 si pas de date trouvée)
 }`
+
+/**
+ * Règles communes pour l'extraction des courses
+ */
+const EXTRACTION_RACES_RULES = `IMPORTANT pour les courses: inclus TOUTES les épreuves mentionnées, y compris:
+  * Les trails/courses principales
+  * Les randonnées (rando, marche)
+  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
+  * Les formats ultra ou spéciaux`
+
+/**
+ * Génère le prompt d'extraction selon le type de source
+ */
+export type ExtractionSourceType = 'html' | 'image' | 'text'
+
+export const buildExtractionPrompt = (content: string, sourceType: ExtractionSourceType): string => {
+  const today = new Date().toISOString().split('T')[0]
+
+  const introByType: Record<ExtractionSourceType, string> = {
+    html: `Extrais les informations de l'événement sportif à partir du contenu HTML suivant.
+RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.`,
+    image: `Analyse cette image d'un événement sportif et extrais TOUTES les informations visibles.
+RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.`,
+    text: `Analyse ce texte décrivant un événement sportif et extrais TOUTES les informations présentes.
+RAPPEL: N'invente AUCUNE date. Si tu ne trouves pas de date explicite, omets editionDate et editionYear.`
+  }
+
+  const contentSection = sourceType === 'image'
+    ? '' // L'image est passée séparément dans le message
+    : `
+---
+${content}
+---`
+
+  const spaErrorSection = sourceType === 'html'
+    ? `
+Si le contenu est du code JavaScript/CSS sans données lisibles, retourne:
+{"error": "page_spa_no_content", "eventName": null, "confidence": 0}
+
+Sinon, réponds avec un objet JSON (omets les champs non trouvés):`
+    : `Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):`
+
+  return `Date du jour: ${today}
+
+${introByType[sourceType]}
+
+${EXTRACTION_RACES_RULES}
+${contentSection}
+
+${spaErrorSection}
+${EXTRACTION_JSON_SCHEMA}`
 }
+
+/**
+ * Prompt pour extraction HTML (rétro-compatibilité)
+ */
+export const EXTRACTION_PROMPT_USER = (content: string) => buildExtractionPrompt(content, 'html')

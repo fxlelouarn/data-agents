@@ -12,7 +12,8 @@ import Anthropic from '@anthropic-ai/sdk'
 import {
   ExtractionResult,
   ExtractedEventData,
-  EXTRACTION_PROMPT_SYSTEM
+  EXTRACTION_PROMPT_SYSTEM,
+  buildExtractionPrompt
 } from './types'
 import { ApiCreditError, ApiRateLimitError } from './HtmlExtractor'
 
@@ -118,7 +119,7 @@ export class TextExtractor {
         messages: [
           {
             role: 'user',
-            content: this.buildTextPrompt(text)
+            content: buildExtractionPrompt(text, 'text')
           }
         ],
         system: EXTRACTION_PROMPT_SYSTEM
@@ -164,7 +165,7 @@ export class TextExtractor {
         messages: [
           {
             role: 'user',
-            content: this.buildTextPrompt(text)
+            content: buildExtractionPrompt(text, 'text')
           }
         ],
         system: EXTRACTION_PROMPT_SYSTEM
@@ -187,57 +188,6 @@ export class TextExtractor {
 
       return null
     }
-  }
-
-  /**
-   * Build prompt for text extraction
-   */
-  private buildTextPrompt(text: string): string {
-    const today = new Date().toISOString().split('T')[0]
-    return `Date du jour: ${today}
-
-Analyse ce texte décrivant un événement sportif et extrais TOUTES les informations présentes.
-
-RÈGLES CRITIQUES:
-- N'INVENTE JAMAIS de données. Extrait UNIQUEMENT ce qui est EXPLICITEMENT mentionné.
-- Pour les dates: cherche une date EXPLICITE. N'invente JAMAIS.
-- IMPORTANT pour les courses: inclus TOUTES les épreuves mentionnées, y compris:
-  * Les trails/courses principales
-  * Les randonnées (rando, marche)
-  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
-  * Les formats ultra ou spéciaux
-- Si une information n'est pas présente, ne l'inclus pas dans le JSON.
-- Le score de confiance doit refléter la qualité/complétude des informations trouvées.
-
----
-${text}
----
-
-Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):
-{
-  "eventName": "string (OBLIGATOIRE - si pas trouvé, retourne null)",
-  "eventCity": "string",
-  "eventDepartment": "string (code ou nom)",
-  "editionYear": number (SEULEMENT si mentionné),
-  "editionDate": "YYYY-MM-DD (SEULEMENT si mentionné)",
-  "editionEndDate": "YYYY-MM-DD (si multi-jours)",
-  "races": [
-    {
-      "name": "string",
-      "distance": number (en mètres),
-      "elevation": number (D+ en mètres),
-      "startTime": "HH:mm",
-      "price": number (en euros),
-      "type": "trail" | "rando" | "marche" | "ultra" | "autre"
-    }
-  ],
-  "organizerName": "string",
-  "organizerEmail": "string",
-  "organizerPhone": "string",
-  "organizerWebsite": "string",
-  "registrationUrl": "string",
-  "confidence": number (0-1, basé sur la qualité des informations)
-}`
   }
 
   /**
