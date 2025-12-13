@@ -623,9 +623,163 @@ await db.createProposal({ eventId: event.id.toString(), ... })
 
 ---
 
+## Contrats Obligatoires
+
+Cette section décrit les formats standardisés que **tous les agents DOIVENT respecter** pour la création de propositions.
+
+### SourceMetadata
+
+Chaque proposition **DOIT** inclure un `sourceMetadata` au format standardisé. Ce champ permet au dashboard d'afficher correctement les sources (URL, images, texte Slack, etc.).
+
+```typescript
+import { SourceMetadata, createSourceMetadata } from '@data-agents/database'
+
+const proposal = {
+  // ... autres champs
+  sourceMetadata: createSourceMetadata('URL', {
+    url: 'https://example.com/event',
+    // Optionnel
+    imageUrls: ['https://example.com/image.jpg'],
+    rawText: 'Texte extrait de la page...',
+    extra: {
+      // Métadonnées spécifiques à la source
+    }
+  })
+}
+
+// Ou manuellement :
+const sourceMetadata: SourceMetadata = {
+  type: 'URL',  // 'URL' | 'IMAGE' | 'TEXT' | 'SLACK' | 'FFA' | 'GOOGLE'
+  url: 'https://example.com/event',
+  extractedAt: new Date().toISOString()
+}
+```
+
+**Types de sources supportés :**
+
+| Type | Description | Champs attendus |
+|------|-------------|-----------------|
+| `URL` | Page web scrapée | `url` |
+| `IMAGE` | Image analysée | `imageUrls` |
+| `TEXT` | Texte brut | `rawText` |
+| `SLACK` | Message Slack | `extra.messageLink`, `extra.channelId` |
+| `FFA` | Calendrier FFA | `url`, `extra.ffaId`, `extra.ligue` |
+| `GOOGLE` | Recherche Google | `url`, `extra.searchQuery` |
+
+### Justification avec rejectedMatches
+
+Si le matching trouve des événements similaires mais **en dessous du seuil** (0.75), ils **DOIVENT** être inclus dans la justification avec le type `rejected_matches`.
+
+Cela permet à l'utilisateur de voir la card "Événements similaires détectés" et de convertir manuellement la proposition NEW_EVENT en EDITION_UPDATE.
+
+```typescript
+import { 
+  Justification, 
+  RejectedMatch,
+  createRejectedMatchesJustification,
+  createUrlSourceJustification 
+} from '@data-agents/database'
+
+// Utiliser les helpers (recommandé)
+const justifications: Justification[] = [
+  createUrlSourceJustification('https://example.com/event'),
+  createRejectedMatchesJustification([
+    {
+      eventId: 8821,
+      eventName: 'La 7 vallées race',
+      eventSlug: 'la-7-vallees-race-8821',
+      eventCity: 'Hesdin',
+      eventDepartment: '62',
+      editionId: 49092,
+      editionYear: '2026',
+      matchScore: 0.748,
+      nameScore: 0.88,
+      cityScore: 0.99,
+      departmentMatch: false,
+      dateProximity: 0.98
+    }
+  ])
+]
+
+// Ou manuellement :
+const justification: Justification = {
+  type: 'rejected_matches',  // Type OBLIGATOIRE pour ce cas
+  content: 'Top 3 événements similaires trouvés mais rejetés',
+  metadata: {
+    rejectedMatches: [
+      {
+        eventId: 8821,
+        eventName: 'La 7 vallées race',
+        eventSlug: 'la-7-vallees-race-8821',
+        eventCity: 'Hesdin',
+        eventDepartment: '62',
+        editionId: 49092,
+        editionYear: '2026',
+        matchScore: 0.748,
+        nameScore: 0.88,
+        cityScore: 0.99,
+        departmentMatch: false,
+        dateProximity: 0.98
+      }
+    ]
+  }
+}
+```
+
+**Types de justification supportés :**
+
+| Type | Description | Métadonnées attendues |
+|------|-------------|----------------------|
+| `url_source` | Source URL | `url` |
+| `rejected_matches` | Événements similaires rejetés | `rejectedMatches[]` |
+| `matching` | Résultat de matching | `matchType`, `matchedEventId`, etc. |
+| `extraction` | Info extraction | `extractionMethod` |
+| `validation` | Résultat validation | `validationRules`, `validationScore` |
+
+### Exemple complet
+
+```typescript
+import { 
+  SourceMetadata, 
+  Justification,
+  createSourceMetadata,
+  createUrlSourceJustification,
+  createRejectedMatchesJustification
+} from '@data-agents/database'
+
+// Dans votre agent, après le matching
+const proposal = {
+  type: ProposalType.NEW_EVENT,
+  eventName: '7 Vallées Race',
+  eventCity: 'Hesdin',
+  editionYear: 2026,
+  changes: {
+    event: { name: '7 Vallées Race', city: 'Hesdin' },
+    edition: { year: '2026', startDate: '2026-06-21' },
+    races: [...]
+  },
+  
+  // ✅ OBLIGATOIRE: sourceMetadata standardisé
+  sourceMetadata: createSourceMetadata('URL', {
+    url: 'https://www.finishers.com/course/7-vallees-race'
+  }),
+  
+  // ✅ OBLIGATOIRE si matching rejeté: inclure les rejectedMatches
+  justification: [
+    createUrlSourceJustification('https://www.finishers.com/course/7-vallees-race'),
+    createRejectedMatchesJustification(matchResult.rejectedMatches)
+  ],
+  
+  confidence: 0.58
+}
+```
+
+---
+
 ## Ressources
 
 - [CLAUDE.md](../CLAUDE.md) - Règles du projet
 - [BaseAgent source](../packages/agent-framework/src/base-agent.ts) - Classe de base
 - [agent-metadata.ts](../apps/api/src/services/agent-metadata.ts) - Métadonnées centralisées
 - [FFAScraperAgent](../apps/agents/src/FFAScraperAgent.ts) - Exemple complet d'agent
+- [Types partagés](../packages/database/src/types/) - SourceMetadata, Justification

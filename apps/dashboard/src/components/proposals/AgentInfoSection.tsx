@@ -21,6 +21,29 @@ import { Link } from 'react-router-dom'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 
+/**
+ * Format SourceMetadata générique (contrat)
+ * Supporte tous les types de sources: URL, IMAGE, TEXT, SLACK, FFA, GOOGLE
+ */
+interface SourceMetadata {
+  type: 'URL' | 'IMAGE' | 'TEXT' | 'SLACK' | 'FFA' | 'GOOGLE'
+  url?: string
+  imageUrls?: string[]
+  rawText?: string
+  extractedAt: string
+  extra?: {
+    workspaceId?: string
+    channelId?: string
+    messageLink?: string
+    userId?: string
+    userName?: string
+    ffaId?: string
+    ligue?: string
+    searchQuery?: string
+    resultRank?: number
+  }
+}
+
 interface Proposal {
   id: string
   agent: {
@@ -37,12 +60,15 @@ interface Proposal {
   editionYear?: number
   eventId?: string
   editionId?: string
-  // Justifications pour extraire les sources
+  // SourceMetadata générique (contrat)
+  sourceMetadata?: SourceMetadata | null
+  // Justifications pour extraire les sources (fallback)
   justification?: Array<{
     type: string
     content: string
     metadata?: {
       source?: string
+      url?: string
       [key: string]: any
     }
   }>
@@ -97,27 +123,47 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
   }
 
   // Extraire la première source disponible d'une proposition
+  // Ordre de priorité:
+  // 1. sourceMetadata.url (format générique - contrat)
+  // 2. sourceMetadata.extra.messageLink (pour Slack)
+  // 3. justification avec type 'url_source' (nouveau contrat)
+  // 4. justification avec metadata.source ou metadata.url (fallback)
   const getSourceUrl = (proposal: Proposal): string | null => {
+    // Priorité 1: sourceMetadata.url (contrat générique)
+    if (proposal.sourceMetadata?.url) {
+      return proposal.sourceMetadata.url
+    }
+
+    // Priorité 2: messageLink pour sources Slack
+    if (proposal.sourceMetadata?.extra?.messageLink) {
+      return proposal.sourceMetadata.extra.messageLink
+    }
+
+    // Priorité 3+: Fallback sur justifications
     if (!proposal.justification || proposal.justification.length === 0) {
       return null
     }
 
-    // Chercher dans l'ordre de priorité:
-    // 1. metadata.source
-    // 2. content si type = 'url'
-    // 3. content si commence par http
     for (const justif of proposal.justification) {
-      // Priorité 1: metadata.source
+      // Priorité 3: type 'url_source' (nouveau contrat)
+      if (justif.type === 'url_source' && justif.metadata?.url) {
+        return justif.metadata.url
+      }
+
+      // Priorité 4: metadata.source ou metadata.url
       if (justif.metadata?.source) {
         return justif.metadata.source
       }
+      if (justif.metadata?.url) {
+        return justif.metadata.url
+      }
 
-      // Priorité 2: content de type url
+      // Priorité 5: content de type url
       if (justif.type === 'url' && justif.content) {
         return justif.content
       }
 
-      // Priorité 3: content qui ressemble à une URL
+      // Priorité 6: content qui ressemble à une URL
       if (justif.content && typeof justif.content === 'string' && justif.content.match(/^https?:\/\//)) {
         return justif.content
       }
