@@ -535,13 +535,16 @@ export class ProposalDomainService {
             if ('toDelete' in value && Array.isArray(value.toDelete) && value.toDelete.length > 0) {
               // ✅ FIX 2025-12-13: Supporter les deux formats (number[] ou {raceId, raceName}[])
               if (typeof value.toDelete[0] === 'object' && 'raceId' in value.toDelete[0]) {
-                racesToDelete = value.toDelete.map((item: { raceId: number | string }) =>
-                  typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
-                )
-              } else {
                 racesToDelete = value.toDelete
+                  .map((item: { raceId?: number | string }) => {
+                    if (item.raceId === undefined || item.raceId === null) return NaN
+                    return typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
+                  })
+                  .filter((id: number) => !isNaN(id))
+              } else if (typeof value.toDelete[0] === 'number') {
+                racesToDelete = (value.toDelete as number[]).filter((id: number) => !isNaN(id))
               }
-              this.logger.info(`✅ [DEBUG] Extraction races.toDelete: ${racesToDelete.length} IDs`)
+              this.logger.info(`✅ [DEBUG] Extraction races.toDelete: ${racesToDelete?.length || 0} IDs valides`)
             }
           }
           continue
@@ -559,15 +562,20 @@ export class ProposalDomainService {
           // - Nouveau format: Array<{raceId: number, raceName: string}> (objets avec métadonnées)
           if (Array.isArray(value) && value.length > 0) {
             if (typeof value[0] === 'object' && 'raceId' in value[0]) {
-              // Nouveau format: extraire les raceId des objets
-              racesToDelete = value.map((item: { raceId: number | string }) =>
-                typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
-              )
-              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format objet): ${racesToDelete?.length || 0} IDs`)
+              // Nouveau format: extraire les raceId des objets et filtrer les invalides
+              racesToDelete = value
+                .map((item: { raceId?: number | string }) => {
+                  if (item.raceId === undefined || item.raceId === null) return NaN
+                  return typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
+                })
+                .filter((id: number) => !isNaN(id))
+              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format objet): ${racesToDelete?.length || 0} IDs valides`)
+            } else if (typeof value[0] === 'number') {
+              // Ancien format: tableau de numbers - filtrer les NaN
+              racesToDelete = (value as number[]).filter((id: number) => !isNaN(id))
+              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format number[]): ${racesToDelete?.length || 0} IDs valides`)
             } else {
-              // Ancien format: tableau de numbers
-              racesToDelete = value as number[]
-              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format number[]): ${racesToDelete?.length || 0} IDs`)
+              this.logger.warn(`⚠️ [DEBUG] racesToDelete format non reconnu:`, value[0])
             }
           }
           continue
@@ -1133,6 +1141,11 @@ export class ProposalDomainService {
       if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
         this.logger.info(`🗑️  Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
         for (const raceId of racesToDelete) {
+          // ✅ FIX 2025-12-13: Valider que raceId est un nombre valide avant suppression
+          if (raceId === undefined || raceId === null || isNaN(raceId)) {
+            this.logger.warn(`  ⚠️  raceId invalide ignoré: ${raceId}`)
+            continue
+          }
           await milesRepo.deleteRace(raceId)
           this.logger.info(`  ✅ Course ${raceId} supprimée`)
         }
