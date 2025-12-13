@@ -27,10 +27,13 @@ import {
 } from '@data-agents/database'
 import {
   matchEvent,
+  matchRaces,
   calculateNewEventConfidence,
   calculateAdjustedConfidence,
   EventMatchInput,
   EventMatchResult,
+  RaceMatchInput,
+  DbRace,
   DEFAULT_MATCHING_CONFIG,
   createConsoleLogger,
   ConnectionManager,
@@ -356,10 +359,12 @@ function buildNewEventChanges(data: ExtractedEventData) {
 /**
  * Construit les changements pour une proposition EDITION_UPDATE
  * Enrichit automatiquement les courses avec catégories et dates/heures
+ * Utilise matchRaces() pour séparer racesToUpdate (courses existantes) et racesToAdd (nouvelles courses)
  */
 function buildEditionUpdateChanges(
   data: ExtractedEventData,
-  matchResult: EventMatchResult
+  matchResult: EventMatchResult,
+  existingRaces: DbRace[]
 ) {
   const changes: any = {}
 
@@ -404,28 +409,93 @@ function buildEditionUpdateChanges(
     new: timeZone
   }
 
-  // Ajouter les courses si présentes - avec enrichissement
+  // Matcher les courses extraites avec les courses existantes
   if (data.races && data.races.length > 0) {
-    changes.racesToAdd = {
-      old: null,
-      new: data.races.map(race => {
-        // Enrichir avec les catégories si non définies
-        const enrichedRace = enrichRaceWithCategories(race)
+    // Convertir les courses extraites au format RaceMatchInput
+    const raceInputs: RaceMatchInput[] = data.races.map(race => ({
+      name: race.name,
+      distance: race.distance ? race.distance / 1000 : undefined, // Convertir m → km pour le matching
+      startTime: race.startTime
+    }))
 
-        // Calculer la date de départ avec heure et timezone
-        const startDate = calculateRaceStartDate(data.editionDate, race.startTime, timeZone)
+    // Effectuer le matching
+    const { matched, unmatched } = matchRaces(raceInputs, existingRaces, logger)
 
-        return {
-          name: enrichedRace.name,
-          startDate, // Date complète avec heure et timezone
-          startTime: enrichedRace.startTime, // Garder aussi l'heure locale pour référence
-          runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined,
-          runPositiveElevation: enrichedRace.elevation,
-          categoryLevel1: enrichedRace.categoryLevel1,
-          categoryLevel2: enrichedRace.categoryLevel2,
-          timeZone
-        }
-      })
+    logger.info(`Race matching: ${matched.length} matched, ${unmatched.length} new`, {
+      matched: matched.map(m => `"${m.input.name}" → "${m.db.name}"`),
+      unmatched: unmatched.map(u => u.name)
+    })
+
+    // Construire racesToUpdate pour les courses matchées
+    if (matched.length > 0) {
+      changes.racesToUpdate = {
+        old: null,
+        new: matched.map(({ input, db }) => {
+          // Retrouver la course originale extraite pour les données complètes
+          const originalRace = data.races!.find(r => r.name === input.name)!
+          const enrichedRace = enrichRaceWithCategories(originalRace)
+          const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
+
+          // Construire l'objet de mise à jour avec les différences
+          const updates: any = {}
+
+          // Comparer et ajouter les champs modifiés
+          if (startDate) {
+            updates.startDate = { old: db.startDate, new: startDate }
+          }
+          if (enrichedRace.distance && enrichedRace.distance / 1000 !== db.runDistance) {
+            updates.runDistance = { old: db.runDistance, new: enrichedRace.distance / 1000 }
+          }
+          if (enrichedRace.elevation && enrichedRace.elevation !== db.runPositiveElevation) {
+            updates.runPositiveElevation = { old: db.runPositiveElevation, new: enrichedRace.elevation }
+          }
+          if (enrichedRace.categoryLevel1) {
+            updates.categoryLevel1 = { old: (db as any).categoryLevel1, new: enrichedRace.categoryLevel1 }
+          }
+          if (enrichedRace.categoryLevel2) {
+            updates.categoryLevel2 = { old: (db as any).categoryLevel2, new: enrichedRace.categoryLevel2 }
+          }
+
+          return {
+            raceId: db.id,
+            raceName: db.name,
+            updates,
+            currentData: {
+              id: db.id,
+              name: db.name,
+              startDate: db.startDate,
+              runDistance: db.runDistance,
+              runPositiveElevation: db.runPositiveElevation,
+              categoryLevel1: (db as any).categoryLevel1,
+              categoryLevel2: (db as any).categoryLevel2
+            }
+          }
+        })
+      }
+    }
+
+    // Construire racesToAdd pour les nouvelles courses
+    if (unmatched.length > 0) {
+      changes.racesToAdd = {
+        old: null,
+        new: unmatched.map(unmatchedInput => {
+          // Retrouver la course originale extraite
+          const originalRace = data.races!.find(r => r.name === unmatchedInput.name)!
+          const enrichedRace = enrichRaceWithCategories(originalRace)
+          const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
+
+          return {
+            name: enrichedRace.name,
+            startDate,
+            startTime: enrichedRace.startTime,
+            runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined,
+            runPositiveElevation: enrichedRace.elevation,
+            categoryLevel1: enrichedRace.categoryLevel1,
+            categoryLevel2: enrichedRace.categoryLevel2,
+            timeZone
+          }
+        })
+      }
     }
   }
 
@@ -591,7 +661,34 @@ export async function createProposalFromSlack(
     } else {
       // Match trouvé → EDITION_UPDATE
       proposalType = ProposalType.EDITION_UPDATE
-      changes = buildEditionUpdateChanges(extractedData, matchResult)
+
+      // Récupérer les courses existantes de l'édition pour le matching
+      let existingRaces: DbRace[] = []
+      if (matchResult.edition?.id) {
+        const editionId = typeof matchResult.edition.id === 'number'
+          ? matchResult.edition.id
+          : parseInt(matchResult.edition.id)
+
+        existingRaces = await sourceDb.race.findMany({
+          where: { editionId },
+          select: {
+            id: true,
+            name: true,
+            runDistance: true,
+            walkDistance: true,
+            swimDistance: true,
+            bikeDistance: true,
+            startDate: true,
+            runPositiveElevation: true,
+            categoryLevel1: true,
+            categoryLevel2: true
+          }
+        })
+
+        logger.info(`Found ${existingRaces.length} existing races for edition ${editionId}`)
+      }
+
+      changes = buildEditionUpdateChanges(extractedData, matchResult, existingRaces)
       confidence = calculateAdjustedConfidence(
         extractedData.confidence,
         matchResult,
