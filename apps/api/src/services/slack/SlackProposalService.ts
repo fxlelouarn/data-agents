@@ -5,9 +5,26 @@
  * - Match les données extraites avec Miles Republic
  * - Crée des Proposals (NEW_EVENT ou EDITION_UPDATE)
  * - Stocke les métadonnées Slack dans sourceMetadata
+ * - Enrichit les courses avec catégories et dates/heures
  */
 
-import { prisma, ProposalType, ProposalStatus } from '@data-agents/database'
+import {
+  prisma,
+  ProposalType,
+  ProposalStatus,
+  // Types contrats
+  SourceMetadata,
+  Justification,
+  RejectedMatch,
+  createSourceMetadata,
+  createRejectedMatchesJustification,
+  createUrlSourceJustification,
+  createMatchingJustification,
+  // Services partagés
+  inferRaceCategories,
+  getTimezoneFromLocation,
+  getDefaultTimezone,
+} from '@data-agents/database'
 import {
   matchEvent,
   calculateNewEventConfidence,
@@ -20,10 +37,12 @@ import {
   DatabaseManager,
   PrismaClientType
 } from '@data-agents/agent-framework'
-import { ExtractedEventData } from './extractors/types'
+import { zonedTimeToUtc } from 'date-fns-tz'
+import { ExtractedEventData, ExtractedRace } from './extractors/types'
 
 /**
  * Métadonnées source Slack stockées dans la Proposal
+ * @deprecated Utiliser SourceMetadata de @data-agents/database
  */
 export interface SlackSourceMetadata {
   type: 'SLACK'
@@ -66,6 +85,73 @@ const logger = createConsoleLogger('SlackProposalService', 'slack-proposal-servi
 
 // ConnectionManager pour gérer les connexions aux bases sources
 const connectionManager = new ConnectionManager()
+
+/**
+ * Enrichit une course avec les catégories inférées si non fournies
+ */
+function enrichRaceWithCategories(race: ExtractedRace): ExtractedRace {
+  // Si les catégories sont déjà définies, ne pas les écraser
+  if (race.categoryLevel1) {
+    return race
+  }
+
+  // Inférer les catégories depuis le nom et la distance
+  const distanceKm = race.distance ? race.distance / 1000 : undefined
+  const [categoryLevel1, categoryLevel2] = inferRaceCategories(race.name, distanceKm)
+
+  return {
+    ...race,
+    categoryLevel1,
+    categoryLevel2,
+  }
+}
+
+/**
+ * Calcule la date de départ d'une course avec heure et timezone
+ *
+ * @param editionDate - Date de l'édition (format YYYY-MM-DD)
+ * @param startTime - Heure de départ (format HH:mm)
+ * @param timeZone - Timezone IANA
+ * @returns Date UTC ou undefined
+ */
+function calculateRaceStartDate(
+  editionDate: string | undefined,
+  startTime: string | undefined,
+  timeZone: string
+): Date | undefined {
+  if (!editionDate) {
+    return undefined
+  }
+
+  // Si on a une heure de départ
+  if (startTime) {
+    const [hours, minutes] = startTime.split(':').map(Number)
+    const localDateStr = `${editionDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+    return zonedTimeToUtc(localDateStr, timeZone)
+  }
+
+  // Sinon, minuit local
+  const localMidnight = `${editionDate}T00:00:00`
+  return zonedTimeToUtc(localMidnight, timeZone)
+}
+
+/**
+ * Convertit les données source Slack en SourceMetadata générique
+ */
+function convertToSourceMetadata(slackMetadata: SlackSourceMetadata): SourceMetadata {
+  return createSourceMetadata('SLACK', {
+    url: slackMetadata.sourceUrl,
+    imageUrls: slackMetadata.imageUrls,
+    extractedAt: slackMetadata.extractedAt,
+    extra: {
+      workspaceId: slackMetadata.workspaceId,
+      channelId: slackMetadata.channelId,
+      messageLink: slackMetadata.messageLink,
+      userId: slackMetadata.userId,
+      userName: slackMetadata.userName,
+    },
+  })
+}
 
 /**
  * Récupère l'ID de la base source depuis la config de l'agent Slack
@@ -149,8 +235,32 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
 
 /**
  * Construit les changements pour une proposition NEW_EVENT
+ * Enrichit automatiquement les courses avec catégories et dates/heures
  */
 function buildNewEventChanges(data: ExtractedEventData) {
+  // Déterminer la timezone depuis la localisation
+  const timeZone = getTimezoneFromLocation({
+    department: data.eventDepartment,
+    country: data.eventCountry,
+  })
+
+  // Calculer les dates de l'édition avec timezone
+  let editionStartDate: Date | undefined
+  let editionEndDate: Date | undefined
+
+  if (data.editionDate) {
+    // Trouver la première heure de course du jour
+    const firstRaceTime = data.races?.find(r => r.startTime)?.startTime || '00:00'
+    editionStartDate = calculateRaceStartDate(data.editionDate, firstRaceTime, timeZone)
+  }
+
+  if (data.editionEndDate || data.editionDate) {
+    const endDateStr = data.editionEndDate || data.editionDate
+    // Dernière heure de course du dernier jour (ou fin de journée)
+    const lastRaceTime = data.races?.slice().reverse().find(r => r.startTime)?.startTime || '23:59'
+    editionEndDate = calculateRaceStartDate(endDateStr, lastRaceTime, timeZone)
+  }
+
   const changes: any = {
     event: {
       name: data.eventName,
@@ -160,21 +270,32 @@ function buildNewEventChanges(data: ExtractedEventData) {
     },
     edition: {
       year: data.editionYear?.toString() || new Date().getFullYear().toString(),
-      startDate: data.editionDate,
-      endDate: data.editionEndDate || data.editionDate
+      startDate: editionStartDate,
+      endDate: editionEndDate,
+      timeZone
     }
   }
 
-  // Ajouter les courses si présentes
+  // Ajouter les courses si présentes - avec enrichissement
   if (data.races && data.races.length > 0) {
-    changes.races = data.races.map(race => ({
-      name: race.name,
-      runDistance: race.distance ? race.distance / 1000 : undefined, // Convertir en km
-      runPositiveElevation: race.elevation,
-      startTime: race.startTime,
-      categoryLevel1: race.categoryLevel1,
-      categoryLevel2: race.categoryLevel2
-    }))
+    changes.races = data.races.map(race => {
+      // Enrichir avec les catégories si non définies
+      const enrichedRace = enrichRaceWithCategories(race)
+
+      // Calculer la date de départ avec heure et timezone
+      const startDate = calculateRaceStartDate(data.editionDate, race.startTime, timeZone)
+
+      return {
+        name: enrichedRace.name,
+        startDate, // Date complète avec heure et timezone
+        startTime: enrichedRace.startTime, // Garder aussi l'heure locale pour référence
+        runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined, // Convertir en km
+        runPositiveElevation: enrichedRace.elevation,
+        categoryLevel1: enrichedRace.categoryLevel1,
+        categoryLevel2: enrichedRace.categoryLevel2,
+        timeZone
+      }
+    })
   }
 
   // Ajouter l'organisateur si présent
@@ -197,6 +318,7 @@ function buildNewEventChanges(data: ExtractedEventData) {
 
 /**
  * Construit les changements pour une proposition EDITION_UPDATE
+ * Enrichit automatiquement les courses avec catégories et dates/heures
  */
 function buildEditionUpdateChanges(
   data: ExtractedEventData,
@@ -204,33 +326,63 @@ function buildEditionUpdateChanges(
 ) {
   const changes: any = {}
 
-  // Mettre à jour la date si différente
+  // Déterminer la timezone depuis la localisation
+  const timeZone = getTimezoneFromLocation({
+    department: data.eventDepartment,
+    country: data.eventCountry,
+  })
+
+  // Mettre à jour la date si différente (avec timezone)
   if (data.editionDate) {
+    // Trouver la première heure de course du jour
+    const firstRaceTime = data.races?.find(r => r.startTime)?.startTime || '00:00'
+    const startDate = calculateRaceStartDate(data.editionDate, firstRaceTime, timeZone)
+
     changes.startDate = {
       old: matchResult.edition?.startDate,
-      new: new Date(data.editionDate)
+      new: startDate
     }
   }
 
   if (data.editionEndDate) {
+    // Dernière heure de course du dernier jour
+    const lastRaceTime = data.races?.slice().reverse().find(r => r.startTime)?.startTime || '23:59'
+    const endDate = calculateRaceStartDate(data.editionEndDate, lastRaceTime, timeZone)
+
     changes.endDate = {
       old: null,
-      new: new Date(data.editionEndDate)
+      new: endDate
     }
   }
 
-  // Ajouter les courses si présentes
+  // Ajouter la timezone
+  changes.timeZone = {
+    old: null,
+    new: timeZone
+  }
+
+  // Ajouter les courses si présentes - avec enrichissement
   if (data.races && data.races.length > 0) {
     changes.racesToAdd = {
       old: null,
-      new: data.races.map(race => ({
-        name: race.name,
-        runDistance: race.distance ? race.distance / 1000 : undefined,
-        runPositiveElevation: race.elevation,
-        startTime: race.startTime,
-        categoryLevel1: race.categoryLevel1,
-        categoryLevel2: race.categoryLevel2
-      }))
+      new: data.races.map(race => {
+        // Enrichir avec les catégories si non définies
+        const enrichedRace = enrichRaceWithCategories(race)
+
+        // Calculer la date de départ avec heure et timezone
+        const startDate = calculateRaceStartDate(data.editionDate, race.startTime, timeZone)
+
+        return {
+          name: enrichedRace.name,
+          startDate, // Date complète avec heure et timezone
+          startTime: enrichedRace.startTime, // Garder aussi l'heure locale pour référence
+          runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined,
+          runPositiveElevation: enrichedRace.elevation,
+          categoryLevel1: enrichedRace.categoryLevel1,
+          categoryLevel2: enrichedRace.categoryLevel2,
+          timeZone
+        }
+      })
     }
   }
 
@@ -260,6 +412,7 @@ function buildEditionUpdateChanges(
 
 /**
  * Construit les justifications pour la Proposal
+ * Utilise les helpers du contrat standardisé
  *
  * Note: Les infos de source Slack sont stockées dans sourceMetadata (champ dédié).
  * On ne duplique plus dans justification pour éviter la redondance.
@@ -269,45 +422,55 @@ function buildJustifications(
   data: ExtractedEventData,
   matchResult: EventMatchResult,
   sourceMetadata: SlackSourceMetadata
-) {
-  const justifications: any[] = []
+): Justification[] {
+  const justifications: Justification[] = []
 
   // Si on a une URL source
   if (sourceMetadata.sourceUrl) {
-    justifications.push({
-      type: 'url_source',
-      content: `Source: ${sourceMetadata.sourceUrl}`,
-      metadata: {
-        url: sourceMetadata.sourceUrl
-      }
-    })
+    justifications.push(createUrlSourceJustification(sourceMetadata.sourceUrl))
   }
 
   // Si matching avec événement existant
   if (matchResult.type !== 'NO_MATCH' && matchResult.event) {
-    justifications.push({
-      type: 'matching',
-      content: `Match ${matchResult.type} avec "${matchResult.event.name}"`,
-      metadata: {
-        matchType: matchResult.type,
-        matchedEventId: matchResult.event.id,
-        matchedEventName: matchResult.event.name,
-        similarity: matchResult.event.similarity,
-        matchedEditionId: matchResult.edition?.id,
-        matchedEditionYear: matchResult.edition?.year
-      }
-    })
+    justifications.push(
+      createMatchingJustification(
+        matchResult.type as 'EXACT' | 'FUZZY_MATCH' | 'NO_MATCH',
+        {
+          id: typeof matchResult.event.id === 'number' ? matchResult.event.id : parseInt(matchResult.event.id),
+          name: matchResult.event.name,
+          similarity: matchResult.event.similarity,
+        },
+        matchResult.edition
+          ? {
+              id: typeof matchResult.edition.id === 'number' ? matchResult.edition.id : parseInt(matchResult.edition.id),
+              year: matchResult.edition.year,
+            }
+          : undefined
+      )
+    )
   }
 
-  // Top 3 des matches rejetés (pour NEW_EVENT)
+  // Top 3 des matches rejetés (pour NEW_EVENT) - FORMAT CONTRAT OBLIGATOIRE
   if (matchResult.rejectedMatches && matchResult.rejectedMatches.length > 0) {
-    justifications.push({
-      type: 'rejected_matches',
-      content: `Top ${matchResult.rejectedMatches.length} événements similaires trouvés mais rejetés`,
-      metadata: {
-        rejectedMatches: matchResult.rejectedMatches
-      }
-    })
+    // Convertir les rejectedMatches au format standardisé RejectedMatch
+    const standardizedRejectedMatches: RejectedMatch[] = matchResult.rejectedMatches.map(
+      (rm: any) => ({
+        eventId: rm.eventId,
+        eventName: rm.eventName,
+        eventSlug: rm.eventSlug || '',
+        eventCity: rm.eventCity || '',
+        eventDepartment: rm.eventDepartment || '',
+        editionId: rm.editionId,
+        editionYear: rm.editionYear,
+        matchScore: rm.matchScore || rm.score || 0,
+        nameScore: rm.nameScore || 0,
+        cityScore: rm.cityScore || 0,
+        departmentMatch: rm.departmentMatch ?? false,
+        dateProximity: rm.dateProximity || 0,
+      })
+    )
+
+    justifications.push(createRejectedMatchesJustification(standardizedRejectedMatches))
   }
 
   return justifications
@@ -397,7 +560,10 @@ export async function createProposalFromSlack(
     // 6. Construire les justifications (sans doublon slack_source)
     const justifications = buildJustifications(extractedData, matchResult, sourceMetadata)
 
-    // 7. Créer la Proposal
+    // 7. Convertir sourceMetadata au format générique (contrat)
+    const genericSourceMetadata = convertToSourceMetadata(sourceMetadata)
+
+    // 8. Créer la Proposal
     const proposal = await prisma.proposal.create({
       data: {
         agentId: agent.id,
@@ -409,9 +575,9 @@ export async function createProposalFromSlack(
         eventCity: extractedData.eventCity,
         editionYear: extractedData.editionYear,
         changes,
-        justification: justifications,
+        justification: justifications as any,
         confidence,
-        sourceMetadata: sourceMetadata as any
+        sourceMetadata: genericSourceMetadata as any
       }
     })
 

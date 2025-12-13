@@ -57,3 +57,31 @@ export {
   formatFrequencyConfig,
   areFrequencyConfigsEqual,
 } from './services/frequency-calculator'
+
+// Export shared types for agents (contracts)
+export * from './types'
+
+// Export race enrichment services
+export {
+  inferRaceCategories,
+  enrichRaceCategories,
+  normalizeRaceName,
+  cleanRaceName,
+  normalizeRaceNameWithCategory,
+  getCategoryLabel,
+} from './services/race-enrichment'
+export type { RaceEnrichmentInput, EnrichedRaceCategories } from './services/race-enrichment'
+
+// Export timezone services
+export {
+  getTimezoneFromDepartment,
+  getTimezoneFromLigue,
+  getTimezoneFromCountry,
+  getTimezoneFromLocation,
+  isDOMTOM,
+  getDefaultTimezone,
+  departmentTimezones,
+  ligueTimezones,
+  countryTimezones,
+  DEFAULT_TIMEZONE,
+} from './services/timezone'

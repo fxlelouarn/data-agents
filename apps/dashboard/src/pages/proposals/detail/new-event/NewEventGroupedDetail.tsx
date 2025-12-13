@@ -245,8 +245,10 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         const firstProposal = groupProposals[0]
 
         // Extraire les matches rejetés depuis les justifications de la première proposition
+        // Contrat: type === 'rejected_matches' (obligatoire)
+        // Fallback: type === 'text' pour rétro-compatibilité avec anciennes propositions
         const rejectedMatches = firstProposal?.justification
-          ?.find((j: any) => j.type === 'text')
+          ?.find((j: any) => j.type === 'rejected_matches' || j.type === 'text')
           ?.metadata?.rejectedMatches || []
 
         return (

@@ -48,23 +48,23 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           isBlockPending,
           blockProposals
         } = context
-        
+
         // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
-        
+
         // Champs Event (bloqués par EDITION_FIELDS et organizer)
         const editionFields = ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate']
-        const eventChanges = consolidatedChanges.filter(c => 
+        const eventChanges = consolidatedChanges.filter(c =>
           !editionFields.includes(c.field) && c.field !== 'organizer'
         )
-        
+
         // Champs Edition uniquement
         const editionChanges = consolidatedChanges.filter(c => editionFields.includes(c.field))
-        
+
         // Ajouter les champs URL éditables même s'ils ne sont pas proposés
         const urlFields = ['websiteUrl', 'facebookUrl', 'instagramUrl']
         const eventChangesWithUrls = [...eventChanges]
-        
+
         urlFields.forEach(urlField => {
           if (!eventChangesWithUrls.some(c => c.field === urlField)) {
             // Ajouter un champ vide éditable
@@ -75,7 +75,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
             })
           }
         })
-        
+
         return (
           <>
             <CategorizedEventChangesTable
@@ -98,7 +98,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               showConfidence={false}
               showActions={false}
             />
-            
+
             <CategorizedEditionChangesTable
               title="Informations de l'édition"
               changes={editionChanges}
@@ -122,7 +122,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               showActions={false}
               // actions - ❌ OBSOLETE : Boutons "Tout approuver" / "Tout rejeter" remplacés par validation par blocs
             />
-            
+
             {organizerChange && (
               <OrganizerSection
                 change={organizerChange}
@@ -140,7 +140,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 showActions={false}
               />
             )}
-            
+
             <RacesChangesTable
               consolidatedRaces={consolidatedRaceChanges}
               userModifiedRaceChanges={userModifiedRaceChanges}
@@ -155,7 +155,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               showActions={false}
               showDeleteAction={false}
             />
-            
+
             <ProposalJustificationsCard
               justifications={proposal.justification || []}
               confidence={proposal.confidence}
@@ -164,27 +164,29 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
         )
       }}
       renderSidebar={(context) => {
-        const { 
-          proposal, 
-          getEditionYear, 
-          selectedChanges, 
+        const {
+          proposal,
+          getEditionYear,
+          selectedChanges,
           userModifiedChanges
         } = context
-        
+
         // Extraire les matches rejetés depuis les justifications
+        // Contrat: type === 'rejected_matches' (obligatoire)
+        // Fallback: type === 'text' pour rétro-compatibilité avec anciennes propositions
         const rejectedMatches = proposal.justification
-          ?.find((j: any) => j.type === 'text')
+          ?.find((j: any) => j.type === 'rejected_matches' || j.type === 'text')
           ?.metadata?.rejectedMatches || []
-        
+
         return (
           <>
             {proposal && (
               <EditionContextInfo
                 currentCalendarStatus={
-                  userModifiedChanges['calendarStatus'] || 
-                  selectedChanges['calendarStatus'] || 
-                  (typeof proposal.changes.calendarStatus === 'string' 
-                    ? proposal.changes.calendarStatus 
+                  userModifiedChanges['calendarStatus'] ||
+                  selectedChanges['calendarStatus'] ||
+                  (typeof proposal.changes.calendarStatus === 'string'
+                    ? proposal.changes.calendarStatus
                     : (proposal.changes.calendarStatus as any)?.current || (proposal.changes.calendarStatus as any)?.proposed)
                 }
                 currentEditionYear={getEditionYear(proposal) ? parseInt(getEditionYear(proposal)!) : undefined}
@@ -195,7 +197,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 eventSlug={(proposal as any).eventSlug}
               />
             )}
-            
+
             <AgentCard
               agent={{
                 name: proposal.agent.name,
@@ -203,7 +205,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               }}
               createdAt={proposal.createdAt}
             />
-            
+
             {/* Afficher la card des matches rejetés */}
             {rejectedMatches.length > 0 && (
               <RejectedMatchesCard

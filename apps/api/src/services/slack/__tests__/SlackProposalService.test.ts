@@ -14,7 +14,8 @@ import { SlackSourceMetadata } from '../SlackProposalService'
 jest.mock('@data-agents/database', () => ({
   prisma: {
     agent: {
-      findFirst: jest.fn()
+      findFirst: jest.fn(),
+      findMany: jest.fn()
     },
     proposal: {
       create: jest.fn(),
@@ -32,7 +33,55 @@ jest.mock('@data-agents/database', () => ({
     APPROVED: 'APPROVED',
     REJECTED: 'REJECTED',
     ARCHIVED: 'ARCHIVED'
-  }
+  },
+  // Services partagés
+  inferRaceCategories: jest.fn((name: string, distance?: number) => {
+    if (name.toLowerCase().includes('trail')) {
+      if (distance && distance > 80) return ['TRAIL', 'ULTRA_TRAIL']
+      if (distance && distance > 40) return ['TRAIL', 'LONG_TRAIL']
+      if (distance && distance > 20) return ['TRAIL', 'SHORT_TRAIL']
+      return ['TRAIL', 'DISCOVERY_TRAIL']
+    }
+    if (name.toLowerCase().includes('marathon')) return ['RUNNING', 'MARATHON']
+    if (distance && distance >= 42) return ['RUNNING', 'MARATHON']
+    if (distance && distance >= 21) return ['RUNNING', 'HALF_MARATHON']
+    if (distance && distance >= 10) return ['RUNNING', 'KM10']
+    return ['RUNNING', undefined]
+  }),
+  getTimezoneFromLocation: jest.fn(({ department, country }: { department?: string; country?: string }) => {
+    if (department === '974') return 'Indian/Reunion'
+    if (department === '971') return 'America/Guadeloupe'
+    if (country === 'Belgique') return 'Europe/Brussels'
+    return 'Europe/Paris'
+  }),
+  getDefaultTimezone: jest.fn(() => 'Europe/Paris'),
+  // Types et helpers
+  createSourceMetadata: jest.fn((type, options) => ({
+    type,
+    ...options
+  })),
+  createRejectedMatchesJustification: jest.fn((rejectedMatches) => ({
+    type: 'rejected_matches',
+    content: `Top ${rejectedMatches.length} événements similaires trouvés mais rejetés`,
+    metadata: { rejectedMatches }
+  })),
+  createUrlSourceJustification: jest.fn((url) => ({
+    type: 'url_source',
+    content: `Source: ${url}`,
+    metadata: { url }
+  })),
+  createMatchingJustification: jest.fn((matchType, event, edition) => ({
+    type: 'matching',
+    content: matchType === 'NO_MATCH' ? 'Aucun événement correspondant trouvé' : `Match ${matchType} avec "${event?.name}"`,
+    metadata: {
+      matchType,
+      matchedEventId: event?.id,
+      matchedEventName: event?.name,
+      similarity: event?.similarity,
+      matchedEditionId: edition?.id,
+      matchedEditionYear: edition?.year
+    }
+  }))
 }))
 
 jest.mock('@data-agents/agent-framework', () => ({
@@ -67,7 +116,11 @@ describe('SlackProposalService', () => {
     id: 'agent-123',
     name: 'Slack Event Agent',
     type: 'EXTRACTOR',
-    isActive: true
+    isActive: true,
+    config: {
+      agentType: 'SLACK_EVENT',
+      sourceDatabase: 'miles-republic-db'
+    }
   }
 
   const mockSourceMetadata: SlackSourceMetadata = {
@@ -86,7 +139,10 @@ describe('SlackProposalService', () => {
 
   beforeEach(() => {
     jest.clearAllMocks()
+    // Le service utilise findFirst pour getSlackAgentSourceDatabaseId (config avec sourceDatabase)
     ;(prisma.agent.findFirst as jest.Mock).mockResolvedValue(mockAgent)
+    // Le service utilise findMany pour chercher l'agent par agentType (pour créer la proposition)
+    ;(prisma.agent.findMany as jest.Mock).mockResolvedValue([mockAgent])
   })
 
   describe('createProposalFromSlack - NEW_EVENT', () => {
@@ -137,13 +193,17 @@ describe('SlackProposalService', () => {
           status: 'PENDING',
           eventName: 'Trail des Montagnes',
           eventCity: 'Chamonix',
-          editionYear: 2025,
-          sourceMetadata: mockSourceMetadata
+          editionYear: 2025
         })
       })
 
-      // Verify changes structure for NEW_EVENT
+      // Verify sourceMetadata is converted to generic format
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      expect(createCall.data.sourceMetadata).toHaveProperty('type', 'SLACK')
+      expect(createCall.data.sourceMetadata).toHaveProperty('url', mockSourceMetadata.sourceUrl)
+      expect(createCall.data.sourceMetadata).toHaveProperty('extractedAt')
+
+      // Verify changes structure for NEW_EVENT
       expect(createCall.data.changes).toHaveProperty('event')
       expect(createCall.data.changes).toHaveProperty('edition')
       expect(createCall.data.changes).toHaveProperty('races')
@@ -371,7 +431,7 @@ describe('SlackProposalService', () => {
     })
 
     it('should fail when agent is not found', async () => {
-      ;(prisma.agent.findFirst as jest.Mock).mockResolvedValue(null)
+      ;(prisma.agent.findMany as jest.Mock).mockResolvedValue([])
       ;(matchEvent as jest.Mock).mockResolvedValue({
         type: 'NO_MATCH',
         confidence: 0.3,
@@ -439,10 +499,21 @@ describe('SlackProposalService', () => {
       await createProposalFromSlack(extractedData, fullSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.sourceMetadata).toEqual(fullSourceMetadata)
-      expect(createCall.data.sourceMetadata.type).toBe('SLACK')
-      expect(createCall.data.sourceMetadata.threadTs).toBe('1234567890.000000')
-      expect(createCall.data.sourceMetadata.imageUrls).toHaveLength(2)
+      const storedMetadata = createCall.data.sourceMetadata
+
+      // Le service convertit vers le format générique SourceMetadata
+      expect(storedMetadata.type).toBe('SLACK')
+      expect(storedMetadata.url).toBe('https://myrace.com/event')
+      expect(storedMetadata.imageUrls).toHaveLength(2)
+      expect(storedMetadata.extractedAt).toBe('2025-01-15T14:30:00Z')
+
+      // Les métadonnées Slack spécifiques sont dans 'extra'
+      expect(storedMetadata.extra).toBeDefined()
+      expect(storedMetadata.extra.workspaceId).toBe('T123')
+      expect(storedMetadata.extra.channelId).toBe('C456')
+      expect(storedMetadata.extra.messageLink).toBe('https://myworkspace.slack.com/archives/C456/p1234567890000001')
+      expect(storedMetadata.extra.userId).toBe('U789')
+      expect(storedMetadata.extra.userName).toBe('john.doe')
     })
   })
 
@@ -620,18 +691,21 @@ describe('SlackProposalService - Data coherence', () => {
         },
         edition: {
           year: 'string (required, e.g., "2025")',
-          startDate: 'ISO date string (required)',
-          endDate: 'ISO date string (optional)',
+          startDate: 'Date object with time (required)',
+          endDate: 'Date object with time (optional)',
+          timeZone: 'IANA timezone string (required)',
           registrationUrl: 'string (optional)'
         },
         races: [
           {
             name: 'string (required)',
+            startDate: 'Date object with time (enriched)',
+            startTime: 'HH:mm format (optional)',
             runDistance: 'number in km (optional)',
             runPositiveElevation: 'number in meters (optional)',
-            startTime: 'HH:mm format (optional)',
-            categoryLevel1: 'RUNNING | TRAIL | WALK | etc. (optional)',
-            categoryLevel2: 'MARATHON | ULTRA_TRAIL | etc. (optional)'
+            categoryLevel1: 'RUNNING | TRAIL | WALK | etc. (enriched)',
+            categoryLevel2: 'MARATHON | ULTRA_TRAIL | etc. (enriched)',
+            timeZone: 'IANA timezone string (enriched)'
           }
         ],
         organizer: {
@@ -645,7 +719,10 @@ describe('SlackProposalService - Data coherence', () => {
       // Verify structure documentation
       expect(expectedNewEventChanges.event).toHaveProperty('name')
       expect(expectedNewEventChanges.edition).toHaveProperty('year')
+      expect(expectedNewEventChanges.edition).toHaveProperty('timeZone')
       expect(expectedNewEventChanges.races[0]).toHaveProperty('runDistance')
+      expect(expectedNewEventChanges.races[0]).toHaveProperty('categoryLevel1')
+      expect(expectedNewEventChanges.races[0]).toHaveProperty('startDate')
     })
   })
 
@@ -655,15 +732,19 @@ describe('SlackProposalService - Data coherence', () => {
       const expectedEditionUpdateChanges = {
         startDate: {
           old: 'Date object or null',
-          new: 'Date object (required)'
+          new: 'Date object with time (required)'
         },
         endDate: {
           old: 'Date object or null',
-          new: 'Date object (optional)'
+          new: 'Date object with time (optional)'
+        },
+        timeZone: {
+          old: 'null',
+          new: 'IANA timezone string (enriched)'
         },
         racesToAdd: {
           old: 'null',
-          new: ['array of race objects']
+          new: ['array of race objects with enriched categories and dates']
         },
         organizer: {
           old: 'null or existing organizer',
@@ -678,13 +759,38 @@ describe('SlackProposalService - Data coherence', () => {
       // Verify structure documentation
       expect(expectedEditionUpdateChanges.startDate).toHaveProperty('old')
       expect(expectedEditionUpdateChanges.startDate).toHaveProperty('new')
+      expect(expectedEditionUpdateChanges.timeZone).toHaveProperty('new')
       expect(expectedEditionUpdateChanges.racesToAdd).toHaveProperty('new')
     })
   })
 
   describe('sourceMetadata structure', () => {
-    it('should document expected sourceMetadata format', () => {
-      const expectedSourceMetadata: SlackSourceMetadata = {
+    it('should document expected sourceMetadata format (generic SourceMetadata)', () => {
+      // Nouveau format générique SourceMetadata (contrat)
+      const expectedSourceMetadata = {
+        type: 'SLACK', // 'URL' | 'IMAGE' | 'TEXT' | 'SLACK' | 'FFA' | 'GOOGLE'
+        url: 'https://example.com/event', // URL de la source (optional)
+        imageUrls: ['https://files.slack.com/...'], // Images (optional)
+        extractedAt: '2025-01-15T10:00:00.000Z', // Date extraction (required)
+        extra: {
+          // Slack-specific
+          workspaceId: 'T123456789',
+          channelId: 'C123456789',
+          messageLink: 'https://company.slack.com/archives/C123/p1234567890123456',
+          userId: 'U123456789',
+          userName: 'john.doe'
+        }
+      }
+
+      expect(expectedSourceMetadata.type).toBe('SLACK')
+      expect(expectedSourceMetadata).toHaveProperty('url')
+      expect(expectedSourceMetadata).toHaveProperty('extractedAt')
+      expect(expectedSourceMetadata.extra).toHaveProperty('workspaceId')
+      expect(expectedSourceMetadata.extra).toHaveProperty('messageLink')
+    })
+
+    it('should document legacy SlackSourceMetadata format for backward compatibility', () => {
+      const legacySourceMetadata: SlackSourceMetadata = {
         type: 'SLACK',
         workspaceId: 'T123456789',
         workspaceName: 'Company Workspace',
@@ -700,12 +806,351 @@ describe('SlackProposalService - Data coherence', () => {
         extractedAt: '2025-01-15T10:00:00.000Z'
       }
 
-      expect(expectedSourceMetadata.type).toBe('SLACK')
-      expect(expectedSourceMetadata).toHaveProperty('workspaceId')
-      expect(expectedSourceMetadata).toHaveProperty('channelId')
-      expect(expectedSourceMetadata).toHaveProperty('messageTs')
-      expect(expectedSourceMetadata).toHaveProperty('userId')
-      expect(expectedSourceMetadata).toHaveProperty('messageLink')
+      expect(legacySourceMetadata.type).toBe('SLACK')
+      expect(legacySourceMetadata).toHaveProperty('workspaceId')
+      expect(legacySourceMetadata).toHaveProperty('channelId')
+      expect(legacySourceMetadata).toHaveProperty('messageTs')
+      expect(legacySourceMetadata).toHaveProperty('userId')
+      expect(legacySourceMetadata).toHaveProperty('messageLink')
+    })
+  })
+})
+
+describe('SlackProposalService - Enrichment', () => {
+  /**
+   * Tests for automatic enrichment of races with categories and dates
+   */
+
+  const mockAgent = {
+    id: 'agent-123',
+    name: 'Slack Event Agent',
+    type: 'EXTRACTOR',
+    isActive: true,
+    config: { agentType: 'SLACK_EVENT', sourceDatabase: 'db-123' }
+  }
+
+  const mockSourceMetadata: SlackSourceMetadata = {
+    type: 'SLACK',
+    workspaceId: 'T123456',
+    workspaceName: 'Test Workspace',
+    channelId: 'C123456',
+    channelName: 'events',
+    messageTs: '1234567890.123456',
+    userId: 'U123456',
+    userName: 'testuser',
+    messageLink: 'https://slack.com/archives/C123/p1234567890123456',
+    sourceUrl: 'https://example.com/event',
+    extractedAt: '2025-01-15T10:00:00Z'
+  }
+
+  beforeEach(() => {
+    jest.clearAllMocks()
+    ;(prisma.agent.findFirst as jest.Mock).mockResolvedValue(mockAgent)
+    ;(prisma.agent.findMany as jest.Mock).mockResolvedValue([mockAgent])
+    ;(matchEvent as jest.Mock).mockResolvedValue({
+      type: 'NO_MATCH',
+      confidence: 0.3,
+      event: null,
+      edition: null,
+      rejectedMatches: []
+    })
+  })
+
+  describe('Category enrichment', () => {
+    it('should enrich races with inferred categories when not provided', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Trail des Montagnes',
+        eventCity: 'Chamonix',
+        eventDepartment: '74',
+        editionDate: '2025-06-15',
+        races: [
+          { name: 'Trail 30km', distance: 30000 }, // No categories provided
+          { name: 'Trail 60km', distance: 60000 }
+        ],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const races = createCall.data.changes.races
+
+      // inferRaceCategories is called for each race
+      expect(races).toHaveLength(2)
+      // The mock returns TRAIL/SHORT_TRAIL for 30km and TRAIL/LONG_TRAIL for 60km
+      expect(races[0].categoryLevel1).toBe('TRAIL')
+      expect(races[0].categoryLevel2).toBe('SHORT_TRAIL')
+      expect(races[1].categoryLevel1).toBe('TRAIL')
+      expect(races[1].categoryLevel2).toBe('LONG_TRAIL')
+    })
+
+    it('should not overwrite existing categories', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Course Spéciale',
+        eventCity: 'Paris',
+        editionDate: '2025-03-15',
+        races: [
+          {
+            name: 'Course 10km',
+            distance: 10000,
+            categoryLevel1: 'FUN', // Already provided
+            categoryLevel2: 'COLOR_RUN'
+          }
+        ],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const races = createCall.data.changes.races
+
+      // Categories should be preserved, not overwritten
+      expect(races[0].categoryLevel1).toBe('FUN')
+      expect(races[0].categoryLevel2).toBe('COLOR_RUN')
+    })
+  })
+
+  describe('Timezone resolution', () => {
+    it('should use Europe/Paris for metropolitan France', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Course de Paris',
+        eventCity: 'Paris',
+        eventDepartment: '75',
+        editionDate: '2025-03-15',
+        races: [{ name: '10km', distance: 10000 }],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      expect(createCall.data.changes.edition.timeZone).toBe('Europe/Paris')
+      expect(createCall.data.changes.races[0].timeZone).toBe('Europe/Paris')
+    })
+
+    it('should use correct timezone for DOM-TOM (La Réunion)', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Grand Raid de La Réunion',
+        eventCity: 'Saint-Denis',
+        eventDepartment: '974',
+        editionDate: '2025-10-15',
+        races: [{ name: 'Diagonale des Fous', distance: 165000 }],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      expect(createCall.data.changes.edition.timeZone).toBe('Indian/Reunion')
+      expect(createCall.data.changes.races[0].timeZone).toBe('Indian/Reunion')
+    })
+
+    it('should use country timezone for foreign events', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Marathon de Bruxelles',
+        eventCity: 'Bruxelles',
+        eventCountry: 'Belgique',
+        editionDate: '2025-10-05',
+        races: [{ name: 'Marathon', distance: 42195 }],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      expect(createCall.data.changes.edition.timeZone).toBe('Europe/Brussels')
+    })
+  })
+
+  describe('Date with time enrichment', () => {
+    it('should include startDate with time for races', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Trail Matinal',
+        eventCity: 'Lyon',
+        editionDate: '2025-05-20',
+        races: [
+          { name: 'Trail 20km', distance: 20000, startTime: '07:00' },
+          { name: 'Trail 10km', distance: 10000, startTime: '09:30' }
+        ],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const races = createCall.data.changes.races
+
+      // Races should have startDate (Date object) not just startTime
+      expect(races[0].startDate).toBeDefined()
+      expect(races[0].startTime).toBe('07:00')
+      expect(races[1].startDate).toBeDefined()
+      expect(races[1].startTime).toBe('09:30')
+    })
+
+    it('should include startDate in edition based on first race time', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Course du Matin',
+        eventCity: 'Marseille',
+        editionDate: '2025-04-10',
+        races: [
+          { name: 'Course A', distance: 5000, startTime: '08:30' },
+          { name: 'Course B', distance: 10000, startTime: '10:00' }
+        ],
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const edition = createCall.data.changes.edition
+
+      // Edition startDate should be a Date object (not string)
+      expect(edition.startDate).toBeDefined()
+      expect(edition.startDate instanceof Date).toBe(true)
+    })
+  })
+
+  describe('SourceMetadata conversion', () => {
+    it('should convert SlackSourceMetadata to generic SourceMetadata', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Test Event',
+        eventCity: 'Paris',
+        editionDate: '2025-03-15',
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const sourceMetadata = createCall.data.sourceMetadata
+
+      // Should be converted to generic format
+      expect(sourceMetadata.type).toBe('SLACK')
+      expect(sourceMetadata.url).toBe('https://example.com/event')
+      expect(sourceMetadata.extra).toBeDefined()
+      expect(sourceMetadata.extra.workspaceId).toBe('T123456')
+      expect(sourceMetadata.extra.messageLink).toBe('https://slack.com/archives/C123/p1234567890123456')
+    })
+  })
+
+  describe('Justification contracts', () => {
+    it('should use type=rejected_matches for similar events (not type=text)', async () => {
+      ;(matchEvent as jest.Mock).mockResolvedValue({
+        type: 'NO_MATCH',
+        confidence: 0.3,
+        event: null,
+        edition: null,
+        rejectedMatches: [
+          {
+            eventId: 123,
+            eventName: 'Similar Event',
+            eventCity: 'Paris',
+            matchScore: 0.72
+          }
+        ]
+      })
+
+      const extractedData: ExtractedEventData = {
+        eventName: 'New Event',
+        eventCity: 'Paris',
+        editionDate: '2025-03-15',
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const justifications = createCall.data.justification
+
+      // Should use type='rejected_matches' (contract), not type='text'
+      const rejectedMatchesJustif = justifications.find((j: any) => j.type === 'rejected_matches')
+      expect(rejectedMatchesJustif).toBeDefined()
+      expect(rejectedMatchesJustif.metadata.rejectedMatches).toBeDefined()
+
+      // Should NOT have type='text' for rejected matches
+      const textJustifWithRejected = justifications.find(
+        (j: any) => j.type === 'text' && j.metadata?.rejectedMatches
+      )
+      expect(textJustifWithRejected).toBeUndefined()
+    })
+
+    it('should use type=url_source for source URLs', async () => {
+      const extractedData: ExtractedEventData = {
+        eventName: 'Test Event',
+        eventCity: 'Paris',
+        editionDate: '2025-03-15',
+        confidence: 0.9,
+        extractionMethod: 'html'
+      }
+
+      ;(prisma.proposal.create as jest.Mock).mockResolvedValue({
+        id: 'proposal-123',
+        type: 'NEW_EVENT'
+      })
+
+      await createProposalFromSlack(extractedData, mockSourceMetadata)
+
+      const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
+      const justifications = createCall.data.justification
+
+      const urlJustif = justifications.find((j: any) => j.type === 'url_source')
+      expect(urlJustif).toBeDefined()
+      expect(urlJustif.metadata.url).toBe('https://example.com/event')
     })
   })
 })
