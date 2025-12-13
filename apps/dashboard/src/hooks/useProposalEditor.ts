@@ -5,6 +5,34 @@ import { proposalsApi } from '@/services/api'
 import { Proposal, RaceData } from '@/types'
 
 /**
+ * ✅ FIX 2025-12-13: Priorité des agents pour la consolidation
+ * L'ordre de priorité est basé sur la fiabilité de la source de données :
+ * - FFA Scraper : Source officielle de la FFA, données très fiables
+ * - Slack Event Agent : Données fournies par l'utilisateur, fiables
+ * - Autres agents : Priorité par défaut
+ * - Google Search Date Agent : Données extraites de pages web, moins fiables
+ *
+ * @returns Un score de priorité (plus élevé = plus prioritaire)
+ */
+function getAgentPriority(agentName: string | undefined): number {
+  if (!agentName) return 50 // Priorité par défaut
+
+  const name = agentName.toLowerCase()
+
+  // FFA Scraper : Source officielle, priorité maximale
+  if (name.includes('ffa')) return 100
+
+  // Slack Event Agent : Données utilisateur, haute priorité
+  if (name.includes('slack')) return 90
+
+  // Google Search Date Agent : Données web extraites, priorité basse
+  if (name.includes('google')) return 30
+
+  // Autres agents : priorité par défaut
+  return 50
+}
+
+/**
  * État consolidé d'une proposition
  * ✅ Aligné sur WorkingProposalGroup : changes proposés + userModifiedChanges séparés
  */
@@ -263,7 +291,16 @@ export function useProposalEditor(
 
     // ✅ MODE LECTURE SEULE : Si aucune PENDING mais des APPROVED, afficher en lecture seule
     // Utiliser uniquement les APPROVED (pas REJECTED/ARCHIVED) pour éviter la pollution
-    const proposalsToConsolidate = pendingProposals.length > 0 ? pendingProposals : approvedProposals
+    let proposalsToConsolidate = pendingProposals.length > 0 ? pendingProposals : approvedProposals
+
+    // ✅ FIX 2025-12-13: Trier par PRIORITÉ D'AGENT AVANT de consolider
+    // L'ordre de priorité est basé sur la fiabilité de la source, pas sur la confiance auto-déclarée
+    // FFA Scraper > Slack Event Agent > autres agents > Google Search Date Agent
+    proposalsToConsolidate = proposalsToConsolidate.sort((a, b) => {
+      const priorityA = getAgentPriority((a as any).agentName || (a as any).agent?.name)
+      const priorityB = getAgentPriority((b as any).agentName || (b as any).agent?.name)
+      return priorityB - priorityA // Décroissant: plus haute priorité en premier
+    })
 
     // ✅ Consolidation (PENDING en priorité, sinon APPROVED en lecture seule)
     const consolidatedChanges = consolidateChangesFromProposals(proposalsToConsolidate)
@@ -569,6 +606,10 @@ export function useProposalEditor(
    * ✅ FIX 2025-12-10: Retourne aussi le mapping raceId → existing-{index}
    * Ce mapping est nécessaire pour convertir les clés lors de la sauvegarde
    * car le backend attend des clés existing-{index} dans raceEdits
+   *
+   * ✅ FIX 2025-12-13: Respecter la priorité d'agent pour les champs des courses
+   * Les propositions sont triées par confiance AVANT d'arriver ici (FFA Scraper en premier).
+   * On ne doit PAS écraser les champs déjà définis par un agent plus prioritaire.
    */
   const consolidateRacesFromProposals = (proposals: Proposal[]): {
     races: ConsolidatedRaceChange[],
@@ -607,8 +648,19 @@ export function useProposalEditor(
         }
         const entry = raceMap.get(raceId)!
         entry.proposalIds.push(p.id)
-        // Fusion simple des champs proposés (UNIQUEMENT ceux dans updates)
-        entry.fields = { ...entry.fields, ...raceData }
+
+        // ✅ FIX 2025-12-13: NE PAS écraser les champs déjà définis par un agent plus prioritaire
+        // Les propositions sont triées par confiance, donc le premier agent (FFA) a la priorité
+        // On fusionne en gardant les valeurs existantes (agent prioritaire) si déjà définies
+        Object.entries(raceData).forEach(([field, value]) => {
+          // Ignorer les champs internes (_originalIndex, etc.)
+          if (field.startsWith('_')) return
+
+          // ✅ NE PAS écraser si le champ existe déjà (agent plus prioritaire l'a défini)
+          if (!(field in entry.fields)) {
+            entry.fields[field] = value
+          }
+        })
       })
     })
 

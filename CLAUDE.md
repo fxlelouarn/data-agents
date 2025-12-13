@@ -4,6 +4,63 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-13 - Fix: Priorité FFA Scraper non respectée pour les courses dans propositions groupées ✅
+
+**Problème résolu** : Dans les propositions groupées (FFA Scraper + Google Agent), les dates du FFA Scraper avaient bien la priorité sur l'édition, mais les courses prenaient les dates du Google Agent au lieu de celles du FFA.
+
+#### Symptômes
+
+1. Proposition groupée avec FFA Scraper + Google Agent
+2. L'édition affiche correctement les dates du FFA Scraper (agent prioritaire)
+3. Mais les courses affichent les dates du Google Agent (agent moins prioritaire)
+4. Exemple : https://data-agents-dashboard.onrender.com/proposals/group/13111-42613
+
+#### Cause
+
+Deux problèmes dans `useProposalEditor.ts` :
+
+1. **`consolidateRacesFromProposals()`** : Fusion simple `{ ...entry.fields, ...raceData }` qui écrase les champs de l'agent prioritaire par ceux de l'agent suivant dans la boucle
+2. **`initializeWorkingGroup()`** : Les propositions étaient triées par confiance, mais le Google Agent s'auto-attribue souvent une confiance élevée (0.8+) alors que sa source est moins fiable
+
+```typescript
+// AVANT (bug) - consolidateRacesFromProposals()
+entry.fields = { ...entry.fields, ...raceData }  // L'agent suivant ÉCRASE le précédent!
+
+// APRÈS (fix)
+Object.entries(raceData).forEach(([field, value]) => {
+  if (!(field in entry.fields)) {  // NE PAS écraser si déjà défini
+    entry.fields[field] = value
+  }
+})
+```
+
+#### Solution
+
+1. **Modifier `consolidateRacesFromProposals()`** : Ne pas écraser les champs déjà définis par un agent plus prioritaire
+2. **Modifier `initializeWorkingGroup()`** : Trier par **TYPE D'AGENT** (pas par confiance) :
+   - FFA Scraper : priorité 100 (source officielle FFA)
+   - Slack Event Agent : priorité 90 (données utilisateur)
+   - Autres agents : priorité 50 (défaut)
+   - Google Search Date Agent : priorité 30 (données web scrapées, moins fiables)
+3. **Ajouter `getAgentPriority()`** : Fonction qui retourne la priorité selon le nom de l'agent
+
+#### Fichiers modifiés
+
+- Frontend : `apps/dashboard/src/hooks/useProposalEditor.ts`
+  - `getAgentPriority()` : **Nouvelle fonction** - Retourne la priorité selon le type d'agent
+  - `consolidateRacesFromProposals()` : Fusion qui respecte la priorité (premier agent gagne)
+  - `initializeWorkingGroup()` : Tri par priorité d'agent avant consolidation
+
+#### Tests ajoutés
+
+- `apps/dashboard/src/hooks/__tests__/useProposalEditor.agentPriority.test.ts` : 15 tests couvrant :
+  - Tri par priorité d'agent (pas par confiance)
+  - Non-écrasement des champs par agents moins prioritaires
+  - Ordre correct : FFA > Slack > autres > Google
+  - Intégration avec le hook complet
+
+---
+
 ### 2025-12-13 - Feature: Notification Slack après validation de proposition ✅
 
 **Fonctionnalité ajoutée** : Quand une proposition provenant de Slack est validée dans le dashboard, un message de confirmation est automatiquement envoyé dans le thread Slack original.
