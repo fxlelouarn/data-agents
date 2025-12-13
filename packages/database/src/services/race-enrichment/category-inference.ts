@@ -41,6 +41,7 @@ export interface EnrichedRaceCategories {
  * @param bikeDistance Distance vélo en km (optionnel)
  * @param swimDistance Distance nage en km (optionnel)
  * @param walkDistance Distance marche en km (optionnel)
+ * @param eventName Nom de l'événement (optionnel, utilisé comme contexte pour l'inférence)
  * @returns Tuple [categoryLevel1, categoryLevel2 | undefined]
  */
 export function inferRaceCategories(
@@ -48,9 +49,11 @@ export function inferRaceCategories(
   runDistance?: number,
   bikeDistance?: number,
   swimDistance?: number,
-  walkDistance?: number
+  walkDistance?: number,
+  eventName?: string
 ): [string, string | undefined] {
   const lowerName = normalizeRaceName(raceName)
+  const eventNameLower = eventName ? normalizeRaceName(eventName) : ''
 
   // 1. TRIATHLON ET VARIANTS - Prioritaire car très distinctifs
   if (lowerName.includes('swim') && lowerName.includes('run')) return ['TRIATHLON', 'SWIM_RUN']
@@ -119,7 +122,9 @@ export function inferRaceCategories(
   }
 
   // 3. TRAIL - Trails pédestres
-  if (lowerName.includes('trail')) {
+  // Check both race name AND event name for "trail" context
+  const isTrailContext = lowerName.includes('trail') || eventNameLower.includes('trail')
+  if (isTrailContext) {
     // Classifier par distance
     if (runDistance) {
       if (runDistance <= 21) return ['TRAIL', 'DISCOVERY_TRAIL']

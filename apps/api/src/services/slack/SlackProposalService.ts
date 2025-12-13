@@ -24,6 +24,7 @@ import {
   inferRaceCategories,
   getTimezoneFromLocation,
   getDefaultTimezone,
+  normalizeRaceName,
 } from '@data-agents/database'
 import {
   matchEvent,
@@ -91,16 +92,25 @@ const connectionManager = new ConnectionManager()
 
 /**
  * Enrichit une course avec les catégories inférées si non fournies
+ * @param race - Course à enrichir
+ * @param eventName - Nom de l'événement (optionnel, utilisé comme contexte pour l'inférence)
  */
-function enrichRaceWithCategories(race: ExtractedRace): ExtractedRace {
+function enrichRaceWithCategories(race: ExtractedRace, eventName?: string): ExtractedRace {
   // Si les catégories sont déjà définies, ne pas les écraser
   if (race.categoryLevel1) {
     return race
   }
 
-  // Inférer les catégories depuis le nom et la distance
+  // Inférer les catégories depuis le nom, la distance, et le contexte de l'événement
   const distanceKm = race.distance ? race.distance / 1000 : undefined
-  const [categoryLevel1, categoryLevel2] = inferRaceCategories(race.name, distanceKm)
+  const [categoryLevel1, categoryLevel2] = inferRaceCategories(
+    race.name,
+    distanceKm,
+    undefined, // bikeDistance
+    undefined, // swimDistance
+    undefined, // walkDistance
+    eventName  // event context for inference
+  )
 
   return {
     ...race,
@@ -307,7 +317,7 @@ function buildNewEventChanges(data: ExtractedEventData) {
   if (data.races && data.races.length > 0) {
     editionNew.races = data.races.map(race => {
       // Enrichir avec les catégories si non définies
-      const enrichedRace = enrichRaceWithCategories(race)
+      const enrichedRace = enrichRaceWithCategories(race, data.eventName)
 
       // Calculer la date de départ avec heure et timezone
       const startDate = calculateRaceStartDate(data.editionDate, race.startTime, timeZone)
@@ -433,7 +443,7 @@ function buildEditionUpdateChanges(
         new: matched.map(({ input, db }) => {
           // Retrouver la course originale extraite pour les données complètes
           const originalRace = data.races!.find(r => r.name === input.name)!
-          const enrichedRace = enrichRaceWithCategories(originalRace)
+          const enrichedRace = enrichRaceWithCategories(originalRace, data.eventName)
           const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
 
           // Construire l'objet de mise à jour avec les différences
@@ -449,11 +459,12 @@ function buildEditionUpdateChanges(
           if (enrichedRace.elevation && enrichedRace.elevation !== db.runPositiveElevation) {
             updates.runPositiveElevation = { old: db.runPositiveElevation, new: enrichedRace.elevation }
           }
-          if (enrichedRace.categoryLevel1) {
-            updates.categoryLevel1 = { old: (db as any).categoryLevel1, new: enrichedRace.categoryLevel1 }
+          // Only propose category if DB doesn't have one (preserve existing categories)
+          if (enrichedRace.categoryLevel1 && !(db as any).categoryLevel1) {
+            updates.categoryLevel1 = { old: null, new: enrichedRace.categoryLevel1 }
           }
-          if (enrichedRace.categoryLevel2) {
-            updates.categoryLevel2 = { old: (db as any).categoryLevel2, new: enrichedRace.categoryLevel2 }
+          if (enrichedRace.categoryLevel2 && !(db as any).categoryLevel2) {
+            updates.categoryLevel2 = { old: null, new: enrichedRace.categoryLevel2 }
           }
 
           return {
@@ -481,7 +492,7 @@ function buildEditionUpdateChanges(
         new: unmatched.map(unmatchedInput => {
           // Retrouver la course originale extraite
           const originalRace = data.races!.find(r => r.name === unmatchedInput.name)!
-          const enrichedRace = enrichRaceWithCategories(originalRace)
+          const enrichedRace = enrichRaceWithCategories(originalRace, data.eventName)
           const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
 
           return {
@@ -495,6 +506,26 @@ function buildEditionUpdateChanges(
             timeZone
           }
         })
+      }
+    }
+
+    // Identify existing DB races that were NOT matched (for display in UI)
+    const matchedDbRaceIds = new Set(matched.map(m => m.db.id))
+    const unmatchedDbRaces = existingRaces.filter(r => !matchedDbRaceIds.has(r.id))
+
+    if (unmatchedDbRaces.length > 0) {
+      changes.racesExisting = {
+        old: null,
+        new: unmatchedDbRaces.map(race => ({
+          raceId: race.id,
+          raceName: race.name,
+          runDistance: race.runDistance,
+          walkDistance: race.walkDistance,
+          runPositiveElevation: race.runPositiveElevation,
+          categoryLevel1: (race as any).categoryLevel1,
+          categoryLevel2: (race as any).categoryLevel2,
+          startDate: race.startDate
+        }))
       }
     }
   }
@@ -689,6 +720,47 @@ export async function createProposalFromSlack(
       }
 
       changes = buildEditionUpdateChanges(extractedData, matchResult, existingRaces)
+
+      // FIX 5: Deduplicate racesToAdd against existing PENDING proposals for same event/edition
+      if (changes.racesToAdd?.new?.length > 0 && matchResult.event?.id && matchResult.edition?.id) {
+        const pendingProposals = await prisma.proposal.findMany({
+          where: {
+            eventId: matchResult.event.id.toString(),
+            editionId: matchResult.edition.id.toString(),
+            status: 'PENDING'
+          },
+          select: { changes: true }
+        })
+
+        // Collect race names already proposed in other PENDING proposals
+        const pendingRaceNames = new Set<string>()
+        for (const pending of pendingProposals) {
+          const pendingChanges = pending.changes as any
+          const racesToAdd = pendingChanges?.racesToAdd?.new || []
+          racesToAdd.forEach((r: any) => {
+            if (r.name) {
+              pendingRaceNames.add(normalizeRaceName(r.name))
+            }
+          })
+        }
+
+        // Filter out races already proposed
+        if (pendingRaceNames.size > 0) {
+          const originalCount = changes.racesToAdd.new.length
+          changes.racesToAdd.new = changes.racesToAdd.new.filter(
+            (r: any) => !pendingRaceNames.has(normalizeRaceName(r.name))
+          )
+          const filteredCount = originalCount - changes.racesToAdd.new.length
+          if (filteredCount > 0) {
+            logger.info(`Deduplicated ${filteredCount} race(s) already in PENDING proposals`)
+          }
+          // Remove racesToAdd entirely if empty
+          if (changes.racesToAdd.new.length === 0) {
+            delete changes.racesToAdd
+          }
+        }
+      }
+
       confidence = calculateAdjustedConfidence(
         extractedData.confidence,
         matchResult,
