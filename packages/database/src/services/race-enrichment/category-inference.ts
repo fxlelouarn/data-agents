@@ -178,15 +178,15 @@ export function inferRaceCategories(
   if (lowerName.includes('corrida')) return ['RUNNING', undefined]
 
   // Classifier par distance si fournie (RUNNING)
+  // Note: HALF_MARATHON et MARATHON sont détectés par nom uniquement (ci-dessus)
+  // La classification par distance utilise KM20 pour 17.5-45km car pas de KM30
   if (runDistance) {
     if (runDistance < 5) return ['RUNNING', 'LESS_THAN_5_KM']
     if (runDistance < 7.5) return ['RUNNING', 'KM5']
     if (runDistance < 12.5) return ['RUNNING', 'KM10']
     if (runDistance < 17.5) return ['RUNNING', 'KM15']
-    if (runDistance < 30) return ['RUNNING', 'KM20']
-    if (runDistance < 35) return ['RUNNING', 'HALF_MARATHON']
-    if (runDistance < 50) return ['RUNNING', 'MARATHON']
-    if (runDistance >= 50) return ['RUNNING', 'ULTRA_RUNNING']
+    if (runDistance < 45) return ['RUNNING', 'KM20']
+    if (runDistance >= 45) return ['RUNNING', 'ULTRA_RUNNING']
   }
 
   // Par défaut : RUNNING

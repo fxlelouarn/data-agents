@@ -83,25 +83,31 @@ describe('inferRaceCategories', () => {
       expect(cat2).toBe('KM10')
     })
 
-    test('Distance 21km → RUNNING/KM20 (seuil < 30km)', () => {
+    test('Distance 21km → RUNNING/KM20 (pas de catégorie spécifique semi par distance)', () => {
       const [cat1, cat2] = inferRaceCategories('Course longue', 21)
       expect(cat1).toBe('RUNNING')
       expect(cat2).toBe('KM20')
     })
 
-    test('Distance 32km → RUNNING/HALF_MARATHON (seuil 30-35km)', () => {
+    test('Distance 32km → RUNNING/KM20 (pas de KM30, KM20 jusqu\'à 45km)', () => {
       const [cat1, cat2] = inferRaceCategories('Course longue', 32)
       expect(cat1).toBe('RUNNING')
-      expect(cat2).toBe('HALF_MARATHON')
+      expect(cat2).toBe('KM20')
     })
 
-    test('Distance 42km → RUNNING/MARATHON', () => {
+    test('Distance 42km → RUNNING/KM20 (MARATHON détecté par nom, pas distance)', () => {
       const [cat1, cat2] = inferRaceCategories('Course très longue', 42)
       expect(cat1).toBe('RUNNING')
-      expect(cat2).toBe('MARATHON')
+      expect(cat2).toBe('KM20')
     })
 
-    test('Distance >50km → RUNNING/ULTRA_RUNNING', () => {
+    test('Distance 45km → RUNNING/ULTRA_RUNNING', () => {
+      const [cat1, cat2] = inferRaceCategories('Ultra course', 45)
+      expect(cat1).toBe('RUNNING')
+      expect(cat2).toBe('ULTRA_RUNNING')
+    })
+
+    test('Distance 80km → RUNNING/ULTRA_RUNNING', () => {
       const [cat1, cat2] = inferRaceCategories('Ultra course', 80)
       expect(cat1).toBe('RUNNING')
       expect(cat2).toBe('ULTRA_RUNNING')
