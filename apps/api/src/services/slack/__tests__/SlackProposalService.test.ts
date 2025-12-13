@@ -203,15 +203,16 @@ describe('SlackProposalService', () => {
       expect(createCall.data.sourceMetadata).toHaveProperty('url', mockSourceMetadata.sourceUrl)
       expect(createCall.data.sourceMetadata).toHaveProperty('extractedAt')
 
-      // Verify changes structure for NEW_EVENT
-      expect(createCall.data.changes).toHaveProperty('event')
+      // Verify changes structure for NEW_EVENT (aligned with FFA Scraper)
+      // Structure: { name: { new, confidence }, city: { new, confidence }, edition: { new: { races, organizer, ... }, confidence } }
+      expect(createCall.data.changes).toHaveProperty('name')
+      expect(createCall.data.changes).toHaveProperty('city')
       expect(createCall.data.changes).toHaveProperty('edition')
-      expect(createCall.data.changes).toHaveProperty('races')
-      expect(createCall.data.changes.event.name).toBe('Trail des Montagnes')
-      expect(createCall.data.changes.event.city).toBe('Chamonix')
-      expect(createCall.data.changes.races).toHaveLength(1)
-      expect(createCall.data.changes.races[0].name).toBe('Ultra 100K')
-      expect(createCall.data.changes.races[0].runDistance).toBe(100) // Converted to km
+      expect(createCall.data.changes.name.new).toBe('Trail des Montagnes')
+      expect(createCall.data.changes.city.new).toBe('Chamonix')
+      expect(createCall.data.changes.edition.new.races).toHaveLength(1)
+      expect(createCall.data.changes.edition.new.races[0].name).toBe('Ultra 100K')
+      expect(createCall.data.changes.edition.new.races[0].runDistance).toBe(100) // Converted to km
     })
 
     it('should include organizer in changes when present', async () => {
@@ -234,10 +235,11 @@ describe('SlackProposalService', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.changes).toHaveProperty('organizer')
-      expect(createCall.data.changes.organizer.name).toBe('Test Organizer')
-      expect(createCall.data.changes.organizer.email).toBe('contact@test.org')
-      expect(createCall.data.changes.organizer.websiteUrl).toBe('https://test.org')
+      // Organizer is inside edition.new (aligned with FFA Scraper structure)
+      expect(createCall.data.changes.edition.new).toHaveProperty('organizer')
+      expect(createCall.data.changes.edition.new.organizer.name).toBe('Test Organizer')
+      expect(createCall.data.changes.edition.new.organizer.email).toBe('contact@test.org')
+      expect(createCall.data.changes.edition.new.organizer.websiteUrl).toBe('https://test.org')
     })
 
     it('should include registration URL in edition when present', async () => {
@@ -258,7 +260,8 @@ describe('SlackProposalService', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.changes.edition.registrationUrl).toBe('https://inscription.test.org')
+      // registrationUrl is inside edition.new (aligned with FFA Scraper structure)
+      expect(createCall.data.changes.edition.new.registrationUrl).toBe('https://inscription.test.org')
     })
   })
 
@@ -879,7 +882,8 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      const races = createCall.data.changes.races
+      // Races are inside edition.new (aligned with FFA Scraper structure)
+      const races = createCall.data.changes.edition.new.races
 
       // inferRaceCategories is called for each race
       expect(races).toHaveLength(2)
@@ -915,7 +919,8 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      const races = createCall.data.changes.races
+      // Races are inside edition.new (aligned with FFA Scraper structure)
+      const races = createCall.data.changes.edition.new.races
 
       // Categories should be preserved, not overwritten
       expect(races[0].categoryLevel1).toBe('FUN')
@@ -943,8 +948,9 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.changes.edition.timeZone).toBe('Europe/Paris')
-      expect(createCall.data.changes.races[0].timeZone).toBe('Europe/Paris')
+      // Timezone is inside edition.new (aligned with FFA Scraper structure)
+      expect(createCall.data.changes.edition.new.timeZone).toBe('Europe/Paris')
+      expect(createCall.data.changes.edition.new.races[0].timeZone).toBe('Europe/Paris')
     })
 
     it('should use correct timezone for DOM-TOM (La Réunion)', async () => {
@@ -966,8 +972,9 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.changes.edition.timeZone).toBe('Indian/Reunion')
-      expect(createCall.data.changes.races[0].timeZone).toBe('Indian/Reunion')
+      // Timezone is inside edition.new (aligned with FFA Scraper structure)
+      expect(createCall.data.changes.edition.new.timeZone).toBe('Indian/Reunion')
+      expect(createCall.data.changes.edition.new.races[0].timeZone).toBe('Indian/Reunion')
     })
 
     it('should use country timezone for foreign events', async () => {
@@ -989,7 +996,8 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      expect(createCall.data.changes.edition.timeZone).toBe('Europe/Brussels')
+      // Timezone is inside edition.new (aligned with FFA Scraper structure)
+      expect(createCall.data.changes.edition.new.timeZone).toBe('Europe/Brussels')
     })
   })
 
@@ -1015,7 +1023,8 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      const races = createCall.data.changes.races
+      // Races are inside edition.new (aligned with FFA Scraper structure)
+      const races = createCall.data.changes.edition.new.races
 
       // Races should have startDate (Date object) not just startTime
       expect(races[0].startDate).toBeDefined()
@@ -1024,7 +1033,7 @@ describe('SlackProposalService - Enrichment', () => {
       expect(races[1].startTime).toBe('09:30')
     })
 
-    it('should include startDate in edition based on first race time', async () => {
+    it('should include startDate in edition based on earliest race time', async () => {
       const extractedData: ExtractedEventData = {
         eventName: 'Course du Matin',
         eventCity: 'Marseille',
@@ -1045,7 +1054,8 @@ describe('SlackProposalService - Enrichment', () => {
       await createProposalFromSlack(extractedData, mockSourceMetadata)
 
       const createCall = (prisma.proposal.create as jest.Mock).mock.calls[0][0]
-      const edition = createCall.data.changes.edition
+      // Edition is inside edition.new (aligned with FFA Scraper structure)
+      const edition = createCall.data.changes.edition.new
 
       // Edition startDate should be a Date object (not string)
       expect(edition.startDate).toBeDefined()
