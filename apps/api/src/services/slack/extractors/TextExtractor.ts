@@ -114,6 +114,7 @@ export class TextExtractor {
       const response = await this.anthropic.messages.create({
         model: 'claude-3-haiku-20240307',
         max_tokens: 2048,
+        temperature: 0, // Déterministe pour des résultats cohérents
         messages: [
           {
             role: 'user',
@@ -159,6 +160,7 @@ export class TextExtractor {
       const response = await this.anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2048,
+        temperature: 0, // Déterministe pour des résultats cohérents
         messages: [
           {
             role: 'user',
