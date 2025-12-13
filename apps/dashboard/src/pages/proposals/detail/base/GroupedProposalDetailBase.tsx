@@ -494,18 +494,28 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   const editionTimezone = useMemo(() => {
     if (!workingGroup) return 'Europe/Paris'
 
-    // Chercher timeZone dans userModifiedChanges (priorité)
+    // 1. Chercher timeZone dans userModifiedChanges (priorité)
     if (workingGroup.userModifiedChanges?.timeZone) {
       return workingGroup.userModifiedChanges.timeZone
     }
 
-    // Sinon chercher dans consolidatedChanges
+    // 2. Sinon chercher dans consolidatedChanges
     const timeZoneChange = workingGroup.consolidatedChanges.find(c => c.field === 'timeZone')
     if (timeZoneChange?.selectedValue) {
       return timeZoneChange.selectedValue
     }
     if (timeZoneChange?.options[0]?.proposedValue) {
       return timeZoneChange.options[0].proposedValue
+    }
+
+    // 3. Chercher dans racesToUpdate[].currentData.timeZone (données des courses)
+    const racesToUpdateChange = workingGroup.consolidatedChanges.find(c => c.field === 'racesToUpdate')
+    const racesToUpdate = racesToUpdateChange?.options?.[0]?.proposedValue
+    if (Array.isArray(racesToUpdate) && racesToUpdate.length > 0) {
+      const firstRaceTimezone = racesToUpdate[0]?.currentData?.timeZone
+      if (firstRaceTimezone) {
+        return firstRaceTimezone
+      }
     }
 
     return 'Europe/Paris' // Fallback
