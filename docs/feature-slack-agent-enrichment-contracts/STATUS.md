@@ -118,6 +118,24 @@ docs/CREATING-AGENTS.md
 
 ---
 
+## Tests
+
+### Tests ajoutés ✅
+
+| Package | Fichier | Tests |
+|---------|---------|-------|
+| `@data-agents/database` | `race-enrichment.test.ts` | 128 tests (inferRaceCategories, normalizeRaceName, getCategoryLabel) |
+| `@data-agents/database` | `timezone.test.ts` | Tests (getTimezoneFromDepartment, getTimezoneFromLigue, getTimezoneFromCountry) |
+| `@data-agents/api` | `SlackProposalService.test.ts` | Tests enrichissement (sourceMetadata générique, justifications contrat) |
+
+### Exécution
+
+```bash
+npm test  # 267 tests passent (128 database + 139 api)
+```
+
+---
+
 ## Prochaines étapes recommandées
 
 1. **Tester en dev** : Créer une proposition via Slack et vérifier l'enrichissement
