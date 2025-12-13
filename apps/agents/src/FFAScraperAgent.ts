@@ -1539,8 +1539,9 @@ export class FFAScraperAgent extends BaseAgent {
       })
     } else if (matchResult.type === 'FUZZY_MATCH' || matchResult.type === 'EXACT_MATCH') {
       // Vérifier si l'événement est featured (ne doit pas être modifié)
+      // Note: matchResult.event.id est un string (type MatchResult), Prisma attend un Int
       const eventData = await this.sourceDb.event.findUnique({
-        where: { id: matchResult.event!.id },
+        where: { id: parseInt(matchResult.event!.id, 10) },
         select: { isFeatured: true }
       })
 
@@ -1552,8 +1553,9 @@ export class FFAScraperAgent extends BaseAgent {
       // Proposer des mises à jour pour l'édition existante
       if (matchResult.edition) {
         // Charger les données complètes de l'édition depuis la base
+        // Note: matchResult.edition.id est un string (type MatchResult), Prisma attend un Int
         const fullEdition = await this.sourceDb.edition.findUnique({
-          where: { id: matchResult.edition.id },
+          where: { id: parseInt(matchResult.edition.id, 10) },
           include: {
             organization: true,
             editionPartners: true,
