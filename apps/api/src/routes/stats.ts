@@ -388,6 +388,7 @@ router.get('/proposals-created', async (req, res) => {
 /**
  * GET /api/stats/user-leaderboard
  * Classement des utilisateurs par nombre de propositions traitées
+ * Exclut les agents et utilisateurs système (seuls les vrais users de la table User sont inclus)
  */
 router.get('/user-leaderboard', async (req, res) => {
   try {
@@ -399,24 +400,7 @@ router.get('/user-leaderboard', async (req, res) => {
     endDateInclusive.setDate(endDateInclusive.getDate() + 1)
     endDateInclusive.setHours(0, 0, 0, 0)
 
-    // Récupérer toutes les propositions dans la période avec leur reviewedBy
-    const proposals = await prisma.proposal.findMany({
-      where: {
-        reviewedAt: {
-          gte: startDate,
-          lt: endDateInclusive  // lt au lieu de lte pour être cohérent
-        },
-        reviewedBy: {
-          not: null
-        }
-      },
-      select: {
-        reviewedBy: true,
-        status: true
-      }
-    })
-
-    // Récupérer les infos des utilisateurs
+    // Récupérer d'abord les vrais utilisateurs
     const users = await prisma.user.findMany({
       select: {
         id: true,
@@ -426,8 +410,26 @@ router.get('/user-leaderboard', async (req, res) => {
       }
     })
 
-    // Créer un map pour accéder rapidement aux infos utilisateur
+    // Créer un map et un set des IDs utilisateurs valides
     const userMap = new Map(users.map(u => [u.id, u]))
+    const validUserIds = users.map(u => u.id)
+
+    // Récupérer uniquement les propositions validées par de vrais utilisateurs
+    const proposals = await prisma.proposal.findMany({
+      where: {
+        reviewedAt: {
+          gte: startDate,
+          lt: endDateInclusive
+        },
+        reviewedBy: {
+          in: validUserIds
+        }
+      },
+      select: {
+        reviewedBy: true,
+        status: true
+      }
+    })
 
     // Agréger les stats par utilisateur
     const userStats = new Map<string, {
@@ -445,19 +447,14 @@ router.get('/user-leaderboard', async (req, res) => {
       if (!proposal.reviewedBy) return
 
       const user = userMap.get(proposal.reviewedBy)
-
-      // Si pas d'utilisateur correspondant, utiliser reviewedBy comme nom
-      // (pour les validateurs système comme "auto-validator-agent", "system", etc.)
-      const displayName = user
-        ? `${user.firstName} ${user.lastName}`.trim()
-        : proposal.reviewedBy
+      if (!user) return // Sécurité supplémentaire
 
       if (!userStats.has(proposal.reviewedBy)) {
         userStats.set(proposal.reviewedBy, {
           userId: proposal.reviewedBy,
-          firstName: user?.firstName || displayName,
-          lastName: user?.lastName || '',
-          email: user?.email || '',
+          firstName: user.firstName,
+          lastName: user.lastName,
+          email: user.email,
           approved: 0,
           rejected: 0,
           archived: 0,
