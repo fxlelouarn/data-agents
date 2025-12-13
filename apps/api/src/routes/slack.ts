@@ -81,25 +81,11 @@ router.post('/events', verifySlackRequest, async (req: Request, res: Response) =
 /**
  * POST /api/slack/interactions
  * Handles Slack interactive components (buttons, modals, etc.)
+ * Note: Le bouton "Voir sur le dashboard" est géré directement par Slack (URL button)
  */
 router.post('/interactions', verifySlackRequest, async (req: Request, res: Response) => {
-  // Slack sends interactions as form-urlencoded with a "payload" field
-  const payload = JSON.parse(req.body.payload || '{}')
-
-  const { type, actions, user, channel, message } = payload
-
-  // Respond immediately
+  // Respond immediately - all current buttons are URL buttons handled by Slack
   res.status(200).json({ ok: true })
-
-  // Process interaction asynchronously
-  if (type === 'block_actions' && actions?.length > 0) {
-    const action = actions[0]
-
-    if (action.action_id === 'approve_proposal') {
-      await handleApproveProposal(action.value, user, channel, message)
-    }
-    // 'view_dashboard' action is handled by Slack (opens URL)
-  }
 })
 
 /**
@@ -308,17 +294,6 @@ async function handleBotMention(message: SlackMessage) {
                 type: 'button',
                 text: {
                   type: 'plain_text',
-                  text: '✅ Valider',
-                  emoji: true
-                },
-                style: 'primary',
-                action_id: 'approve_proposal',
-                value: proposalResult.proposalId
-              },
-              {
-                type: 'button',
-                text: {
-                  type: 'plain_text',
                   text: '📝 Voir sur le dashboard',
                   emoji: true
                 },
@@ -370,56 +345,6 @@ async function handleBotMention(message: SlackMessage) {
       errorMessage,
       { thread_ts: message.ts }
     )
-  }
-}
-
-/**
- * Handle "Approve" button click from Slack
- */
-async function handleApproveProposal(
-  proposalId: string,
-  user: any,
-  channel: any,
-  message: any
-) {
-  console.log(`✅ User ${user.id} approved proposal ${proposalId}`)
-
-  // TODO: Phase 4 - Actually approve the proposal via API
-  // For now, just update the message
-
-  try {
-    // Update the message to show it's been approved
-    const updatedText = `✅ *Proposition validée* par <@${user.id}>`
-
-    await slackService.updateMessage(
-      channel.id,
-      message.ts,
-      updatedText,
-      [
-        {
-          type: 'section',
-          text: {
-            type: 'mrkdwn',
-            text: updatedText
-          }
-        },
-        {
-          type: 'context',
-          elements: [
-            {
-              type: 'mrkdwn',
-              text: `Validée le ${new Date().toLocaleString('fr-FR')}`
-            }
-          ]
-        }
-      ]
-    )
-
-    // Add checkmark to original message
-    // Note: We'd need to track the original message ts somewhere
-
-  } catch (error) {
-    console.error('Error approving proposal:', error)
   }
 }
 

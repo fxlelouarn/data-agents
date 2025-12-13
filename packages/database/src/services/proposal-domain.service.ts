@@ -532,8 +532,15 @@ export class ProposalDomainService {
               racesToAdd = value.toAdd
               this.logger.info(`✅ [DEBUG] Extraction races.toAdd: ${racesToAdd.length} courses`)
             }
-            if ('toDelete' in value && Array.isArray(value.toDelete)) {
-              racesToDelete = value.toDelete
+            if ('toDelete' in value && Array.isArray(value.toDelete) && value.toDelete.length > 0) {
+              // ✅ FIX 2025-12-13: Supporter les deux formats (number[] ou {raceId, raceName}[])
+              if (typeof value.toDelete[0] === 'object' && 'raceId' in value.toDelete[0]) {
+                racesToDelete = value.toDelete.map((item: { raceId: number | string }) =>
+                  typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
+                )
+              } else {
+                racesToDelete = value.toDelete
+              }
               this.logger.info(`✅ [DEBUG] Extraction races.toDelete: ${racesToDelete.length} IDs`)
             }
           }
@@ -547,8 +554,22 @@ export class ProposalDomainService {
         }
 
         if (field === 'racesToDelete') {
-          racesToDelete = value as number[]
-          this.logger.info(`✅ [DEBUG] racesToDelete extrait au niveau racine: ${racesToDelete?.length || 0} IDs`)
+          // ✅ FIX 2025-12-13: Supporter les deux formats:
+          // - Ancien format: number[] (IDs directs)
+          // - Nouveau format: Array<{raceId: number, raceName: string}> (objets avec métadonnées)
+          if (Array.isArray(value) && value.length > 0) {
+            if (typeof value[0] === 'object' && 'raceId' in value[0]) {
+              // Nouveau format: extraire les raceId des objets
+              racesToDelete = value.map((item: { raceId: number | string }) =>
+                typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
+              )
+              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format objet): ${racesToDelete?.length || 0} IDs`)
+            } else {
+              // Ancien format: tableau de numbers
+              racesToDelete = value as number[]
+              this.logger.info(`✅ [DEBUG] racesToDelete extrait (format number[]): ${racesToDelete?.length || 0} IDs`)
+            }
+          }
           continue
         }
 

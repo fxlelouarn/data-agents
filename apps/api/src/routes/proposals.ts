@@ -5,6 +5,7 @@ import { asyncHandler, createError } from '../middleware/error-handler'
 import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
 import pLimit from 'p-limit'
 import type { Proposal, ProposalApplication, Prisma } from '@data-agents/database'
+import { notifyProposalValidatedById } from '../services/slack/SlackNotificationService'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -1181,6 +1182,13 @@ router.put('/:id', requireAuth, [
     }
   }
 
+  // 🔔 Notification Slack si la proposition est approuvée (fire-and-forget)
+  if (status === 'APPROVED') {
+    const validatedBlocks = block ? [block] : ['all']
+    notifyProposalValidatedById(id, validatedBlocks, userId)
+      .catch(err => console.error('❌ Erreur notification Slack:', err))
+  }
+
   res.json({
     success: true,
     data: proposal,
@@ -1743,6 +1751,12 @@ router.post('/validate-block-group', requireAuth, [
       })
     }
   }
+
+  // 🔔 Notification Slack (fire-and-forget, ne bloque pas la réponse)
+  // Notifier uniquement la première proposition du groupe (pour éviter les doublons)
+  const validatedBlocks = Object.keys(approvedBlocksObj).filter(k => approvedBlocksObj[k])
+  notifyProposalValidatedById(validProposalIds[0], validatedBlocks, userId)
+    .catch(err => console.error('❌ Erreur notification Slack:', err))
 
   res.json({
     success: true,

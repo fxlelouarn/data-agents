@@ -4,6 +4,83 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-13 - Feature: Notification Slack après validation de proposition ✅
+
+**Fonctionnalité ajoutée** : Quand une proposition provenant de Slack est validée dans le dashboard, un message de confirmation est automatiquement envoyé dans le thread Slack original.
+
+#### Comportement
+
+1. Utilisateur mentionne @databot dans Slack avec un lien/image d'événement
+2. Le bot crée une proposition et poste un message avec le bouton "📝 Voir sur le dashboard"
+3. L'utilisateur valide la proposition dans le dashboard
+4. Un message est posté dans le thread Slack : "✅ Proposition validée par {user} - Blocs validés : event, edition..."
+
+#### Changements
+
+- **Bouton "Valider" retiré** du message Slack (validation uniquement via dashboard)
+- **Nouveau service** : `SlackNotificationService.ts` pour gérer les notifications
+- **Notification fire-and-forget** : Ne bloque pas la réponse API
+
+#### Fichiers modifiés
+
+- `apps/api/src/routes/slack.ts` : Retrait bouton "Valider" et handler `handleApproveProposal`
+- `apps/api/src/routes/proposals.ts` : Appel notification après validation
+- `apps/api/src/services/slack/SlackNotificationService.ts` : **Nouveau** service
+
+---
+
+### 2025-12-13 - Fix: Erreur Prisma lors de la suppression de courses (racesToDelete format objet) ✅
+
+**Problème résolu** : Lors de l'application du bloc `races`, la suppression de courses échouait avec l'erreur Prisma `Expected Int, provided Object` car `racesToDelete` contenait des objets `{raceId, raceName}` au lieu de simples IDs numériques.
+
+#### Symptômes
+
+1. Utilisateur supprime une course dans l'interface
+2. Le frontend stocke `racesToDelete: [{raceId: 200171, raceName: "Course 200171"}]`
+3. Le backend extrait `racesToDelete` sans convertir le format
+4. Prisma reçoit `where: { id: {raceId: 200171, raceName: "..."} }` au lieu de `where: { id: 200171 }`
+5. Résultat : Erreur `Invalid value provided. Expected Int, provided Object.`
+
+#### Cause
+
+Le fix du 2025-12-11 dans `proposals.ts` a changé le format de `racesToDelete` pour inclure le `raceName` (pour le logging), mais `proposal-domain.service.ts` n'a pas été mis à jour pour gérer ce nouveau format.
+
+```typescript
+// proposals.ts crée maintenant:
+racesToDelete.push({ raceId: 200171, raceName: "Course 200171" })
+
+// proposal-domain.service.ts attendait:
+racesToDelete = [200171]  // number[]
+```
+
+#### Solution
+
+Modifier `proposal-domain.service.ts` pour supporter les deux formats lors de l'extraction de `racesToDelete` :
+
+```typescript
+// AVANT
+racesToDelete = value as number[]
+
+// APRÈS
+if (typeof value[0] === 'object' && 'raceId' in value[0]) {
+  // Nouveau format: extraire les raceId des objets
+  racesToDelete = value.map((item) => 
+    typeof item.raceId === 'string' ? parseInt(item.raceId) : item.raceId
+  )
+} else {
+  // Ancien format: tableau de numbers
+  racesToDelete = value as number[]
+}
+```
+
+#### Fichiers modifiés
+
+- Backend : `packages/database/src/services/proposal-domain.service.ts`
+  - Section extraction `racesToDelete` au niveau racine (ligne ~549)
+  - Section extraction `races.toDelete` imbriqué (ligne ~535)
+
+---
+
 ### 2025-12-11 - Fix: Modifications manuelles des courses non prises en compte dans ProposalApplication ✅
 
 **Problème résolu** : Lors de la validation du bloc `races`, les modifications manuelles (heures de départ modifiées via l'interface) n'étaient pas fusionnées dans `racesToUpdate` de la `ProposalApplication`.
