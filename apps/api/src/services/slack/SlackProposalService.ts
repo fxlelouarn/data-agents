@@ -273,17 +273,23 @@ function buildNewEventChanges(data: ExtractedEventData) {
   let editionStartDate: Date | undefined
   let editionEndDate: Date | undefined
 
+  // Helper pour trouver l'heure la plus tôt/tard parmi les courses
+  const racesWithTime = data.races?.filter(r => r.startTime) || []
+  const sortedTimes = racesWithTime
+    .map(r => r.startTime!)
+    .sort((a, b) => a.localeCompare(b))
+  const earliestTime = sortedTimes[0] || '00:00'
+  const latestTime = sortedTimes[sortedTimes.length - 1] || '23:59'
+
   if (data.editionDate) {
-    // Trouver la première heure de course du jour
-    const firstRaceTime = data.races?.find(r => r.startTime)?.startTime || '00:00'
-    editionStartDate = calculateRaceStartDate(data.editionDate, firstRaceTime, timeZone)
+    // Trouver l'heure de course la plus tôt du jour
+    editionStartDate = calculateRaceStartDate(data.editionDate, earliestTime, timeZone)
   }
 
   if (data.editionEndDate || data.editionDate) {
     const endDateStr = data.editionEndDate || data.editionDate
-    // Dernière heure de course du dernier jour (ou fin de journée)
-    const lastRaceTime = data.races?.slice().reverse().find(r => r.startTime)?.startTime || '23:59'
-    editionEndDate = calculateRaceStartDate(endDateStr, lastRaceTime, timeZone)
+    // Trouver l'heure de course la plus tard du dernier jour
+    editionEndDate = calculateRaceStartDate(endDateStr, latestTime, timeZone)
   }
 
   // Construire l'objet edition.new (contient races et organizer)
@@ -363,11 +369,18 @@ function buildEditionUpdateChanges(
     country: data.eventCountry,
   })
 
+  // Helper pour trouver l'heure la plus tôt/tard parmi les courses
+  const racesWithTime = data.races?.filter(r => r.startTime) || []
+  const sortedTimes = racesWithTime
+    .map(r => r.startTime!)
+    .sort((a, b) => a.localeCompare(b))
+  const earliestTime = sortedTimes[0] || '00:00'
+  const latestTime = sortedTimes[sortedTimes.length - 1] || '23:59'
+
   // Mettre à jour la date si différente (avec timezone)
   if (data.editionDate) {
-    // Trouver la première heure de course du jour
-    const firstRaceTime = data.races?.find(r => r.startTime)?.startTime || '00:00'
-    const startDate = calculateRaceStartDate(data.editionDate, firstRaceTime, timeZone)
+    // Trouver l'heure de course la plus tôt du jour
+    const startDate = calculateRaceStartDate(data.editionDate, earliestTime, timeZone)
 
     changes.startDate = {
       old: matchResult.edition?.startDate,
@@ -376,9 +389,8 @@ function buildEditionUpdateChanges(
   }
 
   if (data.editionEndDate) {
-    // Dernière heure de course du dernier jour
-    const lastRaceTime = data.races?.slice().reverse().find(r => r.startTime)?.startTime || '23:59'
-    const endDate = calculateRaceStartDate(data.editionEndDate, lastRaceTime, timeZone)
+    // Trouver l'heure de course la plus tard du dernier jour
+    const endDate = calculateRaceStartDate(data.editionEndDate, latestTime, timeZone)
 
     changes.endDate = {
       old: null,
