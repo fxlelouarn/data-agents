@@ -62,11 +62,11 @@ export class ImageExtractor {
       if (imageBuffer) {
         // Use provided buffer, resize if needed
         let processedBuffer = imageBuffer
-        
+
         if (imageBuffer.length > RESIZE_THRESHOLD) {
           processedBuffer = await this.resizeImage(imageBuffer)
         }
-        
+
         const base64 = processedBuffer.toString('base64')
         const detectedMimeType = this.detectMimeType(processedBuffer)
 
@@ -101,7 +101,7 @@ export class ImageExtractor {
 
       // Send to Claude Vision
       const extractedData = await this.extractWithClaudeVision(imageData)
-      
+
       if (!extractedData) {
         return {
           success: false,
@@ -192,7 +192,7 @@ export class ImageExtractor {
     try {
       const image = sharp(buffer)
       const metadata = await image.metadata()
-      
+
       console.log(`📐 Redimensionnement image: ${metadata.width}x${metadata.height}, ${(buffer.length / 1024 / 1024).toFixed(1)} MB`)
 
       // Resize and convert to JPEG for consistent compression
@@ -280,6 +280,7 @@ export class ImageExtractor {
       const response = await this.anthropic.messages.create({
         model: 'claude-3-haiku-20240307',
         max_tokens: 2048,
+        temperature: 0, // Déterministe pour des résultats cohérents
         messages: [
           {
             role: 'user',
@@ -353,6 +354,7 @@ export class ImageExtractor {
       const response = await this.anthropic.messages.create({
         model: 'claude-sonnet-4-20250514',
         max_tokens: 2048,
+        temperature: 0, // Déterministe pour des résultats cohérents
         messages: [
           {
             role: 'user',
@@ -394,12 +396,16 @@ export class ImageExtractor {
     const today = new Date().toISOString().split('T')[0]
     return `Date du jour: ${today}
 
-Analyse cette image d'un événement sportif (course à pied, trail, marathon, etc.) et extrais les informations visibles.
+Analyse cette image d'un événement sportif et extrais TOUTES les informations visibles.
 
 RÈGLES CRITIQUES:
 - N'INVENTE JAMAIS de données. Extrait UNIQUEMENT ce qui est VISIBLE dans l'image.
 - Pour les dates: cherche une date EXPLICITE visible dans l'image. N'invente JAMAIS.
-- Si le texte est flou ou illisible, indique-le dans ton analyse.
+- IMPORTANT pour les courses: inclus TOUTES les épreuves visibles, y compris:
+  * Les trails/courses principales
+  * Les randonnées (rando, marche)
+  * Les nouveautés annoncées (même si marquées "Nouveauté 2026" ou similaire)
+  * Les formats ultra ou spéciaux
 - Le score de confiance doit refléter la lisibilité de l'image.
 
 Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):
@@ -416,7 +422,8 @@ Réponds UNIQUEMENT avec un objet JSON valide (pas de texte avant/après):
       "distance": number (en mètres),
       "elevation": number (D+ en mètres),
       "startTime": "HH:mm",
-      "price": number (en euros)
+      "price": number (en euros),
+      "type": "trail" | "rando" | "marche" | "ultra" | "autre"
     }
   ],
   "organizerName": "string",
