@@ -46,3 +46,33 @@ Argument `id`: Invalid value provided. Expected Int, provided String.
 - `apps/agents/src/ffa/types.ts`
 - `apps/agents/src/ffa/matcher.ts`
 - `apps/agents/src/FFAScraperAgent.ts`
+
+---
+
+## 2. Tolérance de matching des courses hardcodée
+
+**Date** : 2025-12-13
+
+**Problème** : La tolérance de matching des courses (distance) est hardcodée à 15% dans `matchRaces()` au lieu d'être paramétrable dans les Settings de la plateforme.
+
+**Localisation** : `packages/agent-framework/src/services/event-matching/event-matcher.ts` ligne 350
+```typescript
+tolerancePercent: number = 0.15 // TECH DEBT: Should be configurable in platform Settings
+```
+
+**Contexte** : La tolérance a été augmentée de 5% à 15% pour améliorer le matching des courses dont les distances varient légèrement entre sources (ex: 25km vs 27.5km).
+
+**Amélioration recommandée** :
+1. Ajouter un champ `raceMatchingTolerancePercent` dans la table `Settings` (schema Prisma)
+2. Créer un endpoint API pour lire/modifier ce paramètre
+3. Passer le paramètre depuis les Settings aux agents qui appellent `matchRaces()`
+4. Ajouter une UI dans la page Administration du dashboard
+
+**Impact** : Moyen - Permet aux administrateurs d'ajuster le seuil sans déploiement de code.
+
+**Fichiers concernés** :
+- `packages/database/prisma/schema.prisma` (ajouter champ Settings)
+- `packages/agent-framework/src/services/event-matching/event-matcher.ts`
+- `apps/api/src/services/slack/SlackProposalService.ts`
+- `apps/agents/src/FFAScraperAgent.ts`
+- `apps/dashboard/src/pages/Settings.tsx`

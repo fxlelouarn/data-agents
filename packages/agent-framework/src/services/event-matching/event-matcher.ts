@@ -347,10 +347,11 @@ export function matchRaces(
   inputRaces: RaceMatchInput[],
   dbRaces: DbRace[],
   logger: MatchingLogger = defaultLogger,
-  tolerancePercent: number = 0.05
+  tolerancePercent: number = 0.15 // TECH DEBT: Should be configurable in platform Settings (see docs/TECH_DEBT.md)
 ): RaceMatchResult {
   const matched: Array<{ input: RaceMatchInput, db: DbRace }> = []
   const unmatched: RaceMatchInput[] = []
+  const matchedDbIds = new Set<number | string>() // Track matched DB races to avoid duplicates
 
   // 1. Group DB races by distance
   const racesByDistance = new Map<number, DbRace[]>()
@@ -399,37 +400,55 @@ export function matchRaces(
       continue
     }
 
-    // Find candidates by distance
+    // Find candidates by distance (excluding already matched races)
     let candidates: DbRace[] = []
     for (const [groupDistance, races] of racesByDistance.entries()) {
       const tolerance = groupDistance * tolerancePercent
       if (Math.abs(groupDistance - inputDistanceKm) <= tolerance) {
-        candidates = races
+        candidates = races.filter(r => !matchedDbIds.has(r.id))
         break
       }
     }
 
     if (candidates.length === 0) {
       // Try fallback with races without distance
-      if (racesWithoutDistance.length > 0) {
-        const bestMatch = fuzzyMatchRaceName(inputRace, racesWithoutDistance, logger)
+      const availableRacesWithoutDistance = racesWithoutDistance.filter(r => !matchedDbIds.has(r.id))
+      if (availableRacesWithoutDistance.length > 0) {
+        const bestMatch = fuzzyMatchRaceName(inputRace, availableRacesWithoutDistance, logger)
 
         if (bestMatch.score >= 0.7) {
-          logger.debug(`Fallback match: "${inputRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)})`)
+          logger.debug(`Fallback match (no distance): "${inputRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)})`)
           matched.push({ input: inputRace, db: bestMatch.race })
+          matchedDbIds.add(bestMatch.race.id)
           continue
         }
       }
+
+      // NEW: Try fuzzy match on ALL available DB races as last resort
+      const allAvailableDbRaces = dbRaces.filter(r => !matchedDbIds.has(r.id))
+      if (allAvailableDbRaces.length > 0) {
+        const bestMatch = fuzzyMatchRaceName(inputRace, allAvailableDbRaces, logger)
+
+        if (bestMatch.score >= 0.65) {
+          logger.info(`Fuzzy fallback match: "${inputRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)})`)
+          matched.push({ input: inputRace, db: bestMatch.race })
+          matchedDbIds.add(bestMatch.race.id)
+          continue
+        }
+      }
+
       unmatched.push(inputRace)
     } else if (candidates.length === 1) {
       logger.debug(`Race "${inputRace.name}" → "${candidates[0].name}" (unique distance match)`)
       matched.push({ input: inputRace, db: candidates[0] })
+      matchedDbIds.add(candidates[0].id)
     } else {
       const bestMatch = fuzzyMatchRaceName(inputRace, candidates, logger)
 
       if (bestMatch.score >= 0.5) {
         logger.debug(`Race "${inputRace.name}" → "${bestMatch.race.name}" (score: ${bestMatch.score.toFixed(2)})`)
         matched.push({ input: inputRace, db: bestMatch.race })
+        matchedDbIds.add(bestMatch.race.id)
       } else {
         unmatched.push(inputRace)
       }
