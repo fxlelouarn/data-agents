@@ -2465,6 +2465,33 @@ router.get('/:id/check-existing-event', [
     return res.json({ hasMatch: false, proposalData })
   }
 
+  // 6. Vérifier si l'événement trouvé est différent des rejectedMatches
+  // et a un score supérieur au meilleur rejectedMatch
+  const justification = proposal.justification as any[] | null
+  const rejectedMatchesJustif = justification?.find(
+    (j: any) => j.type === 'rejected_matches' || j.type === 'text'
+  )
+  const rejectedMatches = rejectedMatchesJustif?.metadata?.rejectedMatches || []
+
+  if (rejectedMatches.length > 0) {
+    const foundEventId = result.event!.id
+
+    // Vérifier si l'événement trouvé est dans les rejectedMatches
+    const isInRejectedMatches = rejectedMatches.some(
+      (rm: any) => rm.eventId === foundEventId
+    )
+
+    // Trouver le meilleur score parmi les rejectedMatches
+    const bestRejectedScore = Math.max(...rejectedMatches.map((rm: any) => rm.matchScore || 0))
+
+    // Ne pas afficher l'alerte si:
+    // - L'événement est déjà dans rejectedMatches (même eventId)
+    // - OU le score est inférieur ou égal au meilleur score rejeté
+    if (isInRejectedMatches || result.confidence <= bestRejectedScore) {
+      return res.json({ hasMatch: false, proposalData })
+    }
+  }
+
   return res.json({
     hasMatch: true,
     match: {

@@ -4,6 +4,53 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-14 - Fix: ExistingEventAlert affichée même pour rejectedMatches ✅
+
+**Problème résolu** : L'alerte "un événement correspondant existe maintenant" s'affichait même quand l'événement trouvé était déjà dans les `rejectedMatches` de la proposition ou avait un score inférieur.
+
+#### Symptômes
+
+1. Agent FFA crée une proposition NEW_EVENT avec des `rejectedMatches` (événements similaires rejetés car score < seuil)
+2. L'utilisateur ouvre la proposition dans le dashboard
+3. L'alerte ExistingEventAlert s'affiche pour un événement qui était déjà dans les rejectedMatches
+4. Résultat : Alerte inutile et confuse
+
+#### Cause
+
+L'endpoint `GET /api/proposals/:id/check-existing-event` ne prenait pas en compte les `rejectedMatches` stockés dans la proposition. Il retournait `hasMatch: true` dès qu'un match était trouvé, sans vérifier si :
+- L'événement était déjà dans les rejectedMatches
+- Le score était supérieur aux scores des événements déjà rejetés
+
+#### Solution
+
+Ajouter une vérification dans l'endpoint après le matching :
+
+```typescript
+// Récupérer les rejectedMatches de la proposition
+const rejectedMatches = proposal.justification
+  ?.find(j => j.type === 'rejected_matches')
+  ?.metadata?.rejectedMatches || []
+
+if (rejectedMatches.length > 0) {
+  // Ne pas afficher l'alerte si:
+  // - L'événement est déjà dans rejectedMatches (même eventId)
+  // - OU le score est inférieur ou égal au meilleur score rejeté
+  const isInRejectedMatches = rejectedMatches.some(rm => rm.eventId === foundEventId)
+  const bestRejectedScore = Math.max(...rejectedMatches.map(rm => rm.matchScore))
+  
+  if (isInRejectedMatches || result.confidence <= bestRejectedScore) {
+    return res.json({ hasMatch: false, proposalData })
+  }
+}
+```
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Endpoint `GET /:id/check-existing-event` : Ajout section 6 pour filtrer selon rejectedMatches
+
+---
+
 ### 2025-12-13 - Fix: Priorité FFA Scraper non respectée pour les courses dans propositions groupées ✅
 
 **Problème résolu** : Dans les propositions groupées (FFA Scraper + Google Agent), les dates du FFA Scraper avaient bien la priorité sur l'édition, mais les courses prenaient les dates du Google Agent au lieu de celles du FFA.
@@ -664,6 +711,11 @@ Le projet utilise PostgreSQL avec Prisma pour :
 **Variables d'environnement pour les connexions** :
 - `DATABASE_URL` : Base de données data-agents (propositions, agents, etc.)
 - `MILES_REPUBLIC_DATABASE_URL` : Base de données Miles Republic (Events, Editions, Races)
+
+**Fichiers `.env` à la racine du projet** :
+- `.env.local` : URLs des bases de données **locales** (développement)
+- `.env.prod` : URLs des bases de données **de production**
+- `.env.test` : URLs des bases de données **de test**
 
 **Pour vérifier un Event, Edition ou Race dans Miles Republic** :
 - **TOUJOURS** faire des requêtes SQL directement en base de données

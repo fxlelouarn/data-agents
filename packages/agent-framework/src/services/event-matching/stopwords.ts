@@ -53,9 +53,10 @@ export const EVENT_NAME_STOPWORDS = new Set([
   // Mots organisateurs
   'by', 'organise', 'presente', 'propose',
 
-  // Types d'événements (trop génériques)
-  'trail', 'course', 'semi', 'marathon', 'km', 'run', 'running',
-  'corrida', 'foulees', 'relais', 'marche', 'randonnee',
+  // Types d'événements - seuls les mots vraiment génériques
+  // GARDÉS car distinctifs: 'trail', 'marathon', 'semi', 'corrida', 'cross', 'ultra', 'foulees', 'randonnee'
+  // Ces mots sont ESSENTIELS pour le matching (un marathon ≠ un trail)
+  'course', 'km', 'run', 'running', 'relais', 'marche',
 
   // Qualificatifs génériques
   'grand', 'grande', 'petit', 'petite', 'super', 'mega',
