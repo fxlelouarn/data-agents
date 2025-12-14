@@ -10,12 +10,18 @@ import ProposalJustificationsCard from '@/components/proposals/ProposalJustifica
 import AgentCard from '@/components/proposals/AgentCard'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import { RejectedMatchesCard } from '@/components/proposals/new-event/RejectedMatchesCard'
+import { ExistingEventAlert } from '@/components/proposals/new-event/ExistingEventAlert'
+import { useCheckExistingEvent } from '@/hooks/useApi'
 
 interface NewEventDetailProps {
   proposalId: string
 }
 
 const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
+  // Vérifier si un événement correspondant existe maintenant dans Miles Republic
+  // Le hook gère le cas où la proposition n'est pas NEW_EVENT ou PENDING (erreur 400 ignorée)
+  const { data: checkExistingResult } = useCheckExistingEvent(proposalId, true)
+
   return (
     <ProposalDetailBase
       proposalId={proposalId}
@@ -49,6 +55,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
           blockProposals
         } = context
 
+        // Extraire l'année de l'édition pour l'alerte
+        const editionYear = proposal.changes?.edition?.new?.year
+          ? parseInt(proposal.changes.edition.new.year)
+          : proposal.editionYear || new Date().getFullYear()
+
         // Séparer les champs Event, Edition et spéciaux
         const organizerChange = consolidatedChanges.find(c => c.field === 'organizer')
 
@@ -78,6 +89,15 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
 
         return (
           <>
+            {/* Alerte si un événement correspondant existe maintenant */}
+            {checkExistingResult?.data?.hasMatch && checkExistingResult.data.match && (
+              <ExistingEventAlert
+                proposalId={proposal.id}
+                match={checkExistingResult.data.match}
+                proposalYear={editionYear}
+              />
+            )}
+
             <CategorizedEventChangesTable
               title="Informations de l'événement"
               changes={eventChangesWithUrls}

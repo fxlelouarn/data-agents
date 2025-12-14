@@ -10,12 +10,24 @@ import DateSourcesSection from '@/components/proposals/DateSourcesSection'
 import AgentInfoSection from '@/components/proposals/AgentInfoSection'
 import EditionContextInfo from '@/components/proposals/EditionContextInfo'
 import { RejectedMatchesCard } from '@/components/proposals/new-event/RejectedMatchesCard'
+import { ExistingEventAlert } from '@/components/proposals/new-event/ExistingEventAlert'
+import { useCheckExistingEvent, useProposalGroup } from '@/hooks/useApi'
 
 interface NewEventGroupedDetailProps {
   groupKey: string
 }
 
 const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey }) => {
+  // Récupérer le groupe pour avoir accès au premier proposalId
+  const { data: groupData } = useProposalGroup(groupKey)
+  const firstProposalId = groupData?.data?.[0]?.id
+
+  // Vérifier si un événement correspondant existe maintenant dans Miles Republic
+  const { data: checkExistingResult } = useCheckExistingEvent(
+    firstProposalId || '',
+    Boolean(firstProposalId)
+  )
+
   return (
     <GroupedProposalDetailBase
       groupKey={groupKey}
@@ -147,10 +159,24 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           }
         })
 
+        // Extraire l'année de l'édition pour l'alerte
+        const editionYear = groupProposals[0]?.changes?.edition?.new?.year
+          ? parseInt(groupProposals[0].changes.edition.new.year)
+          : groupProposals[0]?.editionYear || new Date().getFullYear()
+
         return (
           <>
+            {/* Alerte si un événement correspondant existe maintenant */}
+            {checkExistingResult?.data?.hasMatch && checkExistingResult.data.match && firstProposalId && (
+              <ExistingEventAlert
+                proposalId={firstProposalId}
+                match={checkExistingResult.data.match}
+                proposalYear={editionYear}
+              />
+            )}
+
             {/* Table des champs Event */}
-<CategorizedEventChangesTable
+            <CategorizedEventChangesTable
               title="Informations de l'événement"
               changes={eventChanges}
               isNewEvent={true}
