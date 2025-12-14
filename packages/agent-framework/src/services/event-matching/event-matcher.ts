@@ -11,7 +11,7 @@
  */
 
 import Fuse from 'fuse.js'
-import { removeStopwords, getPrimaryKeyword, extractKeywords } from './stopwords'
+import { removeStopwords, getPrimaryKeyword, extractKeywords, removeSponsors } from './stopwords'
 import { normalizeDepartmentCode } from './departments'
 import {
   EventMatchInput,
@@ -51,7 +51,9 @@ export async function matchEvent(
 ): Promise<EventMatchResult> {
   try {
     // 1. Normalize input data
-    const cleanedName = removeEditionNumber(input.eventName)
+    // ✅ FIX 2025-12-14: Retirer les sponsors avant le matching
+    const withoutSponsors = removeSponsors(input.eventName)
+    const cleanedName = removeEditionNumber(withoutSponsors)
     const searchName = normalizeString(cleanedName)
     const searchCity = normalizeString(input.eventCity)
     const searchDepartment = input.eventDepartment ? normalizeDepartmentCode(input.eventDepartment) : undefined
@@ -59,7 +61,10 @@ export async function matchEvent(
     const searchYear = (input.editionYear || searchDate.getFullYear()).toString()
 
     logger.info(`[MATCHER] "${input.eventName}" in ${input.eventCity} (dept: ${searchDepartment || 'unknown'})`)
-    if (cleanedName !== input.eventName) {
+    if (withoutSponsors !== input.eventName) {
+      logger.info(`  Without sponsors: "${withoutSponsors}"`)
+    }
+    if (cleanedName !== withoutSponsors) {
       logger.info(`  Cleaned: "${cleanedName}"`)
     }
     logger.info(`  Normalized: name="${searchName}", city="${searchCity}"`)

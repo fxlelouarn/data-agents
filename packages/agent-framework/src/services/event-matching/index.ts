@@ -1,6 +1,6 @@
 /**
  * Event Matching Service
- * 
+ *
  * Mutualized service for matching events against an existing database.
  * Used by FFA, Slack, and other agents.
  */
@@ -37,8 +37,10 @@ export {
 // Stopwords and keywords
 export {
   EVENT_NAME_STOPWORDS,
+  EVENT_SPONSORS,
   CITY_NAME_STOPWORDS,
   removeStopwords,
+  removeSponsors,
   extractKeywords,
   getPrimaryKeyword,
   calculateNameQuality
