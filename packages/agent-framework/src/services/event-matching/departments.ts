@@ -110,54 +110,66 @@ export const FRENCH_DEPARTMENTS: Record<string, string> = {
 /**
  * Convertit un code département en nom de département
  * Gère les codes sur 2 ou 3 chiffres et normalise le format
- * 
+ *
  * @param code Code département (ex: "063", "06", "2A")
  * @returns Nom du département ou le code si non trouvé
  */
 export function getDepartmentName(code: string | null | undefined): string {
   if (!code) return ''
-  
+
   // Normaliser le code : retirer les zéros non significatifs pour les codes numériques
   let normalizedCode = code.trim()
-  
+
   // Si c'est un code numérique sur 3 chiffres, le convertir en 2 chiffres
   if (/^\d{3}$/.test(normalizedCode)) {
     normalizedCode = normalizedCode.substring(1) // "063" -> "63"
   }
-  
+
   // Gérer les cas spéciaux Corse (2A, 2B)
   normalizedCode = normalizedCode.toUpperCase()
-  
+
   return FRENCH_DEPARTMENTS[normalizedCode] || code
 }
 
 /**
  * Normalise un code département pour l'affichage
- * 
+ *
  * Règles :
  * - Codes DOM-TOM (971-976) : garder 3 chiffres
  * - Codes métropole avec zéro devant (021, 063) : retirer le zéro (-> 21, 63)
  * - Autres codes : garder tels quels
- * 
+ *
  * @param code Code département (ex: "063", "06", "974")
  * @returns Code normalisé (ex: "63", "06", "974")
  */
+// ✅ Reverse mapping: nom département -> code
+const DEPARTMENT_NAME_TO_CODE: Record<string, string> = Object.fromEntries(
+  Object.entries(FRENCH_DEPARTMENTS).map(([code, name]) => [name.toLowerCase(), code])
+)
+
 export function normalizeDepartmentCode(code: string | null | undefined): string {
   if (!code) return ''
-  
+
   const trimmed = code.trim()
-  
+
+  // ✅ FIX 2025-12-14: Si c'est un nom de département, le convertir en code
+  // Ex: "Ille-et-Vilaine" -> "35"
+  const lowerTrimmed = trimmed.toLowerCase()
+  if (DEPARTMENT_NAME_TO_CODE[lowerTrimmed]) {
+    return DEPARTMENT_NAME_TO_CODE[lowerTrimmed]
+  }
+
   // Cas spécial : DOM-TOM (codes 971-976) -> garder 3 chiffres
   if (/^97[1-6]$/.test(trimmed)) {
     return trimmed
   }
-  
+
   // Codes métropole avec zéro devant : "0XX" -> "XX"
   // Exemples : "021" -> "21", "063" -> "63", "069" -> "69"
   if (/^0\d{2}$/.test(trimmed)) {
     return trimmed.substring(1)
   }
-  
+
   // Cas spécial Corse : garder tel quel (2A, 2B)
   // Tous les autres codes : garder tels quels
   return trimmed

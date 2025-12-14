@@ -2405,7 +2405,10 @@ router.get('/:id/check-existing-event', [
   const changes = proposal.changes as any
   const eventName = changes.name?.new
   const eventCity = changes.city?.new
+  // ✅ FIX 2025-12-14: Support des deux formats de département (Slack vs FFA)
   const eventDepartment = changes.countrySubdivisionDisplayCodeLevel2?.new
+    || changes.department?.new  // Format Slack: "Ille-et-Vilaine"
+    || changes.countrySubdivisionNameLevel2?.new  // Format alternatif
   const editionData = changes.edition?.new
 
   // Données insuffisantes pour le matching
