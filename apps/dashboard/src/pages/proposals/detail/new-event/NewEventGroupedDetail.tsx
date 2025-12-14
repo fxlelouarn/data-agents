@@ -167,10 +167,10 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         return (
           <>
             {/* Alerte si un événement correspondant existe maintenant */}
-            {checkExistingResult?.data?.hasMatch && checkExistingResult.data.match && firstProposalId && (
+            {checkExistingResult?.hasMatch && checkExistingResult.match && firstProposalId && (
               <ExistingEventAlert
                 proposalId={firstProposalId}
-                match={checkExistingResult.data.match}
+                match={checkExistingResult.match}
                 proposalYear={editionYear}
               />
             )}

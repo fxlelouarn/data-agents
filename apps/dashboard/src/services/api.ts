@@ -283,7 +283,7 @@ export const proposalsApi = {
   }>> =>
     api.post(`/proposals/${id}/convert-to-edition-update`, data).then(res => res.data),
 
-  checkExistingEvent: (id: string): Promise<ApiResponse<{
+  checkExistingEvent: (id: string): Promise<{
     hasMatch: boolean
     match?: {
       type: 'EXACT_MATCH' | 'FUZZY_MATCH'
@@ -302,7 +302,7 @@ export const proposalsApi = {
       editionYear: number | null
       editionDate: string | null
     }
-  }>> => api.get(`/proposals/${id}/check-existing-event`).then(res => res.data),
+  }> => api.get(`/proposals/${id}/check-existing-event`).then(res => res.data),
 
   changeTarget: (
     id: string,

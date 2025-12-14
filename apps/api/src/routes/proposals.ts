@@ -1478,6 +1478,61 @@ router.post('/validate-block-group', requireAuth, [
         })
       }
     }
+
+    // ✅ FIX 2025-12-14: Gérer racesExisting - convertir en racesToUpdate si modifiées
+    // Les courses dans racesExisting sont des courses DB non matchées, sans propositions de changement
+    // Si l'utilisateur les modifie, on doit les transformer en racesToUpdate
+    if (baseChanges.racesExisting) {
+      const racesExisting = baseChanges.racesExisting.new || baseChanges.racesExisting
+      if (Array.isArray(racesExisting)) {
+        // Initialiser racesToUpdate si pas déjà présent
+        if (!baseChanges.racesToUpdate) {
+          baseChanges.racesToUpdate = { new: [], confidence: baseChanges.racesExisting.confidence || 0.75 }
+        }
+        const racesToUpdate = baseChanges.racesToUpdate.new || baseChanges.racesToUpdate
+
+        racesExisting.forEach((race: any) => {
+          const raceId = race.raceId?.toString()
+          const userEdits = raceEdits[raceId]
+
+          if (userEdits && !userEdits._deleted) {
+            // Cette course existante a des modifications utilisateur
+            // La transformer en racesToUpdate
+            const raceUpdate: any = {
+              raceId: race.raceId,
+              raceName: race.raceName,
+              currentData: race.currentData || {
+                name: race.raceName,
+                runDistance: race.runDistance,
+                walkDistance: race.walkDistance,
+                bikeDistance: race.bikeDistance,
+                swimDistance: race.swimDistance,
+                runPositiveElevation: race.runPositiveElevation,
+                categoryLevel1: race.categoryLevel1,
+                categoryLevel2: race.categoryLevel2,
+                startDate: race.startDate
+              },
+              updates: {}
+            }
+
+            // Appliquer les modifications utilisateur
+            Object.entries(userEdits).forEach(([field, value]) => {
+              if (field !== '_deleted') {
+                raceUpdate.updates[field] = {
+                  new: value,
+                  old: raceUpdate.currentData[field]
+                }
+              }
+            })
+
+            // Ajouter à racesToUpdate seulement s'il y a des updates
+            if (Object.keys(raceUpdate.updates).length > 0) {
+              racesToUpdate.push(raceUpdate)
+            }
+          }
+        })
+      }
+    }
   }
 
   // ✅ FIX: Merger baseChanges (agent) + changes (user) au lieu de choisir l'un ou l'autre
@@ -2181,6 +2236,43 @@ router.post('/:id/convert-to-edition-update', [
         }
       }
 
+      // ✅ FIX: Ajouter les courses DB non matchées dans racesExisting
+      // Ces courses existent dans Miles Republic mais n'ont pas de correspondance FFA
+      const matchedDbIds = new Set(matchingResult.matched.map(m => m.db.id))
+      for (const dbRace of existingRaces) {
+        if (!matchedDbIds.has(dbRace.id)) {
+          const startDateIso = dbRace.startDate
+            ? (dbRace.startDate instanceof Date
+                ? dbRace.startDate.toISOString()
+                : dbRace.startDate)
+            : null
+
+          racesExisting.push({
+            raceId: dbRace.id,
+            raceName: dbRace.name,
+            currentData: {
+              name: dbRace.name,
+              runDistance: dbRace.runDistance,
+              walkDistance: dbRace.walkDistance,
+              bikeDistance: dbRace.bikeDistance,
+              swimDistance: dbRace.swimDistance,
+              runPositiveElevation: dbRace.runPositiveElevation,
+              categoryLevel1: dbRace.categoryLevel1,
+              categoryLevel2: dbRace.categoryLevel2,
+              startDate: startDateIso
+            },
+            runDistance: dbRace.runDistance,
+            walkDistance: dbRace.walkDistance,
+            bikeDistance: dbRace.bikeDistance,
+            swimDistance: dbRace.swimDistance,
+            runPositiveElevation: dbRace.runPositiveElevation,
+            categoryLevel1: dbRace.categoryLevel1,
+            categoryLevel2: dbRace.categoryLevel2,
+            startDate: startDateIso
+          })
+        }
+      }
+
       // Ajouter les courses non matchées
       if (racesToAdd.length > 0) {
         editionChanges.racesToAdd = { new: racesToAdd, confidence }
@@ -2202,7 +2294,7 @@ router.post('/:id/convert-to-edition-update', [
       }
 
       // Logger le résultat
-      logger.info(`  🏁 Races summary: ${racesToAdd.length} to add, ${racesToUpdate.length} to update, ${racesExisting.length} existing unchanged`)
+      logger.info(`  🏁 Races summary: ${racesToAdd.length} to add, ${racesToUpdate.length} to update, ${racesExisting.length} existing unchanged (incl. unmatched DB)`)
     }
   }
 
