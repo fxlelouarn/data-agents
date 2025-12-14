@@ -2286,6 +2286,106 @@ router.post('/:id/convert-to-edition-update', [
   })
 }))
 
+// GET /api/proposals/:id/check-existing-event
+// Vérifie si un événement correspondant existe maintenant dans Miles Republic
+// Utilisé pour détecter si un événement a été créé après la proposition NEW_EVENT
+// Réutilisable par un futur agent de détection de doublons
+router.get('/:id/check-existing-event', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const similarityThreshold = parseFloat(req.query.similarityThreshold as string) || 0.75
+
+  // 1. Récupérer la proposition
+  const proposal = await db.prisma.proposal.findUnique({ where: { id } })
+  if (!proposal) {
+    throw createError(404, 'Proposal not found', 'PROPOSAL_NOT_FOUND')
+  }
+  if (proposal.type !== 'NEW_EVENT') {
+    throw createError(400, 'Only for NEW_EVENT proposals', 'INVALID_PROPOSAL_TYPE')
+  }
+  if (proposal.status !== 'PENDING') {
+    throw createError(400, 'Only for PENDING proposals', 'INVALID_PROPOSAL_STATUS')
+  }
+
+  // 2. Extraire les données de matching depuis changes
+  const changes = proposal.changes as any
+  const eventName = changes.name?.new
+  const eventCity = changes.city?.new
+  const eventDepartment = changes.countrySubdivisionDisplayCodeLevel2?.new
+  const editionData = changes.edition?.new
+
+  // Données insuffisantes pour le matching
+  if (!eventName || !eventCity || !editionData?.startDate) {
+    return res.json({
+      hasMatch: false,
+      proposalData: {
+        eventName: eventName || null,
+        eventCity: eventCity || null,
+        eventDepartment: eventDepartment || null,
+        editionYear: editionData?.year ? parseInt(editionData.year) : null,
+        editionDate: editionData?.startDate || null
+      }
+    })
+  }
+
+  // 3. Connexion Miles Republic
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+  if (!milesRepublicConn) {
+    throw createError(500, 'Miles Republic connection not found', 'CONNECTION_NOT_FOUND')
+  }
+
+  const { DatabaseManager, createConsoleLogger, matchEvent } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'check-existing-event')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+
+  // 4. Appeler matchEvent
+  const result = await matchEvent(
+    {
+      eventName,
+      eventCity,
+      eventDepartment,
+      editionDate: new Date(editionData.startDate),
+      editionYear: parseInt(editionData.year)
+    },
+    sourceDb,
+    { similarityThreshold },
+    logger
+  )
+
+  // 5. Construire la réponse
+  const proposalData = {
+    eventName,
+    eventCity,
+    eventDepartment,
+    editionYear: parseInt(editionData.year),
+    editionDate: editionData.startDate
+  }
+
+  if (result.type === 'NO_MATCH') {
+    return res.json({ hasMatch: false, proposalData })
+  }
+
+  return res.json({
+    hasMatch: true,
+    match: {
+      type: result.type,
+      eventId: result.event!.id,
+      eventName: result.event!.name,
+      eventSlug: result.event!.slug || '',
+      eventCity: result.event!.city,
+      editionId: result.edition?.id,
+      editionYear: result.edition?.year,
+      confidence: result.confidence
+    },
+    proposalData
+  })
+}))
+
 // POST /api/proposals/:id/change-target - Change the target event/edition of an EDITION_UPDATE proposal
 router.post('/:id/change-target', [
   param('id').isString().notEmpty(),

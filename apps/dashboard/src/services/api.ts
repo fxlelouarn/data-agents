@@ -283,6 +283,27 @@ export const proposalsApi = {
   }>> =>
     api.post(`/proposals/${id}/convert-to-edition-update`, data).then(res => res.data),
 
+  checkExistingEvent: (id: string): Promise<ApiResponse<{
+    hasMatch: boolean
+    match?: {
+      type: 'EXACT_MATCH' | 'FUZZY_MATCH'
+      eventId: number
+      eventName: string
+      eventSlug: string
+      eventCity: string
+      editionId?: number
+      editionYear?: string
+      confidence: number
+    }
+    proposalData: {
+      eventName: string | null
+      eventCity: string | null
+      eventDepartment: string | null
+      editionYear: number | null
+      editionDate: string | null
+    }
+  }>> => api.get(`/proposals/${id}/check-existing-event`).then(res => res.data),
+
   changeTarget: (
     id: string,
     data: {

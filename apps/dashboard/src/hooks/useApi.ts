@@ -483,6 +483,16 @@ export const useConvertToEditionUpdate = () => {
   })
 }
 
+export const useCheckExistingEvent = (proposalId: string, enabled: boolean) => {
+  return useQuery({
+    queryKey: ['proposal-check-existing', proposalId],
+    queryFn: () => proposalsApi.checkExistingEvent(proposalId),
+    enabled,
+    staleTime: 5 * 60 * 1000, // Cache 5 min
+    refetchOnMount: true
+  })
+}
+
 export const useChangeTarget = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()
