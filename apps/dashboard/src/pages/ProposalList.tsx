@@ -48,7 +48,7 @@ import {
   Edit as EditIcon
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
-import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal } from '@/hooks/useApi'
+import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal, useAgents } from '@/hooks/useApi'
 import { ProposalStatus, ProposalType } from '@/types'
 import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposalTypeStyles, categoryLevel1Labels, categoryLevel2Labels, categoryLevel2ByLevel1 } from '@/constants/proposals'
 
@@ -163,10 +163,18 @@ const ProposalList: React.FC = () => {
     return () => clearTimeout(timer)
   }, [searchTerm])
 
+  // Charger la liste des agents pour le filtre
+  const { data: agentsData } = useAgents({ includeInactive: true })
+  const uniqueAgents = useMemo(() => {
+    if (!agentsData?.data) return []
+    return agentsData.data.map(a => a.name).sort()
+  }, [agentsData?.data])
+
   const { data: proposalsData, isLoading, refetch } = useProposals(
     {
       status: statusFilter !== 'ALL' ? statusFilter : undefined,
       type: typeFilter !== 'ALL' ? typeFilter : undefined,
+      agentName: agentFilter !== 'ALL' ? agentFilter : undefined,
       categoryLevel1: categoryLevel1Filter !== 'ALL' ? categoryLevel1Filter : undefined,
       categoryLevel2: categoryLevel2Filter !== 'ALL' ? categoryLevel2Filter : undefined,
       search: debouncedSearchTerm.trim() || undefined,
@@ -187,28 +195,8 @@ const ProposalList: React.FC = () => {
   const bulkDeleteMutation = useBulkDeleteProposals()
   const deleteMutation = useDeleteProposal()
 
-  // Get unique agent names for filter
-  const uniqueAgents = useMemo(() => {
-    if (!proposalsData?.data) return []
-    const agentNames = [...new Set(proposalsData.data.map(p => p.agent.name))]
-    return agentNames.sort()
-  }, [proposalsData?.data])
-
-  // Filter proposals by agent (côté client uniquement)
-  // La recherche textuelle est maintenant côté serveur
-  const filteredProposals = useMemo(() => {
-    if (!proposalsData?.data) return []
-
-    // Si pas de filtre agent, retourner toutes les propositions
-    if (agentFilter === 'ALL') {
-      return proposalsData.data
-    }
-
-    // Filtrer par agent (côté client car pas encore supporté côté serveur)
-    return proposalsData.data.filter(proposal => {
-      return proposal.agent.name === agentFilter
-    })
-  }, [proposalsData?.data, agentFilter])
+  // Les propositions sont maintenant filtrées côté serveur
+  const filteredProposals = proposalsData?.data || []
 
   // Group proposals by event/edition
   const groupedProposals = useMemo(() => {

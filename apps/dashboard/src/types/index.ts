@@ -229,6 +229,7 @@ export interface ProposalFilters {
   type?: ProposalType
   eventId?: string
   editionId?: string
+  agentName?: string
   categoryLevel1?: string
   categoryLevel2?: string
   search?: string

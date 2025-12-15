@@ -702,6 +702,7 @@ router.get('/', [
   query('type').optional().isIn(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE']),
   query('eventId').optional().isString(),
   query('editionId').optional().isString(),
+  query('agentName').optional().isString(),
   query('categoryLevel1').optional().isString(),
   query('categoryLevel2').optional().isString(),
   query('search').optional().isString(),
@@ -710,7 +711,7 @@ router.get('/', [
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, search, sort = 'created-desc', limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLevel2, search, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
 
@@ -743,7 +744,9 @@ const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, search
     status: (status as string | undefined) ? (status as any) : undefined,
     type: (type as string | undefined) ? (type as any) : undefined,
     eventId: (eventId as string | undefined) || undefined,
-    editionId: (editionId as string | undefined) || undefined
+    editionId: (editionId as string | undefined) || undefined,
+    // Filtre par nom d'agent via relation
+    ...(agentName ? { agent: { name: agentName as string } } : {})
   }
 
   // Ajouter la recherche textuelle si présente (Prisma)
@@ -801,6 +804,13 @@ const { status, type, eventId, editionId, categoryLevel1, categoryLevel2, search
     if (editionId) {
       baseConditions.push(`"editionId" = $${paramIndex}`)
       params.push(editionId)
+      paramIndex++
+    }
+
+    // Filtre par nom d'agent (jointure avec table agents)
+    if (agentName) {
+      baseConditions.push(`EXISTS (SELECT 1 FROM agents a WHERE a.id = p."agentId" AND a.name = $${paramIndex})`)
+      params.push(agentName)
       paramIndex++
     }
 
@@ -957,22 +967,35 @@ router.get('/group/:groupKey', [
 
     proposals = proposal ? [proposal] : []
   } else {
-    // Parse eventId-editionId format
-    const [eventId, editionId] = groupKey.split('-')
+    // Parse eventId-editionId format (ou eventId-only pour propositions sans editionId)
+    const parts = groupKey.split('-')
+    const eventId = parts[0]
+    const editionId = parts[1] // Peut être undefined si format "eventId-only"
 
-    if (!eventId || !editionId || eventId === 'unknown' || editionId === 'unknown') {
+    if (!eventId || eventId === 'unknown') {
       throw createError(400, 'Invalid group key format', 'INVALID_GROUP_KEY')
     }
 
     // Get all proposals for this event/edition combination
     // ⚠️ FIX 2025-12-10: Exclure les propositions ARCHIVED et REJECTED pour éviter
     // qu'elles soient réapprouvées lors de la validation groupée
+    // ⚠️ FIX 2025-12-15: Supporter les propositions sans editionId (editionId-only groupKey)
+    const whereClause: any = {
+      eventId,
+      status: { notIn: ['ARCHIVED', 'REJECTED'] }
+    }
+
+    // Si editionId est fourni et valide, filtrer par editionId
+    // Sinon, chercher les propositions avec editionId NULL (propositions EVENT_UPDATE ou EDITION_UPDATE sans édition cible)
+    if (editionId && editionId !== 'undefined' && editionId !== 'null' && editionId !== 'unknown') {
+      whereClause.editionId = editionId
+    } else {
+      // Propositions sans editionId (null)
+      whereClause.editionId = null
+    }
+
     proposals = await db.prisma.proposal.findMany({
-      where: {
-        eventId,
-        editionId,
-        status: { notIn: ['ARCHIVED', 'REJECTED'] }
-      },
+      where: whereClause,
       include: {
         agent: {
           select: { name: true, type: true }
