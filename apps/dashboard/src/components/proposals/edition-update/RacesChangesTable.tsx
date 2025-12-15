@@ -25,7 +25,8 @@ import {
   Edit as EditIcon,
   Check as CheckIcon,
   Close as CloseIcon,
-  EditNote as EditNoteIcon
+  EditNote as EditNoteIcon,
+  RestartAlt as RestartAltIcon
 } from '@mui/icons-material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
@@ -455,13 +456,30 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
           />
         )}
         {showActions && !disabled && !isBlockValidated && (
-          <IconButton
-            size="small"
-            onClick={() => startEdit(raceId, field, value)}
-            sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
-          >
-            <EditIcon fontSize="small" />
-          </IconButton>
+          <Box sx={{ display: 'flex', gap: 0.25 }}>
+            <IconButton
+              size="small"
+              onClick={() => startEdit(raceId, field, value)}
+              sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
+            >
+              <EditIcon fontSize="small" />
+            </IconButton>
+            {isModified && (
+              <Tooltip title="Réinitialiser à la valeur proposée">
+                <IconButton
+                  size="small"
+                  color="warning"
+                  onClick={() => {
+                    // Passer undefined pour supprimer l'entrée
+                    onRaceFieldModify(raceId, field, undefined)
+                  }}
+                  sx={{ opacity: 0.6, '&:hover': { opacity: 1 } }}
+                >
+                  <RestartAltIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
         )}
       </Box>
     )

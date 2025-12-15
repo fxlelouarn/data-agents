@@ -105,6 +105,9 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   isBlockApplied: (blockKey: string) => boolean  // ✅ Nouveau : vérifie si le bloc est déjà appliqué en base
   isBlockPending: boolean
   blockProposals: Record<string, string[]>
+  // Archivage individuel d'une sous-proposition
+  handleArchiveSingleProposal: (proposalId: string) => Promise<void>
+  isArchiving: boolean
 }
 
 export interface GroupedProposalDetailBaseProps {
@@ -715,6 +718,18 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     }
   }
 
+  // Archiver une seule sous-proposition du groupe
+  const handleArchiveSingleProposal = async (proposalId: string) => {
+    try {
+      await bulkArchiveMutation.mutateAsync({
+        proposalIds: [proposalId],
+        archiveReason: 'Archivage individuel depuis la vue groupée'
+      })
+    } catch (error) {
+      console.error('Error archiving single proposal:', error)
+    }
+  }
+
   const handleKillEvent = async () => {
     try {
       const eventId = firstProposal?.eventId
@@ -1126,7 +1141,10 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     isBlockValidated,
     isBlockApplied,  // ✅ Nouveau : vérifie si le bloc est déjà appliqué en base
     isBlockPending,
-    blockProposals
+    blockProposals,
+    // Archivage individuel d'une sous-proposition
+    handleArchiveSingleProposal,
+    isArchiving: bulkArchiveMutation.isPending
   }
 
   if (isLoading) return <LinearProgress />

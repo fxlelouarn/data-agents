@@ -19,7 +19,8 @@ import {
   CheckCircle as ApproveIcon,
   Business as BusinessIcon,
   Edit as EditIcon,
-  EditNote as EditNoteIcon
+  EditNote as EditNoteIcon,
+  RestartAlt as RestartAltIcon
 } from '@mui/icons-material'
 import type { ConsolidatedChange } from '@/pages/proposals/detail/base/GroupedProposalDetailBase'
 import FieldEditor from '@/components/proposals/FieldEditor'
@@ -295,14 +296,30 @@ const OrganizerSection: React.FC<OrganizerSectionProps> = ({
                     <Box sx={{ display: 'flex', gap: 1, alignItems: 'center', width: '100%' }}>
                       {formatFieldValue(getFieldValue(field.key), field.key, field.key)}
                       {showActions && onFieldModify && !disabled && !isBlockValidated && (
-                        <Tooltip title="Modifier manuellement">
-                          <IconButton
-                            size="small"
-                            onClick={() => handleStartEdit(field.key)}
-                          >
-                            <EditIcon fontSize="small" />
-                          </IconButton>
-                        </Tooltip>
+                        <Box sx={{ display: 'flex', gap: 0.25 }}>
+                          <Tooltip title="Modifier manuellement">
+                            <IconButton
+                              size="small"
+                              onClick={() => handleStartEdit(field.key)}
+                            >
+                              <EditIcon fontSize="small" />
+                            </IconButton>
+                          </Tooltip>
+                          {userModifiedChanges[`organizer.${field.key}`] !== undefined && (
+                            <Tooltip title="Réinitialiser à la valeur proposée">
+                              <IconButton
+                                size="small"
+                                color="warning"
+                                onClick={() => {
+                                  // Passer undefined pour supprimer l'entrée
+                                  onFieldModify(`organizer.${field.key}`, undefined)
+                                }}
+                              >
+                                <RestartAltIcon fontSize="small" />
+                              </IconButton>
+                            </Tooltip>
+                          )}
+                        </Box>
                       )}
                     </Box>
                   )}

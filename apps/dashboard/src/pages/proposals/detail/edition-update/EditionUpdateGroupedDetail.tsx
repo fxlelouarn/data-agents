@@ -248,7 +248,9 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
           selectedChanges,
           userModifiedChanges,
           handleFieldModify,
-          allPending
+          allPending,
+          handleArchiveSingleProposal,
+          isArchiving
         } = context
 
         const firstProposal = groupProposals[0]
@@ -302,6 +304,8 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                 confidence: p.confidence || 0,
                 status: p.status
               }))}
+              onArchive={handleArchiveSingleProposal}
+              isArchiving={isArchiving}
             />
           </>
         )

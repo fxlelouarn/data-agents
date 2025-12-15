@@ -42,10 +42,10 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
           isBlockPending,
           blockProposals
         } = context
-        
+
         const firstProposal = groupProposals[0]
         const eventId = firstProposal?.eventId
-        
+
         return (
           <>
             {/* Table des champs Event */}
@@ -114,35 +114,39 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
                 </Box>
               ) : undefined}
             />
-            
+
             {/* Sources des dates extraites */}
-            <DateSourcesSection 
-              justifications={groupProposals.flatMap(p => p.justification || [])} 
+            <DateSourcesSection
+              justifications={groupProposals.flatMap(p => p.justification || [])}
             />
           </>
         )
       }}
       renderSidebar={(context) => {
-        const { 
+        const {
           groupProposals, // ✅ PENDING uniquement
           allGroupProposals, // ✅ Toutes les propositions (PENDING + historiques)
           allPending,
-          handleFieldModify
+          handleFieldModify,
+          handleArchiveSingleProposal,
+          isArchiving
         } = context
-        
+
         const firstProposal = groupProposals[0]
-        
+
         return (
           <>
             {/* ✅ AgentInfoSection gère la séparation PENDING vs historique en interne */}
-            <AgentInfoSection 
-              proposals={allGroupProposals.map(p => ({ 
-                ...p, 
-                confidence: p.confidence || 0, 
-                status: p.status 
-              }))} 
+            <AgentInfoSection
+              proposals={allGroupProposals.map(p => ({
+                ...p,
+                confidence: p.confidence || 0,
+                status: p.status
+              }))}
+              onArchive={handleArchiveSingleProposal}
+              isArchiving={isArchiving}
             />
-            
+
             {/* URLs de l'événement */}
             {firstProposal && (
               <Box sx={{ mt: 3 }}>

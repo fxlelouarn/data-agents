@@ -963,18 +963,32 @@ export function useProposalEditor(
 
   /**
    * Mettre à jour un champ
+   * Si value === undefined, supprime l'entrée de userModifiedChanges (réinitialisation)
    */
   const updateField = useCallback((field: string, value: any) => {
     if (isGroupMode) {
       setWorkingGroup(prev => {
         if (!prev) return prev
-        // Mettre à jour la sélection utilisateur au niveau groupe
         const next = { ...prev }
-        next.userModifiedChanges = { ...next.userModifiedChanges, [field]: value }
-        // Mettre à jour la valeur sélectionnée si le champ est consolidé
-        const idx = next.consolidatedChanges.findIndex(c => c.field === field)
-        if (idx >= 0) {
-          next.consolidatedChanges[idx] = { ...next.consolidatedChanges[idx], selectedValue: value }
+
+        // Si value === undefined, supprimer l'entrée (réinitialisation)
+        if (value === undefined) {
+          const { [field]: _, ...rest } = next.userModifiedChanges
+          next.userModifiedChanges = rest
+          // Réinitialiser la valeur sélectionnée à la valeur proposée par défaut
+          const idx = next.consolidatedChanges.findIndex(c => c.field === field)
+          if (idx >= 0) {
+            const originalValue = next.consolidatedChanges[idx].options[0]?.proposedValue
+            next.consolidatedChanges[idx] = { ...next.consolidatedChanges[idx], selectedValue: originalValue }
+          }
+        } else {
+          // Mettre à jour la sélection utilisateur au niveau groupe
+          next.userModifiedChanges = { ...next.userModifiedChanges, [field]: value }
+          // Mettre à jour la valeur sélectionnée si le champ est consolidé
+          const idx = next.consolidatedChanges.findIndex(c => c.field === field)
+          if (idx >= 0) {
+            next.consolidatedChanges[idx] = { ...next.consolidatedChanges[idx], selectedValue: value }
+          }
         }
         next.isDirty = true
         return next
@@ -982,6 +996,16 @@ export function useProposalEditor(
     } else {
       setWorkingProposal(prev => {
         if (!prev) return prev
+
+        // Si value === undefined, supprimer l'entrée (réinitialisation)
+        if (value === undefined) {
+          const { [field]: _, ...rest } = prev.userModifiedChanges
+          return {
+            ...prev,
+            userModifiedChanges: rest,
+            isDirty: true
+          }
+        }
 
         // ✅ Aligné sur mode groupé : mettre à jour userModifiedChanges, pas changes
         return {
@@ -1003,6 +1027,7 @@ export function useProposalEditor(
 
   /**
    * Mettre à jour une course
+   * Si value === undefined, supprime l'entrée du champ (réinitialisation)
    */
   const updateRace = useCallback((raceId: string, field: string, value: any) => {
     if (isGroupMode) {
@@ -1010,7 +1035,20 @@ export function useProposalEditor(
         if (!prev) return prev
         const next = { ...prev }
         const current = next.userModifiedRaceChanges[raceId] || {}
-        next.userModifiedRaceChanges = { ...next.userModifiedRaceChanges, [raceId]: { ...current, [field]: value } }
+
+        // Si value === undefined, supprimer l'entrée du champ (réinitialisation)
+        if (value === undefined) {
+          const { [field]: _, ...restFields } = current
+          // Si plus de champs modifiés pour cette course, supprimer l'entrée de la course
+          if (Object.keys(restFields).length === 0) {
+            const { [raceId]: __, ...restRaces } = next.userModifiedRaceChanges
+            next.userModifiedRaceChanges = restRaces
+          } else {
+            next.userModifiedRaceChanges = { ...next.userModifiedRaceChanges, [raceId]: restFields }
+          }
+        } else {
+          next.userModifiedRaceChanges = { ...next.userModifiedRaceChanges, [raceId]: { ...current, [field]: value } }
+        }
         next.isDirty = true
         return next
       })
@@ -1018,8 +1056,31 @@ export function useProposalEditor(
       setWorkingProposal(prev => {
         if (!prev) return prev
 
-        // ✅ Aligné sur mode groupé : mettre à jour userModifiedRaceChanges, pas races
         const current = prev.userModifiedRaceChanges[raceId] || {}
+
+        // Si value === undefined, supprimer l'entrée du champ (réinitialisation)
+        if (value === undefined) {
+          const { [field]: _, ...restFields } = current
+          // Si plus de champs modifiés pour cette course, supprimer l'entrée de la course
+          if (Object.keys(restFields).length === 0) {
+            const { [raceId]: __, ...restRaces } = prev.userModifiedRaceChanges
+            return {
+              ...prev,
+              userModifiedRaceChanges: restRaces,
+              isDirty: true
+            }
+          }
+          return {
+            ...prev,
+            userModifiedRaceChanges: {
+              ...prev.userModifiedRaceChanges,
+              [raceId]: restFields
+            },
+            isDirty: true
+          }
+        }
+
+        // ✅ Aligné sur mode groupé : mettre à jour userModifiedRaceChanges, pas races
         return {
           ...prev,
           userModifiedRaceChanges: {

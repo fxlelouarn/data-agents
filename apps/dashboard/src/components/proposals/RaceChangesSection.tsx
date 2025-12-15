@@ -27,7 +27,8 @@ import {
   Cancel as RejectIcon,
   ExpandMore as ExpandMoreIcon,
   DirectionsRun as RaceIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  RestartAlt as RestartAltIcon
 } from '@mui/icons-material'
 import FieldEditor from './FieldEditor'
 import BlockValidationButton from './BlockValidationButton'
@@ -196,16 +197,32 @@ const RaceChangesSection: React.FC<RaceChangesSectionProps> = ({
                                   {formatValue(userModifiedRaceChanges[raceData.raceIndex]?.[fieldName] || fieldData.options[0].proposedValue, false, timezone)}
                                 </Typography>
 
-                                {/* Bouton modifier pour les dates */}
+                                {/* Boutons modifier et réinitialiser pour les dates */}
                                 {fieldName === 'startDate' && onFieldModify && !disabled && !isEditionCanceled && !isBlockValidated && (
-                                  <Tooltip title="Modifier manuellement">
-                                    <IconButton
-                                      size="small"
-                                      onClick={() => handleStartEdit(raceData.raceIndex, fieldName)}
-                                    >
-                                      <EditIcon fontSize="small" />
-                                    </IconButton>
-                                  </Tooltip>
+                                  <Box sx={{ display: 'flex', gap: 0.25 }}>
+                                    <Tooltip title="Modifier manuellement">
+                                      <IconButton
+                                        size="small"
+                                        onClick={() => handleStartEdit(raceData.raceIndex, fieldName)}
+                                      >
+                                        <EditIcon fontSize="small" />
+                                      </IconButton>
+                                    </Tooltip>
+                                    {userModifiedRaceChanges[raceData.raceIndex]?.[fieldName] !== undefined && (
+                                      <Tooltip title="Réinitialiser à la valeur proposée">
+                                        <IconButton
+                                          size="small"
+                                          color="warning"
+                                          onClick={() => {
+                                            // Passer undefined pour supprimer l'entrée
+                                            onFieldModify(raceData.raceIndex, fieldName, undefined)
+                                          }}
+                                        >
+                                          <RestartAltIcon fontSize="small" />
+                                        </IconButton>
+                                      </Tooltip>
+                                    )}
+                                  </Box>
                                 )}
                               </Box>
                             )}

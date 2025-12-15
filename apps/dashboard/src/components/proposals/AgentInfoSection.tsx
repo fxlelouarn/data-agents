@@ -4,7 +4,9 @@ import {
   Typography,
   Card,
   CardContent,
-  Button
+  Button,
+  IconButton,
+  Tooltip
 } from '@mui/material'
 import {
   Person as PersonIcon,
@@ -76,9 +78,11 @@ interface Proposal {
 
 interface AgentInfoSectionProps {
   proposals: Proposal[]
+  onArchive?: (proposalId: string) => void
+  isArchiving?: boolean
 }
 
-const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
+const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals, onArchive, isArchiving }) => {
   // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
   const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
   const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
@@ -208,9 +212,24 @@ const AgentInfoSection: React.FC<AgentInfoSectionProps> = ({ proposals }) => {
             Proposition {index + 1}
           </Typography>
         </Box>
-        <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
-          {`${Math.round((proposal.confidence || 0) * 100)}%`}
-        </Typography>
+        <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+          <Typography variant="caption" sx={{ fontWeight: 600, color: 'text.secondary' }}>
+            {`${Math.round((proposal.confidence || 0) * 100)}%`}
+          </Typography>
+          {isPending && onArchive && (
+            <Tooltip title="Archiver cette proposition">
+              <IconButton
+                size="small"
+                color="warning"
+                onClick={() => onArchive(proposal.id)}
+                disabled={isArchiving}
+                sx={{ ml: 0.5, p: 0.25 }}
+              >
+                <ArchiveIcon sx={{ fontSize: '1rem' }} />
+              </IconButton>
+            </Tooltip>
+          )}
+        </Box>
       </Box>
 
       <Typography variant="caption" sx={{ display: 'block', color: 'text.secondary', mb: 0.5, ml: 3 }}>

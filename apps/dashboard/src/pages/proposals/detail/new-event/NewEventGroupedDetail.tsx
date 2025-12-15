@@ -265,7 +265,9 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
           allGroupProposals, // ✅ Toutes les propositions (PENDING + historiques)
           getEditionYear,
           selectedChanges,
-          userModifiedChanges
+          userModifiedChanges,
+          handleArchiveSingleProposal,
+          isArchiving
         } = context
 
         const firstProposal = groupProposals[0]
@@ -304,6 +306,8 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                 confidence: p.confidence || 0,
                 status: p.status
               }))}
+              onArchive={handleArchiveSingleProposal}
+              isArchiving={isArchiving}
             />
 
             {/* Afficher la card des matches rejetés */}

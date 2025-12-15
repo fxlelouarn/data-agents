@@ -21,7 +21,8 @@ import {
   Edit as EditIcon,
   EditNote as EditNoteIcon,
   Event as EventIcon,
-  CalendarToday as EditionIcon
+  CalendarToday as EditionIcon,
+  RestartAlt as RestartAltIcon
 } from '@mui/icons-material'
 import { useChangesTable, ConsolidatedChange } from '@/hooks/useChangesTable'
 import FieldEditor from './FieldEditor'
@@ -249,14 +250,30 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         )}
 
         {showActions && onFieldModify && !fieldDisabled && (
-          <Tooltip title="Modifier manuellement">
-            <IconButton
-              size="small"
-              onClick={() => table.handleStartEdit(fieldName)}
-            >
-              <EditIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
+          <Box sx={{ display: 'flex', gap: 0.25 }}>
+            <Tooltip title="Modifier manuellement">
+              <IconButton
+                size="small"
+                onClick={() => table.handleStartEdit(fieldName)}
+              >
+                <EditIcon fontSize="small" />
+              </IconButton>
+            </Tooltip>
+            {userModifiedChanges[fieldName] !== undefined && (
+              <Tooltip title="Réinitialiser à la valeur proposée">
+                <IconButton
+                  size="small"
+                  color="warning"
+                  onClick={() => {
+                    // Passer undefined pour supprimer l'entrée de userModifiedChanges
+                    onFieldModify(fieldName, undefined, 'Réinitialisé à la valeur proposée')
+                  }}
+                >
+                  <RestartAltIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            )}
+          </Box>
         )}
       </Box>
     )
