@@ -1021,6 +1021,19 @@ psql "$MILES_REPUBLIC_DATABASE_URL" -c "SELECT id, name, \"categoryLevel1\", \"c
 - `apps/agents/src/GoogleSearchDateAgent.ts` - Agent recherche de dates
 - Tout code utilisant `connectToSource()` pour accéder à Miles Republic
 
+### ⚠️ IMPORTANT - Unités de distance dans Race
+
+**Distances en kilomètres (km)** :
+- `runDistance` - Distance de course à pied
+- `bikeDistance` - Distance de vélo
+- `walkDistance` - Distance de marche
+
+**Distances en mètres (m)** :
+- `swimDistance` - Distance de natation (ex: 750 = 750m, 1500 = 1.5km, 3800 = distance Ironman)
+
+**Dénivelé en mètres (m)** :
+- `runPositiveElevation` - Dénivelé positif course à pied
+
 ### ⚠️ IMPORTANT - Conversion des IDs entre Miles Republic et data-agents
 
 **Problème fréquent :** Erreur de validation Prisma lors de la création de propositions.

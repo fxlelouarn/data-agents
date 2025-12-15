@@ -369,7 +369,7 @@ const AddRaceDialog: React.FC<AddRaceDialogProps> = ({
 
                 {activeFields.distances.includes('swimDistance') && (
                   <TextField
-                    label="Distance natation (km)"
+                    label="Distance natation (m)"
                     type="number"
                     value={formData.swimDistance || ''}
                     onChange={(e) => setFormData({
@@ -378,7 +378,7 @@ const AddRaceDialog: React.FC<AddRaceDialogProps> = ({
                     })}
                     fullWidth
                     disabled={isBlockValidated}
-                    inputProps={{ step: 0.1, min: 0 }}
+                    inputProps={{ step: 1, min: 0 }}
                   />
                 )}
               </>
