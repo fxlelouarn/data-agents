@@ -73,7 +73,7 @@ router.get('/search', [
 
   } catch (error) {
     console.error('Meilisearch search error:', error)
-    
+
     res.status(500).json({
       success: false,
       message: 'Failed to search events',
@@ -126,15 +126,15 @@ router.get('/autocomplete', [
 
   } catch (error) {
     console.error('Meilisearch autocomplete error:', error)
-    
+
     // En cas d'erreur, retourner une réponse vide mais pas d'erreur HTTP
     // pour ne pas casser l'expérience utilisateur de l'autocomplétion
     res.json({
       success: false,
       message: 'Search temporarily unavailable',
-      data: { 
-        events: [], 
-        configured: true, 
+      data: {
+        events: [],
+        configured: true,
         query: q,
         error: error instanceof Error ? error.message : 'Unknown error'
       }
@@ -161,7 +161,7 @@ router.post('/test-meilisearch', asyncHandler(async (req: Request, res: Response
     )
 
     const testResult = await meilisearchService.testConnection()
-    
+
     res.json({
       success: testResult.success,
       data: {
@@ -465,7 +465,7 @@ router.post('/:eventId/kill', asyncHandler(async (req: Request, res: Response) =
     let manualAgent = await db.prisma.agent.findUnique({
       where: { id: 'manual' }
     })
-    
+
     if (!manualAgent) {
       manualAgent = await db.prisma.agent.create({
         data: {
@@ -580,17 +580,19 @@ router.post('/:eventId/kill', asyncHandler(async (req: Request, res: Response) =
 
 /**
  * POST /api/events/:eventId/revive
- * Crée une ProposalApplication pour réactiver un événement DEAD en le passant à LIVE
+ * Ressuscite immédiatement un événement DEAD en le passant à LIVE
+ * Remet également en PENDING les propositions REJECTED pour cet événement/édition
  */
 router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response) => {
   const { eventId } = req.params
+  const { editionId } = req.body // Optionnel: pour filtrer par édition
 
   try {
     // 0. S'assurer qu'un agent "manual" existe
     let manualAgent = await db.prisma.agent.findUnique({
       where: { id: 'manual' }
     })
-    
+
     if (!manualAgent) {
       manualAgent = await db.prisma.agent.create({
         data: {
@@ -606,16 +608,63 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
       })
     }
 
-    // 1. Créer une Proposal pour réactiver l'événement
+    // 1. Remettre en PENDING les propositions REJECTED pour cet événement
+    // (toutes les propositions rejetées sont restaurées car l'événement est ressuscité)
+    const whereClause: any = {
+      eventId: eventId,
+      status: 'REJECTED'
+    }
+    if (editionId) {
+      whereClause.editionId = editionId
+    }
+
+    const revivedProposals = await db.prisma.proposal.updateMany({
+      where: whereClause,
+      data: {
+        status: 'PENDING',
+        reviewedBy: null,
+        reviewedAt: null
+      }
+    })
+
+    console.log(`[REVIVE] ${revivedProposals.count} propositions remises en PENDING pour eventId=${eventId}`)
+
+    // 2. Appliquer immédiatement le changement de statut dans Miles Republic
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: { name: 'miles-republic' }
+    })
+
+    if (!milesRepublicConnection) {
+      throw createError(500, 'Miles Republic connection not found', 'CONNECTION_NOT_FOUND')
+    }
+
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'events-revive')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const sourceDb = await dbManager.getConnection(milesRepublicConnection.id)
+
+    const previousStatus = await sourceDb.event.findUnique({
+      where: { id: parseInt(eventId) },
+      select: { status: true }
+    })
+
+    await sourceDb.event.update({
+      where: { id: parseInt(eventId) },
+      data: { status: 'LIVE' }
+    })
+
+    console.log(`[REVIVE] Event ${eventId} status changed from ${previousStatus?.status} to LIVE`)
+
+    // 3. Créer une Proposal pour tracer l'action (déjà appliquée)
     const reviveProposal = await db.prisma.proposal.create({
       data: {
-        agentId: 'manual', // Agent manuel
+        agentId: 'manual',
         type: 'EVENT_UPDATE',
-        status: 'APPROVED', // Auto-approuvée
+        status: 'APPROVED',
         eventId: eventId,
         changes: {
           status: {
-            current: 'DEAD',
+            current: previousStatus?.status || 'DEAD',
             proposed: 'LIVE'
           }
         },
@@ -629,27 +678,33 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
       }
     })
 
-    // 2. Créer une ProposalApplication (sera appliquée plus tard)
+    // 4. Créer une ProposalApplication marquée comme APPLIED
     const application = await db.prisma.proposalApplication.create({
       data: {
         proposalId: reviveProposal.id,
-        status: 'PENDING',
+        status: 'APPLIED',
+        appliedAt: new Date(),
         appliedChanges: {
           eventId: eventId,
-          status: 'LIVE'
+          previousStatus: previousStatus?.status || 'DEAD',
+          newStatus: 'LIVE'
         }
       }
     })
 
-    // 3. Log l'action
+    // 5. Log l'action
     await db.createLog({
       agentId: 'manual',
       level: 'INFO',
-      message: `Event ${eventId} revive request created`,
+      message: `Event ${eventId} revived immediately`,
       data: {
         eventId,
+        editionId: editionId || null,
+        previousStatus: previousStatus?.status,
+        newStatus: 'LIVE',
         proposalId: reviveProposal.id,
         applicationId: application.id,
+        revivedProposalsCount: revivedProposals.count,
         timestamp: new Date().toISOString()
       }
     })
@@ -658,6 +713,9 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
       success: true,
       data: {
         eventId: eventId,
+        previousStatus: previousStatus?.status || 'DEAD',
+        newStatus: 'LIVE',
+        revivedProposalsCount: revivedProposals.count,
         reviveProposal: {
           id: reviveProposal.id,
           status: reviveProposal.status
@@ -667,13 +725,13 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
           status: application.status
         }
       },
-      message: 'Event revival scheduled. Application will be processed later.'
+      message: `Événement ressuscité ! Statut: LIVE. ${revivedProposals.count} propositions restaurées.`
     })
   } catch (error) {
     console.error('Error reviving event:', error)
     res.status(500).json({
       success: false,
-      message: 'Error creating revive event request',
+      message: 'Error reviving event',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }
@@ -698,7 +756,7 @@ router.get('/:eventId', [
         )
 
         const event = await meilisearchService.getEventById(eventId)
-        
+
         if (event) {
           return res.json({
             success: true,
@@ -717,7 +775,7 @@ router.get('/:eventId', [
       // Relay the 404 error
       return res.status(404).json({ success: false, error: { code: 'EVENT_NOT_FOUND', message: 'Event not found' } })
     }
-    
+
     console.error('Error fetching event:', error)
     return res.status(500).json({ success: false, error: { code: 'FETCH_ERROR', message: 'Failed to fetch event' } })
   }

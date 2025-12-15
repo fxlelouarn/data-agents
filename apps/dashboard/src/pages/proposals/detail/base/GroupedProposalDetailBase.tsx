@@ -32,7 +32,8 @@ import {
   useBulkArchiveProposals,
   useUnapproveProposal,
   useProposalGroup,
-  useUpdates
+  useUpdates,
+  useReviveEvent
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
 import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
@@ -154,12 +155,18 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   // on ne veut PAS que toutes les autres courses soient affectées
   const [skipDateCascade, setSkipDateCascade] = useState(false)
 
+  // ✅ Stocker eventId/editionId pour qu'ils restent disponibles même après le kill
+  // (quand les propositions passent en REJECTED et sont filtrées par l'API)
+  const [savedEventId, setSavedEventId] = useState<string | null>(null)
+  const [savedEditionId, setSavedEditionId] = useState<string | null>(null)
+
   // Hooks API (DOIT être déclaré AVANT proposalIds qui l'utilise)
-  const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
+  const { data: groupProposalsData, isLoading, refetch: refetchGroup } = useProposalGroup(groupKey || '')
   const { data: allProposalsData } = useProposals({}, 100)
   const updateProposalMutation = useUpdateProposal()
   const bulkArchiveMutation = useBulkArchiveProposals()
   const unapproveProposalMutation = useUnapproveProposal()
+  const reviveEventMutation = useReviveEvent()
 
   // 🚀 PHASE 2: Initialisation du hook useProposalEditor pour le mode groupé
   const proposalIds = useMemo(() => {
@@ -216,6 +223,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       return confidenceB - confidenceA
     })
   }, [groupProposalsData?.data, groupKey])
+
+  // ✅ Sauvegarder eventId/editionId quand les propositions sont chargées
+  // Ces valeurs restent disponibles même après le kill (quand groupProposals devient vide)
+  useEffect(() => {
+    if (groupProposals.length > 0 && !savedEventId) {
+      const first = groupProposals[0]
+      if (first.eventId) setSavedEventId(first.eventId)
+      if (first.editionId) setSavedEditionId(first.editionId)
+    }
+  }, [groupProposals, savedEventId])
 
   // ✅ Phase 4: Consolider les changements depuis workingGroup
   const consolidatedChanges = useMemo(() => {
@@ -476,7 +493,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       if (proposal.type === 'NEW_EVENT') {
         keys.add(`new-event-${proposal.id}`)
       } else {
-        keys.add(`${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`)
+        // Format: {eventId}-{editionId} ou {eventId}-null si pas d'editionId
+        keys.add(`${proposal.eventId || 'unknown'}-${proposal.editionId || 'null'}`)
       }
     })
     return Array.from(keys)
@@ -713,6 +731,9 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         proposalIds,
         archiveReason: undefined // Pas de raison requise
       })
+      // ✅ Rediriger vers la liste des propositions après archivage
+      // Car le groupe sera vide (l'API exclut les propositions ARCHIVED)
+      navigate('/proposals')
     } catch (error) {
       console.error('Error archiving proposals:', error)
     }
@@ -725,6 +746,12 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         proposalIds: [proposalId],
         archiveReason: 'Archivage individuel depuis la vue groupée'
       })
+      // Recharger le groupe pour afficher les sous-propositions restantes
+      const result = await refetchGroup()
+      // Si le groupe est vide après l'archivage, retourner à la liste
+      if (!result.data?.data || result.data.data.length === 0) {
+        navigate('/proposals')
+      }
     } catch (error) {
       console.error('Error archiving single proposal:', error)
     }
@@ -771,43 +798,33 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
   }
 
   const handleReviveEvent = async () => {
-    try {
-      const eventId = firstProposal?.eventId
-      if (!eventId) {
-        console.error('No eventId found')
-        return
-      }
-
-      // 1. Remettre toutes les propositions rejetées au statut PENDING et retirer killEvent
-      // ⚡ Optimisation: Mutations en parallèle, non-bloquantes
-      const promises = groupProposals
-        .filter(p => p.status === 'REJECTED')
-        .map(proposal =>
-          new Promise<void>((resolve, reject) => {
-            updateProposalMutation.mutate({
-              id: proposal.id,
-              status: 'PENDING',
-              reviewedBy: undefined,
-              modificationReason: 'Événement ressuscité',
-              killEvent: false // ✅ Retirer le marqueur de kill
-            }, {
-              onSuccess: () => resolve(),
-              onError: reject
-            })
-          })
-        )
-      await Promise.all(promises)
-
-      // 2. Retirer le marqueur local
-      setIsKilledLocally(false)
-
-      // 3. Rafraîchir le cache pour mettre à jour l'UI
-      await queryClient.invalidateQueries({ queryKey: ['proposals'] })
-      await queryClient.invalidateQueries({ queryKey: ['proposal-groups'] })
-      await queryClient.refetchQueries({ queryKey: ['proposal-groups', groupKey] })
-    } catch (error) {
-      console.error('Error reviving event:', error)
+    // ✅ Utiliser savedEventId/savedEditionId car après le kill, groupProposals est vide
+    // (l'API filtre les propositions REJECTED)
+    const eventId = firstProposal?.eventId || savedEventId
+    const editionId = firstProposal?.editionId || savedEditionId
+    if (!eventId) {
+      console.error('No eventId found (neither from proposal nor saved state)')
+      return
     }
+
+    // Utiliser le hook useReviveEvent qui:
+    // 1. Remet les propositions REJECTED en PENDING côté backend
+    // 2. Crée une ProposalApplication pour remettre l'événement en LIVE
+    // 3. Invalide les caches automatiquement
+    reviveEventMutation.mutate(
+      { eventId, editionId: editionId || undefined },
+      {
+        onSuccess: () => {
+          // Retirer le marqueur local
+          setIsKilledLocally(false)
+          // Refetch pour mettre à jour l'UI
+          queryClient.refetchQueries({ queryKey: ['proposal-groups', groupKey] })
+        },
+        onError: (error) => {
+          console.error('Error reviving event:', error)
+        }
+      }
+    )
   }
 
   // ✅ Phase 4: Confirmer la propagation de startDate aux courses

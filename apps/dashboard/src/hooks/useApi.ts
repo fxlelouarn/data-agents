@@ -1078,9 +1078,11 @@ export const useReviveEvent = () => {
   const { enqueueSnackbar } = useSnackbar()
 
   return useMutation({
-    mutationFn: (eventId: string) => eventsApi.revive(eventId),
+    mutationFn: ({ eventId, editionId }: { eventId: string; editionId?: string }) =>
+      eventsApi.revive(eventId, editionId),
     onSuccess: (response) => {
       queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['proposal-groups'] })
       enqueueSnackbar(response.message || 'Événement ressuscité avec succès', { variant: 'success' })
     },
     onError: (error: any) => {

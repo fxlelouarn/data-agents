@@ -591,8 +591,8 @@ export const eventsApi = {
   kill: (eventId: string): Promise<ApiResponse<{ status: string }>> =>
     api.post(`/events/${eventId}/kill`).then(res => res.data),
 
-  revive: (eventId: string): Promise<ApiResponse<{ status: string }>> =>
-    api.post(`/events/${eventId}/revive`).then(res => res.data),
+  revive: (eventId: string, editionId?: string): Promise<ApiResponse<{ status: string; revivedProposalsCount?: number }>> =>
+    api.post(`/events/${eventId}/revive`, editionId ? { editionId } : {}).then(res => res.data),
 }
 
 // Events API (interroge directement Miles Republic)

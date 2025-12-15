@@ -356,16 +356,20 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
 
   const handleReviveEvent = async () => {
     const eventId = proposalData?.data?.eventId
+    const editionId = proposalData?.data?.editionId
     if (!eventId) {
       console.error('No eventId found')
       return
     }
 
-    reviveEventMutation.mutate(eventId, {
-      onError: (error) => {
-        console.error('Error reviving event:', error)
+    reviveEventMutation.mutate(
+      { eventId, editionId: editionId || undefined },
+      {
+        onError: (error) => {
+          console.error('Error reviving event:', error)
+        }
       }
-    })
+    )
   }
 
   // Handler pour éditer la proposition (PHASE 3)
@@ -376,9 +380,12 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     if (proposal.type === 'NEW_EVENT') {
       // Format: new-event-{proposalId}
       groupKey = `new-event-${proposalId}`
-    } else {
+    } else if (proposal.editionId) {
       // Format: {eventId}-{editionId}
       groupKey = `${proposal.eventId}-${proposal.editionId}`
+    } else {
+      // Format: {eventId}-null (propositions sans editionId)
+      groupKey = `${proposal.eventId}-null`
     }
 
     navigate(`/proposals/group/${groupKey}`)
