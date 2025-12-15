@@ -39,8 +39,10 @@ import {
   createConsoleLogger,
   ConnectionManager,
   DatabaseManager,
-  PrismaClientType
+  PrismaClientType,
+  MeilisearchMatchingConfig
 } from '@data-agents/agent-framework'
+import { settingsService } from '../../config/settings'
 import { zonedTimeToUtc } from 'date-fns-tz'
 import { ExtractedEventData, ExtractedRace } from './extractors/types'
 
@@ -642,17 +644,28 @@ export async function createProposalFromSlack(
     // 2. Récupérer la connexion à la base source via ConnectionManager
     const sourceDb = await getSourceDatabase()
 
-    // 3. Effectuer le matching
+    // 3. Préparer la config de matching avec Meilisearch si disponible
+    let meilisearchConfig: MeilisearchMatchingConfig | undefined
+    if (await settingsService.isMeilisearchConfigured()) {
+      const url = await settingsService.getMeilisearchUrl()
+      const apiKey = await settingsService.getMeilisearchApiKey()
+      if (url && apiKey) {
+        meilisearchConfig = { url, apiKey }
+        logger.info('Meilisearch configured for matching')
+      }
+    }
+
+    // 4. Effectuer le matching
     const matchResult = await matchEvent(
       matchInput,
       sourceDb,
-      DEFAULT_MATCHING_CONFIG,
+      { ...DEFAULT_MATCHING_CONFIG, meilisearch: meilisearchConfig },
       logger
     )
 
     logger.info(`Match result: ${matchResult.type}`, { confidence: matchResult.confidence })
 
-    // 4. Récupérer l'agent Slack pour l'ID (par agentType, pas par nom)
+    // 5. Récupérer l'agent Slack pour l'ID (par agentType, pas par nom)
     const agents = await prisma.agent.findMany({
       where: {
         config: {
@@ -671,7 +684,7 @@ export async function createProposalFromSlack(
       }
     }
 
-    // 5. Déterminer le type de Proposal
+    // 6. Déterminer le type de Proposal
     let proposalType: ProposalType
     let changes: any
     let confidence: number

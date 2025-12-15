@@ -31,7 +31,8 @@ export {
   defaultLogger,
   RaceMatchInput,
   DbRace,
-  RaceMatchResult
+  RaceMatchResult,
+  MeilisearchMatchingConfig
 } from './types'
 
 // Stopwords and keywords

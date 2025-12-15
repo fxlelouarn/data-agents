@@ -1,9 +1,9 @@
 /**
  * Wrapper de matching pour l'agent FFA
- * 
+ *
  * Ce module fait le lien entre les types FFA et le service de matching mutualisé.
  * Le code de matching a été déplacé dans @data-agents/agent-framework.
- * 
+ *
  * @see packages/agent-framework/src/services/event-matching/
  */
 
@@ -17,7 +17,8 @@ import {
   EventMatchResult,
   MatchingLogger,
   RaceMatchInput,
-  DbRace
+  DbRace,
+  MeilisearchMatchingConfig
 } from '@data-agents/agent-framework'
 
 /**
@@ -103,36 +104,40 @@ function ffaToEventMatchResult(matchResult: MatchResult): EventMatchResult {
 
 /**
  * Match une compétition FFA avec un événement Miles Republic existant
- * 
+ *
  * Cette fonction est un wrapper autour du service de matching mutualisé.
  * Elle convertit les types FFA vers les types génériques et inversement.
+ *
+ * @param meilisearchConfig - Configuration optionnelle pour utiliser Meilisearch
  */
 export async function matchCompetition(
   competition: FFACompetitionDetails,
   sourceDb: any,
   config: FFAScraperConfig,
-  logger: any
+  logger: any,
+  meilisearchConfig?: MeilisearchMatchingConfig
 ): Promise<MatchResult> {
   const input = ffaToMatchInput(competition)
   const adaptedLogger = adaptLogger(logger)
-  
+
   const result = await matchEvent(
     input,
     sourceDb,
     {
       similarityThreshold: config.similarityThreshold,
       distanceTolerancePercent: config.distanceTolerancePercent,
-      confidenceBase: config.confidenceBase
+      confidenceBase: config.confidenceBase,
+      meilisearch: meilisearchConfig
     },
     adaptedLogger
   )
-  
+
   return matchResultToFFA(result)
 }
 
 /**
  * Match des courses FFA avec des courses Miles Republic existantes
- * 
+ *
  * @deprecated Utiliser matchRaces de @data-agents/agent-framework directement
  */
 export function matchRacesByDistanceAndName(
@@ -145,16 +150,16 @@ export function matchRacesByDistanceAndName(
   unmatched: FFARace[]
 } {
   const adaptedLogger = adaptLogger(logger)
-  
+
   // Convertir FFARace en RaceMatchInput
   const raceInputs: RaceMatchInput[] = ffaRaces.map(r => ({
     name: r.name,
     distance: r.distance ? r.distance / 1000 : undefined, // FFA stocke en mètres, convertir en km
     startTime: r.startTime
   }))
-  
+
   const result = matchRacesGeneric(raceInputs, dbRaces, adaptedLogger, tolerancePercent)
-  
+
   // Reconvertir les résultats vers le format FFA
   return {
     matched: result.matched.map(m => {
@@ -179,9 +184,9 @@ export function calculateAdjustedConfidence(
 ): number {
   const hasOrganizerInfo = !!(competition.organizerEmail || competition.organizerWebsite)
   const raceCount = competition.races.length
-  
+
   const eventMatchResult = ffaToEventMatchResult(matchResult)
-  
+
   return calculateAdjustedConfidenceGeneric(
     baseConfidence,
     eventMatchResult,
@@ -201,9 +206,9 @@ export function calculateNewEventConfidence(
   const hasOrganizerInfo = !!(competition.organizerEmail || competition.organizerWebsite)
   const raceCount = competition.races.length
   const eventLevel = competition.competition.level
-  
+
   const eventMatchResult = ffaToEventMatchResult(matchResult)
-  
+
   return calculateNewEventConfidenceGeneric(
     baseConfidence,
     eventMatchResult,
