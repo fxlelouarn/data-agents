@@ -6,6 +6,7 @@ import { requireAuth, optionalAuth } from '../middleware/auth.middleware'
 import pLimit from 'p-limit'
 import type { Proposal, ProposalApplication, Prisma } from '@data-agents/database'
 import { notifyProposalValidatedById } from '../services/slack/SlackNotificationService'
+import { settingsService } from '../config/settings'
 
 const router = Router()
 const db = getDatabaseServiceSync()
@@ -2438,7 +2439,18 @@ router.get('/:id/check-existing-event', [
   const dbManager = DatabaseManager.getInstance(logger)
   const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
 
-  // 4. Appeler matchEvent
+  // 4. Préparer la config de matching avec Meilisearch si disponible
+  let meilisearchConfig: { url: string; apiKey: string; indexName?: string } | undefined
+  if (await settingsService.isMeilisearchConfigured()) {
+    const url = await settingsService.getMeilisearchUrl()
+    const apiKey = await settingsService.getMeilisearchApiKey()
+    if (url && apiKey) {
+      meilisearchConfig = { url, apiKey }
+      logger.info('Meilisearch configured for matching')
+    }
+  }
+
+  // 5. Appeler matchEvent
   const result = await matchEvent(
     {
       eventName,
@@ -2448,11 +2460,11 @@ router.get('/:id/check-existing-event', [
       editionYear: parseInt(editionData.year)
     },
     sourceDb,
-    { similarityThreshold },
+    { similarityThreshold, meilisearch: meilisearchConfig },
     logger
   )
 
-  // 5. Construire la réponse
+  // 6. Construire la réponse
   const proposalData = {
     eventName,
     eventCity,
@@ -2465,7 +2477,7 @@ router.get('/:id/check-existing-event', [
     return res.json({ hasMatch: false, proposalData })
   }
 
-  // 6. Vérifier si l'événement trouvé est différent des rejectedMatches
+  // 7. Vérifier si l'événement trouvé est différent des rejectedMatches
   // et a un score supérieur au meilleur rejectedMatch
   const justification = proposal.justification as any[] | null
   const rejectedMatchesJustif = justification?.find(

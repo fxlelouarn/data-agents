@@ -1,6 +1,6 @@
 /**
  * Types for the Event Matching Service
- * 
+ *
  * These types are generic and not specific to any data source (FFA, Slack, etc.)
  */
 
@@ -27,7 +27,7 @@ export interface EventMatchInput {
 export interface EventMatchResult {
   /** Type of match found */
   type: 'NO_MATCH' | 'FUZZY_MATCH' | 'EXACT_MATCH'
-  
+
   /** Matched event details (if found) */
   event?: {
     id: number | string
@@ -36,17 +36,17 @@ export interface EventMatchResult {
     slug?: string
     similarity: number
   }
-  
+
   /** Matched edition details (if found) */
   edition?: {
     id: number | string
     year: string
     startDate?: Date
   }
-  
+
   /** Overall confidence score (0-1) */
   confidence: number
-  
+
   /** Top 3 rejected matches for NEW_EVENT proposals */
   rejectedMatches?: RejectedMatch[]
 }
@@ -70,6 +70,18 @@ export interface RejectedMatch {
 }
 
 /**
+ * Configuration for Meilisearch integration
+ */
+export interface MeilisearchMatchingConfig {
+  /** Meilisearch server URL */
+  url: string
+  /** Meilisearch API key (search key) */
+  apiKey: string
+  /** Index name (default: 'fra_events') */
+  indexName?: string
+}
+
+/**
  * Configuration for the matching algorithm
  */
 export interface MatchingConfig {
@@ -79,6 +91,8 @@ export interface MatchingConfig {
   distanceTolerancePercent?: number
   /** Base confidence for proposals (default: 0.9) */
   confidenceBase?: number
+  /** Optional Meilisearch configuration for improved search */
+  meilisearch?: MeilisearchMatchingConfig
 }
 
 /**

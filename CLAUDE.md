@@ -4,6 +4,84 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-15 - Feature: Intégration Meilisearch dans le Matcher d'événements ✅
+
+**Fonctionnalité ajoutée** : Le système de matching d'événements utilise maintenant Meilisearch pour trouver les candidats, avec fallback automatique vers SQL.
+
+#### Comportement
+
+1. Si Meilisearch est configuré → recherche via Meilisearch + enrichissement éditions via Prisma
+2. Si Meilisearch échoue ou retourne 0 résultats → fallback vers SQL 3 passes
+3. Si Meilisearch non configuré → SQL directement (comportement identique à avant)
+
+#### Configuration
+
+**API (SlackProposalService, check-existing-event)** :
+- Via `settingsService` : `meilisearchUrl` et `meilisearchApiKey`
+
+**Agents (FFAScraperAgent)** :
+- Variables d'environnement : `MEILISEARCH_URL` et `MEILISEARCH_API_KEY`
+
+#### Fichiers modifiés
+
+- `packages/agent-framework/src/services/event-matching/types.ts` : Ajout interface `MeilisearchMatchingConfig`
+- `packages/agent-framework/src/services/event-matching/event-matcher.ts` : Fonctions `findCandidatesViaMeilisearch()` et `enrichCandidatesWithEditions()`
+- `packages/agent-framework/src/services/event-matching/index.ts` : Export du nouveau type
+- `apps/api/src/services/slack/SlackProposalService.ts` : Passe config Meilisearch à `matchEvent()`
+- `apps/api/src/routes/proposals.ts` : Endpoint `check-existing-event` utilise Meilisearch
+- `apps/agents/src/ffa/matcher.ts` : `matchCompetition()` accepte config Meilisearch
+- `apps/agents/src/FFAScraperAgent.ts` : Lit config depuis env vars
+
+#### Documentation
+
+- `docs/feature-meilisearch-matching/PLAN.md` : Plan d'implémentation
+- `docs/feature-meilisearch-matching/IMPLEMENTATION.md` : Détails techniques
+- `docs/feature-meilisearch-matching/STATUS.md` : Statut de progression
+
+---
+
+### 2025-12-15 - Fix: Apostrophes dans normalizeString() cassent le matching ✅
+
+**Problème résolu** : Les noms d'événements avec apostrophe (ex: "Marathon du lac d'Annecy") ne matchaient pas correctement car l'apostrophe était conservée, créant des mots comme "d'annecy" qui ne matchent pas avec "annecy".
+
+#### Symptômes
+
+1. Proposition NEW_EVENT pour "Brooks Marathon Annecy 2026"
+2. L'événement "Marathon du lac d'Annecy" (id 2642) existe en base
+3. Le matching ne trouve PAS cet événement (ou avec un score très bas)
+4. Résultat : Proposition de création d'un doublon
+
+#### Cause
+
+Dans `normalizeString()`, les apostrophes étaient conservées :
+- "Marathon du lac d'Annecy" → "marathon du lac d'annecy"
+- Après `removeStopwords` : "marathon lac d'annecy"
+- Le mot "d'annecy" ≠ "annecy" pour fuse.js
+
+```typescript
+// AVANT (bug)
+.replace(/[''‛]/g, "'")  // Garde l'apostrophe
+.replace(/[^\w\s']/g, ' ')
+
+// APRÈS (fix)
+.replace(/[''‛]/g, ' ')  // Apostrophe → espace
+.replace(/[^\w\s]/g, ' ')
+```
+
+#### Solution
+
+Modifier `normalizeString()` pour remplacer les apostrophes par des espaces :
+- "Marathon du lac d'Annecy" → "marathon du lac d annecy"
+- Après `removeStopwords` : "marathon lac annecy"
+- Maintenant "annecy" matche avec "annecy" ✅
+
+#### Fichiers modifiés
+
+- Backend : `packages/agent-framework/src/services/event-matching/event-matcher.ts`
+  - `normalizeString()` : Apostrophe → espace au lieu de conserver
+
+---
+
 ### 2025-12-14 - Fix: ExistingEventAlert affichée même pour rejectedMatches ✅
 
 **Problème résolu** : L'alerte "un événement correspondant existe maintenant" s'affichait même quand l'événement trouvé était déjà dans les `rejectedMatches` de la proposition ou avait un score inférieur.

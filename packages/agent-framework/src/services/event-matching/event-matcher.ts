@@ -22,8 +22,10 @@ import {
   defaultLogger,
   RaceMatchInput,
   DbRace,
-  RaceMatchResult
+  RaceMatchResult,
+  MeilisearchMatchingConfig
 } from './types'
+import { getMeilisearchService } from '@data-agents/database'
 
 /**
  * Default matching configuration
@@ -69,13 +71,15 @@ export async function matchEvent(
     }
     logger.info(`  Normalized: name="${searchName}", city="${searchCity}"`)
 
-    // 2. Find candidate events via SQL
+    // 2. Find candidate events via Meilisearch (if configured) or SQL
     const candidates = await findCandidateEvents(
       searchName,
       searchCity,
       searchDepartment,
       searchDate,
-      sourceDb
+      sourceDb,
+      config.meilisearch,
+      logger
     )
 
     logger.info(`  Found ${candidates.length} candidates`)
@@ -582,16 +586,152 @@ export function calculateNewEventConfidence(
 // Internal helpers
 // ============================================================================
 
+// ============================================================================
+// Meilisearch integration
+// ============================================================================
+
+/**
+ * Candidate event structure returned by search
+ */
+interface CandidateEvent {
+  id: string
+  name: string
+  city: string
+  slug?: string
+  countrySubdivisionDisplayCodeLevel2: string
+  editions?: Array<{ id: number | string; year: string; startDate: Date | null }>
+}
+
+/**
+ * Find candidates via Meilisearch
+ * Returns empty array on error (triggers SQL fallback)
+ */
+async function findCandidatesViaMeilisearch(
+  searchQuery: string,
+  config: MeilisearchMatchingConfig,
+  logger: MatchingLogger
+): Promise<Array<{ id: string; name: string; city: string; slug?: string; countrySubdivisionDisplayCodeLevel2: string }>> {
+  try {
+    const meilisearch = getMeilisearchService(config.url, config.apiKey)
+
+    const result = await meilisearch.searchEvents({
+      query: searchQuery,
+      limit: 100,
+      attributesToRetrieve: [
+        'objectID', 'eventName', 'eventCity',
+        'eventCountrySubdivisionDisplayCodeLevel2', 'eventSlug'
+      ]
+    })
+
+    logger.info(`[MEILISEARCH] Found ${result.hits.length} candidates for "${searchQuery}"`)
+
+    return result.hits.map((hit: any) => ({
+      id: String(hit.objectID),
+      name: hit.eventName || hit.name || '',
+      city: hit.eventCity || hit.city || '',
+      slug: hit.eventSlug || hit.slug,
+      countrySubdivisionDisplayCodeLevel2: hit.eventCountrySubdivisionDisplayCodeLevel2 || ''
+    }))
+  } catch (error) {
+    logger.warn(`[MEILISEARCH] Search failed: ${error}. Falling back to SQL.`)
+    return []
+  }
+}
+
+/**
+ * Enrich Meilisearch candidates with editions from Prisma
+ */
+async function enrichCandidatesWithEditions(
+  candidates: Array<{ id: string; name: string; city: string; slug?: string; countrySubdivisionDisplayCodeLevel2: string }>,
+  date: Date,
+  sourceDb: any,
+  logger: MatchingLogger
+): Promise<CandidateEvent[]> {
+  if (candidates.length === 0) return []
+
+  // Convert string IDs to numbers for Prisma query
+  const eventIds = candidates
+    .map(c => parseInt(c.id, 10))
+    .filter(id => !isNaN(id))
+
+  if (eventIds.length === 0) {
+    logger.warn('[MEILISEARCH] No valid event IDs to enrich')
+    return candidates.map(c => ({ ...c, editions: [] }))
+  }
+
+  // Date range for edition search (±90 days)
+  const startDate = new Date(date)
+  startDate.setDate(startDate.getDate() - 90)
+  const endDate = new Date(date)
+  endDate.setDate(endDate.getDate() + 90)
+
+  try {
+    const editions = await sourceDb.edition.findMany({
+      where: {
+        eventId: { in: eventIds },
+        startDate: { gte: startDate, lte: endDate }
+      },
+      select: { id: true, eventId: true, year: true, startDate: true }
+    })
+
+    logger.debug(`[MEILISEARCH] Fetched ${editions.length} editions for ${candidates.length} candidates`)
+
+    // Group editions by eventId
+    const editionsByEventId = new Map<string, any[]>()
+    for (const ed of editions) {
+      const key = String(ed.eventId)
+      if (!editionsByEventId.has(key)) {
+        editionsByEventId.set(key, [])
+      }
+      editionsByEventId.get(key)!.push({
+        id: ed.id,
+        year: ed.year,
+        startDate: ed.startDate
+      })
+    }
+
+    // Enrich candidates with their editions
+    return candidates.map(c => ({
+      ...c,
+      editions: editionsByEventId.get(c.id) || []
+    }))
+  } catch (error) {
+    logger.error(`[MEILISEARCH] Failed to enrich candidates with editions: ${error}`)
+    return candidates.map(c => ({ ...c, editions: [] }))
+  }
+}
+
+// ============================================================================
+// SQL candidate search (fallback)
+// ============================================================================
+
 /**
  * Find candidate events by name + city + time period
+ * Uses Meilisearch if configured, falls back to SQL otherwise
  */
 async function findCandidateEvents(
   name: string,
   city: string,
   department: string | undefined,
   date: Date,
-  sourceDb: any
-): Promise<Array<{ id: string, name: string, city: string, slug?: string, countrySubdivisionDisplayCodeLevel2: string, editions?: any[] }>> {
+  sourceDb: any,
+  meilisearchConfig?: MeilisearchMatchingConfig,
+  logger: MatchingLogger = defaultLogger
+): Promise<CandidateEvent[]> {
+  // Try Meilisearch first if configured
+  if (meilisearchConfig) {
+    const searchQuery = `${name} ${city}`.trim()
+    const msCandidates = await findCandidatesViaMeilisearch(searchQuery, meilisearchConfig, logger)
+
+    if (msCandidates.length > 0) {
+      // Enrich with editions from Prisma
+      const enriched = await enrichCandidatesWithEditions(msCandidates, date, sourceDb, logger)
+      logger.info(`[MATCHER] Using ${enriched.length} Meilisearch candidates (enriched with editions)`)
+      return enriched
+    }
+
+    logger.info(`[MATCHER] Meilisearch returned 0 candidates, falling back to SQL`)
+  }
   try {
     const startDate = new Date(date)
     startDate.setDate(startDate.getDate() - 90)
@@ -825,14 +965,20 @@ export function removeEditionNumber(name: string): string {
 
 /**
  * Normalize string for comparison
+ *
+ * FIX 2025-12-15: Les apostrophes sont maintenant remplacées par des espaces
+ * au lieu d'être conservées. Cela permet de matcher "annecy" avec "d'annecy"
+ * car "d'annecy" devient "d annecy" puis "annecy" après removeStopwords.
+ *
+ * Exemple: "Marathon du lac d'Annecy" → "marathon du lac d annecy"
  */
 export function normalizeString(str: string): string {
   return str
     .toLowerCase()
     .normalize('NFD')
     .replace(/[\u0300-\u036f]/g, '')
-    .replace(/[''‛]/g, "'")
-    .replace(/[^\w\s']/g, ' ')
+    .replace(/[''‛]/g, ' ')  // FIX: Apostrophe → espace (était "'")
+    .replace(/[^\w\s]/g, ' ')
     .replace(/\s+/g, ' ')
     .trim()
 }

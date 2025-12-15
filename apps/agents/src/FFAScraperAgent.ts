@@ -8,7 +8,7 @@
  */
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
 export const FFA_SCRAPER_AGENT_VERSION = AGENT_VERSIONS.FFA_SCRAPER_AGENT
@@ -42,6 +42,7 @@ export class FFAScraperAgent extends BaseAgent {
   private sourceDb: any
   private stateService: IAgentStateService
   private prisma: typeof prisma
+  private meilisearchConfig?: MeilisearchMatchingConfig
 
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
@@ -1737,6 +1738,16 @@ export class FFAScraperAgent extends BaseAgent {
         sourceDatabase: config.sourceDatabase
       })
 
+      // Initialiser la config Meilisearch depuis les variables d'environnement
+      const meilisearchUrl = process.env.MEILISEARCH_URL
+      const meilisearchApiKey = process.env.MEILISEARCH_API_KEY
+      if (meilisearchUrl && meilisearchApiKey) {
+        this.meilisearchConfig = { url: meilisearchUrl, apiKey: meilisearchApiKey }
+        context.logger.info('🔍 Meilisearch configuré pour le matching')
+      } else {
+        context.logger.debug('Meilisearch non configuré, utilisation du fallback SQL')
+      }
+
       // Charger la progression
       const progress = await this.loadProgress()
       context.logger.info('📊 Progression chargée', { progress })
@@ -1767,7 +1778,8 @@ export class FFAScraperAgent extends BaseAgent {
               competition,
               this.sourceDb,
               config,
-              this.logger
+              this.logger,
+              this.meilisearchConfig
             )
 
             const proposals = await this.createProposalsForCompetition(
