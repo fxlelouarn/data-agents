@@ -538,44 +538,41 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
         <Table size="small">
           <TableHead sx={{ bgcolor: 'background.paper' }}>
             <TableRow>
-              <TableCell sx={{ width: '10%' }}>Statut</TableCell>
-              <TableCell sx={{ width: '20%' }}>Champ</TableCell>
-              {showCurrentValue && <TableCell sx={{ width: '30%' }}>Valeur actuelle</TableCell>}
-              <TableCell sx={{
-                width: showDeleteAction
-                  ? (showCurrentValue ? '30%' : '60%')
-                  : (showCurrentValue ? '40%' : '70%'),
-              }}>Valeur proposée</TableCell>
-              {showDeleteAction && <TableCell sx={{ width: '10%' }}>Action</TableCell>}
+              <TableCell sx={{ width: '25%' }}>Champ</TableCell>
+              {showCurrentValue && <TableCell sx={{ width: '35%' }}>Valeur actuelle</TableCell>}
+              <TableCell sx={{ width: showCurrentValue ? '40%' : '75%' }}>
+                Valeur proposée
+              </TableCell>
             </TableRow>
           </TableHead>
           <TableBody>
             {/* Courses consolidées depuis workingGroup */}
-            {consolidatedRaces.map((race) => {
+            {consolidatedRaces.map((race, raceIdx) => {
               const isDeleted = isRaceDeleted(race.raceId)
               const isExistingUnchanged = (race.fields as any)._isExistingUnchanged === true // ✅ Course existante sans changement
+              const isNewRace = race.raceId.startsWith('new-')
+              const raceName = getDisplayValue(race, 'name') || `Course ${raceIdx + 1}`
+              const isFirstRace = raceIdx === 0
 
-              return RACE_FIELDS.map((field, fieldIdx) => {
-                const displayValue = getDisplayValue(race, field.key)
-                const isFirstRow = fieldIdx === 0
-                const isNewRace = race.raceId.startsWith('new-')
-                const isModified = isFieldModified(race.raceId, field.key) // ✅ Badge Modifié
-                const hasChange = hasProposedChange(race, field.key)      // ✅ Changement proposé
-
-                // ✅ Valeur actuelle = originalFields (vraie valeur de la base)
-                const currentValue = isNewRace ? '-' : race.originalFields[field.key]
-
-                return (
+              return (
+                <React.Fragment key={race.raceId}>
+                  {/* Header de la course avec séparation visuelle */}
                   <TableRow
-                    key={`${race.raceId}-${field.key}`}
-                    sx={{
-                      opacity: isDeleted ? 0.4 : (isBlockValidated ? 0.6 : 1),
-                      backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
-                      textDecoration: isDeleted ? 'line-through' : 'none'
-                    }}
+                    sx={(theme) => ({
+                      bgcolor: isDeleted
+                        ? (theme.palette.mode === 'dark' ? 'rgba(211, 47, 47, 0.15)' : 'error.50')
+                        : isNewRace
+                          ? (theme.palette.mode === 'dark' ? 'rgba(46, 125, 50, 0.15)' : 'success.50')
+                          : (theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'grey.100'),
+                      borderTop: isFirstRace ? 'none' : '3px solid',
+                      borderTopColor: 'divider'
+                    })}
                   >
-                    {isFirstRow && (
-                      <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
+                    <TableCell
+                      colSpan={showCurrentValue ? 3 : 2}
+                      sx={{ py: 1.5 }}
+                    >
+                      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1.5 }}>
                         <Chip
                           label={
                             isDeleted ? "À supprimer"
@@ -590,60 +587,80 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                           }
                           variant="outlined"
                         />
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      <Typography
-                        variant="body2"
-                        fontWeight={hasChange ? 'bold' : 'normal'}
-                        sx={{ fontStyle: isExistingUnchanged ? 'italic' : 'normal' }}
-                      >
-                        {field.label}
-                      </Typography>
-                    </TableCell>
-                    {showCurrentValue && (
-                      <TableCell>
-                        <Typography variant="body2" color="text.secondary">
-                          {field.format ? field.format(currentValue) : currentValue || '-'}
+                        <Typography variant="subtitle2" fontWeight="bold">
+                          {raceName}
                         </Typography>
-                      </TableCell>
-                    )}
-                    <TableCell>
-                      {isExistingUnchanged ? (
-                        <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                          Aucun changement
-                        </Typography>
-                      ) : (
-                        renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format, race)
-                      )}
+                        {showDeleteAction && onDeleteRace && (
+                          <Tooltip title={
+                            disabled || isBlockValidated
+                              ? "Suppression désactivée"
+                              : (isDeleted ? "Annuler la suppression" : "Supprimer la course")
+                          }>
+                            <span style={{ marginLeft: 'auto' }}>
+                              <IconButton
+                                size="small"
+                                disabled={disabled || isBlockValidated}
+                                onClick={() => onDeleteRace(race.raceId)}
+                                color={isDeleted ? "default" : "error"}
+                                sx={{
+                                  opacity: (disabled || isBlockValidated) ? 0.3 : 0.7,
+                                  '&:hover': { opacity: 1 }
+                                }}
+                              >
+                                {isDeleted ? <UndoIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
+                              </IconButton>
+                            </span>
+                          </Tooltip>
+                        )}
+                      </Box>
                     </TableCell>
-                    {showDeleteAction && isFirstRow && (
-                      <TableCell rowSpan={RACE_FIELDS.length} sx={{ verticalAlign: 'top' }}>
-                        <Tooltip title={
-                          disabled || isBlockValidated
-                            ? "Suppression désactivée"
-                            : (isDeleted ? "Annuler la suppression" : "Supprimer la course")
-                        }>
-                          <span>
-                            <IconButton
-                              size="small"
-                              disabled={disabled || isBlockValidated || !onDeleteRace}
-                              onClick={() => onDeleteRace && onDeleteRace(race.raceId)}
-                              color={isDeleted ? "default" : "error"}
-                              sx={{
-                                opacity: (disabled || isBlockValidated || !onDeleteRace) ? 0.3 : 0.7,
-                                '&:hover': { opacity: 1 }
-                              }}
-                            >
-                              {isDeleted ? <UndoIcon fontSize="small" /> : <DeleteIcon fontSize="small" />}
-                            </IconButton>
-                          </span>
-                        </Tooltip>
-                      </TableCell>
-                    )}
                   </TableRow>
-                )
-              })
+                  {/* Champs de la course (incluant le nom pour édition) */}
+                  {RACE_FIELDS.map((field) => {
+                    const displayValue = getDisplayValue(race, field.key)
+                    const isModified = isFieldModified(race.raceId, field.key)
+                    const hasChange = hasProposedChange(race, field.key)
+                    const currentValue = isNewRace ? '-' : race.originalFields[field.key]
+
+                    return (
+                      <TableRow
+                        key={`${race.raceId}-${field.key}`}
+                        sx={{
+                          opacity: isDeleted ? 0.4 : (isBlockValidated ? 0.6 : 1),
+                          backgroundColor: isBlockValidated ? 'action.hover' : 'inherit',
+                          textDecoration: isDeleted ? 'line-through' : 'none'
+                        }}
+                      >
+                        <TableCell>
+                          <Typography
+                            variant="body2"
+                            fontWeight={hasChange ? 'bold' : 'normal'}
+                            sx={{ fontStyle: isExistingUnchanged ? 'italic' : 'normal' }}
+                          >
+                            {field.label}
+                          </Typography>
+                        </TableCell>
+                        {showCurrentValue && (
+                          <TableCell>
+                            <Typography variant="body2" color="text.secondary">
+                              {field.format ? field.format(currentValue) : currentValue || '-'}
+                            </Typography>
+                          </TableCell>
+                        )}
+                        <TableCell>
+                          {isExistingUnchanged ? (
+                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
+                              Aucun changement
+                            </Typography>
+                          ) : (
+                            renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format, race)
+                          )}
+                        </TableCell>
+                      </TableRow>
+                    )
+                  })}
+                </React.Fragment>
+              )
             })}
           </TableBody>
         </Table>

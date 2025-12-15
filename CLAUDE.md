@@ -790,6 +790,39 @@ function MyComponent() {
 }
 ```
 
+### ⚠️ IMPORTANT - Support du Dark Mode
+
+**Le dashboard supporte le dark mode. Toujours utiliser des couleurs qui s'adaptent au thème.**
+
+- ❌ Ne pas utiliser : `grey.100`, `error.50`, `success.50` (couleurs fixes qui ne fonctionnent qu'en light mode)
+- ✅ Utiliser : `action.hover`, `action.selected`, `divider`, ou des couleurs avec alpha
+
+**Exemple de background adaptatif** :
+```tsx
+// ❌ INCORRECT - Mauvais contraste en dark mode
+<TableRow sx={{ bgcolor: 'grey.100' }}>
+
+// ✅ CORRECT - Utiliser theme.palette.mode pour adapter
+<TableRow
+  sx={(theme) => ({
+    bgcolor: theme.palette.mode === 'dark'
+      ? 'rgba(255, 255, 255, 0.08)'  // Léger blanc transparent en dark
+      : 'grey.100'                    // Gris clair en light
+  })}
+>
+
+// ✅ CORRECT - Utiliser les couleurs sémantiques MUI
+<TableRow sx={{ bgcolor: 'action.hover' }}>
+```
+
+**Couleurs adaptatives recommandées** :
+| Usage | Light mode | Dark mode |
+|-------|------------|-----------|
+| Background subtil | `grey.100` | `rgba(255, 255, 255, 0.08)` |
+| Succès subtil | `success.50` | `rgba(46, 125, 50, 0.15)` |
+| Erreur subtil | `error.50` | `rgba(211, 47, 47, 0.15)` |
+| Info subtil | `info.50` | `rgba(2, 136, 209, 0.15)` |
+
 ## Architecture du projet
 
 ```
