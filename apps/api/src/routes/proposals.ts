@@ -1339,8 +1339,39 @@ router.post('/validate-block-group', requireAuth, [
   const approvedBlocks = { [block]: true }
 
   // ✅ PHASE 1: Construire le payload final (agent + user merged)
+  // ✅ FIX 2025-12-15: Fusionner les changes de TOUTES les propositions du groupe, pas juste la première
+  const baseChanges: Record<string, any> = {}
+  for (const proposal of proposals) {
+    const proposalChanges = proposal.changes as Record<string, any>
+    Object.entries(proposalChanges).forEach(([key, value]) => {
+      // Pour les tableaux (racesToUpdate, racesExisting, racesToAdd), fusionner
+      if (key === 'racesToUpdate' || key === 'racesExisting' || key === 'racesToAdd') {
+        const existingArr = baseChanges[key]?.new || baseChanges[key] || []
+        const newArr = value?.new || value || []
+        if (Array.isArray(existingArr) && Array.isArray(newArr)) {
+          // Fusionner en évitant les doublons par raceId
+          const merged = [...existingArr]
+          const existingRaceIds = new Set(existingArr.map((r: any) => r.raceId?.toString()))
+          newArr.forEach((race: any) => {
+            if (race.raceId && !existingRaceIds.has(race.raceId.toString())) {
+              merged.push(race)
+            } else if (!race.raceId) {
+              merged.push(race) // Nouvelles courses sans raceId
+            }
+          })
+          baseChanges[key] = value?.new ? { new: merged, confidence: value.confidence || 1 } : merged
+        } else {
+          baseChanges[key] = value
+        }
+      } else if (!(key in baseChanges)) {
+        // Pour les autres champs, prendre la première valeur trouvée
+        baseChanges[key] = value
+      }
+    })
+  }
+
+  // Garder une référence à la première proposition pour les logs et l'agentId
   const firstProposal = proposals[0]
-  const baseChanges = { ...firstProposal.changes as Record<string, any> }
 
   // ✅ FIX: Lire raceEdits depuis 'changes' envoyé par le frontend
   // Le frontend envoie déjà userModifiedRaceChanges dans changes.raceEdits
@@ -1365,18 +1396,22 @@ router.post('/validate-block-group', requireAuth, [
   if (block === 'races' && Object.keys(raceEdits).length > 0) {
     const racesToDelete: Array<{ raceId: number | string, raceName: string }> = []
 
-    // Essayer d'extraire existingRaces depuis les changes (racesToUpdate)
-    const existingRacesFromChanges = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
+    // Essayer d'extraire existingRaces depuis les changes (racesToUpdate OU racesExisting)
+    const racesToUpdateArr = baseChanges.racesToUpdate?.new || baseChanges.racesToUpdate || []
+    const racesExistingArr = baseChanges.racesExisting?.new || baseChanges.racesExisting || []
+    const existingRacesFromChanges = [
+      ...(Array.isArray(racesToUpdateArr) ? racesToUpdateArr : []),
+      ...(Array.isArray(racesExistingArr) ? racesExistingArr : [])
+    ]
 
     // ✅ FIX 2025-12-11: Construire un index par raceId pour lookup rapide
+    // ✅ FIX 2025-12-15: Inclure aussi racesExisting (propositions manuelles)
     const racesByRaceId: Record<string, any> = {}
-    if (Array.isArray(existingRacesFromChanges)) {
-      existingRacesFromChanges.forEach((race: any) => {
-        if (race.raceId) {
-          racesByRaceId[race.raceId.toString()] = race
-        }
-      })
-    }
+    existingRacesFromChanges.forEach((race: any) => {
+      if (race.raceId) {
+        racesByRaceId[race.raceId.toString()] = race
+      }
+    })
 
     Object.entries(raceEdits).forEach(([key, mods]: [string, any]) => {
       if (mods._deleted === true) {

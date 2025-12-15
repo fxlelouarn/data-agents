@@ -4,6 +4,38 @@ Ce document contient les règles et bonnes pratiques spécifiques au projet Data
 
 ## Changelog
 
+### 2025-12-15 - Fix: Fusion des courses lors de validation groupée ✅
+
+**Problème résolu** : Lors de la validation du bloc `races` pour des propositions groupées (même événement/édition), les courses à supprimer (`racesToDelete`) n'étaient pas toutes prises en compte car le backend ne fusionnait pas correctement les `changes` des différentes propositions.
+
+#### Symptômes
+
+1. Groupe de 2 propositions pour le même événement/édition
+2. Proposition A a `racesExisting` (9 courses), Proposition B a `racesToUpdate` (26 courses)
+3. Utilisateur supprime 20 courses et valide le bloc `races`
+4. Seulement 14 courses sont dans `racesToDelete` de l'application
+5. Résultat : 6 courses ne sont pas supprimées
+
+#### Cause
+
+Deux problèmes dans `apps/api/src/routes/proposals.ts` :
+
+1. **`baseChanges` prenait seulement la première proposition** : `const baseChanges = { ...firstProposal.changes }` au lieu de fusionner toutes les propositions
+2. **`racesByRaceId` ne cherchait que dans `racesToUpdate`** : Les courses de `racesExisting` (propositions manuelles) n'étaient pas indexées
+
+#### Solution
+
+1. Fusionner les `changes` de toutes les propositions du groupe (avec déduplication par `raceId`)
+2. Construire `existingRacesFromChanges` depuis `racesToUpdate` ET `racesExisting`
+
+#### Fichiers modifiés
+
+- Backend : `apps/api/src/routes/proposals.ts`
+  - Section "PHASE 1: Construire le payload final" : Fusion des changes de toutes les propositions
+  - Section "Construire racesToDelete" : Inclusion de `racesExisting` dans la recherche
+
+---
+
 ### 2025-12-15 - Feature: Intégration Meilisearch dans le Matcher d'événements ✅
 
 **Fonctionnalité ajoutée** : Le système de matching d'événements utilise maintenant Meilisearch pour trouver les candidats, avec fallback automatique vers SQL.
