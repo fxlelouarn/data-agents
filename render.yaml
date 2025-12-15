@@ -30,6 +30,10 @@ services:
         sync: false # À configurer manuellement dans Render Dashboard
       - key: MILES_REPUBLIC_DATABASE_DIRECT_URL
         sync: false # À configurer manuellement dans Render Dashboard
+      - key: MEILISEARCH_URL
+        sync: false # À configurer manuellement dans Render Dashboard
+      - key: MEILISEARCH_API_KEY
+        sync: false # À configurer manuellement dans Render Dashboard
       - key: FRONTEND_URL
         value: https://data-agents-dashboard.onrender.com
       - key: CORS_ORIGIN
