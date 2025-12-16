@@ -39,6 +39,10 @@ function loadAgentMetadata(): Record<string, AgentMetadata> {
     'slack-event-agent': {
       version: AGENT_VERSIONS.SLACK_EVENT_AGENT,
       description: `Agent qui traite les messages Slack @databot pour extraire et créer des propositions d'événements (v${AGENT_VERSIONS.SLACK_EVENT_AGENT})`
+    },
+    'duplicate-detection-agent': {
+      version: AGENT_VERSIONS.DUPLICATE_DETECTION_AGENT,
+      description: `Agent qui détecte automatiquement les événements doublons dans Miles Republic (v${AGENT_VERSIONS.DUPLICATE_DETECTION_AGENT})`
     }
   }
 }
@@ -69,6 +73,10 @@ function detectAgentType(name: string, config?: Record<string, any>): string | n
 
   if (lowerName.includes('slack')) {
     return 'SLACK_EVENT'
+  }
+
+  if (lowerName.includes('duplicate') || lowerName.includes('detection')) {
+    return 'DUPLICATE_DETECTION'
   }
 
   return null
@@ -170,7 +178,7 @@ export interface AvailableAgentInfo {
   /** Version actuelle */
   version: string
   /** Type d'agent (EXTRACTOR, VALIDATOR, etc.) */
-  agentType: 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER'
+  agentType: 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER' | 'ANALYZER'
   /** Schéma de configuration pour le formulaire dynamique */
   configSchema: ConfigSchema
 }
@@ -178,11 +186,12 @@ export interface AvailableAgentInfo {
 /**
  * Mapping des types d'agents vers leurs catégories
  */
-const agentTypeCategories: Record<string, 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER'> = {
+const agentTypeCategories: Record<string, 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER' | 'ANALYZER'> = {
   FFA_SCRAPER: 'EXTRACTOR',
   GOOGLE_SEARCH_DATE: 'EXTRACTOR',
   AUTO_VALIDATOR: 'VALIDATOR',
-  SLACK_EVENT: 'EXTRACTOR'
+  SLACK_EVENT: 'EXTRACTOR',
+  DUPLICATE_DETECTION: 'ANALYZER'
 }
 
 /**

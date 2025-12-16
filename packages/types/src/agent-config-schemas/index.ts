@@ -12,12 +12,14 @@ export { FFAScraperAgentConfigSchema } from './ffa-scraper.js'
 export { GoogleSearchDateAgentConfigSchema } from './google-search-date.js'
 export { AutoValidatorAgentConfigSchema } from './auto-validator.js'
 export { SlackEventAgentConfigSchema } from './slack-event.js'
+export { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 
 // Re-export pour accès par clé
 import { FFAScraperAgentConfigSchema } from './ffa-scraper.js'
 import { GoogleSearchDateAgentConfigSchema } from './google-search-date.js'
 import { AutoValidatorAgentConfigSchema } from './auto-validator.js'
 import { SlackEventAgentConfigSchema } from './slack-event.js'
+import { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 import type { ConfigSchema } from '../config.js'
 
 /**
@@ -27,5 +29,6 @@ export const AGENT_CONFIG_SCHEMAS: Record<string, ConfigSchema> = {
   FFA_SCRAPER: FFAScraperAgentConfigSchema,
   GOOGLE_SEARCH_DATE: GoogleSearchDateAgentConfigSchema,
   AUTO_VALIDATOR: AutoValidatorAgentConfigSchema,
-  SLACK_EVENT: SlackEventAgentConfigSchema
+  SLACK_EVENT: SlackEventAgentConfigSchema,
+  DUPLICATE_DETECTION: DuplicateDetectionAgentConfigSchema
 }
