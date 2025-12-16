@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { useParams, useNavigate } from 'react-router-dom'
+import { useParams, Link } from 'react-router-dom'
 import {
   Box,
   Typography,
@@ -7,202 +7,174 @@ import {
   CardContent,
   LinearProgress,
   Button,
+  Chip,
   List,
   ListItem,
   ListItemText,
-  Chip,
-  Alert,
-  Pagination,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogContentText,
+  DialogActions,
   FormControl,
   InputLabel,
   Select,
   MenuItem,
-  TextField,
-  Stack,
-  Dialog,
-  DialogTitle,
-  DialogContent,
-  DialogActions
+  Pagination,
 } from '@mui/material'
-import {
-  ArrowBack as ArrowBackIcon
-} from '@mui/icons-material'
-import { useAgent, useLogs } from '@/hooks/useApi'
+import { ArrowBack as ArrowBackIcon } from '@mui/icons-material'
+import { useQuery } from '@tanstack/react-query'
+import api from '@/services/api'
+
+const LOGS_PER_PAGE = 50
 
 const AgentLogs: React.FC = () => {
   const { id } = useParams<{ id: string }>()
-  const navigate = useNavigate()
-  const [page, setPage] = useState(1)
-  const [levelFilter, setLevelFilter] = useState('')
-  const [searchFilter, setSearchFilter] = useState('')
   const [selectedLog, setSelectedLog] = useState<any>(null)
-  const [logDetailDialogOpen, setLogDetailDialogOpen] = useState(false)
+  const [levelFilter, setLevelFilter] = useState<string>('ALL')
+  const [page, setPage] = useState(1)
 
-  const pageSize = 20
-  const offset = (page - 1) * pageSize
-
-  const { data: agentData, isLoading: agentLoading } = useAgent(id!)
-  const { data: logsData, isLoading: logsLoading } = useLogs(
-    {
-      agentId: id,
-      level: levelFilter ? levelFilter as any : undefined,
-      search: searchFilter || undefined
+  // Fetch agent info
+  const { data: agent, isLoading: agentLoading } = useQuery({
+    queryKey: ['agent', id],
+    queryFn: async () => {
+      const response = await api.get(`/agents/${id}`)
+      return response.data
     },
-    pageSize,
-    offset
-  )
+  })
 
-  const handleBackToAgent = () => {
-    navigate(`/agents/${id}`)
-  }
+  // Fetch all logs for this agent
+  const { data: logsData, isLoading: logsLoading } = useQuery({
+    queryKey: ['agent-logs', id, levelFilter],
+    queryFn: async () => {
+      const params = new URLSearchParams()
+      params.append('limit', '1000') // Get many logs
+      if (levelFilter !== 'ALL') {
+        params.append('level', levelFilter)
+      }
+      const response = await api.get(`/agents/${id}/logs?${params.toString()}`)
+      return response.data
+    },
+  })
+
+  const logs = logsData?.logs || []
+  const totalPages = Math.ceil(logs.length / LOGS_PER_PAGE)
+  const paginatedLogs = logs.slice((page - 1) * LOGS_PER_PAGE, page * LOGS_PER_PAGE)
 
   const handleLogClick = (log: any) => {
     setSelectedLog(log)
-    setLogDetailDialogOpen(true)
   }
 
-  const handleLogDetailClose = () => {
-    setLogDetailDialogOpen(false)
+  const handleCloseDialog = () => {
     setSelectedLog(null)
   }
 
-  const handlePageChange = (_event: React.ChangeEvent<unknown>, value: number) => {
-    setPage(value)
+  const getLevelColor = (level: string) => {
+    switch (level) {
+      case 'ERROR':
+        return 'error'
+      case 'WARN':
+        return 'warning'
+      case 'INFO':
+        return 'info'
+      case 'DEBUG':
+        return 'default'
+      default:
+        return 'default'
+    }
   }
 
-  const handleLevelFilterChange = (event: any) => {
-    setLevelFilter(event.target.value)
-    setPage(1) // Reset to first page when filtering
+  if (agentLoading) {
+    return <LinearProgress />
   }
 
-  const handleSearchChange = (event: React.ChangeEvent<HTMLInputElement>) => {
-    setSearchFilter(event.target.value)
-    setPage(1) // Reset to first page when searching
-  }
-
-  if (agentLoading) return <LinearProgress />
-
-  if (!agentData?.data) {
+  if (!agent) {
     return (
-      <Card>
-        <CardContent>
-          <Alert severity="error">Agent non trouvé</Alert>
-        </CardContent>
-      </Card>
+      <Box sx={{ p: 3 }}>
+        <Typography color="error">Agent non trouvé</Typography>
+      </Box>
     )
   }
 
-  const agent = agentData.data
-  const logs = logsData?.data || []
-  const totalLogs = logsData?.meta?.total || 0
-  const totalPages = Math.ceil(totalLogs / pageSize)
-
   return (
-    <Box>
-      {/* En-tête avec navigation */}
-      <Box sx={{ mb: 3 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', mb: 2 }}>
-          <Button
-            variant="outlined"
-            size="small"
-            startIcon={<ArrowBackIcon />}
-            onClick={handleBackToAgent}
-          >
-            Retour à l'agent
-          </Button>
-        </Box>
-
-        <Typography variant="h4" sx={{ fontWeight: 600 }}>
-          Logs - {agent.name}
-        </Typography>
+    <Box sx={{ p: 3 }}>
+      {/* Header */}
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 3 }}>
+        <Button
+          component={Link}
+          to={`/agents/${id}`}
+          startIcon={<ArrowBackIcon />}
+          variant="outlined"
+        >
+          Retour
+        </Button>
+        <Typography variant="h4">Logs de {agent.name}</Typography>
       </Box>
 
-      {/* Filtres */}
+      {/* Filters */}
       <Card sx={{ mb: 3 }}>
         <CardContent>
-          <Stack direction={{ xs: 'column', md: 'row' }} spacing={2} alignItems="center">
-            <FormControl size="small" sx={{ minWidth: 120 }}>
+          <Box sx={{ display: 'flex', gap: 2, alignItems: 'center' }}>
+            <FormControl size="small" sx={{ minWidth: 150 }}>
               <InputLabel>Niveau</InputLabel>
               <Select
                 value={levelFilter}
                 label="Niveau"
-                onChange={handleLevelFilterChange}
+                onChange={(e) => {
+                  setLevelFilter(e.target.value)
+                  setPage(1)
+                }}
               >
-                <MenuItem value="">Tous</MenuItem>
-                <MenuItem value="DEBUG">DEBUG</MenuItem>
-                <MenuItem value="INFO">INFO</MenuItem>
-                <MenuItem value="WARN">WARN</MenuItem>
+                <MenuItem value="ALL">Tous</MenuItem>
                 <MenuItem value="ERROR">ERROR</MenuItem>
+                <MenuItem value="WARN">WARN</MenuItem>
+                <MenuItem value="INFO">INFO</MenuItem>
+                <MenuItem value="DEBUG">DEBUG</MenuItem>
               </Select>
             </FormControl>
-
-            <TextField
-              size="small"
-              label="Rechercher dans les messages"
-              variant="outlined"
-              value={searchFilter}
-              onChange={handleSearchChange}
-              sx={{ flexGrow: 1, maxWidth: 400 }}
-            />
-
             <Typography variant="body2" color="text.secondary">
-              {totalLogs} log{totalLogs > 1 ? 's' : ''} au total
+              {logs.length} logs trouvés
             </Typography>
-          </Stack>
+          </Box>
         </CardContent>
       </Card>
 
-      {/* Liste des logs */}
+      {/* Logs list */}
       <Card>
         <CardContent>
           {logsLoading ? (
             <LinearProgress />
           ) : logs.length === 0 ? (
-            <Alert severity="info">
-              Aucun log trouvé {levelFilter || searchFilter ? 'avec ces critères' : 'pour cet agent'}
-            </Alert>
+            <Typography color="text.secondary">Aucun log disponible</Typography>
           ) : (
             <>
-              <List>
-                {logs.map((log: any, index: number) => (
+              <List dense>
+                {paginatedLogs.map((log: any) => (
                   <ListItem
                     key={log.id}
-                    component="div"
+                    button
                     onClick={() => handleLogClick(log)}
                     sx={{
                       cursor: 'pointer',
                       '&:hover': { backgroundColor: 'action.hover' },
-                      borderBottom: index < logs.length - 1 ? '1px solid' : 'none',
-                      borderColor: 'divider'
+                      borderBottom: '1px solid',
+                      borderColor: 'divider',
                     }}
                   >
                     <ListItemText
                       primary={
-                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 1 }}>
+                        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
                           <Chip
-                            size="small"
                             label={log.level}
-                            color={log.level === 'ERROR' ? 'error' :
-                                   log.level === 'WARN' ? 'warning' :
-                                   log.level === 'DEBUG' ? 'default' : 'info'}
+                            size="small"
+                            color={getLevelColor(log.level) as any}
                           />
-                          <Typography variant="body2" color="text.secondary">
-                            {new Date(log.timestamp).toLocaleString('fr-FR')}
+                          <Typography variant="body2" sx={{ flex: 1 }}>
+                            {log.message}
                           </Typography>
-                          {log.runId && (
-                            <Chip
-                              size="small"
-                              label={`Run: ${log.runId.substring(0, 8)}...`}
-                              variant="outlined"
-                            />
-                          )}
                         </Box>
                       }
-                      secondary={
-                        <Typography variant="body2" sx={{ mt: 0.5 }}>
-                          {log.message.length > 120 ? `${log.message.substring(0, 120)}...` : log.message}
-                        </Typography>
-                      }
+                      secondary={new Date(log.timestamp).toLocaleString('fr-FR')}
                     />
                   </ListItem>
                 ))}
@@ -210,11 +182,11 @@ const AgentLogs: React.FC = () => {
 
               {/* Pagination */}
               {totalPages > 1 && (
-                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 3 }}>
+                <Box sx={{ display: 'flex', justifyContent: 'center', mt: 2 }}>
                   <Pagination
                     count={totalPages}
                     page={page}
-                    onChange={handlePageChange}
+                    onChange={(_, newPage) => setPage(newPage)}
                     color="primary"
                   />
                 </Box>
@@ -224,114 +196,63 @@ const AgentLogs: React.FC = () => {
         </CardContent>
       </Card>
 
-      {/* Dialog des détails du log */}
-      <Dialog
-        open={logDetailDialogOpen}
-        onClose={handleLogDetailClose}
-        maxWidth="md"
-        fullWidth
-        aria-labelledby="log-detail-dialog-title"
-      >
-        <DialogTitle id="log-detail-dialog-title">
-          <Box sx={{ display: 'flex', alignItems: 'center', gap: 2 }}>
-            Détails du log
-            {selectedLog && (
-              <Chip
-                size="small"
-                label={selectedLog.level}
-                color={selectedLog.level === 'ERROR' ? 'error' :
-                       selectedLog.level === 'WARN' ? 'warning' : 'info'}
-              />
-            )}
+      {/* Log detail dialog */}
+      <Dialog open={!!selectedLog} onClose={handleCloseDialog} maxWidth="md" fullWidth>
+        <DialogTitle>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Chip
+              label={selectedLog?.level}
+              size="small"
+              color={getLevelColor(selectedLog?.level) as any}
+            />
+            <Typography>Détail du log</Typography>
           </Box>
         </DialogTitle>
         <DialogContent>
-          {selectedLog && (
-            <Box sx={{ mt: 1 }}>
-              {/* Informations générales */}
-              <Typography variant="h6" gutterBottom>Informations générales</Typography>
-              <List dense>
-                <ListItem>
-                  <ListItemText
-                    primary="Horodatage"
-                    secondary={new Date(selectedLog.timestamp).toLocaleString('fr-FR', {
-                      year: 'numeric',
-                      month: 'long',
-                      day: 'numeric',
-                      hour: '2-digit',
-                      minute: '2-digit',
-                      second: '2-digit'
-                    })}
-                  />
-                </ListItem>
-                <ListItem>
-                  <ListItemText primary="Niveau" secondary={selectedLog.level} />
-                </ListItem>
-                <ListItem>
-                  <ListItemText primary="Run ID" secondary={selectedLog.runId || 'Non spécifié'} />
-                </ListItem>
-              </List>
-
-              {/* Message */}
-              <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Message</Typography>
-              <Box
-                sx={{
-                  bgcolor: 'action.hover',
-                  padding: 2,
-                  borderRadius: 1,
-                  fontFamily: 'monospace',
-                  fontSize: '0.875rem',
-                  whiteSpace: 'pre-wrap',
-                  wordBreak: 'break-word'
-                }}
-              >
-                {selectedLog.message}
-              </Box>
-
-              {/* Données additionnelles */}
-              {selectedLog.data && Object.keys(selectedLog.data).length > 0 && (
-                <>
-                  <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Données additionnelles</Typography>
-                  <Box
-                    sx={{
-                      bgcolor: 'action.hover',
-                      padding: 2,
-                      borderRadius: 1,
-                      fontFamily: 'monospace',
-                      fontSize: '0.875rem',
-                      overflow: 'auto',
-                      maxHeight: '200px'
-                    }}
-                  >
-                    <pre>{JSON.stringify(selectedLog.data, null, 2)}</pre>
-                  </Box>
-                </>
-              )}
-
-              {/* Métadonnées */}
-              {selectedLog.metadata && Object.keys(selectedLog.metadata).length > 0 && (
-                <>
-                  <Typography variant="h6" gutterBottom sx={{ mt: 3 }}>Métadonnées</Typography>
-                  <Box
-                    sx={{
-                      bgcolor: 'action.hover',
-                      padding: 2,
-                      borderRadius: 1,
-                      fontFamily: 'monospace',
-                      fontSize: '0.875rem',
-                      overflow: 'auto',
-                      maxHeight: '200px'
-                    }}
-                  >
-                    <pre>{JSON.stringify(selectedLog.metadata, null, 2)}</pre>
-                  </Box>
-                </>
-              )}
-            </Box>
-          )}
+          <DialogContentText component="div">
+            <Typography variant="subtitle2" gutterBottom>
+              Date : {selectedLog && new Date(selectedLog.timestamp).toLocaleString('fr-FR')}
+            </Typography>
+            <Typography variant="subtitle2" gutterBottom>
+              Message :
+            </Typography>
+            <Typography
+              variant="body2"
+              sx={{
+                backgroundColor: 'grey.100',
+                p: 1,
+                borderRadius: 1,
+                fontFamily: 'monospace',
+                whiteSpace: 'pre-wrap',
+                mb: 2,
+              }}
+            >
+              {selectedLog?.message}
+            </Typography>
+            {selectedLog?.data && (
+              <>
+                <Typography variant="subtitle2" gutterBottom>
+                  Données :
+                </Typography>
+                <Box
+                  component="pre"
+                  sx={{
+                    backgroundColor: 'grey.100',
+                    p: 1,
+                    borderRadius: 1,
+                    overflow: 'auto',
+                    maxHeight: 400,
+                    fontSize: '0.75rem',
+                  }}
+                >
+                  {JSON.stringify(selectedLog.data, null, 2)}
+                </Box>
+              </>
+            )}
+          </DialogContentText>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleLogDetailClose}>Fermer</Button>
+          <Button onClick={handleCloseDialog}>Fermer</Button>
         </DialogActions>
       </Dialog>
     </Box>

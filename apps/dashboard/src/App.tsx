@@ -18,6 +18,7 @@ import AgentList from '@/pages/AgentList'
 import AgentCreate from '@/pages/AgentCreate'
 import AgentDetail from '@/pages/AgentDetail'
 import AgentEdit from '@/pages/AgentEdit'
+import AgentLogs from '@/pages/AgentLogs'
 import ProposalList from '@/pages/ProposalList'
 import ProposalDetailDispatcher from '@/pages/proposals/ProposalDetailDispatcher'
 import ProposalEditRedirect from '@/pages/proposals/ProposalEditRedirect'
@@ -271,6 +272,14 @@ function AppContent() {
                             element={
                               <ProtectedRoute requiredRoles={['ADMIN']}>
                                 <AgentEdit />
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/agents/:id/logs"
+                            element={
+                              <ProtectedRoute requiredRoles={['ADMIN']}>
+                                <AgentLogs />
                               </ProtectedRoute>
                             }
                           />
