@@ -1,6 +1,9 @@
 import { useState, useEffect, useCallback } from 'react'
 import { useDebounce } from './useDebounce'
 
+// Utiliser la même URL de base que le reste de l'application
+const API_BASE_URL = import.meta.env.VITE_API_URL || '/api'
+
 export interface MeilisearchEvent {
   objectID: string
   name?: string
@@ -42,7 +45,7 @@ export const useMeilisearchAutocomplete = (
 
     try {
       const response = await fetch(
-        `/api/events/autocomplete?q=${encodeURIComponent(searchQuery)}&limit=${limit}`
+        `${API_BASE_URL}/events/autocomplete?q=${encodeURIComponent(searchQuery)}&limit=${limit}`
       )
       const data = await response.json()
 
@@ -87,7 +90,7 @@ export const useCacheEventFromMeilisearch = () => {
   const cacheEvent = useCallback(async (eventId: string) => {
     setCaching(true)
     try {
-      const response = await fetch(`/api/events/${eventId}?cache=true`)
+      const response = await fetch(`${API_BASE_URL}/events/${eventId}?cache=true`)
       const data = await response.json()
 
       if (data.success) {
