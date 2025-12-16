@@ -5,13 +5,14 @@ import { useProposalGroup } from '@/hooks/useApi'
 import EditionUpdateGroupedDetail from './detail/edition-update/EditionUpdateGroupedDetail'
 import EventUpdateGroupedDetail from './detail/event-update/EventUpdateGroupedDetail'
 import NewEventGroupedDetail from './detail/new-event/NewEventGroupedDetail'
+import EventMergeDetail from './detail/event-merge/EventMergeDetail'
 
 const GroupedProposalDetailDispatcher: React.FC = () => {
   const { groupKey } = useParams<{ groupKey: string }>()
   const { data: groupProposalsData, isLoading } = useProposalGroup(groupKey || '')
-  
+
   if (isLoading) return <LinearProgress />
-  
+
   if (!groupProposalsData?.data || groupProposalsData.data.length === 0) {
     return (
       <Card>
@@ -21,21 +22,21 @@ const GroupedProposalDetailDispatcher: React.FC = () => {
       </Card>
     )
   }
-  
+
   // Déterminer le type à partir de la première proposition
   const proposalType = groupProposalsData.data[0].type
-  
+
   // Dispatcher selon le type
   switch (proposalType) {
     case 'EDITION_UPDATE':
       return <EditionUpdateGroupedDetail groupKey={groupKey!} />
-    
+
     case 'EVENT_UPDATE':
       return <EventUpdateGroupedDetail groupKey={groupKey!} />
-    
+
     case 'NEW_EVENT':
       return <NewEventGroupedDetail groupKey={groupKey!} />
-    
+
     case 'RACE_UPDATE':
       return (
         <Card>
@@ -46,7 +47,11 @@ const GroupedProposalDetailDispatcher: React.FC = () => {
           </CardContent>
         </Card>
       )
-    
+
+    case 'EVENT_MERGE':
+      // EVENT_MERGE n'a pas de vue groupée, on affiche la première proposition
+      return <EventMergeDetail proposal={groupProposalsData.data[0]} />
+
     default:
       return (
         <Card>

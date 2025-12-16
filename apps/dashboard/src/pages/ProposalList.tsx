@@ -45,7 +45,8 @@ import {
   AddCircleOutline as AddCircleOutlineIcon,
   EditOutlined as EditOutlinedIcon,
   Update as UpdateIcon,
-  Edit as EditIcon
+  Edit as EditIcon,
+  Merge as MergeIcon,
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal, useAgents } from '@/hooks/useApi'
@@ -603,7 +604,7 @@ const ProposalList: React.FC = () => {
                 onClick={() => navigate('/proposals/create')}
                 sx={{ whiteSpace: 'nowrap' }}
               >
-                Nouveau
+                Nouvelle proposition
               </Button>
               <Button
                 size="small"
@@ -642,7 +643,17 @@ const ProposalList: React.FC = () => {
                 }}
               >
                 <SearchIcon sx={{ mr: 1 }} fontSize="small" />
-                Événement existant
+                Mise à jour édition
+              </MenuItem>
+              <Divider />
+              <MenuItem
+                onClick={() => {
+                  setCreateMenuAnchor(null)
+                  navigate('/events/merge')
+                }}
+              >
+                <MergeIcon sx={{ mr: 1 }} fontSize="small" />
+                Fusionner des doublons
               </MenuItem>
             </Menu>
           </Box>

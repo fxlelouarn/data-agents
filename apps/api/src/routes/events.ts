@@ -738,6 +738,91 @@ router.post('/:eventId/revive', asyncHandler(async (req: Request, res: Response)
 }))
 
 /**
+ * GET /api/events/:eventId/details
+ * Récupère les détails complets d'un événement depuis Miles Republic (avec éditions)
+ * Utilisé pour la page de fusion d'événements
+ */
+router.get('/:eventId/details', asyncHandler(async (req: Request, res: Response) => {
+  const { eventId } = req.params
+  const numericEventId = parseInt(eventId, 10)
+
+  if (isNaN(numericEventId)) {
+    throw createError(400, 'eventId doit être un entier valide', 'INVALID_EVENT_ID')
+  }
+
+  try {
+    // Trouver la connexion Miles Republic
+    const milesRepublicConnection = await db.prisma.databaseConnection.findFirst({
+      where: {
+        type: 'MILES_REPUBLIC',
+        isActive: true
+      }
+    })
+
+    if (!milesRepublicConnection) {
+      throw createError(500, 'Connexion Miles Republic non trouvée', 'DB_CONNECTION_ERROR')
+    }
+
+    // Obtenir la connexion via DatabaseManager
+    const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+    const logger = createConsoleLogger('API', 'events-details')
+    const dbManager = DatabaseManager.getInstance(logger)
+    const connection = await dbManager.getConnection(milesRepublicConnection.id)
+
+    // Récupérer l'événement avec ses éditions
+    const event = await connection.event.findUnique({
+      where: { id: numericEventId },
+      include: {
+        editions: {
+          orderBy: { year: 'desc' },
+          select: {
+            id: true,
+            year: true,
+            startDate: true,
+            endDate: true,
+            status: true,
+            calendarStatus: true
+          }
+        }
+      }
+    })
+
+    if (!event) {
+      throw createError(404, `Événement non trouvé (ID: ${eventId})`, 'EVENT_NOT_FOUND')
+    }
+
+    res.json({
+      success: true,
+      data: {
+        event: {
+          id: event.id,
+          name: event.name,
+          city: event.city,
+          country: event.country,
+          status: event.status,
+          oldSlugId: event.oldSlugId,
+          websiteUrl: event.websiteUrl,
+          editions: event.editions.map((ed: any) => ({
+            id: ed.id,
+            year: ed.year,
+            startDate: ed.startDate?.toISOString() || null,
+            endDate: ed.endDate?.toISOString() || null,
+            status: ed.status,
+            calendarStatus: ed.calendarStatus
+          }))
+        }
+      }
+    })
+  } catch (error) {
+    if (error && typeof error === 'object' && 'statusCode' in error) {
+      throw error // Re-throw HTTP errors
+    }
+    console.error('Error fetching event details from Miles Republic:', error)
+    throw createError(500, 'Erreur lors de la récupération des détails de l\'événement', 'FETCH_ERROR')
+  }
+}))
+
+/**
  * GET /api/events/:eventId
  * Récupère un événement spécifique par son ID depuis Meilisearch
  */

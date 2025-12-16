@@ -115,6 +115,19 @@ jest.mock('@data-agents/agent-framework', () => ({
   }
 }))
 
+// Mock settingsService to avoid DATABASE_URL requirement
+jest.mock('../../../config/settings', () => ({
+  settingsService: {
+    isMeilisearchConfigured: jest.fn().mockResolvedValue(false),
+    getMeilisearchUrl: jest.fn().mockResolvedValue(null),
+    getMeilisearchApiKey: jest.fn().mockResolvedValue(null),
+    getSettings: jest.fn().mockResolvedValue({
+      meilisearchUrl: null,
+      meilisearchApiKey: null
+    })
+  }
+}))
+
 // Import after mocks are set up
 import { createProposalFromSlack, getProposalWithSlackMetadata } from '../SlackProposalService'
 import { prisma } from '@data-agents/database'

@@ -197,6 +197,21 @@ export const proposalsApi = {
   }): Promise<ApiResponse<Proposal>> =>
     api.post('/proposals/manual', data).then(res => res.data),
 
+  createMerge: (data: {
+    keepEventId: number
+    duplicateEventId: number
+    newEventName?: string
+    reason?: string
+    forceOverwrite?: boolean
+    copyMissingEditions?: boolean
+  }): Promise<ApiResponse<{
+    proposal: Proposal
+    message: string
+    editionsToCopy?: Array<{ id: number; year: string; startDate: string | null; status: string }>
+    copyMissingEditions: boolean
+  }>> =>
+    api.post('/proposals/merge', data).then(res => res.data),
+
   createEditionUpdateComplete: (data: {
     editionId: string
     userModifiedChanges?: Record<string, any>
@@ -593,6 +608,27 @@ export const eventsApi = {
 
   revive: (eventId: string, editionId?: string): Promise<ApiResponse<{ status: string; revivedProposalsCount?: number }>> =>
     api.post(`/events/${eventId}/revive`, editionId ? { editionId } : {}).then(res => res.data),
+
+  getDetails: (eventId: string): Promise<ApiResponse<{
+    event: {
+      id: number
+      name: string
+      city: string
+      country: string
+      status: string
+      oldSlugId: number | null
+      websiteUrl: string | null
+      editions: Array<{
+        id: number
+        year: string
+        startDate: string | null
+        endDate: string | null
+        status: string
+        calendarStatus: string
+      }>
+    }
+  }>> =>
+    api.get(`/events/${eventId}/details`).then(res => res.data),
 }
 
 // Events API (interroge directement Miles Republic)

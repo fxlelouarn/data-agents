@@ -433,8 +433,15 @@ export function matchRaces(
         }
       }
 
-      // NEW: Try fuzzy match on ALL available DB races as last resort
-      const allAvailableDbRaces = dbRaces.filter(r => !matchedDbIds.has(r.id))
+      // NEW: Try fuzzy match on DB races with compatible distance as last resort
+      // Only consider races where distance is within the same tolerance or race has no distance
+      const allAvailableDbRaces = dbRaces.filter(r => {
+        if (matchedDbIds.has(r.id)) return false
+        const dbDistance = (r.runDistance || 0) + (r.walkDistance || 0) + (r.swimDistance || 0) + (r.bikeDistance || 0)
+        if (dbDistance === 0) return true // No distance constraint
+        const diff = Math.abs(dbDistance - inputDistanceKm) / Math.max(dbDistance, inputDistanceKm)
+        return diff <= tolerancePercent
+      })
       if (allAvailableDbRaces.length > 0) {
         const bestMatch = fuzzyMatchRaceName(inputRace, allAvailableDbRaces, logger)
 

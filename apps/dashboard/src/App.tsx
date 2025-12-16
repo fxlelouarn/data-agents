@@ -25,6 +25,7 @@ import GroupedProposalDetailDispatcher from '@/pages/proposals/GroupedProposalDe
 import ManualProposalCreate from '@/pages/proposals/ManualProposalCreate'
 import CreateProposalForExistingEvent from '@/pages/CreateProposalForExistingEvent'
 import CreateProposalForEdition from '@/pages/CreateProposalForEdition'
+import EventMerge from '@/pages/EventMerge'
 import UpdateList from '@/pages/UpdateList'
 import UpdateDetail from '@/pages/UpdateDetail'
 import UpdateGroupDetail from '@/pages/UpdateGroupDetail'
@@ -177,6 +178,14 @@ function AppContent() {
                             element={
                               <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
                                 <CreateProposalForEdition />
+                              </ProtectedRoute>
+                            }
+                          />
+                          <Route
+                            path="/events/merge"
+                            element={
+                              <ProtectedRoute requiredRoles={['VALIDATOR', 'EXECUTOR', 'ADMIN']}>
+                                <EventMerge />
                               </ProtectedRoute>
                             }
                           />
