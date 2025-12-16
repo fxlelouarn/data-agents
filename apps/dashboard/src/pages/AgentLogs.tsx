@@ -1,4 +1,4 @@
-import React, { useState } from 'react'
+import React, { useState, useMemo } from 'react'
 import { useParams, Link } from 'react-router-dom'
 import {
   Box,
@@ -23,8 +23,7 @@ import {
   Pagination,
 } from '@mui/material'
 import { ArrowBack as ArrowBackIcon } from '@mui/icons-material'
-import { useQuery } from '@tanstack/react-query'
-import api from '@/services/api'
+import { useAgent } from '@/hooks/useApi'
 
 const LOGS_PER_PAGE = 50
 
@@ -34,32 +33,19 @@ const AgentLogs: React.FC = () => {
   const [levelFilter, setLevelFilter] = useState<string>('ALL')
   const [page, setPage] = useState(1)
 
-  // Fetch agent info
-  const { data: agent, isLoading: agentLoading } = useQuery({
-    queryKey: ['agent', id],
-    queryFn: async () => {
-      const response = await api.get(`/agents/${id}`)
-      return response.data
-    },
-  })
+  // Fetch agent with logs
+  const { data: agentData, isLoading } = useAgent(id!)
+  const agent = agentData?.data
 
-  // Fetch all logs for this agent
-  const { data: logsData, isLoading: logsLoading } = useQuery({
-    queryKey: ['agent-logs', id, levelFilter],
-    queryFn: async () => {
-      const params = new URLSearchParams()
-      params.append('limit', '1000') // Get many logs
-      if (levelFilter !== 'ALL') {
-        params.append('level', levelFilter)
-      }
-      const response = await api.get(`/agents/${id}/logs?${params.toString()}`)
-      return response.data
-    },
-  })
+  // Filter and paginate logs
+  const filteredLogs = useMemo(() => {
+    if (!agent?.logs) return []
+    if (levelFilter === 'ALL') return agent.logs
+    return agent.logs.filter((log: any) => log.level === levelFilter)
+  }, [agent?.logs, levelFilter])
 
-  const logs = logsData?.logs || []
-  const totalPages = Math.ceil(logs.length / LOGS_PER_PAGE)
-  const paginatedLogs = logs.slice((page - 1) * LOGS_PER_PAGE, page * LOGS_PER_PAGE)
+  const totalPages = Math.ceil(filteredLogs.length / LOGS_PER_PAGE)
+  const paginatedLogs = filteredLogs.slice((page - 1) * LOGS_PER_PAGE, page * LOGS_PER_PAGE)
 
   const handleLogClick = (log: any) => {
     setSelectedLog(log)
@@ -84,7 +70,7 @@ const AgentLogs: React.FC = () => {
     }
   }
 
-  if (agentLoading) {
+  if (isLoading) {
     return <LinearProgress />
   }
 
@@ -133,7 +119,7 @@ const AgentLogs: React.FC = () => {
               </Select>
             </FormControl>
             <Typography variant="body2" color="text.secondary">
-              {logs.length} logs trouvés
+              {filteredLogs.length} logs trouvés
             </Typography>
           </Box>
         </CardContent>
@@ -142,9 +128,7 @@ const AgentLogs: React.FC = () => {
       {/* Logs list */}
       <Card>
         <CardContent>
-          {logsLoading ? (
-            <LinearProgress />
-          ) : logs.length === 0 ? (
+          {filteredLogs.length === 0 ? (
             <Typography color="text.secondary">Aucun log disponible</Typography>
           ) : (
             <>
