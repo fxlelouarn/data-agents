@@ -67,6 +67,7 @@ const agentTypeLabels: Record<AgentType, string> = {
   CLEANER: 'Nettoyeur',
   DUPLICATOR: 'Duplicateur',
   SPECIFIC_FIELD: 'Champ spécifique',
+  ANALYZER: 'Analyseur',
 }
 
 const agentTypeColors: Record<AgentType, 'primary' | 'secondary' | 'success' | 'error' | 'warning' | 'info'> = {
@@ -76,6 +77,7 @@ const agentTypeColors: Record<AgentType, 'primary' | 'secondary' | 'success' | '
   CLEANER: 'warning',
   DUPLICATOR: 'info',
   SPECIFIC_FIELD: 'error',
+  ANALYZER: 'info',
 }
 
 const AgentList: React.FC = () => {

@@ -344,7 +344,6 @@ const enrichmentCache = new Map<string, any>()
 
 // Nettoyage périodique (toutes les 10 minutes) pour éviter l'accumulation en mémoire
 setInterval(() => {
-  console.log(`[ENRICH] Periodic cache cleanup: clearing ${enrichmentCache.size} entries`)
   enrichmentCache.clear()
 }, 10 * 60 * 1000)
 
@@ -358,29 +357,23 @@ export async function enrichProposal(proposal: any) {
       const initStart = Date.now()
       // Lazy load and cache Miles Republic connection (une seule fois au démarrage)
       if (!milesRepublicConnection) {
-        console.log(`[ENRICH] ${proposalId} EVENT_UPDATE - Initializing Miles Republic connection...`)
         const connStart = Date.now()
         const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
           where: { type: 'MILES_REPUBLIC', isActive: true }
         })
-        console.log(`[ENRICH] ${proposalId} - databaseConnection.findFirst took ${Date.now() - connStart}ms`)
         if (!milesRepublicConn) return proposal
         milesRepublicConnectionId = milesRepublicConn.id
 
         // Lazy load DatabaseManager singleton
         const importStart = Date.now()
         const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
-        console.log(`[ENRICH] ${proposalId} - import @data-agents/agent-framework took ${Date.now() - importStart}ms`)
         const logger = createConsoleLogger('API', 'proposals-api')
         enrichProposalDbManager = DatabaseManager.getInstance(logger)
 
         // Obtenir et cacher la connexion Prisma
         const getConnStart = Date.now()
         milesRepublicConnection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
-        console.log(`[ENRICH] ${proposalId} - getConnection took ${Date.now() - getConnStart}ms`)
-        console.log(`[ENRICH] ${proposalId} - Total init time: ${Date.now() - initStart}ms`)
       } else {
-        console.log(`[ENRICH] ${proposalId} EVENT_UPDATE - Using cached Miles Republic connection`)
       }
 
       const connection = milesRepublicConnection
@@ -394,7 +387,6 @@ export async function enrichProposal(proposal: any) {
       let event = enrichmentCache.get(cacheKey)
 
       if (!event) {
-        console.log(`[ENRICH] ${proposalId} - Cache miss for event ${numericEventId}, querying DB...`)
         const queryStart = Date.now()
         event = await connection.event.findUnique({
           where: { id: numericEventId },
@@ -406,14 +398,11 @@ export async function enrichProposal(proposal: any) {
             isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
           }
         })
-        console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
         if (event) enrichmentCache.set(cacheKey, event)
       } else {
-        console.log(`[ENRICH] ${proposalId} - Cache hit for event ${numericEventId}`)
       }
 
       if (event) {
-        console.log(`[ENRICH] ${proposalId} EVENT_UPDATE - Total time: ${Date.now() - startTime}ms`)
         return {
           ...proposal,
           eventName: event.name,
@@ -432,33 +421,26 @@ export async function enrichProposal(proposal: any) {
   // Pour les EDITION_UPDATE et NEW_EVENT
   if (proposal.type === 'EDITION_UPDATE' || proposal.type === 'NEW_EVENT') {
     try {
-      console.log(`[ENRICH] ${proposalId} ${proposal.type} - Starting enrichment...`)
       const initStart = Date.now()
       // Lazy load and cache Miles Republic connection (une seule fois au démarrage)
       if (!milesRepublicConnection) {
-        console.log(`[ENRICH] ${proposalId} ${proposal.type} - Initializing Miles Republic connection...`)
         const connStart = Date.now()
         const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
           where: { type: 'MILES_REPUBLIC', isActive: true }
         })
-        console.log(`[ENRICH] ${proposalId} - databaseConnection.findFirst took ${Date.now() - connStart}ms`)
         if (!milesRepublicConn) return proposal
         milesRepublicConnectionId = milesRepublicConn.id
 
         // Lazy load DatabaseManager singleton
         const importStart = Date.now()
         const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
-        console.log(`[ENRICH] ${proposalId} - import @data-agents/agent-framework took ${Date.now() - importStart}ms`)
         const logger = createConsoleLogger('API', 'proposals-api')
         enrichProposalDbManager = DatabaseManager.getInstance(logger)
 
         // Obtenir et cacher la connexion Prisma
         const getConnStart = Date.now()
         milesRepublicConnection = await enrichProposalDbManager.getConnection(milesRepublicConnectionId)
-        console.log(`[ENRICH] ${proposalId} - getConnection took ${Date.now() - getConnStart}ms`)
-        console.log(`[ENRICH] ${proposalId} - Total init time: ${Date.now() - initStart}ms`)
       } else {
-        console.log(`[ENRICH] ${proposalId} ${proposal.type} - Using cached Miles Republic connection`)
       }
 
       const connection = milesRepublicConnection
@@ -477,7 +459,6 @@ export async function enrichProposal(proposal: any) {
         let edition = enrichmentCache.get(editionCacheKey)
 
         if (!edition) {
-          console.log(`[ENRICH] ${proposalId} - Cache miss for edition ${numericEditionId}, querying DB...`)
           const queryStart = Date.now()
           edition = await connection.edition.findUnique({
             where: { id: numericEditionId },
@@ -486,10 +467,8 @@ export async function enrichProposal(proposal: any) {
               year: true
             }
           })
-          console.log(`[ENRICH] ${proposalId} - edition.findUnique took ${Date.now() - queryStart}ms`)
           if (edition) enrichmentCache.set(editionCacheKey, edition)
         } else {
-          console.log(`[ENRICH] ${proposalId} - Cache hit for edition ${numericEditionId}`)
         }
 
         if (edition) {
@@ -512,7 +491,6 @@ export async function enrichProposal(proposal: any) {
       let event = enrichmentCache.get(eventCacheKey)
 
       if (!event) {
-        console.log(`[ENRICH] ${proposalId} - Cache miss for event ${numericEventId}, querying DB...`)
         const queryStart = Date.now()
         event = await connection.event.findUnique({
           where: { id: numericEventId },
@@ -524,10 +502,8 @@ export async function enrichProposal(proposal: any) {
               isFeatured: true  // ✅ Nécessaire pour alerter si Event featured
             }
         })
-        console.log(`[ENRICH] ${proposalId} - event.findUnique took ${Date.now() - queryStart}ms`)
         if (event) enrichmentCache.set(eventCacheKey, event)
       } else {
-        console.log(`[ENRICH] ${proposalId} - Cache hit for event ${numericEventId}`)
       }
 
       // Base enrichment avec event info
@@ -550,7 +526,6 @@ export async function enrichProposal(proposal: any) {
         let previousEdition = enrichmentCache.get(prevEditionCacheKey)
 
         if (!previousEdition) {
-          console.log(`[ENRICH] ${proposalId} - Cache miss for previous edition ${previousEditionYear}, querying DB...`)
           const queryStart = Date.now()
           previousEdition = await connection.edition.findFirst({
             where: {
@@ -563,10 +538,8 @@ export async function enrichProposal(proposal: any) {
               startDate: true
             }
           })
-          console.log(`[ENRICH] ${proposalId} - edition.findFirst (prev) took ${Date.now() - queryStart}ms`)
           if (previousEdition) enrichmentCache.set(prevEditionCacheKey, previousEdition)
         } else {
-          console.log(`[ENRICH] ${proposalId} - Cache hit for previous edition ${previousEditionYear}`)
         }
 
         if (previousEdition) {
@@ -587,7 +560,6 @@ export async function enrichProposal(proposal: any) {
         let existingRaces = enrichmentCache.get(racesCacheKey)
 
         if (!existingRaces) {
-          console.log(`[ENRICH] ${proposalId} - Cache miss for races of edition ${numericEditionId}, querying DB...`)
           const queryStart = Date.now()
           existingRaces = await connection.race.findMany({
             where: { editionId: numericEditionId },
@@ -605,10 +577,8 @@ export async function enrichProposal(proposal: any) {
             },
             orderBy: { name: 'asc' }
           })
-          console.log(`[ENRICH] ${proposalId} - race.findMany took ${Date.now() - queryStart}ms (found ${existingRaces.length} races)`)
           enrichmentCache.set(racesCacheKey, existingRaces)
         } else {
-          console.log(`[ENRICH] ${proposalId} - Cache hit for races of edition ${numericEditionId} (${existingRaces.length} cached races)`)
         }
 
         // Extraire racesToUpdate de la proposition (si existe)
@@ -686,7 +656,6 @@ export async function enrichProposal(proposal: any) {
         })
       }
 
-      console.log(`[ENRICH] ${proposalId} ${proposal.type} - Total time: ${Date.now() - startTime}ms`)
       return enriched
     } catch (error) {
       console.warn(`[ENRICH] ${proposalId} ${proposal.type} - Error: ${error}. Total time: ${Date.now() - startTime}ms`)
@@ -890,7 +859,6 @@ const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLev
       ${whereClause}
     `
 
-    console.log(`[PROPOSALS] Executing raw SQL with category filter: ${categoryLevel1 || ''} / ${categoryLevel2 || ''}`)
 
     proposals = await db.prisma.$queryRawUnsafe(query, ...params)
     const countResult = await db.prisma.$queryRawUnsafe(countQuery, ...params.slice(0, -2)) as any[]
@@ -913,21 +881,16 @@ const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLev
     total = await db.prisma.proposal.count({ where: baseWhere })
   }
 
-  console.log(`[PROPOSALS] Prisma findMany took ${Date.now() - findStart}ms (returned ${proposals.length})`)
 
   // Enrichir chaque proposition avec les infos contextuelles (concurrence limitée)
   const enrichStart = Date.now()
-  console.log(`[PROPOSALS] GET /api/proposals?limit=${limit}&offset=${offset} - Starting enrichment of ${proposals.length} proposals (pLimit concurrency=20)`)
   const enrichedProposals = await Promise.all(
     proposals.map((p, idx) => {
-      console.log(`[PROPOSALS] Queueing proposal ${idx + 1}/${proposals.length} (${p.id}) to enrichLimit`)
       return enrichLimit(() => enrichProposal(p))
     })
   )
-  console.log(`[PROPOSALS] Enrichment of ${proposals.length} proposals took ${Date.now() - enrichStart}ms`)
 
 // ⚡ Cache conservé entre les requêtes pour performance (cleanup périodique en tâche de fond)
-  console.log(`[PROPOSALS] Cache retained across requests (size=${enrichmentCache.size})`)
 
   res.json({
     success: true,

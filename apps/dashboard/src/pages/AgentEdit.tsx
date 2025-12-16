@@ -61,7 +61,7 @@ const validationSchema = Yup.object({
   description: Yup.string()
     .max(500, 'La description ne peut pas dépasser 500 caractères'),
   type: Yup.string()
-    .oneOf(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD'])
+    .oneOf(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD', 'ANALYZER'])
     .required('Le type est obligatoire'),
   frequency: frequencyConfigSchema.required('La fréquence est obligatoire'),
   isActive: Yup.boolean(),
@@ -99,7 +99,8 @@ const AgentEdit: React.FC = () => {
     VALIDATOR: 'Validateur',
     CLEANER: 'Nettoyeur',
     DUPLICATOR: 'Duplicateur',
-    SPECIFIC_FIELD: 'Champ spécifique'
+    SPECIFIC_FIELD: 'Champ spécifique',
+    ANALYZER: 'Analyseur'
   }
 
   // Default frequency config

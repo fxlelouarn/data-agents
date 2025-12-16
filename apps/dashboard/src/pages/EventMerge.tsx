@@ -44,6 +44,7 @@ import { fr } from 'date-fns/locale'
 interface EventData {
   id: number
   name: string
+  slug: string | null
   city: string
   country: string
   status: string
@@ -51,10 +52,19 @@ interface EventData {
   websiteUrl: string | null
   editions: Array<{
     id: number
-    year: string
+    year: number
     startDate: string | null
+    endDate: string | null
     status: string
     calendarStatus: string
+    races: Array<{
+      id: number
+      name: string
+      runDistance: number | null
+      runPositiveElevation: number | null
+      categoryLevel1: string | null
+      categoryLevel2: string | null
+    }>
   }>
 }
 
@@ -116,7 +126,7 @@ const EventMerge: React.FC = () => {
 
     return (duplicateEvent.editions || [])
       .filter(e => !keepEventYears.has(e.year))
-      .sort((a, b) => a.year.localeCompare(b.year))
+      .sort((a, b) => a.year - b.year)
   }, [leftEvent, rightEvent, keepEventId, copyMissingEditions])
 
   // Auto-sélectionner l'événement suggéré quand les deux sont chargés

@@ -197,6 +197,7 @@ enum AgentType {
   CLEANER
   DUPLICATOR
   SPECIFIC_FIELD
+  ANALYZER
 }
 
 enum RunStatus {

@@ -1,5 +1,5 @@
 // Agent types
-export type AgentType = 'EXTRACTOR' | 'COMPARATOR' | 'VALIDATOR' | 'CLEANER' | 'DUPLICATOR' | 'SPECIFIC_FIELD'
+export type AgentType = 'EXTRACTOR' | 'COMPARATOR' | 'VALIDATOR' | 'CLEANER' | 'DUPLICATOR' | 'SPECIFIC_FIELD' | 'ANALYZER'
 
 export type RunStatus = 'PENDING' | 'RUNNING' | 'SUCCESS' | 'FAILED' | 'CANCELLED'
 

@@ -769,7 +769,7 @@ router.get('/:eventId/details', asyncHandler(async (req: Request, res: Response)
     const dbManager = DatabaseManager.getInstance(logger)
     const connection = await dbManager.getConnection(milesRepublicConnection.id)
 
-    // Récupérer l'événement avec ses éditions
+    // Récupérer l'événement avec ses éditions et courses
     const event = await connection.event.findUnique({
       where: { id: numericEventId },
       include: {
@@ -781,7 +781,18 @@ router.get('/:eventId/details', asyncHandler(async (req: Request, res: Response)
             startDate: true,
             endDate: true,
             status: true,
-            calendarStatus: true
+            calendarStatus: true,
+            races: {
+              select: {
+                id: true,
+                name: true,
+                runDistance: true,
+                runPositiveElevation: true,
+                categoryLevel1: true,
+                categoryLevel2: true
+              },
+              orderBy: { runDistance: 'asc' }
+            }
           }
         }
       }
@@ -797,6 +808,7 @@ router.get('/:eventId/details', asyncHandler(async (req: Request, res: Response)
         event: {
           id: event.id,
           name: event.name,
+          slug: event.slug,
           city: event.city,
           country: event.country,
           status: event.status,
@@ -808,7 +820,15 @@ router.get('/:eventId/details', asyncHandler(async (req: Request, res: Response)
             startDate: ed.startDate?.toISOString() || null,
             endDate: ed.endDate?.toISOString() || null,
             status: ed.status,
-            calendarStatus: ed.calendarStatus
+            calendarStatus: ed.calendarStatus,
+            races: ed.races?.map((race: any) => ({
+              id: race.id,
+              name: race.name,
+              runDistance: race.runDistance,
+              runPositiveElevation: race.runPositiveElevation,
+              categoryLevel1: race.categoryLevel1,
+              categoryLevel2: race.categoryLevel2
+            })) || []
           }))
         }
       }
