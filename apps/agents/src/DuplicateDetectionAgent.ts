@@ -112,6 +112,37 @@ export class DuplicateDetectionAgent extends BaseAgent {
   }
 
   /**
+   * Récupère la configuration Meilisearch depuis les Settings admin, avec fallback sur env vars
+   */
+  private async getMeilisearchConfig(): Promise<{ url: string; apiKey: string } | null> {
+    try {
+      // 1. Essayer depuis les Settings admin
+      const settings = await this.prismaClient.settings.findUnique({
+        where: { id: 'singleton' },
+        select: { meilisearchUrl: true, meilisearchApiKey: true }
+      })
+
+      if (settings?.meilisearchUrl && settings?.meilisearchApiKey) {
+        this.logger.debug('Using Meilisearch config from admin settings')
+        return { url: settings.meilisearchUrl, apiKey: settings.meilisearchApiKey }
+      }
+    } catch (error) {
+      this.logger.debug('Could not read Meilisearch config from settings, trying env vars')
+    }
+
+    // 2. Fallback sur variables d'environnement
+    const url = process.env.MEILISEARCH_URL
+    const apiKey = process.env.MEILISEARCH_API_KEY
+
+    if (url && apiKey) {
+      this.logger.debug('Using Meilisearch config from environment variables')
+      return { url, apiKey }
+    }
+
+    return null
+  }
+
+  /**
    * Initialise la connexion à la base de données Miles Republic
    */
   private async initializeSourceConnection(config: DuplicateDetectionConfig): Promise<void> {
@@ -249,6 +280,15 @@ export class DuplicateDetectionAgent extends BaseAgent {
 
       // Calculer le score de duplication
       const score = calculateDuplicateScore(event, candidate, scoringConfig, config.minDuplicateScore)
+
+      // Log du score pour debug (seulement si score significatif)
+      if (score.score >= 0.5) {
+        this.logger.debug(`Score ${event.id} <-> ${candidate.id}: ${(score.score * 100).toFixed(1)}% (threshold: ${(config.minDuplicateScore * 100).toFixed(0)}%)`, {
+          event: event.name,
+          candidate: candidate.name,
+          details: score.details
+        })
+      }
 
       // Marquer comme analysé
       progress.analyzedPairs[pairKey] = {
@@ -397,8 +437,18 @@ export class DuplicateDetectionAgent extends BaseAgent {
         dateToleranceDays: config.dateToleranceDays
       }
 
+      // Récupérer la config Meilisearch (Settings admin > env vars)
+      const meilisearchConfig = config.useMeilisearch ? await this.getMeilisearchConfig() : null
+      if (meilisearchConfig) {
+        this.logger.info('Meilisearch configured for candidate search')
+      } else if (config.useMeilisearch) {
+        this.logger.info('Meilisearch not configured, using SQL fallback')
+      }
+
       const candidateConfig: CandidateSearchConfig = {
-        useMeilisearch: config.useMeilisearch,
+        useMeilisearch: config.useMeilisearch && !!meilisearchConfig,
+        meilisearchUrl: meilisearchConfig?.url,
+        meilisearchApiKey: meilisearchConfig?.apiKey,
         maxCandidatesPerEvent: 50
       }
 
@@ -450,8 +500,39 @@ export class DuplicateDetectionAgent extends BaseAgent {
           duplicatesFound += duplicates.length
 
           // Créer les propositions (sauf en mode dry run)
-          if (!config.dryRun) {
-            for (const duplicate of duplicates) {
+          for (const duplicate of duplicates) {
+            if (config.dryRun) {
+              // En mode dryRun, afficher ce qui serait créé
+              const { keepEvent, duplicateEvent, score, keepReason } = duplicate
+              const hasExisting = await hasExistingMergeProposal(
+                this.prismaClient,
+                keepEvent.id,
+                duplicateEvent.id
+              )
+
+              if (hasExisting) {
+                this.logger.info(`[DRY RUN] Would skip (already exists): "${keepEvent.name}" <-> "${duplicateEvent.name}"`)
+              } else {
+                proposalsCreated++
+                this.logger.info(`[DRY RUN] Would create EVENT_MERGE proposal:`, {
+                  keepEvent: {
+                    id: keepEvent.id,
+                    name: keepEvent.name,
+                    city: keepEvent.city,
+                    editionsCount: keepEvent.editions.length
+                  },
+                  duplicateEvent: {
+                    id: duplicateEvent.id,
+                    name: duplicateEvent.name,
+                    city: duplicateEvent.city,
+                    editionsCount: duplicateEvent.editions.length
+                  },
+                  score: (score.score * 100).toFixed(1) + '%',
+                  scoreDetails: score.details,
+                  keepReason
+                })
+              }
+            } else {
               const created = await this.createMergeProposal(duplicate, config)
               if (created) {
                 proposalsCreated++
@@ -480,13 +561,19 @@ export class DuplicateDetectionAgent extends BaseAgent {
       // Sauvegarder la progression
       await this.saveProgress(progress)
 
-      this.logger.info(`Batch complete`, {
+      const durationSec = ((Date.now() - startTime) / 1000).toFixed(1)
+      const summaryData = {
         eventsProcessed,
         duplicatesFound,
         proposalsCreated,
         dryRun: config.dryRun,
-        duration: Date.now() - startTime
-      })
+        durationSec
+      }
+      if (config.dryRun) {
+        this.logger.info(`[DRY RUN] Batch complete: ${eventsProcessed} events, ${duplicatesFound} duplicates, ${proposalsCreated} would be created`, summaryData)
+      } else {
+        this.logger.info(`Batch complete: ${eventsProcessed} events, ${duplicatesFound} duplicates, ${proposalsCreated} created`, summaryData)
+      }
 
       return {
         success: errors.length === 0,

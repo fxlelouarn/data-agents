@@ -613,6 +613,7 @@ export const eventsApi = {
     event: {
       id: number
       name: string
+      slug: string | null
       city: string
       country: string
       status: string
@@ -620,11 +621,19 @@ export const eventsApi = {
       websiteUrl: string | null
       editions: Array<{
         id: number
-        year: string
+        year: number
         startDate: string | null
         endDate: string | null
         status: string
         calendarStatus: string
+        races: Array<{
+          id: number
+          name: string
+          runDistance: number | null
+          runPositiveElevation: number | null
+          categoryLevel1: string | null
+          categoryLevel2: string | null
+        }>
       }>
     }
   }>> =>

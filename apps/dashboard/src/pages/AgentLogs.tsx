@@ -156,6 +156,9 @@ const AgentLogs: React.FC = () => {
                           <Typography variant="body2" sx={{ flex: 1 }}>
                             {log.message}
                           </Typography>
+                          {log.data && Object.keys(log.data).length > 0 && (
+                            <Chip label="+" size="small" variant="outlined" sx={{ minWidth: 24 }} />
+                          )}
                         </Box>
                       }
                       secondary={new Date(log.timestamp).toLocaleString('fr-FR')}
@@ -202,14 +205,15 @@ const AgentLogs: React.FC = () => {
             </Typography>
             <Typography
               variant="body2"
-              sx={{
-                backgroundColor: 'grey.100',
+              sx={(theme) => ({
+                backgroundColor:
+                  theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'grey.100',
                 p: 1,
                 borderRadius: 1,
                 fontFamily: 'monospace',
                 whiteSpace: 'pre-wrap',
                 mb: 2,
-              }}
+              })}
             >
               {selectedLog?.message}
             </Typography>
@@ -220,14 +224,15 @@ const AgentLogs: React.FC = () => {
                 </Typography>
                 <Box
                   component="pre"
-                  sx={{
-                    backgroundColor: 'grey.100',
+                  sx={(theme) => ({
+                    backgroundColor:
+                      theme.palette.mode === 'dark' ? 'rgba(255, 255, 255, 0.08)' : 'grey.100',
                     p: 1,
                     borderRadius: 1,
                     overflow: 'auto',
                     maxHeight: 400,
                     fontSize: '0.75rem',
-                  }}
+                  })}
                 >
                   {JSON.stringify(selectedLog.data, null, 2)}
                 </Box>
