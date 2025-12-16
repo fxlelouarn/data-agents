@@ -2,7 +2,7 @@ import { z } from 'zod'
 import { AgentType, ProposalType, ProposalStatus, DatabaseType, RunStatus, LogLevel } from '@prisma/client'
 
 // Base schemas
-export const AgentTypeSchema = z.enum(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD'])
+export const AgentTypeSchema = z.enum(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD', 'ANALYZER'])
 export const ProposalTypeSchema = z.enum(['NEW_EVENT', 'EVENT_UPDATE', 'EDITION_UPDATE', 'RACE_UPDATE'])
 export const ProposalStatusSchema = z.enum(['PENDING', 'APPROVED', 'REJECTED', 'ARCHIVED'])
 export const DatabaseTypeSchema = z.enum(['POSTGRESQL', 'MYSQL', 'SQLITE', 'MONGODB', 'EXTERNAL_API', 'MILES_REPUBLIC'])

@@ -74,7 +74,7 @@ router.get('/:id', [
 router.post('/', [
   body('name').isString().notEmpty().withMessage('Name is required'),
   body('description').optional().isString(),
-  body('type').isIn(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD']),
+  body('type').isIn(['EXTRACTOR', 'COMPARATOR', 'VALIDATOR', 'CLEANER', 'DUPLICATOR', 'SPECIFIC_FIELD', 'ANALYZER']),
   body('frequency').isObject().withMessage('Frequency must be a FrequencyConfig object'),
   body('config').isObject().withMessage('Config must be an object'),
   validateRequest
