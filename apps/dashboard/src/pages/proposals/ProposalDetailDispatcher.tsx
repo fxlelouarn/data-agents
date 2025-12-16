@@ -5,13 +5,14 @@ import { useProposal } from '@/hooks/useApi'
 import EditionUpdateDetail from './detail/edition-update/EditionUpdateDetail'
 import EventUpdateDetail from './detail/event-update/EventUpdateDetail'
 import NewEventDetail from './detail/new-event/NewEventDetail'
+import EventMergeDetail from './detail/event-merge/EventMergeDetail'
 
 const ProposalDetailDispatcher: React.FC = () => {
   const { id } = useParams<{ id: string }>()
   const { data: proposalData, isLoading } = useProposal(id!)
-  
+
   if (isLoading) return <LinearProgress />
-  
+
   if (!proposalData?.data) {
     return (
       <Card>
@@ -21,21 +22,21 @@ const ProposalDetailDispatcher: React.FC = () => {
       </Card>
     )
   }
-  
+
   // Déterminer le type de la proposition
   const proposalType = proposalData.data.type
-  
+
   // Dispatcher selon le type
   switch (proposalType) {
     case 'EDITION_UPDATE':
       return <EditionUpdateDetail proposalId={id!} />
-    
+
     case 'EVENT_UPDATE':
       return <EventUpdateDetail proposalId={id!} />
-    
+
     case 'NEW_EVENT':
       return <NewEventDetail proposalId={id!} />
-    
+
     case 'RACE_UPDATE':
       return (
         <Card>
@@ -46,7 +47,10 @@ const ProposalDetailDispatcher: React.FC = () => {
           </CardContent>
         </Card>
       )
-    
+
+    case 'EVENT_MERGE':
+      return <EventMergeDetail proposal={proposalData.data} />
+
     default:
       return (
         <Card>

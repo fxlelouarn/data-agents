@@ -1168,3 +1168,50 @@ export const useUserLeaderboard = (filters: {
     staleTime: 300000, // 5 minutes
   })
 }
+
+// ============================================================================
+// Event Merge hooks
+// ============================================================================
+
+/**
+ * Hook pour récupérer les détails d'un événement depuis Miles Republic
+ */
+export const useEventDetails = (eventId: number | null) => {
+  return useQuery({
+    queryKey: ['event-details', eventId],
+    queryFn: async () => {
+      if (!eventId) return null
+      const response = await eventsApi.getDetails(eventId.toString())
+      return response.data?.event || null
+    },
+    enabled: !!eventId,
+    staleTime: 60000, // 1 minute
+  })
+}
+
+/**
+ * Hook pour créer une proposition de fusion d'événements
+ */
+export const useCreateMergeProposal = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (data: {
+      keepEventId: number
+      duplicateEventId: number
+      newEventName?: string
+      reason?: string
+      forceOverwrite?: boolean
+      copyMissingEditions?: boolean
+    }) => proposalsApi.createMerge(data),
+    onSuccess: (response) => {
+      enqueueSnackbar(response.message || 'Proposition de fusion créée', { variant: 'success' })
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error || error.message || 'Erreur lors de la création'
+      enqueueSnackbar(message, { variant: 'error' })
+    }
+  })
+}

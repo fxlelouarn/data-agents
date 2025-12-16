@@ -3488,4 +3488,204 @@ function compareData(existing: any, proposed: any): any {
   return changes
 }
 
+// ============================================================================
+// POST /api/proposals/merge - Créer une proposition de fusion d'événements
+// ============================================================================
+router.post('/merge', [
+  body('keepEventId').isInt({ min: 1 }).withMessage('keepEventId doit être un entier positif'),
+  body('duplicateEventId').isInt({ min: 1 }).withMessage('duplicateEventId doit être un entier positif'),
+  body('newEventName').optional().isString().trim(),
+  body('reason').optional().isString().trim(),
+  body('forceOverwrite').optional().isBoolean(),
+  body('copyMissingEditions').optional().isBoolean(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { keepEventId, duplicateEventId, newEventName, reason, forceOverwrite, copyMissingEditions = true } = req.body
+
+  // Valider que les deux IDs sont différents
+  if (keepEventId === duplicateEventId) {
+    throw createError(400, 'Les deux événements doivent être différents', 'SAME_EVENT_ERROR')
+  }
+
+  // Récupérer la connexion Miles Republic
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+
+  if (!milesRepublicConn) {
+    throw createError(500, 'Connexion Miles Republic non trouvée', 'DB_CONNECTION_ERROR')
+  }
+
+  // Charger DatabaseManager
+  const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'proposals-merge')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+
+  // Récupérer les deux événements avec leurs éditions
+  const keepEvent = await sourceDb.event.findUnique({
+    where: { id: keepEventId },
+    include: {
+      editions: {
+        orderBy: { year: 'desc' },
+        select: { id: true, year: true, startDate: true, status: true }
+      }
+    }
+  })
+
+  const duplicateEvent = await sourceDb.event.findUnique({
+    where: { id: duplicateEventId },
+    include: {
+      editions: {
+        orderBy: { year: 'desc' },
+        select: { id: true, year: true, startDate: true, status: true }
+      }
+    }
+  })
+
+  if (!keepEvent) {
+    throw createError(404, `Événement à conserver non trouvé (ID: ${keepEventId})`, 'EVENT_NOT_FOUND')
+  }
+
+  if (!duplicateEvent) {
+    throw createError(404, `Événement doublon non trouvé (ID: ${duplicateEventId})`, 'EVENT_NOT_FOUND')
+  }
+
+  // Vérifier si l'événement à conserver a déjà un oldSlugId
+  let existingRedirectInfo: { oldSlugId: number; eventExists: boolean; eventName?: string } | null = null
+
+  if (keepEvent.oldSlugId) {
+    // Vérifier si cet oldSlugId correspond à un événement existant
+    const existingRedirectEvent = await sourceDb.event.findUnique({
+      where: { id: keepEvent.oldSlugId },
+      select: { id: true, name: true, status: true }
+    })
+
+    existingRedirectInfo = {
+      oldSlugId: keepEvent.oldSlugId,
+      eventExists: !!existingRedirectEvent,
+      eventName: existingRedirectEvent?.name
+    }
+
+    // Si l'événement existe et qu'on n'a pas le flag force, bloquer
+    if (existingRedirectEvent && !forceOverwrite) {
+      throw createError(400,
+        `L'événement "${keepEvent.name}" (ID: ${keepEventId}) a déjà une redirection vers "${existingRedirectEvent.name}" (ID: ${keepEvent.oldSlugId}). Utilisez forceOverwrite: true pour écraser.`,
+        'ALREADY_HAS_REDIRECT',
+        {
+          existingRedirect: existingRedirectInfo,
+          canForce: true
+        }
+      )
+    }
+
+    // Si l'événement n'existe pas (oldSlugId orphelin), on peut écraser sans problème
+    if (!existingRedirectEvent) {
+      logger.info(`[EVENT_MERGE] oldSlugId ${keepEvent.oldSlugId} ne correspond à aucun événement existant, écrasement autorisé`)
+    } else {
+      logger.warn(`[EVENT_MERGE] Écrasement forcé de oldSlugId ${keepEvent.oldSlugId} (${existingRedirectEvent.name})`)
+    }
+  }
+
+  // Récupérer ou créer l'agent "Manual Actions"
+  let manualAgent = await db.prisma.agent.findFirst({
+    where: { name: 'Manual Actions' }
+  })
+
+  if (!manualAgent) {
+    manualAgent = await db.prisma.agent.create({
+      data: {
+        name: 'Manual Actions',
+        description: 'Agent pour les actions manuelles effectuées via le dashboard',
+        type: 'EXTRACTOR',
+        isActive: true,
+        frequency: {},
+        config: { agentType: 'MANUAL' }
+      }
+    })
+  }
+
+  // Calculer les éditions qui seront copiées (si l'option est activée)
+  const keepEventYears = new Set(keepEvent.editions.map((e: { year: string }) => e.year))
+  const editionsToCopy = copyMissingEditions
+    ? duplicateEvent.editions
+        .filter((e: { year: string }) => !keepEventYears.has(e.year))
+        .map((e: { id: number; year: string; startDate: Date | null; status: string }) => ({
+          id: e.id,
+          year: e.year,
+          startDate: e.startDate,
+          status: e.status
+        }))
+    : []
+
+  // Préparer les listes d'éditions pour l'affichage dans le détail
+  const keepEventEditions = keepEvent.editions.map((e: { id: number; year: string }) => ({
+    id: e.id,
+    year: e.year
+  }))
+  const duplicateEventEditions = duplicateEvent.editions.map((e: { id: number; year: string }) => ({
+    id: e.id,
+    year: e.year
+  }))
+
+  // Construire les changes
+  const changes = {
+    merge: {
+      keepEventId,
+      keepEventName: keepEvent.name,
+      keepEventCity: keepEvent.city,
+      keepEventEditionsCount: keepEvent.editions.length,
+      keepEventEditions,
+      duplicateEventId,
+      duplicateEventName: duplicateEvent.name,
+      duplicateEventCity: duplicateEvent.city,
+      duplicateEventEditionsCount: duplicateEvent.editions.length,
+      duplicateEventEditions,
+      newEventName: newEventName || null,
+      // Info sur l'écrasement d'une redirection existante
+      previousOldSlugId: existingRedirectInfo?.oldSlugId || null,
+      previousOldSlugIdEventExists: existingRedirectInfo?.eventExists || false,
+      previousOldSlugIdEventName: existingRedirectInfo?.eventName || null,
+      forceOverwrite: forceOverwrite || false,
+      // Options de copie des éditions
+      copyMissingEditions,
+      editionsToCopy: editionsToCopy.length > 0 ? editionsToCopy : null
+    }
+  }
+
+  // Créer la proposition
+  const proposal = await db.prisma.proposal.create({
+    data: {
+      agentId: manualAgent.id,
+      type: 'EVENT_MERGE',
+      status: 'PENDING',
+      eventId: keepEventId.toString(),
+      changes,
+      justification: [{
+        type: 'user_action',
+        message: reason || 'Fusion manuelle d\'événements doublons',
+        metadata: {
+          keepEvent: { id: keepEventId, name: keepEvent.name, city: keepEvent.city },
+          duplicateEvent: { id: duplicateEventId, name: duplicateEvent.name, city: duplicateEvent.city }
+        }
+      }],
+      confidence: 1.0,
+      eventName: keepEvent.name,
+      eventCity: keepEvent.city
+    }
+  })
+
+  const editionsCopyMessage = editionsToCopy.length > 0
+    ? ` (${editionsToCopy.length} édition(s) seront copiées: ${editionsToCopy.map((e: { year: string }) => e.year).join(', ')})`
+    : ''
+
+  res.json({
+    success: true,
+    proposal,
+    message: `Proposition de fusion créée: "${duplicateEvent.name}" sera fusionné dans "${keepEvent.name}"${editionsCopyMessage}`,
+    editionsToCopy: editionsToCopy.length > 0 ? editionsToCopy : undefined,
+    copyMissingEditions
+  })
+}))
+
 export { router as proposalRouter }

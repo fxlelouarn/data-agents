@@ -219,6 +219,7 @@ enum ProposalType {
   EVENT_UPDATE
   EDITION_UPDATE
   RACE_UPDATE
+  EVENT_MERGE
 }
 
 enum ProposalStatus {

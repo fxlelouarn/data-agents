@@ -178,6 +178,10 @@ export class ProposalDomainService {
           result = await this.applyRaceUpdate(proposal.raceId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName })
           break
 
+        case 'EVENT_MERGE':
+          result = await this.applyEventMerge(filteredFinalChanges, { ...options, agentName })
+          break
+
         default:
           return this.errorResult('type', `Type de proposition non supporté: ${proposal.type}`)
       }
@@ -1203,6 +1207,219 @@ export class ProposalDomainService {
       }
     } catch (error) {
       return this.errorResult('update', `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+    }
+  }
+
+  /**
+   * Apply EVENT_MERGE proposal
+   *
+   * Fusionne deux événements en :
+   * 1. Stockant l'ID du doublon dans oldSlugId de l'événement conservé
+   * 2. Marquant l'événement doublon comme DELETED
+   * 3. Optionnellement, renommant l'événement conservé
+   */
+  async applyEventMerge(
+    changes: any,
+    options: ApplyOptions = {}
+  ): Promise<ProposalApplicationResult> {
+    try {
+      const milesRepo = await this.getMilesRepublicRepository(
+        options.milesRepublicDatabaseId,
+        options.agentName,
+        options.userEmail
+      )
+
+      // Extraire les données de fusion
+      const mergeData = changes.merge
+      if (!mergeData) {
+        return this.errorResult('merge', 'Données de fusion manquantes (changes.merge)')
+      }
+
+      const { keepEventId, duplicateEventId, newEventName, copyMissingEditions = true } = mergeData
+
+      if (!keepEventId || !duplicateEventId) {
+        return this.errorResult('merge', 'keepEventId et duplicateEventId sont requis')
+      }
+
+      // 1. Vérifier que l'événement à conserver existe et n'a pas déjà un oldSlugId
+      const keepEvent = await milesRepo.findEventById(keepEventId)
+      if (!keepEvent) {
+        return this.errorResult('merge', `Événement à conserver non trouvé (ID: ${keepEventId})`)
+      }
+
+      // Vérifier si l'événement a déjà un oldSlugId
+      if (keepEvent.oldSlugId) {
+        // Vérifier si cet oldSlugId correspond à un événement existant
+        const existingRedirectEvent = await milesRepo.findEventById(keepEvent.oldSlugId)
+
+        if (existingRedirectEvent && !mergeData.forceOverwrite) {
+          // L'oldSlugId pointe vers un événement existant et on n'a pas forcé
+          return this.errorResult('merge',
+            `L'événement "${keepEvent.name}" a déjà une redirection vers "${existingRedirectEvent.name}" (ID: ${keepEvent.oldSlugId}). La proposition doit avoir forceOverwrite: true pour écraser.`
+          )
+        }
+
+        // Log approprié selon le cas
+        if (!existingRedirectEvent) {
+          this.logger.info(`[EVENT_MERGE] oldSlugId ${keepEvent.oldSlugId} ne correspond à aucun événement existant, écrasement autorisé`)
+        } else {
+          this.logger.warn(`[EVENT_MERGE] Écrasement forcé de oldSlugId ${keepEvent.oldSlugId} (${existingRedirectEvent.name})`)
+        }
+      }
+
+      // 2. Vérifier que l'événement doublon existe
+      const duplicateEvent = await milesRepo.findEventById(duplicateEventId)
+      if (!duplicateEvent) {
+        return this.errorResult('merge', `Événement doublon non trouvé (ID: ${duplicateEventId})`)
+      }
+
+      // 3. Mettre à jour l'événement à conserver
+      const keepEventUpdate: Record<string, any> = {
+        oldSlugId: duplicateEventId,
+        toUpdate: true,
+        algoliaObjectToUpdate: true
+      }
+
+      if (newEventName && newEventName.trim() !== '') {
+        keepEventUpdate.name = newEventName.trim()
+      }
+
+      await milesRepo.updateEvent(keepEventId, keepEventUpdate)
+      this.logger.info(`✅ EVENT_MERGE: Événement ${keepEventId} mis à jour avec oldSlugId=${duplicateEventId}`)
+
+      // 4. Marquer l'événement doublon comme DELETED
+      await milesRepo.updateEvent(duplicateEventId, {
+        status: 'DELETED',
+        toUpdate: true,
+        algoliaObjectToDelete: true
+      })
+      this.logger.info(`✅ EVENT_MERGE: Événement doublon ${duplicateEventId} marqué DELETED`)
+
+      // 5. Copier les éditions manquantes du doublon vers l'événement conservé
+      const copiedEditions: Array<{ originalId: number; newId: number; year: string }> = []
+
+      if (copyMissingEditions) {
+        // Récupérer les années existantes sur l'événement conservé
+        const keepEventYears = new Set(
+          (keepEvent.editions || []).map((e: any) => e.year)
+        )
+
+        // Trouver les éditions du doublon qui n'existent pas sur l'événement conservé
+        const duplicateEditions = duplicateEvent.editions || []
+        const editionsToCopy = duplicateEditions.filter((e: any) => !keepEventYears.has(e.year))
+
+        if (editionsToCopy.length > 0) {
+          this.logger.info(`📋 EVENT_MERGE: ${editionsToCopy.length} édition(s) à copier depuis le doublon`)
+
+          // Trouver l'année max parmi toutes les éditions (conservées + à copier)
+          const allYears = [
+            ...(keepEvent.editions || []).map((e: any) => parseInt(e.year, 10)),
+            ...editionsToCopy.map((e: any) => parseInt(e.year, 10))
+          ]
+          const maxYear = Math.max(...allYears)
+
+          for (const edition of editionsToCopy) {
+            // Récupérer l'édition complète avec ses courses
+            const fullEdition = await milesRepo.findEditionById(edition.id)
+            if (!fullEdition) {
+              this.logger.warn(`⚠️ Édition ${edition.id} non trouvée, ignorée`)
+              continue
+            }
+
+            const editionYear = parseInt(fullEdition.year, 10)
+            const isLatestEdition = editionYear === maxYear
+
+            // Créer la nouvelle édition sur l'événement conservé
+            const newEdition = await milesRepo.createEdition({
+              eventId: keepEventId,
+              year: fullEdition.year,
+              startDate: fullEdition.startDate,
+              endDate: fullEdition.endDate,
+              registrationOpeningDate: fullEdition.registrationOpeningDate,
+              registrationClosingDate: fullEdition.registrationClosingDate,
+              calendarStatus: fullEdition.calendarStatus,
+              clientStatus: fullEdition.clientStatus || undefined,
+              status: fullEdition.status,
+              timeZone: fullEdition.timeZone,
+              currency: fullEdition.currency,
+              whatIsIncluded: fullEdition.whatIsIncluded || undefined,
+              clientExternalUrl: fullEdition.clientExternalUrl || undefined,
+              bibWithdrawalFullAddress: fullEdition.bibWithdrawalFullAddress || undefined,
+              volunteerCode: fullEdition.volunteerCode || undefined,
+              // currentEditionEventId sera mis à jour après si c'est l'édition la plus récente
+            })
+
+            this.logger.info(`  ✅ Édition ${fullEdition.year} copiée: ${edition.id} → ${newEdition.id}`)
+
+            // Si c'est l'édition la plus récente, la définir comme édition courante
+            if (isLatestEdition) {
+              // D'abord, retirer currentEditionEventId de l'ancienne édition courante
+              const currentEdition = (keepEvent.editions || []).find((e: any) => e.currentEditionEventId === keepEventId)
+              if (currentEdition) {
+                await milesRepo.updateEdition(currentEdition.id, { currentEditionEventId: null })
+                this.logger.info(`  ℹ️ Ancienne édition courante ${currentEdition.year} (ID: ${currentEdition.id}) mise à jour`)
+              }
+              // Définir la nouvelle édition comme courante
+              await milesRepo.updateEdition(newEdition.id, { currentEditionEventId: keepEventId })
+              this.logger.info(`  ⭐ Édition ${fullEdition.year} définie comme édition courante`)
+            }
+
+            // Copier les courses de cette édition
+            const racesToCopy = fullEdition.races || []
+            for (const race of racesToCopy) {
+              await milesRepo.createRace({
+                editionId: newEdition.id,
+                eventId: keepEventId,
+                name: race.name,
+                startDate: race.startDate,
+                timeZone: race.timeZone || fullEdition.timeZone,
+                categoryLevel1: race.categoryLevel1 || undefined,
+                categoryLevel2: race.categoryLevel2 || undefined,
+                runDistance: race.runDistance || undefined,
+                bikeDistance: race.bikeDistance || undefined,
+                walkDistance: race.walkDistance || undefined,
+                swimDistance: race.swimDistance || undefined,
+                runPositiveElevation: race.runPositiveElevation || undefined,
+                isActive: race.isActive,
+              })
+            }
+
+            if (racesToCopy.length > 0) {
+              this.logger.info(`    📋 ${racesToCopy.length} course(s) copiée(s)`)
+            }
+
+            copiedEditions.push({
+              originalId: edition.id,
+              newId: newEdition.id,
+              year: fullEdition.year
+            })
+          }
+        } else {
+          this.logger.info(`ℹ️ EVENT_MERGE: Aucune édition à copier (toutes les années existent déjà)`)
+        }
+      }
+
+      return {
+        success: true,
+        appliedChanges: {
+          keepEvent: {
+            id: keepEventId,
+            previousName: keepEvent.name,
+            newName: newEventName || keepEvent.name,
+            oldSlugId: duplicateEventId
+          },
+          duplicateEvent: {
+            id: duplicateEventId,
+            name: duplicateEvent.name,
+            previousStatus: duplicateEvent.status,
+            newStatus: 'DELETED'
+          },
+          copiedEditions: copiedEditions.length > 0 ? copiedEditions : undefined
+        }
+      }
+    } catch (error) {
+      this.logger.error(`❌ EVENT_MERGE failed: ${error instanceof Error ? error.message : 'Unknown error'}`)
+      return this.errorResult('merge', `Erreur lors de la fusion: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
   }
 

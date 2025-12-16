@@ -24,6 +24,7 @@ export const proposalTypeLabels: Record<ProposalType, string> = {
   EVENT_UPDATE: 'Modification événement',
   EDITION_UPDATE: 'Modification édition',
   RACE_UPDATE: 'Modification course',
+  EVENT_MERGE: 'Fusion événements',
 }
 
 // Couleurs des types de propositions (pour graphiques)
@@ -32,6 +33,7 @@ export const proposalTypeColors: Record<ProposalType, string> = {
   EVENT_UPDATE: '#82ca9d',
   EDITION_UPDATE: '#ffc658',
   RACE_UPDATE: '#ff8042',
+  EVENT_MERGE: '#f97316',
 }
 
 // Styles complets des types de propositions (pour chips)
@@ -66,6 +68,14 @@ export const proposalTypeStyles: Record<ProposalType, any> = {
     borderColor: '#d97706',
     '& .MuiChip-icon': {
       color: '#b45309'
+    }
+  },
+  EVENT_MERGE: {
+    backgroundColor: '#f97316',
+    color: 'white',
+    borderColor: '#ea580c',
+    '& .MuiChip-icon': {
+      color: '#c2410c'
     }
   },
 }
