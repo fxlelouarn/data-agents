@@ -3644,10 +3644,12 @@ router.post('/merge', [
 
   res.json({
     success: true,
-    proposal,
-    message: `Proposition de fusion créée: "${duplicateEvent.name}" sera fusionné dans "${keepEvent.name}"${editionsCopyMessage}`,
-    editionsToCopy: editionsToCopy.length > 0 ? editionsToCopy : undefined,
-    copyMissingEditions
+    data: {
+      proposal,
+      editionsToCopy: editionsToCopy.length > 0 ? editionsToCopy : undefined,
+      copyMissingEditions
+    },
+    message: `Proposition de fusion créée: "${duplicateEvent.name}" sera fusionné dans "${keepEvent.name}"${editionsCopyMessage}`
   })
 }))
 

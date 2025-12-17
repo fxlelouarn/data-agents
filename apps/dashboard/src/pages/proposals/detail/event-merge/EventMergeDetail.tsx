@@ -70,24 +70,6 @@ const formatRaceInfo = (race: RaceInfo): string => {
   return parts.length > 0 ? parts.join(' • ') : ''
 }
 
-// Helper pour obtenir le label du calendarStatus
-const getCalendarStatusLabel = (status: string | undefined): { label: string; color: 'success' | 'warning' | 'error' | 'default' } => {
-  switch (status) {
-    case 'LIVE':
-      return { label: 'Live', color: 'success' }
-    case 'VALIDATED':
-      return { label: 'Validé', color: 'success' }
-    case 'PENDING':
-      return { label: 'En attente', color: 'warning' }
-    case 'CANCELLED':
-      return { label: 'Annulé', color: 'error' }
-    case 'DRAFT':
-      return { label: 'Brouillon', color: 'default' }
-    default:
-      return { label: status || 'N/A', color: 'default' }
-  }
-}
-
 const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
   const navigate = useNavigate()
   const updateMutation = useUpdateProposal()
@@ -314,19 +296,16 @@ const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
                 <Skeleton variant="rectangular" height={32} sx={{ borderRadius: 1 }} />
               ) : (
                 <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ gap: 0.5 }}>
-                  {/* Éditions existantes avec calendarStatus */}
-                  {sortedKeepEditions.map((edition: EditionWithRaces) => {
-                    const statusInfo = getCalendarStatusLabel(edition.calendarStatus)
-                    return (
-                      <Chip
-                        key={edition.id}
-                        label={`${edition.year} (${statusInfo.label})`}
-                        size="small"
-                        variant="outlined"
-                        color={statusInfo.color}
-                      />
-                    )
-                  })}
+                  {/* Éditions existantes */}
+                  {sortedKeepEditions.map((edition: EditionWithRaces) => (
+                    <Chip
+                      key={edition.id}
+                      label={edition.year}
+                      size="small"
+                      variant="outlined"
+                      color="success"
+                    />
+                  ))}
                   {/* Éditions qui seront ajoutées */}
                   {copyMissingEditions && sortedEditionsToCopy.map((edition: EditionInfo) => (
                     <Chip
@@ -438,18 +417,15 @@ const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
                 <Skeleton variant="rectangular" height={32} sx={{ borderRadius: 1 }} />
               ) : (
                 <Stack direction="row" spacing={0.5} flexWrap="wrap" useFlexGap sx={{ gap: 0.5 }}>
-                  {sortedDuplicateEditions.map((edition: EditionWithRaces) => {
-                    const statusInfo = getCalendarStatusLabel(edition.calendarStatus)
-                    return (
-                      <Chip
-                        key={edition.id}
-                        label={`${edition.year} (${statusInfo.label})`}
-                        size="small"
-                        variant="outlined"
-                        color="default"
-                      />
-                    )
-                  })}
+                  {sortedDuplicateEditions.map((edition: EditionWithRaces) => (
+                    <Chip
+                      key={edition.id}
+                      label={edition.year}
+                      size="small"
+                      variant="outlined"
+                      color="default"
+                    />
+                  ))}
                 </Stack>
               )}
 

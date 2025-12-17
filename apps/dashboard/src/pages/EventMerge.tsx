@@ -171,7 +171,7 @@ const EventMerge: React.FC = () => {
       onSuccess: (response) => {
         setForceDialogOpen(false)
         setExistingRedirectInfo(null)
-        navigate(`/proposals/${response.data?.proposal.id}`)
+        navigate(`/proposals/${response.data.proposal.id}`)
       },
       onError: (error: any) => {
         // Vérifier si c'est une erreur de redirection existante qu'on peut forcer
