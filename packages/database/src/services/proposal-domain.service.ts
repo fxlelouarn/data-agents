@@ -712,14 +712,40 @@ export class ProposalDomainService {
         this.logger.info(`⏭️  Blocs races ignorés (blockType=${options.blockType})`)
       }
 
+      // =========================================================================
+      // ✅ FIX 2025-12-17: ORDRE UNIFIÉ - DELETE → UPDATE → ADD
+      // Extraire TOUTES les courses à supprimer depuis toutes les sources
+      // et les supprimer EN PREMIER pour éviter les doublons et l'ordre incorrect
+      // =========================================================================
+
+      const racesToDeleteSet = this.extractAllRacesToDelete(
+        changes,
+        proposal?.userModifiedChanges as Record<string, any> | null,
+        racesToUpdate
+      )
+
+      if (shouldProcessRaces && racesToDeleteSet.size > 0) {
+        this.logger.info(`\n🗑️  [PHASE 1/3] SUPPRESSION de ${racesToDeleteSet.size} course(s) - Ordre unifié`)
+        this.logger.info(`  📋 IDs à supprimer: [${Array.from(racesToDeleteSet).join(', ')}]`)
+
+        for (const raceId of racesToDeleteSet) {
+          try {
+            await milesRepo.deleteRace(raceId)
+            this.logger.info(`  ✅ Course ${raceId} supprimée`)
+          } catch (error) {
+            this.logger.warn(`  ⚠️ Échec suppression course ${raceId}: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+          }
+        }
+      } else if (shouldProcessRaces) {
+        this.logger.info(`\n🗑️  [PHASE 1/3] Aucune course à supprimer`)
+      }
+
+      // =========================================================================
+      // PHASE 2/3: UPDATE - Mise à jour des courses existantes
+      // =========================================================================
+
       // Update races if any (structure: changes.races)
-      this.logger.info(`\n🔍 [DEBUG UPDATE] Avant section UPDATE:`, {
-        racesChangesExists: !!racesChanges,
-        racesChangesIsArray: Array.isArray(racesChanges),
-        racesChangesLength: racesChanges?.length || 0,
-        racesChangesContent: racesChanges,
-        shouldProcess: shouldProcessRaces
-      })
+      this.logger.info(`\n✏️  [PHASE 2/3] UPDATE - Mise à jour des courses existantes`)
 
       if (shouldProcessRaces && racesChanges && Array.isArray(racesChanges)) {
         this.logger.info(`🏃 Mise à jour de ${racesChanges.length} course(s) existante(s)`)
@@ -727,6 +753,12 @@ export class ProposalDomainService {
           const raceId = parseInt(raceChange.raceId)
           if (isNaN(raceId)) {
             this.logger.warn(`ID de course invalide: ${raceChange.raceId}`)
+            continue
+          }
+
+          // ✅ FIX 2025-12-17: Ignorer les courses déjà supprimées
+          if (racesToDeleteSet.has(raceId)) {
+            this.logger.info(`  ⏭️  Course ${raceId} ignorée (déjà supprimée)`)
             continue
           }
 
@@ -756,6 +788,12 @@ export class ProposalDomainService {
           const raceId = parseInt(raceUpdate.raceId)
           if (isNaN(raceId)) {
             this.logger.warn(`ID de course invalide: ${raceUpdate.raceId}`)
+            continue
+          }
+
+          // ✅ FIX 2025-12-17: Ignorer les courses déjà supprimées
+          if (racesToDeleteSet.has(raceId)) {
+            this.logger.info(`  ⏭️  Course ${raceId} ignorée (déjà supprimée)`)
             continue
           }
 
@@ -808,14 +846,10 @@ export class ProposalDomainService {
         }
       }
 
-      // Add races if any
-      this.logger.info(`\n🔍 [DEBUG ADD] Avant section ADD:`, {
-        racesToAddExists: !!racesToAdd,
-        racesToAddIsArray: Array.isArray(racesToAdd),
-        racesToAddLength: racesToAdd?.length || 0,
-        racesToAddContent: racesToAdd,
-        shouldProcess: shouldProcessRaces
-      })
+      // =========================================================================
+      // PHASE 3/3: ADD - Ajout de nouvelles courses
+      // =========================================================================
+      this.logger.info(`\n➕ [PHASE 3/3] ADD - Ajout de nouvelles courses`)
 
       if (shouldProcessRaces && racesToAdd && Array.isArray(racesToAdd) && racesToAdd.length > 0) {
         // Récupérer les modifications utilisateur depuis userModifiedChanges
@@ -1012,17 +1046,15 @@ export class ProposalDomainService {
         }
       }
 
-      // Update existing races if edited
+      // =========================================================================
+      // Appliquer les modifications utilisateur sur courses existantes (raceEdits)
+      // Note: Les suppressions sont déjà traitées dans PHASE 1/3
+      // =========================================================================
       const raceEdits = (proposal?.userModifiedChanges as any)?.raceEdits || {}
-
-      this.logger.info(`🔍 [RACE EDITS] Contenu complet de raceEdits:`, {
-        keys: Object.keys(raceEdits),
-        keysCount: Object.keys(raceEdits).length,
-        raceEdits: JSON.stringify(raceEdits, null, 2)
-      })
 
       // ✅ FIX 2025-12-11: Le frontend envoie maintenant les vrais raceId comme clés
       // Supporter les deux formats: existing-{index} (ancien) et {raceId} (nouveau)
+      // ✅ FIX 2025-12-17: Exclure les courses supprimées (_deleted) - déjà traitées en PHASE 1
       const existingRaceEdits = Object.keys(raceEdits)
         .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && !raceEdits[key]._deleted)
         .map(key => {
@@ -1033,24 +1065,7 @@ export class ProposalDomainService {
           }
         })
 
-      // ✅ FIX: Construire racesToDelete depuis raceEdits._deleted
-      const racesToDeleteFromEdits = Object.keys(raceEdits)
-        .filter(key => (key.startsWith('existing-') || /^\d+$/.test(key)) && raceEdits[key]._deleted === true)
-        .map(key => {
-          if (key.startsWith('existing-')) {
-            return { index: parseInt(key.replace('existing-', '')), raceId: null }
-          } else {
-            return { index: null, raceId: parseInt(key) }
-          }
-        })
-
-      this.logger.info(`🐞 [DEBUG] Edits+Deletes counts:`, {
-        existingRaceEdits: existingRaceEdits.length,
-        racesToDeleteFromEdits: racesToDeleteFromEdits.length,
-        racesToDeleteIndexes: racesToDeleteFromEdits
-      })
-
-      if (existingRaceEdits.length > 0 || racesToDeleteFromEdits.length > 0) {
+      if (existingRaceEdits.length > 0) {
         // ✅ FIX: Créer un mapping index → raceId depuis racesToUpdate
         // existing-0 fait référence à racesToUpdate[0], pas à existingRaces[0]
         const indexToRaceId = new Map<number, number>()
@@ -1063,97 +1078,57 @@ export class ProposalDomainService {
           })
         }
 
-        this.logger.info(`🔗 [INDEX MAPPING] Map index → raceId:`, {
-          mappingSize: indexToRaceId.size,
-          mapping: Array.from(indexToRaceId.entries()).map(([idx, id]) => `${idx}→${id}`)
-        })
+        this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges.raceEdits)`)
 
-        // Traiter les suppressions
-        if (racesToDeleteFromEdits.length > 0) {
-          this.logger.info(`🗑️  Suppression de ${racesToDeleteFromEdits.length} course(s) (via raceEdits._deleted)`)
-
-          for (const item of racesToDeleteFromEdits) {
-            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
-            let raceId: number | null = item.raceId
-            if (!raceId && item.index !== null) {
-              raceId = indexToRaceId.get(item.index) || null
-            }
-            if (!raceId) {
-              this.logger.warn(`  ⚠️  Course ${item.raceId || `index ${item.index}`} non trouvé`)
-              continue
-            }
-
-            await milesRepo.deleteRace(raceId)
-            this.logger.info(`  ✅ Course ${raceId} supprimée`)
+        for (const { index, raceId: directRaceId, edits } of existingRaceEdits) {
+          // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
+          let raceId: number | null = directRaceId
+          if (!raceId && index !== null) {
+            raceId = indexToRaceId.get(index) || null
           }
-        }
-
-        // Traiter les modifications
-        if (existingRaceEdits.length > 0) {
-          this.logger.info(`✏️  Mise à jour de ${existingRaceEdits.length} course(s) existante(s) (via userModifiedChanges)`)
-
-          for (const { index, raceId: directRaceId, edits } of existingRaceEdits) {
-            // ✅ FIX 2025-12-11: Supporter les deux formats (index ou raceId direct)
-            let raceId: number | null = directRaceId
-            if (!raceId && index !== null) {
-              raceId = indexToRaceId.get(index) || null
-            }
-            if (!raceId) {
-              this.logger.warn(`  ⚠️  Course ${directRaceId || `index ${index}`} non trouvé`)
-              continue
-            }
-
-            const updateData: any = {}
-
-            if (edits.name) updateData.name = edits.name
-            if (edits.type) updateData.type = edits.type
-            if (edits.startDate) updateData.startDate = new Date(edits.startDate)
-
-            // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
-            if (edits.categoryLevel1) updateData.categoryLevel1 = edits.categoryLevel1
-            if (edits.categoryLevel2) updateData.categoryLevel2 = edits.categoryLevel2
-
-            // Distances : supporter distance (legacy) et tous les types spécifiques
-            if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
-            if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
-            if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
-            if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
-            if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
-
-            // Élévations : supporter elevation (legacy) et tous les types spécifiques
-            if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
-            if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
-            if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
-            if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
-
-            if (Object.keys(updateData).length > 0) {
-              await milesRepo.updateRace(raceId, updateData)
-              this.logger.info(`  ✅ Course ${raceId} mise à jour via edits utilisateur:`, updateData)
-            }
-          }
-        }
-      }
-
-      // Delete races if any
-      this.logger.info(`\n🔍 [DEBUG DELETE] Avant section DELETE:`, {
-        racesToDeleteExists: !!racesToDelete,
-        racesToDeleteIsArray: Array.isArray(racesToDelete),
-        racesToDeleteLength: racesToDelete?.length || 0,
-        racesToDeleteContent: racesToDelete
-      })
-
-      if (racesToDelete && Array.isArray(racesToDelete) && racesToDelete.length > 0) {
-        this.logger.info(`🗑️  Suppression de ${racesToDelete.length} course(s) de l'édition ${numericEditionId}`)
-        for (const raceId of racesToDelete) {
-          // ✅ FIX 2025-12-13: Valider que raceId est un nombre valide avant suppression
-          if (raceId === undefined || raceId === null || isNaN(raceId)) {
-            this.logger.warn(`  ⚠️  raceId invalide ignoré: ${raceId}`)
+          if (!raceId) {
+            this.logger.warn(`  ⚠️  Course ${directRaceId || `index ${index}`} non trouvé`)
             continue
           }
-          await milesRepo.deleteRace(raceId)
-          this.logger.info(`  ✅ Course ${raceId} supprimée`)
+
+          // ✅ FIX 2025-12-17: Ignorer les courses déjà supprimées
+          if (racesToDeleteSet.has(raceId)) {
+            this.logger.info(`  ⏭️  Course ${raceId} ignorée (déjà supprimée)`)
+            continue
+          }
+
+          const updateData: any = {}
+
+          if (edits.name) updateData.name = edits.name
+          if (edits.type) updateData.type = edits.type
+          if (edits.startDate) updateData.startDate = new Date(edits.startDate)
+
+          // ✅ FIX: Supporter categoryLevel1 et categoryLevel2
+          if (edits.categoryLevel1) updateData.categoryLevel1 = edits.categoryLevel1
+          if (edits.categoryLevel2) updateData.categoryLevel2 = edits.categoryLevel2
+
+          // Distances : supporter distance (legacy) et tous les types spécifiques
+          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
+          if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
+          if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
+          if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
+          if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
+
+          // Élévations : supporter elevation (legacy) et tous les types spécifiques
+          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
+          if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
+          if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
+          if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
+
+          if (Object.keys(updateData).length > 0) {
+            await milesRepo.updateRace(raceId, updateData)
+            this.logger.info(`  ✅ Course ${raceId} mise à jour via edits utilisateur:`, updateData)
+          }
         }
       }
+
+      // ✅ FIX 2025-12-17: Les suppressions ont été déplacées en PHASE 1/3 pour garantir l'ordre DELETE → UPDATE → ADD
+      // Les anciennes sections de suppression (racesToDeleteFromEdits et racesToDelete) ont été supprimées
 
       this.logger.info(`\n✅ EDITION_UPDATE appliqué avec succès pour l'édition ${numericEditionId}\n`)
 
@@ -2066,6 +2041,103 @@ export class ProposalDomainService {
     }
 
     return updateData
+  }
+
+  /**
+   * ✅ FIX 2025-12-17: Extraire TOUTES les courses à supprimer depuis toutes les sources
+   *
+   * Sources consolidées :
+   * 1. changes.racesToDelete (number[] ou {raceId, raceName}[])
+   * 2. changes.races.toDelete (number[] ou {raceId, raceName}[])
+   * 3. userModifiedChanges.raceEdits[key]._deleted === true
+   * 4. userModifiedChanges.racesToDelete (format objet)
+   *
+   * Retourne un Set pour garantir l'unicité (éviter les suppressions en double)
+   */
+  private extractAllRacesToDelete(
+    changes: Record<string, any>,
+    userModifiedChanges: Record<string, any> | null,
+    racesToUpdate: any[] | undefined
+  ): Set<number> {
+    const racesToDeleteSet = new Set<number>()
+
+    // Helper pour parser un raceId depuis différents formats
+    const parseRaceId = (item: any): number | null => {
+      if (item === null || item === undefined) return null
+      if (typeof item === 'number' && !isNaN(item)) return item
+      if (typeof item === 'string') {
+        const parsed = parseInt(item)
+        return isNaN(parsed) ? null : parsed
+      }
+      if (typeof item === 'object' && 'raceId' in item) {
+        return parseRaceId(item.raceId)
+      }
+      return null
+    }
+
+    // Source 1: changes.racesToDelete (number[] ou {raceId}[])
+    if (changes.racesToDelete && Array.isArray(changes.racesToDelete)) {
+      for (const item of changes.racesToDelete) {
+        const raceId = parseRaceId(item)
+        if (raceId !== null) racesToDeleteSet.add(raceId)
+      }
+      this.logger.info(`  📍 Source changes.racesToDelete: ${racesToDeleteSet.size} ID(s)`)
+    }
+
+    // Source 2: changes.races.toDelete
+    if (changes.races?.toDelete && Array.isArray(changes.races.toDelete)) {
+      const beforeCount = racesToDeleteSet.size
+      for (const item of changes.races.toDelete) {
+        const raceId = parseRaceId(item)
+        if (raceId !== null) racesToDeleteSet.add(raceId)
+      }
+      this.logger.info(`  📍 Source changes.races.toDelete: +${racesToDeleteSet.size - beforeCount} ID(s)`)
+    }
+
+    // Source 3: userModifiedChanges.racesToDelete
+    if (userModifiedChanges?.racesToDelete && Array.isArray(userModifiedChanges.racesToDelete)) {
+      const beforeCount = racesToDeleteSet.size
+      for (const item of userModifiedChanges.racesToDelete) {
+        const raceId = parseRaceId(item)
+        if (raceId !== null) racesToDeleteSet.add(raceId)
+      }
+      this.logger.info(`  📍 Source userModifiedChanges.racesToDelete: +${racesToDeleteSet.size - beforeCount} ID(s)`)
+    }
+
+    // Source 4: userModifiedChanges.raceEdits[key]._deleted === true
+    const raceEdits = userModifiedChanges?.raceEdits || {}
+    const beforeEditsCount = racesToDeleteSet.size
+
+    // Créer un mapping index → raceId depuis racesToUpdate pour les clés existing-{index}
+    const indexToRaceId = new Map<number, number>()
+    if (racesToUpdate && Array.isArray(racesToUpdate)) {
+      racesToUpdate.forEach((raceUpdate, i) => {
+        const raceId = parseRaceId(raceUpdate.raceId)
+        if (raceId !== null) indexToRaceId.set(i, raceId)
+      })
+    }
+
+    for (const [key, value] of Object.entries(raceEdits)) {
+      if ((value as any)?._deleted === true) {
+        // Format 1: Clé numérique directe (ex: "151163")
+        if (/^\d+$/.test(key)) {
+          const raceId = parseInt(key)
+          if (!isNaN(raceId)) racesToDeleteSet.add(raceId)
+        }
+        // Format 2: Clé existing-{index} (ex: "existing-0")
+        else if (key.startsWith('existing-')) {
+          const index = parseInt(key.replace('existing-', ''))
+          const raceId = indexToRaceId.get(index)
+          if (raceId !== undefined) racesToDeleteSet.add(raceId)
+        }
+      }
+    }
+
+    if (racesToDeleteSet.size > beforeEditsCount) {
+      this.logger.info(`  📍 Source raceEdits._deleted: +${racesToDeleteSet.size - beforeEditsCount} ID(s)`)
+    }
+
+    return racesToDeleteSet
   }
 
   /**
