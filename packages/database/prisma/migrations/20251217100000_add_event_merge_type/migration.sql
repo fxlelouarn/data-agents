@@ -1,0 +1,2 @@
+-- Add EVENT_MERGE to ProposalType enum
+ALTER TYPE "ProposalType" ADD VALUE IF NOT EXISTS 'EVENT_MERGE';
