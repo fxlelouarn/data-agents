@@ -30,7 +30,7 @@ const CategorizedEventChangesTable: React.FC<CategorizedEventChangesTableProps> 
   isBlockPending = false,
   validationDisabled = false,
   showCurrentValue = true,
-  showConfidence = true,
+  showConfidence = false,
   showActions = true,
   ...props
 }) => {

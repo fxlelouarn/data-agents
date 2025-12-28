@@ -111,7 +111,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               timezone={editionTimezone}
               disabled={isReadOnly || !allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('event')}
-              onValidateBlock={isReadOnly ? undefined : () => validateBlock('event', blockProposals['event'] || [])}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('event')}
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
               showCurrentValue={false}
@@ -134,7 +134,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               disabled={isReadOnly || !allPending || isPending || isEventDead}
               isEditionCanceled={isEditionCanceled || isEventDead}
               isBlockValidated={isBlockValidated('edition')}
-              onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition', blockProposals['edition'] || [])}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition')}
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
               isBlockPending={isBlockPending}
               showCurrentValue={false}
@@ -151,7 +151,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
                 userModifiedChanges={userModifiedChanges}
                 disabled={isReadOnly || isBlockValidated('organizer') || isEventDead}
                 isBlockValidated={isBlockValidated('organizer')}
-                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer')}
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
@@ -167,7 +167,7 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
               onRaceFieldModify={handleRaceFieldModify}
               disabled={isReadOnly || !allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('races')}
-              onValidateBlock={isReadOnly ? undefined : () => validateBlock('races', blockProposals['races'] || [])}
+              onValidateBlock={isReadOnly ? undefined : () => validateBlock('races')}
               onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
               isBlockPending={isBlockPending}
               validationDisabled={isReadOnly || isEventDead}

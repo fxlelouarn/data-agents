@@ -271,6 +271,7 @@ export const useUpdateProposal = () => {
     mutationFn: async ({
       id,
       proposalIds,  // 📦 MODE GROUPÉ
+      primaryProposalId,  // ✅ Two-Panes: proposition prioritaire (pas de merge)
       status,
       reviewedBy,
       appliedChanges,
@@ -283,6 +284,7 @@ export const useUpdateProposal = () => {
     }: {
       id?: string
       proposalIds?: string[]  // 📦 MODE GROUPÉ
+      primaryProposalId?: string  // ✅ Two-Panes: proposition prioritaire
       status?: string
       reviewedBy?: string
       appliedChanges?: Record<string, any>
@@ -295,8 +297,8 @@ export const useUpdateProposal = () => {
     }) => {
       // 📦 MODE GROUPÉ : Détecter et router vers le bon endpoint
       if (proposalIds && proposalIds.length > 0 && block) {
-        console.log(`📦 useUpdateProposal MODE GROUPÉ: ${proposalIds.length} propositions, bloc "${block}"`)
-        return proposalsApi.validateBlockGroup(proposalIds, block, changes || {})
+        console.log(`📦 useUpdateProposal MODE GROUPÉ: ${proposalIds.length} propositions, bloc "${block}", primaryProposalId: ${primaryProposalId || 'none'}`)
+        return proposalsApi.validateBlockGroup(proposalIds, block, changes || {}, primaryProposalId)
       }
 
       // Mode simple (1 proposition) - retourner un tableau pour uniformiser le type

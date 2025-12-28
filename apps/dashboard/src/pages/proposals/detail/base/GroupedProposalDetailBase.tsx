@@ -98,7 +98,8 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   setKillDialogOpen: (open: boolean) => void
   isEditionCanceled: boolean
   // Validation par blocs
-  validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  // ✅ proposalIds optionnel car les vues simples n'ont pas besoin de le passer
+  validateBlock: (blockKey: string, proposalIds?: string[]) => Promise<void>
   validateBlockWithDependencies: (blockKey: string) => Promise<void>  // ✅ Nouveau
   unvalidateBlock: (blockKey: string) => Promise<void>
   validateAllBlocks: () => Promise<void>
@@ -109,6 +110,15 @@ export interface GroupedProposalContext extends Omit<ProposalContext, 'proposal'
   // Archivage individuel d'une sous-proposition
   handleArchiveSingleProposal: (proposalId: string) => Promise<void>
   isArchiving: boolean
+  // ✅ Two-Panes: Fonctions de copie depuis les sources
+  sourceProposals: Proposal[]
+  activeSourceIndex: number
+  setActiveSourceIndex: (index: number) => void
+  copyFieldFromSource: (field: string) => void
+  copyRaceFromSource: (sourceRaceId: string, targetRaceId?: string) => void
+  copyAllFromSource: () => void
+  getFieldDifferences: () => import('@/hooks/useProposalEditor').FieldDiff[]
+  getRaceDifferences: () => import('@/hooks/useProposalEditor').RaceDiff[]
 }
 
 export interface GroupedProposalDetailBaseProps {
@@ -198,7 +208,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     validateAllBlocks: validateAllBlocksEditor,
     isBlockValidated: isBlockValidatedEditor,
     save: saveEditor,
-    isDirty: isEditorDirty
+    isDirty: isEditorDirty,
+    // ✅ Two-Panes: Fonctions de copie depuis les sources
+    sourceProposals,
+    activeSourceIndex,
+    setActiveSourceIndex,
+    copyFieldFromSource,
+    copyRaceFromSource,
+    copyAllFromSource,
+    getFieldDifferences,
+    getRaceDifferences
   } = editorResult
 
 
@@ -1043,6 +1062,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     // ✅ Utiliser TOUTES les propositions pour permettre l'annulation des blocs APPROVED
     proposals: groupProposals,
     blockProposals,
+    // ✅ Two-Panes: Utiliser la proposition prioritaire (pas de merge de toutes les propositions)
+    primaryProposalId: workingGroup?.primaryProposalId,
     // ✅ Phase 4: Construire selectedChanges depuis workingGroup.consolidatedChanges
     selectedChanges: (() => {
       if (!workingGroup) return {}
@@ -1076,7 +1097,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
 
   // Wrapper pour logger les validations de blocs
   // ✅ Phase 4: Utiliser automatiquement la validation en cascade
-  const validateBlock = async (blockKey: string, proposalIds: string[]) => {
+  // ✅ proposalIds optionnel pour compatibilité avec les vues simples
+  const validateBlock = async (blockKey: string, _proposalIds?: string[]) => {
     await validateBlockWithDependenciesBase(blockKey as any, { silent: false })
   }
 
@@ -1161,7 +1183,16 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     blockProposals,
     // Archivage individuel d'une sous-proposition
     handleArchiveSingleProposal,
-    isArchiving: bulkArchiveMutation.isPending
+    isArchiving: bulkArchiveMutation.isPending,
+    // ✅ Two-Panes: Fonctions de copie depuis les sources
+    sourceProposals,
+    activeSourceIndex,
+    setActiveSourceIndex,
+    copyFieldFromSource,
+    copyRaceFromSource,
+    copyAllFromSource,
+    getFieldDifferences,
+    getRaceDifferences
   }
 
   if (isLoading) return <LinearProgress />
@@ -1240,17 +1271,25 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
         {...customHeaderProps}
       />
 
-      <Grid container spacing={3}>
-        <Grid item xs={12} md={renderSidebar ? 8 : 12}>
-          {renderMainContent(context)}
-        </Grid>
+      {(() => {
+        // Évaluer le contenu du sidebar une seule fois
+        const sidebarContent = renderSidebar ? renderSidebar(context) : null
+        const hasSidebar = sidebarContent !== null
 
-        {renderSidebar && (
-          <Grid item xs={12} md={4}>
-            {renderSidebar(context)}
+        return (
+          <Grid container spacing={3}>
+            <Grid item xs={12} md={hasSidebar ? 8 : 12}>
+              {renderMainContent(context)}
+            </Grid>
+
+            {hasSidebar && (
+              <Grid item xs={12} md={4}>
+                {sidebarContent}
+              </Grid>
+            )}
           </Grid>
-        )}
-      </Grid>
+        )
+      })()}
 
       {/* Dialog de confirmation pour tuer l'événement */}
       <Dialog open={killDialogOpen} onClose={() => setKillDialogOpen(false)} maxWidth="sm" fullWidth>

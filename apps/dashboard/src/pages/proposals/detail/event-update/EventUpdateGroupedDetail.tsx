@@ -63,7 +63,7 @@ const EventUpdateGroupedDetail: React.FC<EventUpdateGroupedDetailProps> = ({ gro
               timezone={editionTimezone}
               disabled={!allPending || isPending || isEventDead}
               isBlockValidated={isBlockValidated('event')}
-              onValidateBlock={() => validateBlock('event', blockProposals['event'] || [])}
+              onValidateBlock={() => validateBlock('event')}
               onUnvalidateBlock={() => unvalidateBlock('event')}
               isBlockPending={isBlockPending}
               actions={allPending ? (
