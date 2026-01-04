@@ -425,9 +425,18 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     <TableContainer component={Paper} elevation={0}>
       {/* ✅ Bandeau indicateur si appliqué */}
       {isApplied && (
-        <Box sx={{ bgcolor: 'success.light', px: 2, py: 1, display: 'flex', alignItems: 'center', gap: 1 }}>
-          <CheckCircleIcon fontSize="small" sx={{ color: 'success.dark' }} />
-          <Typography variant="body2" sx={{ color: 'success.dark', fontWeight: 600 }}>
+        <Box sx={(theme) => ({
+          bgcolor: theme.palette.mode === 'dark'
+            ? 'rgba(46, 125, 50, 0.25)'  // Vert transparent en dark mode
+            : 'success.light',
+          px: 2,
+          py: 1,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1
+        })}>
+          <CheckCircleIcon fontSize="small" color="success" />
+          <Typography variant="body2" sx={{ color: 'success.main', fontWeight: 600 }}>
             Changements appliqués avec succès
           </Typography>
         </Box>
@@ -481,7 +490,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
                   <Typography
                     variant="body2"
                     sx={{
-                      color: isApplied ? 'success.dark' : 'primary.main',
+                      color: isApplied ? 'success.main' : 'primary.main',
                       fontWeight: isApplied ? 600 : 500,
                       fontFamily: 'monospace',
                       fontSize: 12,
