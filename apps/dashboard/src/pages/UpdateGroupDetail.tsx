@@ -37,7 +37,7 @@ import {
   Merge as MergeIcon,
   Add as AddIcon,
 } from '@mui/icons-material'
-import { useUpdates, useApplyUpdate, useReplayUpdate, useDeleteUpdate } from '@/hooks/useApi'
+import { useUpdate, useApplyUpdate, useReplayUpdate, useDeleteUpdate } from '@/hooks/useApi'
 import { DataUpdate, UpdateStatus } from '@/types'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
@@ -49,36 +49,21 @@ const UpdateGroupDetail: React.FC = () => {
   const navigate = useNavigate()
   const [expandedApps, setExpandedApps] = useState<Set<string>>(new Set())
 
-  // Récupérer toutes les updates et filtrer par proposalIds
-  const { data: updatesData, isLoading, error } = useUpdates({}, 1000, 0)
+  // ✅ OPTIMISATION: Récupérer uniquement l'update par son ID (au lieu de charger toutes les updates)
+  const { data: updateResponse, isLoading, error } = useUpdate(groupId || '')
   const applyUpdateMutation = useApplyUpdate()
   const replayUpdateMutation = useReplayUpdate()
   const deleteUpdateMutation = useDeleteUpdate()
 
-  // Trouver l'update correspondant au groupId
-  const targetUpdate = React.useMemo(() => {
-    if (!updatesData?.data || !groupId) return null
-    return (updatesData.data as DataUpdate[]).find(app => app.id === groupId)
-  }, [updatesData, groupId])
+  // ✅ L'update cible est directement dans la réponse
+  const targetUpdate = updateResponse?.data as DataUpdate | undefined
 
-  // Filtrer les updates appartenant à ce groupe
+  // ✅ Maintenant qu'on génère une seule ProposalApplication par groupe,
+  // groupUpdates contient juste cette application
   const groupUpdates = React.useMemo(() => {
-    if (!targetUpdate || !updatesData?.data) return []
-
-    // Utiliser proposalIds si non vide, sinon fallback sur proposalId
-    const proposalIds = (targetUpdate.proposalIds && targetUpdate.proposalIds.length > 0)
-      ? targetUpdate.proposalIds
-      : (targetUpdate.proposalId ? [targetUpdate.proposalId] : [])
-
-    if (proposalIds.length === 0) return []
-
-    return (updatesData.data as DataUpdate[]).filter(app => {
-      const appProposalIds = (app.proposalIds && app.proposalIds.length > 0)
-        ? app.proposalIds
-        : (app.proposalId ? [app.proposalId] : [])
-      return proposalIds.some(id => appProposalIds.includes(id))
-    })
-  }, [updatesData, targetUpdate])
+    if (!targetUpdate) return []
+    return [targetUpdate]
+  }, [targetUpdate])
 
   // Métadonnées du groupe
   const groupMetadata = React.useMemo(() => {
