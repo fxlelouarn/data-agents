@@ -38,7 +38,7 @@ const CategorizedEditionChangesTable: React.FC<CategorizedEditionChangesTablePro
   validationDisabled = false,
   onEditionStartDateChange,
   showCurrentValue = true,
-  showConfidence = true,
+  showConfidence = false,
   showActions = true,
   ...props 
 }) => {

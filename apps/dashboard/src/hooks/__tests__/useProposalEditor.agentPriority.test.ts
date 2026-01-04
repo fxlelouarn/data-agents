@@ -156,8 +156,10 @@ const createGoogleProposal = (overrides: Partial<Proposal> = {}): Proposal => ({
 // TEST WRAPPER
 // ─────────────────────────────────────────────────────────────
 
+let testQueryClient: QueryClient
+
 const createWrapper = () => {
-  const queryClient = new QueryClient({
+  testQueryClient = new QueryClient({
     defaultOptions: {
       queries: { retry: false },
       mutations: { retry: false },
@@ -165,7 +167,7 @@ const createWrapper = () => {
   })
 
   return ({ children }: { children: React.ReactNode }) => (
-    React.createElement(QueryClientProvider, { client: queryClient },
+    React.createElement(QueryClientProvider, { client: testQueryClient },
       React.createElement(SnackbarProvider, { maxSnack: 3 }, children)
     )
   )
@@ -176,8 +178,24 @@ const createWrapper = () => {
 // ─────────────────────────────────────────────────────────────
 
 describe('useProposalEditor - Agent Priority', () => {
+  const originalConsoleError = console.error
+
   beforeEach(() => {
     jest.clearAllMocks()
+    // Supprimer les warnings act() qui sont des faux positifs dans les tests async
+    console.error = (...args: unknown[]) => {
+      const message = typeof args[0] === 'string' ? args[0] : ''
+      if (message.includes('not wrapped in act')) return
+      originalConsoleError(...args)
+    }
+  })
+
+  afterEach(async () => {
+    // Annuler toutes les requêtes en cours et nettoyer le cache
+    await testQueryClient?.cancelQueries()
+    testQueryClient?.clear()
+    // Restaurer console.error
+    console.error = originalConsoleError
   })
 
   describe('consolidateRacesFromProposals - priority logic (unit tests)', () => {
@@ -553,7 +571,10 @@ describe('useProposalEditor - Agent Priority', () => {
       expect(race147544?.fields.startDate).toBe('2025-06-15T08:00:00Z')
     })
 
-    it('should include all proposalIds for races with multiple agents', async () => {
+    it('should include only primary proposal in proposalIds (Two-Panes mode)', async () => {
+      // ✅ REFONTE Two-Panes 2025-12-28:
+      // Avec le nouveau comportement, seule la proposition prioritaire est utilisée
+      // pour la working proposal. Les autres sont dans sourceProposals.
       const ffaProposal = createFFAProposal()
       const googleProposal = createGoogleProposal()
 
@@ -576,9 +597,12 @@ describe('useProposalEditor - Agent Priority', () => {
         r => r.raceId === '147544'
       )
 
-      // Both agents proposed changes to this race
+      // ✅ Two-Panes: seule la proposition prioritaire (FFA) est dans proposalIds
       expect(race147544?.proposalIds).toContain('proposal-ffa')
-      expect(race147544?.proposalIds).toContain('proposal-google')
+      expect(race147544?.proposalIds).not.toContain('proposal-google')
+      
+      // ✅ Google est disponible via sourceProposals pour copie manuelle
+      expect(result.current.sourceProposals.length).toBe(2)
     })
   })
 
@@ -609,6 +633,10 @@ describe('useProposalEditor - Agent Priority', () => {
     })
 
     it('should handle agents proposing different races (no overlap)', async () => {
+      // ✅ REFONTE Two-Panes 2025-12-28:
+      // Avec le nouveau comportement, seule la proposition prioritaire (FFA) est utilisée
+      // Les courses de Google sont disponibles via sourceProposals pour copie manuelle
+      
       // FFA proposes race 147544, Google proposes race 147546 (different)
       const ffaProposal = createFFAProposal({
         changes: {
@@ -651,17 +679,20 @@ describe('useProposalEditor - Agent Priority', () => {
 
       const races = result.current.workingGroup?.consolidatedRaces
 
-      // Should have 2 distinct races
-      expect(races?.length).toBe(2)
+      // ✅ Two-Panes: Working proposal contient UNIQUEMENT les courses de FFA (prioritaire)
+      // La course 147546 de Google n'est pas dans la working proposal,
+      // mais disponible via sourceProposals pour copie manuelle
+      expect(races?.length).toBe(1)
 
-      // Each race should have only one proposal
+      // La course FFA est présente
       const race147544 = races?.find(r => r.raceId === '147544')
       expect(race147544?.proposalIds).toEqual(['proposal-ffa'])
       expect(race147544?.fields.startDate).toBe('2025-06-15T08:00:00Z')
 
-      const race147546 = races?.find(r => r.raceId === '147546')
-      expect(race147546?.proposalIds).toEqual(['proposal-google'])
-      expect(race147546?.fields.startDate).toBe('2025-06-20T10:00:00Z')
+      // ✅ La course Google est disponible via sourceProposals (pas dans working)
+      expect(result.current.sourceProposals.length).toBe(2)
+      const googleSource = result.current.sourceProposals.find(p => p.id === 'proposal-google')
+      expect(googleSource).toBeDefined()
     })
   })
 })

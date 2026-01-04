@@ -207,6 +207,8 @@ const ProposalList: React.FC = () => {
       let groupKey: string
       if (proposal.type === 'NEW_EVENT') {
         groupKey = `new-event-${proposal.id}` // Chaque nouvel événement est dans son propre groupe
+      } else if (proposal.type === 'EVENT_MERGE') {
+        groupKey = `event-merge-${proposal.id}` // Chaque fusion est dans son propre groupe
       } else {
         groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
       }
@@ -241,6 +243,8 @@ const ProposalList: React.FC = () => {
       let groupKey: string
       if (proposal.type === 'NEW_EVENT') {
         groupKey = `new-event-${proposal.id}`
+      } else if (proposal.type === 'EVENT_MERGE') {
+        groupKey = `event-merge-${proposal.id}`
       } else {
         groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
       }
@@ -284,6 +288,15 @@ const ProposalList: React.FC = () => {
       const eventNameValue = proposal.changes.eventName || proposal.changes.name
       const eventName = (typeof eventNameValue === 'object' && eventNameValue?.new) ? eventNameValue.new : eventNameValue
       return eventName || 'Nouvel événement'
+    }
+
+    if (groupKey.startsWith('event-merge-')) {
+      const proposal = proposals[0]
+      const merge = proposal.changes?.merge
+      if (merge) {
+        return `Fusion: ${merge.duplicateEventName} → ${merge.keepEventName}`
+      }
+      return 'Fusion d\'événements'
     }
 
     const proposal = proposals[0]

@@ -929,6 +929,22 @@ router.get('/group/:groupKey', [
     })
 
     proposals = proposal ? [proposal] : []
+  } else if (groupKey.startsWith('event-merge-')) {
+    // EVENT_MERGE proposals are individual (not grouped)
+    const proposalId = groupKey.replace('event-merge-', '')
+    const proposal = await db.prisma.proposal.findUnique({
+      where: { id: proposalId },
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        },
+        applications: {
+          select: { id: true, blockType: true, status: true }
+        }
+      }
+    })
+
+    proposals = proposal ? [proposal] : []
   } else {
     // Parse eventId-editionId format (ou eventId-only pour propositions sans editionId)
     const parts = groupKey.split('-')
@@ -1243,16 +1259,19 @@ router.post('/validate-block-group', requireAuth, [
   body('proposalIds.*').isString().withMessage('Each proposalId must be a string'),
   body('block').isString().notEmpty().withMessage('block is required'),
   body('changes').isObject().withMessage('changes must be an object'),
+  // ✅ Two-Panes: primaryProposalId optionnel - si fourni, utiliser ses changes uniquement (pas de merge)
+  body('primaryProposalId').optional().isString().withMessage('primaryProposalId must be a string'),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-  const { proposalIds, block, changes } = req.body
+  const { proposalIds, block, changes, primaryProposalId } = req.body
   const userId = req.user!.userId
 
   // Log pour debug
   console.log('\ud83d\udce6 validate-block-group appelé avec:', {
     proposalIds,
     block,
-    changesKeys: Object.keys(changes)
+    changesKeys: Object.keys(changes),
+    primaryProposalId: primaryProposalId || 'none (legacy merge mode)'
   })
 
   // Vérifier que les propositions existent et sont du même groupe
@@ -1302,39 +1321,65 @@ router.post('/validate-block-group', requireAuth, [
   const approvedBlocks = { [block]: true }
 
   // ✅ PHASE 1: Construire le payload final (agent + user merged)
-  // ✅ FIX 2025-12-15: Fusionner les changes de TOUTES les propositions du groupe, pas juste la première
+  // ✅ Two-Panes 2025-12-28: Si primaryProposalId est fourni, utiliser UNIQUEMENT ses changes (pas de merge)
   const baseChanges: Record<string, any> = {}
-  for (const proposal of proposals) {
-    const proposalChanges = proposal.changes as Record<string, any>
+  
+  if (primaryProposalId) {
+    // ✅ Mode Two-Panes: Utiliser uniquement les changes de la proposition prioritaire
+    const primaryProposal = proposals.find((p: Proposal) => p.id === primaryProposalId)
+    if (!primaryProposal) {
+      throw createError(400, `Primary proposal ${primaryProposalId} not found in group`, 'PRIMARY_PROPOSAL_NOT_FOUND')
+    }
+    
+    const proposalChanges = primaryProposal.changes as Record<string, any>
     Object.entries(proposalChanges).forEach(([key, value]) => {
-      // Pour les tableaux (racesToUpdate, racesExisting, racesToAdd), fusionner
-      if (key === 'racesToUpdate' || key === 'racesExisting' || key === 'racesToAdd') {
-        const existingArr = baseChanges[key]?.new || baseChanges[key] || []
-        const newArr = value?.new || value || []
-        if (Array.isArray(existingArr) && Array.isArray(newArr)) {
-          // Fusionner en évitant les doublons par raceId
-          const merged = [...existingArr]
-          const existingRaceIds = new Set(existingArr.map((r: any) => r.raceId?.toString()))
-          newArr.forEach((race: any) => {
-            if (race.raceId && !existingRaceIds.has(race.raceId.toString())) {
-              merged.push(race)
-            } else if (!race.raceId) {
-              merged.push(race) // Nouvelles courses sans raceId
-            }
-          })
-          baseChanges[key] = value?.new ? { new: merged, confidence: value.confidence || 1 } : merged
-        } else {
+      baseChanges[key] = value
+    })
+    
+    console.log('✅ Two-Panes: Utilisation des changes de la proposition prioritaire uniquement:', {
+      primaryProposalId,
+      baseChangesKeys: Object.keys(baseChanges)
+    })
+  } else {
+    // ⚠️ Mode legacy: Fusionner les changes de TOUTES les propositions du groupe
+    // Ce mode est conservé pour rétrocompatibilité mais sera progressivement abandonné
+    console.log('⚠️ Legacy mode: Fusion des changes de toutes les propositions')
+    
+    for (const proposal of proposals) {
+      const proposalChanges = proposal.changes as Record<string, any>
+      Object.entries(proposalChanges).forEach(([key, value]) => {
+        // Pour les tableaux (racesToUpdate, racesExisting, racesToAdd), fusionner
+        if (key === 'racesToUpdate' || key === 'racesExisting' || key === 'racesToAdd') {
+          const existingArr = baseChanges[key]?.new || baseChanges[key] || []
+          const newArr = value?.new || value || []
+          if (Array.isArray(existingArr) && Array.isArray(newArr)) {
+            // Fusionner en évitant les doublons par raceId
+            const merged = [...existingArr]
+            const existingRaceIds = new Set(existingArr.map((r: any) => r.raceId?.toString()))
+            newArr.forEach((race: any) => {
+              if (race.raceId && !existingRaceIds.has(race.raceId.toString())) {
+                merged.push(race)
+              } else if (!race.raceId) {
+                merged.push(race) // Nouvelles courses sans raceId
+              }
+            })
+            baseChanges[key] = value?.new ? { new: merged, confidence: value.confidence || 1 } : merged
+          } else {
+            baseChanges[key] = value
+          }
+        } else if (!(key in baseChanges)) {
+          // Pour les autres champs, prendre la première valeur trouvée
           baseChanges[key] = value
         }
-      } else if (!(key in baseChanges)) {
-        // Pour les autres champs, prendre la première valeur trouvée
-        baseChanges[key] = value
-      }
-    })
+      })
+    }
   }
 
-  // Garder une référence à la première proposition pour les logs et l'agentId
-  const firstProposal = proposals[0]
+  // Garder une référence à la proposition principale pour les logs et l'agentId
+  // ✅ Two-Panes: Utiliser primaryProposal si fourni, sinon première proposition
+  const firstProposal = primaryProposalId 
+    ? proposals.find((p: Proposal) => p.id === primaryProposalId) || proposals[0]
+    : proposals[0]
 
   // ✅ FIX: Lire raceEdits depuis 'changes' envoyé par le frontend
   // Le frontend envoie déjà userModifiedRaceChanges dans changes.raceEdits
@@ -3650,6 +3695,104 @@ router.post('/merge', [
       copyMissingEditions
     },
     message: `Proposition de fusion créée: "${duplicateEvent.name}" sera fusionné dans "${keepEvent.name}"${editionsCopyMessage}`
+  })
+}))
+
+// ============================================================================
+// POST /api/proposals/:id/swap-merge-direction - Inverser le sens de fusion
+// ============================================================================
+router.post('/:id/swap-merge-direction', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  // Récupérer la proposition
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposition non trouvée', 'PROPOSAL_NOT_FOUND')
+  }
+
+  // Vérifier que c'est une proposition EVENT_MERGE
+  if (proposal.type !== 'EVENT_MERGE') {
+    throw createError(400, 'Cette action n\'est disponible que pour les propositions EVENT_MERGE', 'INVALID_PROPOSAL_TYPE')
+  }
+
+  // Vérifier que la proposition est en statut PENDING
+  if (proposal.status !== 'PENDING') {
+    throw createError(400, 'Seules les propositions en attente peuvent être modifiées', 'INVALID_PROPOSAL_STATUS')
+  }
+
+  // Extraire les données de fusion
+  const changes = proposal.changes as any
+  const merge = changes?.merge
+
+  if (!merge) {
+    throw createError(400, 'Données de fusion invalides', 'INVALID_MERGE_DATA')
+  }
+
+  // Inverser les événements keep <-> duplicate
+  const swappedMerge = {
+    ...merge,
+    // Inverser keep et duplicate
+    keepEventId: merge.duplicateEventId,
+    keepEventName: merge.duplicateEventName,
+    keepEventCity: merge.duplicateEventCity,
+    keepEventEditionsCount: merge.duplicateEventEditionsCount,
+    keepEventEditions: merge.duplicateEventEditions,
+    duplicateEventId: merge.keepEventId,
+    duplicateEventName: merge.keepEventName,
+    duplicateEventCity: merge.keepEventCity,
+    duplicateEventEditionsCount: merge.keepEventEditionsCount,
+    duplicateEventEditions: merge.keepEventEditions,
+    // Réinitialiser les infos de redirection existante (à recalculer)
+    previousOldSlugId: null,
+    previousOldSlugIdEventExists: false,
+    previousOldSlugIdEventName: null,
+    forceOverwrite: false,
+    // Recalculer les éditions à copier
+    editionsToCopy: null,
+    copyMissingEditions: merge.copyMissingEditions ?? true
+  }
+
+  // Recalculer les éditions à copier si l'option est activée
+  if (swappedMerge.copyMissingEditions && swappedMerge.keepEventEditions && swappedMerge.duplicateEventEditions) {
+    const keepYears = new Set(swappedMerge.keepEventEditions.map((e: any) => e.year))
+    const editionsToCopy = swappedMerge.duplicateEventEditions.filter((e: any) => !keepYears.has(e.year))
+    swappedMerge.editionsToCopy = editionsToCopy.length > 0 ? editionsToCopy : null
+  }
+
+  // Mettre à jour la proposition
+  const updatedProposal = await db.prisma.proposal.update({
+    where: { id },
+    data: {
+      changes: { merge: swappedMerge },
+      eventId: swappedMerge.keepEventId.toString(),
+      eventName: swappedMerge.keepEventName,
+      eventCity: swappedMerge.keepEventCity,
+      // Ajouter une justification pour tracer l'inversion
+      justification: [
+        ...(proposal.justification as any[] || []),
+        {
+          type: 'merge_direction_swapped',
+          message: `Sens de fusion inversé: "${swappedMerge.duplicateEventName}" sera maintenant fusionné dans "${swappedMerge.keepEventName}"`,
+          metadata: {
+            swappedAt: new Date().toISOString(),
+            previousKeepEventId: merge.keepEventId,
+            newKeepEventId: swappedMerge.keepEventId
+          }
+        }
+      ]
+    }
+  })
+
+  res.json({
+    success: true,
+    data: updatedProposal,
+    message: `Sens de fusion inversé: "${swappedMerge.keepEventName}" sera conservé, "${swappedMerge.duplicateEventName}" sera supprimé`
   })
 }))
 

@@ -26,7 +26,8 @@ import {
   Check as CheckIcon,
   Close as CloseIcon,
   EditNote as EditNoteIcon,
-  RestartAlt as RestartAltIcon
+  RestartAlt as RestartAltIcon,
+  DirectionsRun as RaceIcon
 } from '@mui/icons-material'
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
@@ -501,7 +502,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
         }}
       >
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          <AddIcon color="primary" />
+          <RaceIcon color="primary" />
           <Typography variant="h6">
             Courses ({totalRaces} total)
           </Typography>
@@ -513,9 +514,9 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
               size="small"
               startIcon={<AddIcon />}
               onClick={() => setIsAddDialogOpen(true)}
-              sx={{ ml: 2 }}
+              sx={{ ml: 2, py: 0.5, px: 1.5, fontSize: '0.8125rem' }}
             >
-              Ajouter une course
+              Ajouter
             </Button>
           )}
         </Box>

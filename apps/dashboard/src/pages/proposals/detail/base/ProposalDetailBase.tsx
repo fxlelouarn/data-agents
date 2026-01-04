@@ -72,7 +72,8 @@ export interface ProposalContext {
   isEditionCanceled: boolean
   isReadOnly: boolean // ⚠️ PHASE 3: Flag pour désactiver toute édition
   // Validation par blocs
-  validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  // ✅ proposalIds optionnel car les vues simples n'ont pas besoin de le passer
+  validateBlock: (blockKey: string, proposalIds?: string[]) => Promise<void>
   unvalidateBlock: (blockKey: string) => Promise<void>
   isBlockValidated: (blockKey: string) => boolean
   isBlockPending: boolean
@@ -307,7 +308,8 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
   })
 
   // Wrappers (lecture seule)
-  const validateBlock = async (blockKey: string, proposalIds: string[]) => {
+  // ✅ proposalIds optionnel pour compatibilité avec les vues simples
+  const validateBlock = async (blockKey: string, proposalIds?: string[]) => {
     await validateBlockBase(blockKey, proposalIds)
   }
 

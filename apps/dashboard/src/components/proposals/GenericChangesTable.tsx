@@ -21,7 +21,7 @@ import {
   Edit as EditIcon,
   EditNote as EditNoteIcon,
   Event as EventIcon,
-  CalendarToday as EditionIcon,
+  CalendarMonth as EditionIcon,
   RestartAlt as RestartAltIcon
 } from '@mui/icons-material'
 import { useChangesTable, ConsolidatedChange } from '@/hooks/useChangesTable'
@@ -381,9 +381,9 @@ const GenericChangesTable: React.FC<GenericChangesTableProps> = ({
         }}
       >
         <Typography variant="h6" sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-          {variant === 'base' && <EditIcon />}
-          {variant === 'categorized' && entityType === 'EVENT' && <EventIcon />}
-          {variant === 'categorized' && entityType === 'EDITION' && <EditionIcon />}
+          {variant === 'base' && <EditIcon color="primary" />}
+          {variant === 'categorized' && entityType === 'EVENT' && <EventIcon color="primary" />}
+          {variant === 'categorized' && entityType === 'EDITION' && <EditionIcon color="primary" />}
           {title}
         </Typography>
         <Box sx={{ display: 'flex', gap: 1, alignItems: 'center' }}>

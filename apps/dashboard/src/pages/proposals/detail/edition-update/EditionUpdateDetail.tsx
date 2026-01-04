@@ -78,7 +78,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 disabled={isReadOnly || isBlockValidated('edition') || isEventDead}
                 isEditionCanceled={isEditionCanceled || isEventDead}
                 isBlockValidated={isBlockValidated('edition')}
-                onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition', blockProposals['edition'] || [])}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('edition')}
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('edition')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
@@ -96,7 +96,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 userModifiedChanges={userModifiedChanges}
                 disabled={isReadOnly || isBlockValidated('organizer') || isEventDead}
                 isBlockValidated={isBlockValidated('organizer')}
-                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer', blockProposals['organizer'] || [])}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('organizer')}
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('organizer')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}
@@ -113,7 +113,7 @@ const EditionUpdateDetail: React.FC<EditionUpdateDetailProps> = ({ proposalId })
                 onRaceFieldModify={handleRaceFieldModify}
                 disabled={isReadOnly || !allPending || isPending || isEventDead}
                 isBlockValidated={isBlockValidated('races')}
-                onValidateBlock={isReadOnly ? undefined : () => validateBlock('races', blockProposals['races'] || [])}
+                onValidateBlock={isReadOnly ? undefined : () => validateBlock('races')}
                 onUnvalidateBlock={isReadOnly ? undefined : () => unvalidateBlock('races')}
                 isBlockPending={isBlockPending}
                 validationDisabled={isReadOnly || isEventDead}

@@ -62,6 +62,7 @@ export interface WorkingProposal {
  */
 export interface WorkingProposalGroup {
   ids: string[] // IDs de toutes les propositions (PENDING + historiques)
+  primaryProposalId: string // ✅ ID de la proposition prioritaire (seule utilisée pour validation/save)
   originalProposals: Proposal[] // ✅ Propositions PENDING uniquement (éditables)
   historicalProposals: Proposal[] // ✅ Propositions déjà traitées (APPROVED/REJECTED/ARCHIVED)
 
@@ -112,6 +113,33 @@ export interface ConsolidatedRaceChange {
   originalFields: Record<string, any> // ✅ Valeurs originales de la base (pour "Valeur actuelle")
   fields: Record<string, any> // Champs proposés consolidés
   userModifications?: Record<string, any> // Modifications utilisateur
+}
+
+/**
+ * Différence de champ entre Working Proposal et Source
+ * Utilisé pour le mode two-panes
+ */
+export interface FieldDiff {
+  field: string
+  workingValue: any
+  sourceValue: any
+  isDifferent: boolean
+  isAbsentInSource: boolean
+  isAbsentInWorking: boolean
+}
+
+/**
+ * Différence de course entre Working Proposal et Source
+ * Utilisé pour le mode two-panes
+ */
+export interface RaceDiff {
+  raceId: string
+  raceName: string
+  existsInWorking: boolean
+  existsInSource: boolean
+  workingRaceId?: string   // ID dans working (pour mapping)
+  sourceRaceId?: string    // ID dans source
+  fieldDiffs: FieldDiff[]  // Différences champ par champ
 }
 
 /**
@@ -172,7 +200,7 @@ export interface UseProposalEditorGroupReturn {
   addRace: (race: RaceData) => void
 
   // Actions de validation
-  validateBlock: (blockKey: string, proposalIds: string[]) => Promise<void>
+  validateBlock: (blockKey: string) => Promise<void>
   unvalidateBlock: (blockKey: string) => Promise<void>
   validateAllBlocks: () => Promise<void>
 
@@ -186,6 +214,38 @@ export interface UseProposalEditorGroupReturn {
   reset: () => void
   hasUnsavedChanges: () => boolean
   isBlockValidated: (blockKey: string) => boolean
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Mode Two-Panes : Gestion des sources et copie
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /** Propositions sources triées par priorité (FFA > Slack > Google) */
+  sourceProposals: Proposal[]
+
+  /** Index de la source actuellement affichée dans le pane droit */
+  activeSourceIndex: number
+
+  /** Changer la source affichée */
+  setActiveSourceIndex: (index: number) => void
+
+  /** Copier un champ depuis la source active vers la working proposal */
+  copyFieldFromSource: (field: string) => void
+
+  /**
+   * Copier une course depuis la source active
+   * @param sourceRaceId - ID de la course dans la source
+   * @param targetRaceId - ID de destination (optionnel). Si undefined, ajoute comme nouvelle course
+   */
+  copyRaceFromSource: (sourceRaceId: string, targetRaceId?: string) => void
+
+  /** Copier TOUTE la proposition source (écrase la working proposal) */
+  copyAllFromSource: () => void
+
+  /** Obtenir les différences de champs entre working et source active */
+  getFieldDifferences: () => FieldDiff[]
+
+  /** Obtenir les différences de courses entre working et source active */
+  getRaceDifferences: () => RaceDiff[]
 }
 
 /**
@@ -220,6 +280,15 @@ export function useProposalEditor(
 
   // États pour mode groupé
   const [workingGroup, setWorkingGroup] = useState<WorkingProposalGroup | null>(null)
+
+  // ═══════════════════════════════════════════════════════════════════════════
+  // États pour mode Two-Panes (groupé uniquement)
+  // ═══════════════════════════════════════════════════════════════════════════
+  /** Toutes les propositions sources triées par priorité agent */
+  const [sourceProposals, setSourceProposals] = useState<Proposal[]>([])
+
+  /** Index de la source affichée dans le pane droit (par défaut: 2ème source pour voir les différences) */
+  const [activeSourceIndex, setActiveSourceIndex] = useState<number>(0)
 
   // États communs
   const [isLoading, setIsLoading] = useState(true)
@@ -260,6 +329,21 @@ export function useProposalEditor(
         // Initialiser l'état consolidé du groupe
         const group = initializeWorkingGroup(proposals)
         setWorkingGroup(group)
+
+        // ═══════════════════════════════════════════════════════════════════
+        // Mode Two-Panes: Initialiser les sources
+        // ═══════════════════════════════════════════════════════════════════
+        // Trier les propositions par priorité agent (FFA > Slack > Google)
+        const sortedProposals = [...proposals].sort((a, b) => {
+          const priorityA = getAgentPriority((a as any).agentName || (a as any).agent?.name)
+          const priorityB = getAgentPriority((b as any).agentName || (b as any).agent?.name)
+          return priorityB - priorityA
+        })
+        setSourceProposals(sortedProposals)
+
+        // Par défaut, afficher la 2ème source (index 1) pour voir les différences
+        // Si une seule source, afficher la première (index 0)
+        setActiveSourceIndex(sortedProposals.length > 1 ? 1 : 0)
       } else {
         // Mode simple: charger une seule proposition
         const response = await proposalsApi.getById(proposalId as string)
@@ -279,50 +363,63 @@ export function useProposalEditor(
 
   /**
    * Construire l'état groupé initial à partir de plusieurs propositions
-   * ✅ Filtre PENDING vs historiques pour éviter pollution de l'état
+   * ✅ REFONTE Two-Panes 2025-12-28: La working proposal = copie de la proposition prioritaire UNIQUEMENT
+   * Plus de fusion de toutes les propositions. L'utilisateur peut copier depuis les sources via le pane droit.
    */
   const initializeWorkingGroup = (proposals: Proposal[]): WorkingProposalGroup => {
-    // ✅ Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
+    // Séparer les propositions en cours (PENDING ou PARTIALLY_APPROVED) des propositions finalisées
     const pendingProposals = proposals.filter(p => p.status === 'PENDING' || p.status === 'PARTIALLY_APPROVED')
     const historicalProposals = proposals.filter(p => p.status !== 'PENDING' && p.status !== 'PARTIALLY_APPROVED')
     const approvedProposals = proposals.filter(p => p.status === 'APPROVED' || p.status === 'PARTIALLY_APPROVED')
 
-    const ids = proposals.map(p => p.id) // Garder tous les IDs pour navigation
+    const ids = proposals.map(p => p.id)
 
-    // ✅ MODE LECTURE SEULE : Si aucune PENDING mais des APPROVED, afficher en lecture seule
-    // Utiliser uniquement les APPROVED (pas REJECTED/ARCHIVED) pour éviter la pollution
-    let proposalsToConsolidate = pendingProposals.length > 0 ? pendingProposals : approvedProposals
+    // MODE LECTURE SEULE : Si aucune PENDING mais des APPROVED, afficher en lecture seule
+    let proposalsToUse = pendingProposals.length > 0 ? pendingProposals : approvedProposals
 
-    // ✅ FIX 2025-12-13: Trier par PRIORITÉ D'AGENT AVANT de consolider
-    // L'ordre de priorité est basé sur la fiabilité de la source, pas sur la confiance auto-déclarée
-    // FFA Scraper > Slack Event Agent > autres agents > Google Search Date Agent
-    proposalsToConsolidate = proposalsToConsolidate.sort((a, b) => {
+    // Trier par PRIORITÉ D'AGENT : FFA > Slack > autres > Google
+    proposalsToUse = proposalsToUse.sort((a, b) => {
       const priorityA = getAgentPriority((a as any).agentName || (a as any).agent?.name)
       const priorityB = getAgentPriority((b as any).agentName || (b as any).agent?.name)
-      return priorityB - priorityA // Décroissant: plus haute priorité en premier
+      return priorityB - priorityA
     })
 
-    // ✅ Consolidation (PENDING en priorité, sinon APPROVED en lecture seule)
-    const consolidatedChanges = consolidateChangesFromProposals(proposalsToConsolidate)
-    // ✅ FIX 2025-12-10: Récupérer aussi le mapping raceId → existing-{index}
-    const { races: consolidatedRaces, raceIdToIndexMap } = consolidateRacesFromProposals(proposalsToConsolidate)
+    // ═══════════════════════════════════════════════════════════════════════════
+    // ✅ REFONTE Two-Panes: Prendre UNIQUEMENT la proposition prioritaire
+    // Plus de consolidation/fusion de toutes les propositions
+    // ═══════════════════════════════════════════════════════════════════════════
+    const primaryProposal = proposalsToUse[0]
 
-    // ✅ Blocs approuvés (PENDING ou APPROVED)
-    // Un bloc est validé si AU MOINS UNE proposition du groupe l'a validé
-    // (pas toutes, car certaines propositions peuvent ne pas avoir ce bloc dans leurs changes)
-    const approvedBlocks: Record<string, boolean> = {}
-    const allBlockKeys = new Set<string>()
-    proposalsToConsolidate.forEach(p => Object.keys(p.approvedBlocks || {}).forEach(k => allBlockKeys.add(k)))
-    allBlockKeys.forEach(blockKey => {
-      approvedBlocks[blockKey] = proposalsToConsolidate.some(p => p.approvedBlocks?.[blockKey])
-    })
+    if (!primaryProposal) {
+      return {
+        ids,
+        primaryProposalId: '', // Pas de proposition prioritaire
+        originalProposals: pendingProposals,
+        historicalProposals,
+        consolidatedChanges: [],
+        consolidatedRaces: [],
+        userModifiedChanges: {},
+        userModifiedRaceChanges: {},
+        raceIdToIndexMap: {},
+        approvedBlocks: {},
+        isDirty: false,
+        lastSaved: null
+      }
+    }
 
-    // Extraire userModifiedChanges depuis la première proposition (PENDING ou APPROVED)
-    const firstProposal = proposalsToConsolidate[0]
-    const savedRaceEdits = firstProposal?.userModifiedChanges?.raceEdits || {}
+    // ✅ Extraire les champs UNIQUEMENT de la proposition prioritaire (pas de fusion)
+    const consolidatedChanges = extractChangesFromSingleProposal(primaryProposal)
 
-    // ✅ FIX 2025-12-10: Convertir les clés existing-{index} en vrais raceId
-    // Les userModifiedChanges sauvegardées utilisent existing-{index} mais notre consolidation utilise les vrais raceId
+    // ✅ Extraire les courses UNIQUEMENT de la proposition prioritaire (pas de fusion)
+    const { races: consolidatedRaces, raceIdToIndexMap } = extractRacesFromSingleProposal(primaryProposal)
+
+    // Blocs approuvés depuis la proposition prioritaire uniquement
+    const approvedBlocks: Record<string, boolean> = { ...primaryProposal.approvedBlocks }
+
+    // Extraire userModifiedChanges depuis la proposition prioritaire
+    const savedRaceEdits = primaryProposal?.userModifiedChanges?.raceEdits || {}
+
+    // Convertir les clés existing-{index} en vrais raceId
     const indexToRaceIdMap: Record<string, string> = {}
     Object.entries(raceIdToIndexMap).forEach(([raceId, indexKey]) => {
       indexToRaceIdMap[indexKey] = raceId
@@ -330,35 +427,30 @@ export function useProposalEditor(
 
     const userModifiedRaceChanges: Record<string, any> = {}
     Object.entries(savedRaceEdits).forEach(([key, value]) => {
-      // Convertir existing-{index} en vrai raceId si possible
       const convertedKey = indexToRaceIdMap[key] || key
       userModifiedRaceChanges[convertedKey] = value
     })
 
-    // Extraire les autres modifications utilisateur (hors raceEdits)
     const userModifiedChanges: Record<string, any> = {}
-    if (firstProposal?.userModifiedChanges) {
-      Object.entries(firstProposal.userModifiedChanges).forEach(([key, value]) => {
+    if (primaryProposal?.userModifiedChanges) {
+      Object.entries(primaryProposal.userModifiedChanges).forEach(([key, value]) => {
         if (key !== 'raceEdits') {
           userModifiedChanges[key] = value
         }
       })
     }
 
-    // ✅ FIX: Ajouter les courses manuellement ajoutées (new-{timestamp}) à consolidatedRaces
-    // Ces courses sont dans userModifiedRaceChanges mais pas dans proposal.changes
+    // Ajouter les courses manuellement ajoutées (new-{timestamp})
     const finalConsolidatedRaces = [...consolidatedRaces]
     Object.entries(userModifiedRaceChanges).forEach(([raceId, raceData]: [string, any]) => {
-      // Vérifier si c'est une course manuellement ajoutée (ID format new-{timestamp})
-      // et qu'elle n'existe pas déjà dans consolidatedRaces
       if (raceId.startsWith('new-') && !raceData._deleted) {
         const existsInConsolidated = consolidatedRaces.some(r => r.raceId === raceId)
         if (!existsInConsolidated) {
           finalConsolidatedRaces.push({
             raceId,
             raceName: raceData.name || 'Nouvelle course',
-            proposalIds: [],  // Pas de proposition source (course manuelle)
-            originalFields: {},  // Pas de valeur originale (nouvelle course)
+            proposalIds: [],
+            originalFields: {},
             fields: { ...raceData, id: raceId }
           })
         }
@@ -367,19 +459,109 @@ export function useProposalEditor(
 
     return {
       ids,
-      originalProposals: pendingProposals, // ✅ Seules les PENDING pour l'édition
-      historicalProposals, // ✅ Propositions déjà traitées (historique)
+      primaryProposalId: primaryProposal.id, // ✅ Two-Panes: Seule proposition utilisée pour validation/save
+      originalProposals: pendingProposals,
+      historicalProposals,
       consolidatedChanges,
-      consolidatedRaces: finalConsolidatedRaces,  // ✅ Inclut les courses manuelles
-      userModifiedChanges, // ✅ Préserver les modifs édition sauvegardées
-      userModifiedRaceChanges, // ✅ Préserver les modifs de courses sauvegardées
-      raceIdToIndexMap, // ✅ FIX 2025-12-10: Mapping pour convertir raceId → existing-{index} à la sauvegarde
+      consolidatedRaces: finalConsolidatedRaces,
+      userModifiedChanges,
+      userModifiedRaceChanges,
+      raceIdToIndexMap,
       approvedBlocks,
       isDirty: false,
       lastSaved: pendingProposals.length > 0
         ? new Date(Math.max(...pendingProposals.map(p => new Date(p.updatedAt).getTime())))
-        : null // Pas de PENDING = pas de lastSaved
+        : null
     }
+  }
+
+  /**
+   * ✅ NOUVEAU Two-Panes: Extraire les champs d'UNE SEULE proposition (pas de fusion)
+   */
+  const extractChangesFromSingleProposal = (proposal: Proposal): ConsolidatedChange[] => {
+    const changes: ConsolidatedChange[] = []
+    const proposalChanges = proposal.changes || {}
+    const userMods = proposal.userModifiedChanges || {}
+    const merged = mergeChanges(proposalChanges, userMods)
+
+    // Aplatir la structure edition.new pour NEW_EVENT
+    const flattenedMerged: Record<string, any> = {}
+    Object.entries(merged).forEach(([key, value]) => {
+      if (key === 'edition' && value && typeof value === 'object' && !Array.isArray(value)) {
+        Object.entries(value).forEach(([editionField, editionValue]) => {
+          if (editionField !== 'races' && editionField !== 'organizer') {
+            flattenedMerged[editionField] = editionValue
+          }
+        })
+        if (value.organizer) {
+          flattenedMerged['organizer'] = value.organizer
+        }
+      } else if (!key.startsWith('races') && key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting') {
+        flattenedMerged[key] = value
+      }
+    })
+
+    Object.entries(flattenedMerged).forEach(([field, value]) => {
+      // Extraire currentValue depuis changes[field]
+      const originalValue = proposalChanges[field]
+      let currentValue: any = undefined
+      if (originalValue && typeof originalValue === 'object') {
+        if ('old' in originalValue) currentValue = originalValue.old
+        else if ('current' in originalValue) currentValue = originalValue.current
+      }
+
+      changes.push({
+        field,
+        options: [{
+          proposalId: proposal.id,
+          agentName: (proposal as any).agentName || (proposal as any).agent?.name || 'Agent',
+          agentType: (proposal as any).agent?.type,
+          proposedValue: value,
+          confidence: (proposal as any).confidence || 0,
+          createdAt: proposal.createdAt as any
+        }],
+        currentValue,
+        selectedValue: value
+      })
+    })
+
+    return changes
+  }
+
+  /**
+   * ✅ NOUVEAU Two-Panes: Extraire les courses d'UNE SEULE proposition (pas de fusion)
+   */
+  const extractRacesFromSingleProposal = (proposal: Proposal): {
+    races: ConsolidatedRaceChange[],
+    raceIdToIndexMap: Record<string, string>
+  } => {
+    const races: ConsolidatedRaceChange[] = []
+    const raceIdToIndexMap: Record<string, string> = {}
+
+    // Extraire les valeurs ORIGINALES depuis currentData
+    const originalRaces = extractRacesOriginalData(proposal)
+
+    // Extraire les valeurs PROPOSÉES
+    const merged = mergeChanges(proposal.changes, proposal.userModifiedChanges || {})
+    const proposedRaces = extractRaces(merged, proposal, false)
+
+    Object.entries(proposedRaces).forEach(([raceId, raceData]) => {
+      // Construire le mapping raceId → existing-{index}
+      const originalIndex = (raceData as any)._originalIndex
+      if (originalIndex !== undefined && !raceId.startsWith('new-')) {
+        raceIdToIndexMap[raceId] = `existing-${originalIndex}`
+      }
+
+      races.push({
+        raceId,
+        raceName: (raceData as any).name || 'Course',
+        proposalIds: [proposal.id],
+        originalFields: originalRaces[raceId] || {},
+        fields: raceData
+      })
+    })
+
+    return { races, raceIdToIndexMap }
   }
 
   /**
@@ -901,13 +1083,13 @@ export function useProposalEditor(
     setIsSaving(true)
     try {
       if (isGroupMode) {
-        // En mode groupé, on persiste les modifications utilisateur sur TOUTES les propositions
+        // ✅ Two-Panes: Sauvegarder UNIQUEMENT sur la proposition prioritaire
         const currentWorkingGroup = workingGroupRef.current
         if (!currentWorkingGroup) return
+        const primaryId = currentWorkingGroup.primaryProposalId
+        if (!primaryId) return
         const diff = buildGroupDiff(currentWorkingGroup)
-        await Promise.all(
-          currentWorkingGroup.ids.map(id => proposalsApi.updateUserModifications(id, diff))
-        )
+        await proposalsApi.updateUserModifications(primaryId, diff)
         setWorkingGroup(prev => {
           if (!prev) return prev
           return { ...prev, isDirty: false, lastSaved: new Date() }
@@ -1249,6 +1431,496 @@ export function useProposalEditor(
     }
   }, [autosave, scheduleAutosave])
 
+  // ═══════════════════════════════════════════════════════════════════════════
+  // Mode Two-Panes : Fonctions de copie depuis les sources
+  // ═══════════════════════════════════════════════════════════════════════════
+
+  /**
+   * Extraire la valeur d'un champ depuis une proposition source
+   * Gère les différents formats de données (NEW_EVENT, EDITION_UPDATE, etc.)
+   */
+  const extractFieldValueFromProposal = useCallback((proposal: Proposal, field: string): any => {
+    const changes = proposal.changes || {}
+    const userMods = proposal.userModifiedChanges || {}
+
+    // 1. Vérifier d'abord dans userModifiedChanges
+    if (field in userMods) {
+      return userMods[field]
+    }
+
+    // 2. Chercher dans changes avec extraction de la valeur "new"
+    if (field in changes) {
+      return extractNewValue(changes[field])
+    }
+
+    // 3. Chercher dans edition.new pour NEW_EVENT
+    if (changes.edition) {
+      const editionData = extractNewValue(changes.edition)
+      if (editionData && typeof editionData === 'object' && field in editionData) {
+        return editionData[field]
+      }
+    }
+
+    return undefined
+  }, [])
+
+  /**
+   * Extraire les courses depuis une proposition source
+   */
+  const extractRacesFromProposal = useCallback((proposal: Proposal): Record<string, RaceData> => {
+    const changes = proposal.changes || {}
+    const userMods = proposal.userModifiedChanges || {}
+    const merged = mergeChanges(changes, userMods)
+    return extractRaces(merged, proposal, false)
+  }, [])
+
+  /**
+   * Copier un champ depuis la source active vers la working proposal
+   */
+  const copyFieldFromSource = useCallback((field: string) => {
+    console.log('🔄 copyFieldFromSource called:', { field, isGroupMode, sourceProposalsLength: sourceProposals.length, activeSourceIndex })
+    
+    if (!isGroupMode || sourceProposals.length === 0) {
+      console.log('❌ copyFieldFromSource: early return (not group mode or no sources)')
+      return
+    }
+
+    const sourceProposal = sourceProposals[activeSourceIndex]
+    if (!sourceProposal) {
+      console.log('❌ copyFieldFromSource: no source proposal at index', activeSourceIndex)
+      return
+    }
+
+    const value = extractFieldValueFromProposal(sourceProposal, field)
+    console.log('📋 copyFieldFromSource: extracted value =', value, 'for field', field)
+    
+    if (value !== undefined) {
+      console.log('✅ copyFieldFromSource: calling updateField with', field, value)
+      updateField(field, value)
+    } else {
+      console.log('⚠️ copyFieldFromSource: value is undefined, not updating')
+    }
+  }, [isGroupMode, sourceProposals, activeSourceIndex, extractFieldValueFromProposal, updateField])
+
+  /**
+   * Copier une course depuis la source active
+   * @param sourceRaceId - ID de la course dans la source
+   * @param targetRaceId - ID de destination (optionnel). Si undefined, ajoute comme nouvelle course
+   */
+  const copyRaceFromSource = useCallback((sourceRaceId: string, targetRaceId?: string) => {
+    if (!isGroupMode || sourceProposals.length === 0) return
+
+    const sourceProposal = sourceProposals[activeSourceIndex]
+    if (!sourceProposal) return
+
+    const sourceRaces = extractRacesFromProposal(sourceProposal)
+    const sourceRace = sourceRaces[sourceRaceId]
+    if (!sourceRace) return
+
+    if (targetRaceId) {
+      // Remplacer une course existante : copier UNIQUEMENT les champs qui diffèrent
+      setWorkingGroup(prev => {
+        if (!prev) return prev
+
+        // Trouver la course cible dans consolidatedRaces pour comparer
+        const targetRace = prev.consolidatedRaces.find(r => r.raceId === targetRaceId)
+        
+        // Champs à ignorer (métadonnées)
+        const ignoredFields = ['id', '_originalIndex', 'raceId', 'proposalIds']
+        
+        // Extraire uniquement les champs qui diffèrent
+        const diffFields: Record<string, any> = {}
+        
+        Object.entries(sourceRace).forEach(([field, sourceValue]) => {
+          if (ignoredFields.includes(field)) return
+          
+          // Récupérer la valeur actuelle dans la working race
+          let workingValue: any = undefined
+          
+          // Chercher dans userModifiedRaceChanges d'abord
+          if (prev.userModifiedRaceChanges[targetRaceId]?.[field] !== undefined) {
+            workingValue = prev.userModifiedRaceChanges[targetRaceId][field]
+          } else if (targetRace) {
+            // Sinon dans consolidatedRaces.fields
+            const fieldData = targetRace.fields[field]
+            if (fieldData && typeof fieldData === 'object' && 'options' in fieldData) {
+              workingValue = fieldData.options[0]?.proposedValue
+            } else {
+              workingValue = fieldData
+            }
+          }
+          
+          // Comparer les valeurs (en tenant compte des dates)
+          const sourceStr = JSON.stringify(sourceValue)
+          const workingStr = JSON.stringify(workingValue)
+          
+          if (sourceStr !== workingStr) {
+            diffFields[field] = sourceValue
+          }
+        })
+        
+        // Si aucune différence, ne rien faire
+        if (Object.keys(diffFields).length === 0) {
+          console.log('📋 [copyRaceFromSource] Aucune différence à copier')
+          return prev
+        }
+        
+        console.log('📋 [copyRaceFromSource] Copie des champs différents:', Object.keys(diffFields))
+
+        const next = { ...prev }
+        next.userModifiedRaceChanges = {
+          ...next.userModifiedRaceChanges,
+          [targetRaceId]: {
+            ...(next.userModifiedRaceChanges[targetRaceId] || {}),
+            ...diffFields
+          }
+        }
+        next.isDirty = true
+        return next
+      })
+
+      if (autosave) {
+        scheduleAutosave()
+      }
+    } else {
+      // Ajouter comme nouvelle course
+      addRace(sourceRace)
+    }
+  }, [isGroupMode, sourceProposals, activeSourceIndex, extractRacesFromProposal, addRace, autosave, scheduleAutosave])
+
+  /**
+   * Copier TOUTE la proposition source vers la working proposal
+   * Ne copie que les champs qui diffèrent (pas de reset complet)
+   */
+  const copyAllFromSource = useCallback(() => {
+    if (!isGroupMode || sourceProposals.length === 0) return
+
+    const sourceProposal = sourceProposals[activeSourceIndex]
+    if (!sourceProposal) return
+
+    setWorkingGroup(prev => {
+      if (!prev) return prev
+
+      const newUserModifiedChanges = { ...prev.userModifiedChanges }
+      const newUserModifiedRaceChanges = { ...prev.userModifiedRaceChanges }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // 1. Copier les champs (Event/Edition) qui diffèrent
+      // ═══════════════════════════════════════════════════════════════════
+      const sourceChanges = sourceProposal.changes || {}
+      const sourceUserMods = sourceProposal.userModifiedChanges || {}
+      const mergedSource = mergeChanges(sourceChanges, sourceUserMods)
+
+      // Aplatir la structure pour NEW_EVENT
+      const flattenedSource: Record<string, any> = {}
+      Object.entries(mergedSource).forEach(([key, value]) => {
+        if (key === 'edition' && value && typeof value === 'object' && !Array.isArray(value)) {
+          Object.entries(value).forEach(([editionField, editionValue]) => {
+            if (editionField !== 'races' && editionField !== 'organizer') {
+              flattenedSource[editionField] = editionValue
+            }
+          })
+          if (value.organizer) {
+            flattenedSource['organizer'] = value.organizer
+          }
+        } else if (key !== 'races' && key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting') {
+          flattenedSource[key] = value
+        }
+      })
+
+      // Pour chaque champ de la source, comparer avec working et copier si différent
+      Object.entries(flattenedSource).forEach(([field, sourceValue]) => {
+        if (sourceValue === undefined) return
+
+        // Valeur dans working
+        const workingChange = prev.consolidatedChanges.find(c => c.field === field)
+        const workingValue = prev.userModifiedChanges[field]
+          ?? workingChange?.selectedValue
+          ?? workingChange?.options[0]?.proposedValue
+
+        // Comparer
+        if (JSON.stringify(workingValue) !== JSON.stringify(sourceValue)) {
+          newUserModifiedChanges[field] = sourceValue
+        }
+      })
+
+      // ═══════════════════════════════════════════════════════════════════
+      // 2. Copier les courses qui diffèrent
+      // ═══════════════════════════════════════════════════════════════════
+      const sourceRaces = extractRacesFromProposal(sourceProposal)
+      const ignoredFields = ['id', '_originalIndex', '_isNew', '_deleted', '_copiedFromSource']
+
+      // Map des courses working par nom pour matching
+      const workingRacesByName = new Map<string, ConsolidatedRaceChange>()
+      prev.consolidatedRaces.forEach(r => {
+        const name = (r.raceName || '').toLowerCase().trim()
+        if (name) workingRacesByName.set(name, r)
+      })
+
+      const processedWorkingRaces = new Set<string>()
+
+      // Pour chaque course source
+      Object.entries(sourceRaces).forEach(([sourceRaceId, sourceRaceData]) => {
+        // Chercher la course correspondante dans working (par ID ou par nom)
+        let workingRace = prev.consolidatedRaces.find(r => r.raceId === sourceRaceId)
+        if (!workingRace) {
+          const sourceName = (sourceRaceData.name || '').toLowerCase().trim()
+          workingRace = workingRacesByName.get(sourceName)
+        }
+
+        if (workingRace && !processedWorkingRaces.has(workingRace.raceId)) {
+          processedWorkingRaces.add(workingRace.raceId)
+
+          // Course existante - ne copier que les champs différents
+          const diffFields: Record<string, any> = {}
+          Object.entries(sourceRaceData).forEach(([field, sourceVal]) => {
+            if (ignoredFields.includes(field)) return
+            if (sourceVal === undefined) return
+
+            const workingVal = prev.userModifiedRaceChanges[workingRace!.raceId]?.[field]
+              ?? workingRace!.fields[field]
+
+            if (JSON.stringify(workingVal) !== JSON.stringify(sourceVal)) {
+              diffFields[field] = sourceVal
+            }
+          })
+
+          if (Object.keys(diffFields).length > 0) {
+            newUserModifiedRaceChanges[workingRace.raceId] = {
+              ...(prev.userModifiedRaceChanges[workingRace.raceId] || {}),
+              ...diffFields
+            }
+          }
+        } else if (!workingRace) {
+          // Nouvelle course à ajouter depuis la source
+          const newRaceId = `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          newUserModifiedRaceChanges[newRaceId] = {
+            ...sourceRaceData,
+            _isNew: true,
+            _copiedFromSource: sourceRaceId
+          }
+        }
+      })
+
+      return {
+        ...prev,
+        userModifiedChanges: newUserModifiedChanges,
+        userModifiedRaceChanges: newUserModifiedRaceChanges,
+        isDirty: true
+      }
+    })
+
+    if (autosave) {
+      scheduleAutosave()
+    }
+  }, [isGroupMode, sourceProposals, activeSourceIndex, extractRacesFromProposal, autosave, scheduleAutosave])
+
+  /**
+   * Obtenir les différences de champs entre working et source active
+   */
+  const getFieldDifferences = useCallback((): FieldDiff[] => {
+    if (!isGroupMode || !workingGroup || sourceProposals.length === 0) return []
+
+    const sourceProposal = sourceProposals[activeSourceIndex]
+    if (!sourceProposal) return []
+
+    const diffs: FieldDiff[] = []
+    const allFields = new Set<string>()
+
+    // Collecter tous les champs de la working proposal
+    workingGroup.consolidatedChanges.forEach(c => allFields.add(c.field))
+
+    // Collecter tous les champs de la source
+    const sourceChanges = sourceProposal.changes || {}
+    const sourceUserMods = sourceProposal.userModifiedChanges || {}
+    const merged = mergeChanges(sourceChanges, sourceUserMods)
+
+    // Aplatir pour NEW_EVENT
+    Object.entries(merged).forEach(([key, value]) => {
+      if (key === 'edition' && value && typeof value === 'object' && !Array.isArray(value)) {
+        Object.entries(value).forEach(([editionField]) => {
+          if (editionField !== 'races' && editionField !== 'organizer') {
+            allFields.add(editionField)
+          }
+        })
+      } else {
+        allFields.add(key)
+      }
+    })
+
+    // Comparer chaque champ
+    allFields.forEach(field => {
+      // Valeur dans working
+      const workingChange = workingGroup.consolidatedChanges.find(c => c.field === field)
+      const workingValue = workingGroup.userModifiedChanges[field]
+        ?? workingChange?.selectedValue
+        ?? workingChange?.options[0]?.proposedValue
+
+      // Valeur dans source
+      const sourceValue = extractFieldValueFromProposal(sourceProposal, field)
+
+      const isAbsentInWorking = workingValue === undefined
+      const isAbsentInSource = sourceValue === undefined
+
+      // Comparaison profonde pour les objets
+      const isDifferent = !isAbsentInWorking && !isAbsentInSource &&
+        JSON.stringify(workingValue) !== JSON.stringify(sourceValue)
+
+      diffs.push({
+        field,
+        workingValue,
+        sourceValue,
+        isDifferent,
+        isAbsentInSource,
+        isAbsentInWorking
+      })
+    })
+
+    return diffs
+  }, [isGroupMode, workingGroup, sourceProposals, activeSourceIndex, extractFieldValueFromProposal])
+
+  /**
+   * Obtenir les différences de courses entre working et source active
+   */
+  const getRaceDifferences = useCallback((): RaceDiff[] => {
+    if (!isGroupMode || !workingGroup || sourceProposals.length === 0) return []
+
+    const sourceProposal = sourceProposals[activeSourceIndex]
+    if (!sourceProposal) return []
+
+    const diffs: RaceDiff[] = []
+    const sourceRaces = extractRacesFromProposal(sourceProposal)
+
+    // Map des courses par nom pour matching approximatif
+    const workingRacesByName = new Map<string, ConsolidatedRaceChange>()
+    workingGroup.consolidatedRaces.forEach(r => {
+      const name = (r.raceName || '').toLowerCase().trim()
+      if (name) workingRacesByName.set(name, r)
+    })
+
+    const sourceRacesByName = new Map<string, { raceId: string; raceData: RaceData }>()
+    Object.entries(sourceRaces).forEach(([raceId, raceData]) => {
+      const name = (raceData.name || '').toLowerCase().trim()
+      if (name) sourceRacesByName.set(name, { raceId, raceData })
+    })
+
+    const processedWorkingRaces = new Set<string>()
+    const processedSourceRaces = new Set<string>()
+
+    // 1. Matcher par ID exact
+    workingGroup.consolidatedRaces.forEach(workingRace => {
+      const sourceRace = sourceRaces[workingRace.raceId]
+      if (sourceRace) {
+        processedWorkingRaces.add(workingRace.raceId)
+        processedSourceRaces.add(workingRace.raceId)
+
+        // Comparer les champs
+        const fieldDiffs: FieldDiff[] = []
+        const allFields = new Set([...Object.keys(workingRace.fields), ...Object.keys(sourceRace)])
+
+        allFields.forEach(field => {
+          if (field === 'id' || field.startsWith('_')) return
+
+          const workingVal = workingGroup.userModifiedRaceChanges[workingRace.raceId]?.[field]
+            ?? workingRace.fields[field]
+          const sourceVal = (sourceRace as any)[field]
+
+          fieldDiffs.push({
+            field,
+            workingValue: workingVal,
+            sourceValue: sourceVal,
+            isDifferent: JSON.stringify(workingVal) !== JSON.stringify(sourceVal),
+            isAbsentInSource: sourceVal === undefined,
+            isAbsentInWorking: workingVal === undefined
+          })
+        })
+
+        diffs.push({
+          raceId: workingRace.raceId,
+          raceName: workingRace.raceName,
+          existsInWorking: true,
+          existsInSource: true,
+          workingRaceId: workingRace.raceId,
+          sourceRaceId: workingRace.raceId,
+          fieldDiffs
+        })
+      }
+    })
+
+    // 2. Matcher par nom pour les courses non matchées
+    workingGroup.consolidatedRaces.forEach(workingRace => {
+      if (processedWorkingRaces.has(workingRace.raceId)) return
+
+      const workingName = (workingRace.raceName || '').toLowerCase().trim()
+      const sourceMatch = sourceRacesByName.get(workingName)
+
+      if (sourceMatch && !processedSourceRaces.has(sourceMatch.raceId)) {
+        processedWorkingRaces.add(workingRace.raceId)
+        processedSourceRaces.add(sourceMatch.raceId)
+
+        const fieldDiffs: FieldDiff[] = []
+        const allFields = new Set([...Object.keys(workingRace.fields), ...Object.keys(sourceMatch.raceData)])
+
+        allFields.forEach(field => {
+          if (field === 'id' || field.startsWith('_')) return
+
+          const workingVal = workingGroup.userModifiedRaceChanges[workingRace.raceId]?.[field]
+            ?? workingRace.fields[field]
+          const sourceVal = (sourceMatch.raceData as any)[field]
+
+          fieldDiffs.push({
+            field,
+            workingValue: workingVal,
+            sourceValue: sourceVal,
+            isDifferent: JSON.stringify(workingVal) !== JSON.stringify(sourceVal),
+            isAbsentInSource: sourceVal === undefined,
+            isAbsentInWorking: workingVal === undefined
+          })
+        })
+
+        diffs.push({
+          raceId: workingRace.raceId,
+          raceName: workingRace.raceName,
+          existsInWorking: true,
+          existsInSource: true,
+          workingRaceId: workingRace.raceId,
+          sourceRaceId: sourceMatch.raceId,
+          fieldDiffs
+        })
+      }
+    })
+
+    // 3. Courses uniquement dans working (pas dans source)
+    workingGroup.consolidatedRaces.forEach(workingRace => {
+      if (processedWorkingRaces.has(workingRace.raceId)) return
+
+      diffs.push({
+        raceId: workingRace.raceId,
+        raceName: workingRace.raceName,
+        existsInWorking: true,
+        existsInSource: false,
+        workingRaceId: workingRace.raceId,
+        fieldDiffs: []
+      })
+    })
+
+    // 4. Courses uniquement dans source (pas dans working)
+    Object.entries(sourceRaces).forEach(([raceId, raceData]) => {
+      if (processedSourceRaces.has(raceId)) return
+
+      diffs.push({
+        raceId,
+        raceName: raceData.name || 'Course',
+        existsInWorking: false,
+        existsInSource: true,
+        sourceRaceId: raceId,
+        fieldDiffs: []
+      })
+    })
+
+    return diffs
+  }, [isGroupMode, workingGroup, sourceProposals, activeSourceIndex, extractRacesFromProposal])
+
   /**
    * Construire le diff groupé à appliquer à chaque proposition
    * IMPORTANT : Ne renvoie QUE les modifications utilisateur, pas les valeurs proposées
@@ -1340,16 +2012,21 @@ export function useProposalEditor(
   /**
    * Valider un bloc
    */
-  const validateBlock = useCallback(async (blockKey: string, proposalIds?: string[]) => {
+  const validateBlock = useCallback(async (blockKey: string) => {
     try {
       // Sauvegarder d'abord les modifications locales
       await save()
 
       if (isGroupMode) {
         if (!workingGroup) return
-        const ids = proposalIds && proposalIds.length > 0 ? proposalIds : workingGroup.ids
+        // ✅ Two-Panes: Utiliser UNIQUEMENT la proposition prioritaire pour éviter fusion backend
+        const primaryId = workingGroup.primaryProposalId
+        if (!primaryId) {
+          enqueueSnackbar('Aucune proposition prioritaire trouvée', { variant: 'error' })
+          return
+        }
         const payload = getPayloadForBlock(blockKey)
-        await Promise.all(ids.map(id => proposalsApi.validateBlock(id, blockKey, payload)))
+        await proposalsApi.validateBlock(primaryId, blockKey, payload)
         setWorkingGroup(prev => {
           if (!prev) return prev
           return {
@@ -1357,7 +2034,7 @@ export function useProposalEditor(
             approvedBlocks: { ...prev.approvedBlocks, [blockKey]: true }
           }
         })
-        enqueueSnackbar(`Bloc "${blockKey}" validé pour ${ids.length} proposition(s)`, { variant: 'success' })
+        enqueueSnackbar(`Bloc "${blockKey}" validé`, { variant: 'success' })
       } else {
         if (!workingProposal) return
         const payload = getPayloadForBlock(blockKey)
@@ -1389,10 +2066,14 @@ export function useProposalEditor(
       if (isGroupMode) {
         if (!workingGroup) return
 
-        // Annuler pour toutes les propositions du groupe
-        await Promise.all(
-          workingGroup.ids.map(id => proposalsApi.unvalidateBlock(id, blockKey))
-        )
+        // ✅ Two-Panes: Utiliser UNIQUEMENT la proposition prioritaire
+        const primaryId = workingGroup.primaryProposalId
+        if (!primaryId) {
+          enqueueSnackbar('Aucune proposition prioritaire trouvée', { variant: 'error' })
+          return
+        }
+
+        await proposalsApi.unvalidateBlock(primaryId, blockKey)
 
         setWorkingGroup(prev => {
           if (!prev) return prev
@@ -1406,7 +2087,7 @@ export function useProposalEditor(
           }
         })
 
-        enqueueSnackbar(`Bloc "${blockKey}" dévalidé pour ${workingGroup.ids.length} proposition(s)`, { variant: 'success' })
+        enqueueSnackbar(`Bloc "${blockKey}" dévalidé`, { variant: 'success' })
       } else {
         if (!workingProposal) return
 
@@ -1578,7 +2259,7 @@ export function useProposalEditor(
       updateRace,
       deleteRace,
       addRace,
-      validateBlock: (blockKey: string, proposalIds: string[]) => validateBlock(blockKey, proposalIds),
+      validateBlock: (blockKey: string) => validateBlock(blockKey),
       unvalidateBlock,
       validateAllBlocks: async () => {
         if (!workingGroup) return
@@ -1592,7 +2273,19 @@ export function useProposalEditor(
       getPayload,
       reset,
       hasUnsavedChanges,
-      isBlockValidated
+      isBlockValidated,
+
+      // ═══════════════════════════════════════════════════════════════════════
+      // Mode Two-Panes : Gestion des sources et copie
+      // ═══════════════════════════════════════════════════════════════════════
+      sourceProposals,
+      activeSourceIndex,
+      setActiveSourceIndex,
+      copyFieldFromSource,
+      copyRaceFromSource,
+      copyAllFromSource,
+      getFieldDifferences,
+      getRaceDifferences
     }
   }
 

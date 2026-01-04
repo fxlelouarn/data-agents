@@ -212,6 +212,9 @@ export const proposalsApi = {
   }>> =>
     api.post('/proposals/merge', data).then(res => res.data),
 
+  swapMergeDirection: (id: string): Promise<ApiResponse<Proposal>> =>
+    api.post(`/proposals/${id}/swap-merge-direction`).then(res => res.data),
+
   createEditionUpdateComplete: (data: {
     editionId: string
     userModifiedChanges?: Record<string, any>
@@ -352,12 +355,14 @@ export const proposalsApi = {
     api.post(`/proposals/${id}/unvalidate-block`, { block: blockKey }).then(res => res.data),
 
   // ✅ MODE GROUPÉ : Validation de bloc pour plusieurs propositions
+  // ✅ Two-Panes: primaryProposalId indique quelle proposition utiliser pour les changes (pas de merge)
   validateBlockGroup: (
     proposalIds: string[],
     blockKey: string,
-    changes: Record<string, any>
+    changes: Record<string, any>,
+    primaryProposalId?: string
   ): Promise<ApiResponse<Proposal[]>> =>
-    api.post('/proposals/validate-block-group', { proposalIds, block: blockKey, changes }).then(res => res.data),
+    api.post('/proposals/validate-block-group', { proposalIds, block: blockKey, changes, primaryProposalId }).then(res => res.data),
 
   // Compte les propositions éligibles pour l'auto-validation
   getEligibleCount: (): Promise<ApiResponse<{ count: number }>> =>

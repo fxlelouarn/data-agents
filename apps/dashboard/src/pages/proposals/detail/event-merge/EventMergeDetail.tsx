@@ -29,8 +29,9 @@ import {
   CalendarMonth as CalendarMonthIcon,
   OpenInNew as OpenInNewIcon,
   DirectionsRun as DirectionsRunIcon,
+  SwapHoriz as SwapHorizIcon,
 } from '@mui/icons-material'
-import { useUpdateProposal, useEventDetails, useUpdates } from '@/hooks/useApi'
+import { useUpdateProposal, useEventDetails, useUpdates, useSwapMergeDirection } from '@/hooks/useApi'
 import { proposalStatusLabels, proposalStatusColors } from '@/constants/proposals'
 import { Proposal } from '@/types'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
@@ -73,6 +74,7 @@ const formatRaceInfo = (race: RaceInfo): string => {
 const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
   const navigate = useNavigate()
   const updateMutation = useUpdateProposal()
+  const swapMutation = useSwapMergeDirection()
 
   // Récupérer les mises à jour liées à cette proposition
   const { data: updatesData } = useUpdates({}, 100, 0)
@@ -130,7 +132,11 @@ const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
     }
   }
 
-  const isLoading = updateMutation.isPending
+  const handleSwapDirection = () => {
+    swapMutation.mutate(proposal.id)
+  }
+
+  const isLoading = updateMutation.isPending || swapMutation.isPending
   const isLoadingEditions = isLoadingKeep || isLoadingDuplicate
 
   // Utiliser les éditions stockées ou celles récupérées via API (avec infos complètes)
@@ -226,7 +232,35 @@ const EventMergeDetail: React.FC<EventMergeDetailProps> = ({ proposal }) => {
       </Alert>
 
       {/* Détails des deux événements */}
-      <Grid container spacing={3} sx={{ mb: 3 }}>
+      <Grid container spacing={3} sx={{ mb: 3, position: 'relative' }}>
+        {/* Bouton Inverser (centré entre les deux cartes) */}
+        {isPending && (
+          <Box
+            sx={{
+              position: 'absolute',
+              top: '50%',
+              left: '50%',
+              transform: 'translate(-50%, -50%)',
+              zIndex: 10,
+            }}
+          >
+            <Button
+              variant="contained"
+              color="primary"
+              size="small"
+              onClick={handleSwapDirection}
+              disabled={isLoading}
+              startIcon={swapMutation.isPending ? <CircularProgress size={16} color="inherit" /> : <SwapHorizIcon />}
+              sx={{
+                borderRadius: '50px',
+                px: 2,
+                boxShadow: 3,
+              }}
+            >
+              Inverser
+            </Button>
+          </Box>
+        )}
         {/* Événement à conserver */}
         <Grid item xs={12} md={6}>
           <Card

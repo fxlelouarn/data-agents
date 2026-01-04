@@ -60,6 +60,9 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
 
   const label = blockName || (blockKey ? blockKey : 'bloc')
 
+  // Style compact pour les boutons
+  const compactSx = { py: 0.5, px: 1.5, fontSize: '0.8125rem' }
+
   // ✅ Si le bloc est appliqué, afficher un bouton désactivé avec tooltip explicatif
   if (isApplied && isValidated) {
     return (
@@ -71,8 +74,9 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
             startIcon={<LockIcon />}
             disabled
             size="small"
+            sx={compactSx}
           >
-            {label} appliqué
+            Appliqué
           </Button>
         </span>
       </Tooltip>
@@ -97,8 +101,9 @@ const BlockValidationButton: React.FC<BlockValidationButtonProps> = ({
       // Seul le bouton de validation peut l'être
       disabled={(isValidated ? false : disabled) || isPending}
       size="small"
+      sx={compactSx}
     >
-      {isValidated ? `Annuler ${label}` : `Valider ${label}`}
+      {isValidated ? `Annuler` : `Valider`}
     </Button>
   )
 }

@@ -14,6 +14,8 @@ export interface BlockStatus {
 interface UseBlockValidationProps {
   proposals?: Proposal[]
   blockProposals?: Record<string, string[]>
+  // ✅ Two-Panes: proposition prioritaire (seule utilisée pour les changes, pas de merge)
+  primaryProposalId?: string
   // Nouvelles props pour les valeurs sélectionnées et modifiées
   selectedChanges?: Record<string, any>
   userModifiedChanges?: Record<string, any>
@@ -24,6 +26,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
   const {
     proposals = [],
     blockProposals = {},
+    primaryProposalId,  // ✅ Two-Panes: proposition prioritaire
     selectedChanges = {},
     userModifiedChanges = {},
     userModifiedRaceChanges = {}
@@ -58,8 +61,12 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
 
   // Valider un bloc (approuver toutes ses propositions)
   // ⚠️ MODE GROUPÉ : Un seul appel API avec tous les IDs
-  const validateBlock = useCallback(async (blockKey: string, proposalIds: string[]) => {
+  // ✅ proposalIds optionnel - utilise blockProposals[blockKey] par défaut
+  const validateBlock = useCallback(async (blockKey: string, proposalIdsArg?: string[]) => {
     try {
+      // Utiliser les proposalIds fournis ou récupérer depuis blockProposals
+      const proposalIds = proposalIdsArg || blockProposals[blockKey] || []
+      
       // Vérifier que les propositions existent
       if (proposalIds.length === 0) {
         console.warn('Aucune proposition à valider')
@@ -118,8 +125,10 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       }
 
       // ✅ Utiliser mutateAsync pour permettre await dans la cascade
+      // ✅ Two-Panes: Passer primaryProposalId pour éviter le merge de toutes les propositions
       await updateProposalMutation.mutateAsync({
         proposalIds,    // 📦 Passer tous les IDs
+        primaryProposalId,  // ✅ Two-Panes: proposition prioritaire (pas de merge)
         block: blockKey,
         changes         // 📦 Payload consolidé
       })
@@ -133,7 +142,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       console.error(`Error validating block ${blockKey}:`, error)
       throw error
     }
-  }, [updateProposalMutation, userModifiedChanges, userModifiedRaceChanges])
+  }, [updateProposalMutation, blockProposals, primaryProposalId, userModifiedChanges, userModifiedRaceChanges])
 
   // Vérifier si un bloc est validé (utilise syncedBlockStatus au lieu de blockStatus)
   // ✅ Défini AVANT unvalidateBlock pour éviter la référence circulaire
