@@ -307,11 +307,19 @@ export function useChangesTable({
 
   /**
    * Vérifie si un changement a plusieurs valeurs proposées
+   * 
+   * Note: Si l'utilisateur a déjà modifié/copié une valeur (userModifiedChanges),
+   * on ne considère plus qu'il y a "plusieurs valeurs" car la décision est prise.
+   * Le Select n'est utile que pour choisir parmi les propositions des agents.
    */
   const hasMultipleValues = useCallback((change: ConsolidatedChange): boolean => {
+    // Si l'utilisateur a modifié/copié une valeur, pas de Select
+    if (userModifiedChanges[change.field] !== undefined) {
+      return false
+    }
     const sortedOptions = getSortedOptions(change)
     return sortedOptions.length > 1
-  }, [getSortedOptions])
+  }, [getSortedOptions, userModifiedChanges])
 
   // ─────────────────────────────────────────────────────────────
   // RETURN

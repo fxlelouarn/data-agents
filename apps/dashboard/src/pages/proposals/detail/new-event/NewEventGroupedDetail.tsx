@@ -95,6 +95,7 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                   context={context}
                   checkExistingResult={null} // Déjà affiché au-dessus
                   firstProposalId={firstProposalId}
+                  hideDateSources={true} // Sources dans l'accordéon du bas
                 />
               }
               rightPane={
@@ -131,15 +132,6 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
                   isFeatured={context.groupProposals[0].isFeatured}
                 />
               )}
-              <AgentInfoSection
-                proposals={context.allGroupProposals.map((p: any) => ({
-                  ...p,
-                  confidence: p.confidence || 0,
-                  status: p.status
-                }))}
-                onArchive={context.handleArchiveSingleProposal}
-                isArchiving={context.isArchiving}
-              />
               {(() => {
                 const rejectedMatches = context.groupProposals[0]?.justification
                   ?.find((j: any) => j.type === 'rejected_matches' || j.type === 'text')
@@ -175,6 +167,8 @@ interface MainContentProps {
   context: any // GroupedProposalContext
   checkExistingResult: any
   firstProposalId: string | undefined
+  /** En mode Two-Panes, les sources sont dans l'accordéon du bas */
+  hideDateSources?: boolean
 }
 
 /**
@@ -183,7 +177,8 @@ interface MainContentProps {
 const MainContent: React.FC<MainContentProps> = ({
   context,
   checkExistingResult,
-  firstProposalId
+  firstProposalId,
+  hideDateSources = false
 }) => {
   const {
     consolidatedChanges,
@@ -370,10 +365,12 @@ const MainContent: React.FC<MainContentProps> = ({
         validationDisabled={isEventDead || isAllApproved}
       />
 
-      {/* Sources des dates extraites */}
-      <DateSourcesSection
-        justifications={groupProposals.flatMap((p: any) => p.justification || [])}
-      />
+      {/* Sources des dates extraites (masqué en mode Two-Panes car dans l'accordéon) */}
+      {!hideDateSources && (
+        <DateSourcesSection
+          justifications={groupProposals.flatMap((p: any) => p.justification || [])}
+        />
+      )}
     </>
   )
 }

@@ -71,7 +71,7 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
               leftTitle="Proposition de travail"
               rightTitle="Sources"
               leftPane={
-                <MainContent context={context} />
+                <MainContent context={context} hideDateSources={true} />
               }
               rightPane={
                 <SourceProposalPane
@@ -123,15 +123,6 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
                   isFeatured={context.groupProposals[0].isFeatured}
                 />
               )}
-              <AgentInfoSection
-                proposals={context.allGroupProposals.map((p: any) => ({
-                  ...p,
-                  confidence: p.confidence || 0,
-                  status: p.status
-                }))}
-                onArchive={context.handleArchiveSingleProposal}
-                isArchiving={context.isArchiving}
-              />
             </CollapsibleContextCards>
           </>
         )
@@ -154,12 +145,14 @@ const EditionUpdateGroupedDetail: React.FC<EditionUpdateGroupedDetailProps> = ({
 
 interface MainContentProps {
   context: any // GroupedProposalContext
+  /** En mode Two-Panes, les sources sont dans l'accordéon du bas */
+  hideDateSources?: boolean
 }
 
 /**
  * Contenu principal avec les tables d'édition
  */
-const MainContent: React.FC<MainContentProps> = ({ context }) => {
+const MainContent: React.FC<MainContentProps> = ({ context, hideDateSources = false }) => {
   const {
     consolidatedChanges,
     consolidatedRaceChanges,
@@ -349,10 +342,12 @@ const MainContent: React.FC<MainContentProps> = ({ context }) => {
         />
       )}
 
-      {/* Sources des dates extraites */}
-      <DateSourcesSection
-        justifications={groupProposals.flatMap((p: any) => p.justification || [])}
-      />
+      {/* Sources des dates extraites (masqué en mode Two-Panes car dans l'accordéon) */}
+      {!hideDateSources && (
+        <DateSourcesSection
+          justifications={groupProposals.flatMap((p: any) => p.justification || [])}
+        />
+      )}
     </>
   )
 }

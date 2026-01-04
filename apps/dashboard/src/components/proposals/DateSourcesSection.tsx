@@ -16,9 +16,11 @@ import {
 
 interface DateSourcesSectionProps {
   justifications: any[]
+  /** Désactiver la marge en haut (utile dans les layouts où l'espacement est géré par le parent) */
+  noTopMargin?: boolean
 }
 
-const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications }) => {
+const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications, noTopMargin = false }) => {
   // S'assurer que justifications est un array
   const justificationsArray = Array.isArray(justifications) ? justifications : [];
 
@@ -109,7 +111,7 @@ const DateSourcesSection: React.FC<DateSourcesSectionProps> = ({ justifications 
   }>)
 
   return (
-    <Card sx={{ mt: 3 }}>
+    <Card sx={{ mt: noTopMargin ? 0 : 3 }}>
       <CardContent>
         <Typography variant="h6" sx={{ mb: 2, display: 'flex', alignItems: 'center', gap: 1 }}>
           <InfoIcon color="primary" />

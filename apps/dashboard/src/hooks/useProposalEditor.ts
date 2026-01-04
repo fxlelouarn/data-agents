@@ -1518,21 +1518,61 @@ export function useProposalEditor(
     if (!sourceRace) return
 
     if (targetRaceId) {
-      // Remplacer une course existante : copier tous les champs
+      // Remplacer une course existante : copier UNIQUEMENT les champs qui diffèrent
       setWorkingGroup(prev => {
         if (!prev) return prev
 
-        // Copier tous les champs de la course source vers la cible
-        const raceFields = { ...sourceRace }
-        delete (raceFields as any).id // Ne pas écraser l'ID
-        delete (raceFields as any)._originalIndex
+        // Trouver la course cible dans consolidatedRaces pour comparer
+        const targetRace = prev.consolidatedRaces.find(r => r.raceId === targetRaceId)
+        
+        // Champs à ignorer (métadonnées)
+        const ignoredFields = ['id', '_originalIndex', 'raceId', 'proposalIds']
+        
+        // Extraire uniquement les champs qui diffèrent
+        const diffFields: Record<string, any> = {}
+        
+        Object.entries(sourceRace).forEach(([field, sourceValue]) => {
+          if (ignoredFields.includes(field)) return
+          
+          // Récupérer la valeur actuelle dans la working race
+          let workingValue: any = undefined
+          
+          // Chercher dans userModifiedRaceChanges d'abord
+          if (prev.userModifiedRaceChanges[targetRaceId]?.[field] !== undefined) {
+            workingValue = prev.userModifiedRaceChanges[targetRaceId][field]
+          } else if (targetRace) {
+            // Sinon dans consolidatedRaces.fields
+            const fieldData = targetRace.fields[field]
+            if (fieldData && typeof fieldData === 'object' && 'options' in fieldData) {
+              workingValue = fieldData.options[0]?.proposedValue
+            } else {
+              workingValue = fieldData
+            }
+          }
+          
+          // Comparer les valeurs (en tenant compte des dates)
+          const sourceStr = JSON.stringify(sourceValue)
+          const workingStr = JSON.stringify(workingValue)
+          
+          if (sourceStr !== workingStr) {
+            diffFields[field] = sourceValue
+          }
+        })
+        
+        // Si aucune différence, ne rien faire
+        if (Object.keys(diffFields).length === 0) {
+          console.log('📋 [copyRaceFromSource] Aucune différence à copier')
+          return prev
+        }
+        
+        console.log('📋 [copyRaceFromSource] Copie des champs différents:', Object.keys(diffFields))
 
         const next = { ...prev }
         next.userModifiedRaceChanges = {
           ...next.userModifiedRaceChanges,
           [targetRaceId]: {
             ...(next.userModifiedRaceChanges[targetRaceId] || {}),
-            ...raceFields
+            ...diffFields
           }
         }
         next.isDirty = true
@@ -1549,8 +1589,8 @@ export function useProposalEditor(
   }, [isGroupMode, sourceProposals, activeSourceIndex, extractRacesFromProposal, addRace, autosave, scheduleAutosave])
 
   /**
-   * Copier TOUTE la proposition source (écrase la working proposal)
-   * IMPORTANT: Reset complet, pas de merge avec l'existant
+   * Copier TOUTE la proposition source vers la working proposal
+   * Ne copie que les champs qui diffèrent (pas de reset complet)
    */
   const copyAllFromSource = useCallback(() => {
     if (!isGroupMode || sourceProposals.length === 0) return
@@ -1558,88 +1598,114 @@ export function useProposalEditor(
     const sourceProposal = sourceProposals[activeSourceIndex]
     if (!sourceProposal) return
 
-    // Réinitialiser avec la source comme base
-    // On réutilise initializeWorkingGroup mais avec une seule proposition
     setWorkingGroup(prev => {
       if (!prev) return prev
 
-      // Extraire tous les champs de la source
+      const newUserModifiedChanges = { ...prev.userModifiedChanges }
+      const newUserModifiedRaceChanges = { ...prev.userModifiedRaceChanges }
+
+      // ═══════════════════════════════════════════════════════════════════
+      // 1. Copier les champs (Event/Edition) qui diffèrent
+      // ═══════════════════════════════════════════════════════════════════
       const sourceChanges = sourceProposal.changes || {}
       const sourceUserMods = sourceProposal.userModifiedChanges || {}
+      const mergedSource = mergeChanges(sourceChanges, sourceUserMods)
 
-      // Reconstruire consolidatedChanges à partir de la source uniquement
-      const newConsolidatedChanges: ConsolidatedChange[] = []
-      const merged = mergeChanges(sourceChanges, sourceUserMods)
-
-      // Aplatir la structure edition.new pour NEW_EVENT
-      const flattenedMerged: Record<string, any> = {}
-      Object.entries(merged).forEach(([key, value]) => {
+      // Aplatir la structure pour NEW_EVENT
+      const flattenedSource: Record<string, any> = {}
+      Object.entries(mergedSource).forEach(([key, value]) => {
         if (key === 'edition' && value && typeof value === 'object' && !Array.isArray(value)) {
           Object.entries(value).forEach(([editionField, editionValue]) => {
             if (editionField !== 'races' && editionField !== 'organizer') {
-              flattenedMerged[editionField] = editionValue
+              flattenedSource[editionField] = editionValue
             }
           })
           if (value.organizer) {
-            flattenedMerged['organizer'] = value.organizer
+            flattenedSource['organizer'] = value.organizer
           }
-        } else {
-          flattenedMerged[key] = value
+        } else if (key !== 'races' && key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting') {
+          flattenedSource[key] = value
         }
       })
 
-      Object.entries(flattenedMerged).forEach(([field, value]) => {
-        // Extraire currentValue depuis changes[field]
-        const originalValue = sourceChanges[field]
-        let currentValue: any = undefined
-        if (originalValue && typeof originalValue === 'object') {
-          if ('old' in originalValue) currentValue = originalValue.old
-          else if ('current' in originalValue) currentValue = originalValue.current
-        }
+      // Pour chaque champ de la source, comparer avec working et copier si différent
+      Object.entries(flattenedSource).forEach(([field, sourceValue]) => {
+        if (sourceValue === undefined) return
 
-        newConsolidatedChanges.push({
-          field,
-          options: [{
-            proposalId: sourceProposal.id,
-            agentName: (sourceProposal as any).agentName || (sourceProposal as any).agent?.name || 'Agent',
-            agentType: (sourceProposal as any).agent?.type,
-            proposedValue: value,
-            confidence: (sourceProposal as any).confidence || 0,
-            createdAt: sourceProposal.createdAt as any
-          }],
-          currentValue,
-          selectedValue: value
-        })
+        // Valeur dans working
+        const workingChange = prev.consolidatedChanges.find(c => c.field === field)
+        const workingValue = prev.userModifiedChanges[field]
+          ?? workingChange?.selectedValue
+          ?? workingChange?.options[0]?.proposedValue
+
+        // Comparer
+        if (JSON.stringify(workingValue) !== JSON.stringify(sourceValue)) {
+          newUserModifiedChanges[field] = sourceValue
+        }
       })
 
-      // Extraire les courses de la source
+      // ═══════════════════════════════════════════════════════════════════
+      // 2. Copier les courses qui diffèrent
+      // ═══════════════════════════════════════════════════════════════════
       const sourceRaces = extractRacesFromProposal(sourceProposal)
-      const newConsolidatedRaces: ConsolidatedRaceChange[] = []
-      const newRaceIdToIndexMap: Record<string, string> = {}
+      const ignoredFields = ['id', '_originalIndex', '_isNew', '_deleted', '_copiedFromSource']
 
-      Object.entries(sourceRaces).forEach(([raceId, raceData], index) => {
-        newConsolidatedRaces.push({
-          raceId,
-          raceName: raceData.name || 'Course',
-          proposalIds: [sourceProposal.id],
-          originalFields: {}, // À enrichir si nécessaire
-          fields: raceData
-        })
+      // Map des courses working par nom pour matching
+      const workingRacesByName = new Map<string, ConsolidatedRaceChange>()
+      prev.consolidatedRaces.forEach(r => {
+        const name = (r.raceName || '').toLowerCase().trim()
+        if (name) workingRacesByName.set(name, r)
+      })
 
-        // Reconstruire le mapping
-        const originalIndex = (raceData as any)._originalIndex
-        if (originalIndex !== undefined && !raceId.startsWith('new-')) {
-          newRaceIdToIndexMap[raceId] = `existing-${originalIndex}`
+      const processedWorkingRaces = new Set<string>()
+
+      // Pour chaque course source
+      Object.entries(sourceRaces).forEach(([sourceRaceId, sourceRaceData]) => {
+        // Chercher la course correspondante dans working (par ID ou par nom)
+        let workingRace = prev.consolidatedRaces.find(r => r.raceId === sourceRaceId)
+        if (!workingRace) {
+          const sourceName = (sourceRaceData.name || '').toLowerCase().trim()
+          workingRace = workingRacesByName.get(sourceName)
+        }
+
+        if (workingRace && !processedWorkingRaces.has(workingRace.raceId)) {
+          processedWorkingRaces.add(workingRace.raceId)
+
+          // Course existante - ne copier que les champs différents
+          const diffFields: Record<string, any> = {}
+          Object.entries(sourceRaceData).forEach(([field, sourceVal]) => {
+            if (ignoredFields.includes(field)) return
+            if (sourceVal === undefined) return
+
+            const workingVal = prev.userModifiedRaceChanges[workingRace!.raceId]?.[field]
+              ?? workingRace!.fields[field]
+
+            if (JSON.stringify(workingVal) !== JSON.stringify(sourceVal)) {
+              diffFields[field] = sourceVal
+            }
+          })
+
+          if (Object.keys(diffFields).length > 0) {
+            newUserModifiedRaceChanges[workingRace.raceId] = {
+              ...(prev.userModifiedRaceChanges[workingRace.raceId] || {}),
+              ...diffFields
+            }
+          }
+        } else if (!workingRace) {
+          // Nouvelle course à ajouter depuis la source
+          const newRaceId = `new-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`
+          newUserModifiedRaceChanges[newRaceId] = {
+            ...sourceRaceData,
+            _isNew: true,
+            _copiedFromSource: sourceRaceId
+          }
         }
       })
 
       return {
         ...prev,
-        consolidatedChanges: newConsolidatedChanges,
-        consolidatedRaces: newConsolidatedRaces,
-        userModifiedChanges: {}, // Reset complet
-        userModifiedRaceChanges: {}, // Reset complet
-        raceIdToIndexMap: newRaceIdToIndexMap,
+        userModifiedChanges: newUserModifiedChanges,
+        userModifiedRaceChanges: newUserModifiedRaceChanges,
         isDirty: true
       }
     })

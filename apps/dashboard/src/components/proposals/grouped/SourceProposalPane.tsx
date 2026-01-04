@@ -20,15 +20,109 @@ import {
   DirectionsRun as RaceIcon,
   CheckCircle as CheckIcon,
   Warning as WarningIcon,
-  HelpOutline as AbsentIcon
+  HelpOutline as AbsentIcon,
+  Link as LinkIcon,
+  Schedule as ScheduleIcon,
+  OpenInNew as OpenInNewIcon,
+  SmartToy as AgentIcon
 } from '@mui/icons-material'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { Link } from 'react-router-dom'
 import { Proposal } from '@/types'
 import { FieldDiff, RaceDiff } from '@/hooks/useProposalEditor'
+import { getCategoriesForEntityType } from '@/constants/fieldCategories'
 import SourceTabs from './SourceTabs'
 import CopyFieldButton from './CopyFieldButton'
 import CopyRaceButton, { CopyAllRacesButton } from './CopyRaceButton'
+
+// ═══════════════════════════════════════════════════════════════════════════════
+// Extraction des sources depuis les justifications d'une proposition
+// ═══════════════════════════════════════════════════════════════════════════════
+
+interface SourceInfo {
+  url: string
+  snippet?: string
+  date?: string
+  confidence?: number
+}
+
+/**
+ * Extrait les informations de source d'une proposition
+ * Cherche dans justifications et sourceMetadata
+ */
+function extractSourceInfo(proposal: Proposal): SourceInfo | null {
+  // Cast pour accéder aux champs optionnels non typés
+  const p = proposal as any
+
+  // Priorité 1: sourceMetadata.url
+  if (p.sourceMetadata?.url) {
+    return {
+      url: p.sourceMetadata.url,
+      snippet: p.sourceMetadata.extra?.snippet
+    }
+  }
+
+  // Priorité 2: sourceMetadata.extra.messageLink (Slack)
+  if (p.sourceMetadata?.extra?.messageLink) {
+    return {
+      url: p.sourceMetadata.extra.messageLink,
+      snippet: p.sourceMetadata.extra?.text
+    }
+  }
+
+  // Priorité 3: Chercher dans les justifications
+  if (!proposal.justification || proposal.justification.length === 0) {
+    return null
+  }
+
+  for (const justif of proposal.justification as any[]) {
+    // Format dateDetails avec sources multiples
+    if (justif.metadata?.dateDetails?.sources?.length > 0) {
+      const firstSource = justif.metadata.dateDetails.sources[0]
+      return {
+        url: firstSource.source,
+        snippet: firstSource.snippet,
+        date: justif.metadata.dateDetails.date,
+        confidence: justif.metadata.dateDetails.confidence
+      }
+    }
+
+    // Format dateDetails simple
+    if (justif.metadata?.dateDetails?.source) {
+      return {
+        url: justif.metadata.dateDetails.source,
+        snippet: justif.metadata.dateDetails.snippet,
+        date: justif.metadata.dateDetails.date,
+        confidence: justif.metadata.dateDetails.confidence
+      }
+    }
+
+    // type 'url_source'
+    if (justif.type === 'url_source' && justif.metadata?.url) {
+      return {
+        url: justif.metadata.url,
+        snippet: justif.metadata.snippet
+      }
+    }
+
+    // metadata.source ou metadata.url
+    if (justif.metadata?.source) {
+      return {
+        url: justif.metadata.source,
+        snippet: justif.metadata.snippet
+      }
+    }
+    if (justif.metadata?.url) {
+      return {
+        url: justif.metadata.url,
+        snippet: justif.metadata.snippet
+      }
+    }
+  }
+
+  return null
+}
 
 // Labels lisibles pour les champs
 const FIELD_LABELS: Record<string, string> = {
@@ -55,6 +149,39 @@ const FIELD_LABELS: Record<string, string> = {
   price: 'Prix',
   categoryLevel1: 'Catégorie 1',
   categoryLevel2: 'Catégorie 2'
+}
+
+// Ordre des champs pour les courses (même ordre que RacesChangesTable)
+const RACE_FIELDS_ORDER = [
+  'name',
+  'startDate',
+  'categoryLevel1',
+  'categoryLevel2',
+  'runDistance',
+  'bikeDistance',
+  'swimDistance',
+  'walkDistance',
+  'runPositiveElevation',
+  'price'
+]
+
+/**
+ * Trie les différences de champs selon l'ordre défini dans fieldCategories.ts
+ * Les champs non définis sont placés à la fin dans leur ordre original
+ */
+function sortFieldDiffs(diffs: FieldDiff[], entityType: 'EVENT' | 'EDITION' | 'RACE'): FieldDiff[] {
+  const categories = getCategoriesForEntityType(entityType)
+  // Créer un tableau plat de tous les champs dans l'ordre
+  const fieldsOrder = categories.flatMap(cat => cat.fields)
+  
+  return [...diffs].sort((a, b) => {
+    const indexA = fieldsOrder.indexOf(a.field)
+    const indexB = fieldsOrder.indexOf(b.field)
+    // Si un champ n'est pas dans l'ordre, le mettre à la fin
+    const orderA = indexA === -1 ? 999 : indexA
+    const orderB = indexB === -1 ? 999 : indexB
+    return orderA - orderB
+  })
 }
 
 interface SourceProposalPaneProps {
@@ -143,13 +270,16 @@ const SourceProposalPane: React.FC<SourceProposalPaneProps> = ({
 
   const activeSource = sourceProposals[activeSourceIndex]
 
-  // Séparer les différences par bloc
-  const eventDiffs = fieldDifferences.filter(d => 
-    ['name', 'city', 'department', 'country', 'description'].includes(d.field)
-  )
-  const editionDiffs = fieldDifferences.filter(d => 
-    ['startDate', 'endDate', 'year', 'website', 'registrationUrl', 'calendarStatus', 'timeZone'].includes(d.field)
-  )
+  // Séparer les différences par bloc et trier selon l'ordre défini dans fieldCategories.ts
+  const eventCategories = getCategoriesForEntityType('EVENT')
+  const eventFields = eventCategories.flatMap(cat => cat.fields)
+  const eventDiffsUnsorted = fieldDifferences.filter(d => eventFields.includes(d.field))
+  const eventDiffs = sortFieldDiffs(eventDiffsUnsorted, 'EVENT')
+  
+  const editionCategories = getCategoriesForEntityType('EDITION')
+  const editionFields = editionCategories.flatMap(cat => cat.fields)
+  const editionDiffsUnsorted = fieldDifferences.filter(d => editionFields.includes(d.field))
+  const editionDiffs = sortFieldDiffs(editionDiffsUnsorted, 'EDITION')
 
   // Compter les courses dans la source
   const sourcesRacesCount = raceDifferences.filter(r => r.existsInSource).length
@@ -289,19 +419,19 @@ const SourceProposalPane: React.FC<SourceProposalPaneProps> = ({
             <Table size="small">
               <TableHead>
                 <TableRow>
-                  <TableCell>Course</TableCell>
-                  <TableCell>Statut</TableCell>
-                  <TableCell align="right">Action</TableCell>
+                  <TableCell sx={{ width: '30%' }}>Champ</TableCell>
+                  <TableCell sx={{ width: '55%' }}>Valeur</TableCell>
+                  <TableCell sx={{ width: '15%' }} align="right">Copier</TableCell>
                 </TableRow>
               </TableHead>
               <TableBody>
                 {raceDifferences
                   .filter(race => race.existsInSource)
                   .map(race => (
-                    <RaceDiffRow
+                    <RaceDiffRows
                       key={race.raceId}
                       race={race}
-                      onCopy={onCopyRace}
+                      onCopyRace={onCopyRace}
                       disabled={isValidated}
                     />
                   ))}
@@ -310,6 +440,9 @@ const SourceProposalPane: React.FC<SourceProposalPaneProps> = ({
           </TableContainer>
         </Box>
       )}
+
+      {/* Section Source - URL et snippet de la proposition active */}
+      <SourceInfoSection proposal={activeSource} />
     </Paper>
   )
 }
@@ -325,26 +458,12 @@ interface FieldDiffRowProps {
 
 const FieldDiffRow: React.FC<FieldDiffRowProps> = ({ diff, onCopy, disabled }) => {
   const label = FIELD_LABELS[diff.field] || diff.field
-
-  // Déterminer l'indicateur de statut
-  let statusIcon: React.ReactNode = null
-  let statusColor: 'warning' | 'success' | 'default' = 'default'
-
-  if (diff.isAbsentInSource) {
-    statusIcon = <AbsentIcon fontSize="small" />
-    statusColor = 'default'
-  } else if (diff.isDifferent) {
-    statusIcon = <WarningIcon fontSize="small" />
-    statusColor = 'warning'
-  } else {
-    statusIcon = <CheckIcon fontSize="small" />
-    statusColor = 'success'
-  }
+  const isDifferent = diff.isDifferent && !diff.isAbsentInSource
 
   return (
     <TableRow
       sx={(theme) => ({
-        bgcolor: diff.isDifferent && !diff.isAbsentInSource
+        bgcolor: isDifferent
           ? (theme.palette.mode === 'dark' 
               ? 'rgba(237, 108, 2, 0.08)' 
               : 'rgba(237, 108, 2, 0.04)')
@@ -353,20 +472,25 @@ const FieldDiffRow: React.FC<FieldDiffRowProps> = ({ diff, onCopy, disabled }) =
     >
       <TableCell>
         <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
-          <Chip
-            icon={statusIcon}
-            label={label}
-            size="small"
-            color={statusColor}
-            variant="outlined"
-            sx={{ fontWeight: diff.isDifferent ? 'bold' : 'normal' }}
-          />
+          {diff.isAbsentInSource ? (
+            <AbsentIcon fontSize="small" color="disabled" />
+          ) : isDifferent ? (
+            <WarningIcon fontSize="small" color="warning" />
+          ) : (
+            <CheckIcon fontSize="small" color="success" />
+          )}
+          <Typography
+            variant="body2"
+            fontWeight={isDifferent ? 'bold' : 500}
+          >
+            {label}
+          </Typography>
         </Box>
       </TableCell>
       <TableCell>
         <Typography
           variant="body2"
-          color={diff.isAbsentInSource ? 'text.disabled' : 'text.primary'}
+          color={diff.isAbsentInSource ? 'text.disabled' : (isDifferent ? 'primary.main' : 'text.primary')}
           sx={{ fontStyle: diff.isAbsentInSource ? 'italic' : 'normal' }}
         >
           {diff.isAbsentInSource ? 'Absent dans cette source' : formatValue(diff.field, diff.sourceValue)}
@@ -377,7 +501,7 @@ const FieldDiffRow: React.FC<FieldDiffRowProps> = ({ diff, onCopy, disabled }) =
           fieldName={diff.field}
           fieldLabel={label}
           onCopy={onCopy}
-          isDifferent={diff.isDifferent && !diff.isAbsentInSource}
+          isDifferent={isDifferent}
           disabled={disabled}
         />
       </TableCell>
@@ -386,18 +510,35 @@ const FieldDiffRow: React.FC<FieldDiffRowProps> = ({ diff, onCopy, disabled }) =
 }
 
 /**
- * Ligne affichant une course avec son statut
+ * Lignes affichant une course avec le même format que l'Édition
+ * - Ligne séparateur avec nom de la course + badge différences + bouton copier tout
+ * - Lignes de champs (Champ / Valeur / Copier) pour chaque différence
  */
-interface RaceDiffRowProps {
+interface RaceDiffRowsProps {
   race: RaceDiff
-  onCopy: (sourceRaceId: string, targetRaceId?: string) => void
+  onCopyRace: (sourceRaceId: string, targetRaceId?: string) => void
   disabled: boolean
 }
 
-const RaceDiffRow: React.FC<RaceDiffRowProps> = ({ race, onCopy, disabled }) => {
-  // Déterminer le statut
+const RaceDiffRows: React.FC<RaceDiffRowsProps> = ({ race, onCopyRace, disabled }) => {
   const hasDifferences = race.fieldDiffs.some(d => d.isDifferent)
   const isNew = !race.existsInWorking
+  const differentFields = race.fieldDiffs.filter(d => d.isDifferent)
+  
+  // Pour une nouvelle course, afficher tous les champs avec valeur
+  const fieldsToShowUnsorted = isNew 
+    ? race.fieldDiffs.filter(d => d.sourceValue !== undefined && d.sourceValue !== null)
+    : differentFields
+  
+  // Trier les champs selon l'ordre défini (même ordre que RacesChangesTable)
+  const fieldsToShow = [...fieldsToShowUnsorted].sort((a, b) => {
+    const indexA = RACE_FIELDS_ORDER.indexOf(a.field)
+    const indexB = RACE_FIELDS_ORDER.indexOf(b.field)
+    // Si un champ n'est pas dans l'ordre, le mettre à la fin
+    const orderA = indexA === -1 ? 999 : indexA
+    const orderB = indexB === -1 ? 999 : indexB
+    return orderA - orderB
+  })
 
   let statusLabel: string
   let statusColor: 'success' | 'warning' | 'info' = 'info'
@@ -406,7 +547,7 @@ const RaceDiffRow: React.FC<RaceDiffRowProps> = ({ race, onCopy, disabled }) => 
     statusLabel = 'Nouvelle'
     statusColor = 'success'
   } else if (hasDifferences) {
-    statusLabel = `${race.fieldDiffs.filter(d => d.isDifferent).length} différence(s)`
+    statusLabel = `${differentFields.length} diff.`
     statusColor = 'warning'
   } else {
     statusLabel = 'Identique'
@@ -414,45 +555,250 @@ const RaceDiffRow: React.FC<RaceDiffRowProps> = ({ race, onCopy, disabled }) => 
   }
 
   return (
-    <TableRow
-      sx={(theme) => ({
-        bgcolor: isNew
-          ? (theme.palette.mode === 'dark' 
-              ? 'rgba(46, 125, 50, 0.08)' 
-              : 'rgba(46, 125, 50, 0.04)')
-          : hasDifferences
-            ? (theme.palette.mode === 'dark' 
-                ? 'rgba(237, 108, 2, 0.08)' 
-                : 'rgba(237, 108, 2, 0.04)')
-            : 'inherit'
+    <>
+      {/* Ligne séparateur avec nom de la course */}
+      <TableRow
+        sx={(theme) => ({
+          bgcolor: theme.palette.mode === 'dark' 
+            ? 'rgba(255, 255, 255, 0.05)' 
+            : 'rgba(0, 0, 0, 0.04)'
+        })}
+      >
+        <TableCell colSpan={2}>
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+            <Typography variant="body2" fontWeight="bold">
+              {race.raceName}
+            </Typography>
+            <Chip
+              label={statusLabel}
+              size="small"
+              color={statusColor}
+              variant="outlined"
+              sx={{ height: 20, '& .MuiChip-label': { px: 0.75, fontSize: '0.7rem' } }}
+            />
+          </Box>
+        </TableCell>
+        <TableCell align="right">
+          {(isNew || hasDifferences) && (
+            <CopyRaceButton
+              sourceRaceId={race.sourceRaceId || race.raceId}
+              raceName={race.raceName}
+              existsInWorking={race.existsInWorking}
+              targetRaceId={race.workingRaceId}
+              onCopy={onCopyRace}
+              disabled={disabled}
+            />
+          )}
+        </TableCell>
+      </TableRow>
+
+      {/* Lignes de champs - même format que l'Édition */}
+      {fieldsToShow.map(diff => {
+        const label = FIELD_LABELS[diff.field] || diff.field
+        const isDifferent = diff.isDifferent && !diff.isAbsentInSource
+
+        return (
+          <TableRow
+            key={diff.field}
+            sx={(theme) => ({
+              bgcolor: isDifferent
+                ? (theme.palette.mode === 'dark' 
+                    ? 'rgba(237, 108, 2, 0.08)' 
+                    : 'rgba(237, 108, 2, 0.04)')
+                : 'inherit'
+            })}
+          >
+            <TableCell>
+              <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+                {isDifferent ? (
+                  <WarningIcon fontSize="small" color="warning" />
+                ) : (
+                  <CheckIcon fontSize="small" color={isNew ? 'success' : 'disabled'} />
+                )}
+                <Typography
+                  variant="body2"
+                  fontWeight={isDifferent ? 'bold' : 500}
+                >
+                  {label}
+                </Typography>
+              </Box>
+            </TableCell>
+            <TableCell>
+              <Typography
+                variant="body2"
+                color={isDifferent ? 'primary.main' : 'text.primary'}
+              >
+                {formatValue(diff.field, diff.sourceValue)}
+              </Typography>
+            </TableCell>
+            <TableCell align="right">
+              {/* Pas de bouton copier individuel pour les champs de course */}
+            </TableCell>
+          </TableRow>
+        )
       })}
+
+      {/* Message si aucune différence */}
+      {!isNew && !hasDifferences && (
+        <TableRow>
+          <TableCell colSpan={3}>
+            <Typography variant="body2" color="text.secondary" sx={{ fontStyle: 'italic', pl: 1 }}>
+              Aucune différence
+            </Typography>
+          </TableCell>
+        </TableRow>
+      )}
+    </>
+  )
+}
+
+/**
+ * Section affichant les informations de la proposition source :
+ * - URL source et snippet
+ * - Agent, date de création, lien vers la proposition
+ */
+interface SourceInfoSectionProps {
+  proposal: Proposal
+}
+
+const SourceInfoSection: React.FC<SourceInfoSectionProps> = ({ proposal }) => {
+  const sourceInfo = extractSourceInfo(proposal)
+  const p = proposal as any
+
+  const formatDate = (dateString: string) => {
+    try {
+      const date = new Date(dateString)
+      if (isNaN(date.getTime())) {
+        return dateString
+      }
+      return format(date, 'dd MMM yyyy à HH:mm', { locale: fr })
+    } catch {
+      return dateString
+    }
+  }
+
+  return (
+    <Box
+      sx={{
+        borderTop: 1,
+        borderColor: 'divider'
+      }}
     >
-      <TableCell>
-        <Typography variant="body2" fontWeight="medium">
-          {race.raceName}
-        </Typography>
-      </TableCell>
-      <TableCell>
-        <Chip
-          label={statusLabel}
-          size="small"
-          color={statusColor}
-          variant="outlined"
-        />
-      </TableCell>
-      <TableCell align="right">
-        {(isNew || hasDifferences) && (
-          <CopyRaceButton
-            sourceRaceId={race.sourceRaceId || race.raceId}
-            raceName={race.raceName}
-            existsInWorking={race.existsInWorking}
-            targetRaceId={race.workingRaceId}
-            onCopy={onCopy}
-            disabled={disabled}
+      {/* Section Source URL + Snippet */}
+      {sourceInfo && (
+        <>
+          <Box
+            sx={{
+              p: 1.5,
+              display: 'flex',
+              alignItems: 'center',
+              gap: 1,
+              bgcolor: 'action.hover'
+            }}
+          >
+            <LinkIcon color="primary" fontSize="small" />
+            <Typography variant="subtitle2">Source</Typography>
+          </Box>
+
+          <Box sx={{ p: 2 }}>
+            {/* URL */}
+            <Typography
+              component="a"
+              href={sourceInfo.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              sx={{
+                color: 'primary.main',
+                textDecoration: 'none',
+                fontSize: '0.875rem',
+                wordBreak: 'break-all',
+                display: 'block',
+                mb: sourceInfo.snippet ? 2 : 0,
+                '&:hover': {
+                  textDecoration: 'underline'
+                }
+              }}
+            >
+              {sourceInfo.url}
+            </Typography>
+
+            {/* Snippet */}
+            {sourceInfo.snippet && (
+              <Box
+                sx={(theme) => ({
+                  p: 1.5,
+                  bgcolor: theme.palette.mode === 'dark'
+                    ? 'rgba(255, 255, 255, 0.05)'
+                    : 'rgba(0, 0, 0, 0.02)',
+                  borderLeft: 3,
+                  borderColor: 'info.main',
+                  borderRadius: 1
+                })}
+              >
+                <Typography
+                  variant="body2"
+                  color="text.secondary"
+                  sx={{ fontStyle: 'italic', lineHeight: 1.5 }}
+                >
+                  "{sourceInfo.snippet}"
+                </Typography>
+              </Box>
+            )}
+          </Box>
+        </>
+      )}
+
+      {/* Section Métadonnées de la proposition */}
+      <Box
+        sx={{
+          p: 1.5,
+          display: 'flex',
+          alignItems: 'center',
+          gap: 1,
+          bgcolor: 'action.hover',
+          borderTop: sourceInfo ? 1 : 0,
+          borderColor: 'divider'
+        }}
+      >
+        <AgentIcon color="primary" fontSize="small" />
+        <Typography variant="subtitle2">Proposition</Typography>
+      </Box>
+
+      <Box sx={{ p: 2, display: 'flex', alignItems: 'center', gap: 2, flexWrap: 'wrap' }}>
+        {/* Agent */}
+        {p.agent?.name && (
+          <Chip
+            label={p.agent.name}
+            size="small"
+            color="primary"
+            variant="outlined"
+            sx={{ height: 22 }}
           />
         )}
-      </TableCell>
-    </TableRow>
+
+        {/* Date de création */}
+        {p.createdAt && (
+          <Box sx={{ display: 'flex', alignItems: 'center', gap: 0.5 }}>
+            <ScheduleIcon fontSize="small" color="action" />
+            <Typography variant="body2" color="text.secondary">
+              {formatDate(p.createdAt)}
+            </Typography>
+          </Box>
+        )}
+
+        {/* Lien vers la proposition */}
+        <Button
+          component={Link}
+          to={`/proposals/${proposal.id}`}
+          size="small"
+          variant="text"
+          endIcon={<OpenInNewIcon sx={{ fontSize: '0.875rem' }} />}
+          sx={{ ml: 'auto', textTransform: 'none' }}
+        >
+          Voir détails
+        </Button>
+      </Box>
+    </Box>
   )
 }
 
