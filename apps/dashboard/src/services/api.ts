@@ -212,6 +212,9 @@ export const proposalsApi = {
   }>> =>
     api.post('/proposals/merge', data).then(res => res.data),
 
+  swapMergeDirection: (id: string): Promise<ApiResponse<Proposal>> =>
+    api.post(`/proposals/${id}/swap-merge-direction`).then(res => res.data),
+
   createEditionUpdateComplete: (data: {
     editionId: string
     userModifiedChanges?: Record<string, any>

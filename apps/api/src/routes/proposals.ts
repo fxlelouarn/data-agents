@@ -929,6 +929,22 @@ router.get('/group/:groupKey', [
     })
 
     proposals = proposal ? [proposal] : []
+  } else if (groupKey.startsWith('event-merge-')) {
+    // EVENT_MERGE proposals are individual (not grouped)
+    const proposalId = groupKey.replace('event-merge-', '')
+    const proposal = await db.prisma.proposal.findUnique({
+      where: { id: proposalId },
+      include: {
+        agent: {
+          select: { name: true, type: true }
+        },
+        applications: {
+          select: { id: true, blockType: true, status: true }
+        }
+      }
+    })
+
+    proposals = proposal ? [proposal] : []
   } else {
     // Parse eventId-editionId format (ou eventId-only pour propositions sans editionId)
     const parts = groupKey.split('-')
@@ -3679,6 +3695,104 @@ router.post('/merge', [
       copyMissingEditions
     },
     message: `Proposition de fusion créée: "${duplicateEvent.name}" sera fusionné dans "${keepEvent.name}"${editionsCopyMessage}`
+  })
+}))
+
+// ============================================================================
+// POST /api/proposals/:id/swap-merge-direction - Inverser le sens de fusion
+// ============================================================================
+router.post('/:id/swap-merge-direction', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  // Récupérer la proposition
+  const proposal = await db.prisma.proposal.findUnique({
+    where: { id }
+  })
+
+  if (!proposal) {
+    throw createError(404, 'Proposition non trouvée', 'PROPOSAL_NOT_FOUND')
+  }
+
+  // Vérifier que c'est une proposition EVENT_MERGE
+  if (proposal.type !== 'EVENT_MERGE') {
+    throw createError(400, 'Cette action n\'est disponible que pour les propositions EVENT_MERGE', 'INVALID_PROPOSAL_TYPE')
+  }
+
+  // Vérifier que la proposition est en statut PENDING
+  if (proposal.status !== 'PENDING') {
+    throw createError(400, 'Seules les propositions en attente peuvent être modifiées', 'INVALID_PROPOSAL_STATUS')
+  }
+
+  // Extraire les données de fusion
+  const changes = proposal.changes as any
+  const merge = changes?.merge
+
+  if (!merge) {
+    throw createError(400, 'Données de fusion invalides', 'INVALID_MERGE_DATA')
+  }
+
+  // Inverser les événements keep <-> duplicate
+  const swappedMerge = {
+    ...merge,
+    // Inverser keep et duplicate
+    keepEventId: merge.duplicateEventId,
+    keepEventName: merge.duplicateEventName,
+    keepEventCity: merge.duplicateEventCity,
+    keepEventEditionsCount: merge.duplicateEventEditionsCount,
+    keepEventEditions: merge.duplicateEventEditions,
+    duplicateEventId: merge.keepEventId,
+    duplicateEventName: merge.keepEventName,
+    duplicateEventCity: merge.keepEventCity,
+    duplicateEventEditionsCount: merge.keepEventEditionsCount,
+    duplicateEventEditions: merge.keepEventEditions,
+    // Réinitialiser les infos de redirection existante (à recalculer)
+    previousOldSlugId: null,
+    previousOldSlugIdEventExists: false,
+    previousOldSlugIdEventName: null,
+    forceOverwrite: false,
+    // Recalculer les éditions à copier
+    editionsToCopy: null,
+    copyMissingEditions: merge.copyMissingEditions ?? true
+  }
+
+  // Recalculer les éditions à copier si l'option est activée
+  if (swappedMerge.copyMissingEditions && swappedMerge.keepEventEditions && swappedMerge.duplicateEventEditions) {
+    const keepYears = new Set(swappedMerge.keepEventEditions.map((e: any) => e.year))
+    const editionsToCopy = swappedMerge.duplicateEventEditions.filter((e: any) => !keepYears.has(e.year))
+    swappedMerge.editionsToCopy = editionsToCopy.length > 0 ? editionsToCopy : null
+  }
+
+  // Mettre à jour la proposition
+  const updatedProposal = await db.prisma.proposal.update({
+    where: { id },
+    data: {
+      changes: { merge: swappedMerge },
+      eventId: swappedMerge.keepEventId.toString(),
+      eventName: swappedMerge.keepEventName,
+      eventCity: swappedMerge.keepEventCity,
+      // Ajouter une justification pour tracer l'inversion
+      justification: [
+        ...(proposal.justification as any[] || []),
+        {
+          type: 'merge_direction_swapped',
+          message: `Sens de fusion inversé: "${swappedMerge.duplicateEventName}" sera maintenant fusionné dans "${swappedMerge.keepEventName}"`,
+          metadata: {
+            swappedAt: new Date().toISOString(),
+            previousKeepEventId: merge.keepEventId,
+            newKeepEventId: swappedMerge.keepEventId
+          }
+        }
+      ]
+    }
+  })
+
+  res.json({
+    success: true,
+    data: updatedProposal,
+    message: `Sens de fusion inversé: "${swappedMerge.keepEventName}" sera conservé, "${swappedMerge.duplicateEventName}" sera supprimé`
   })
 }))
 

@@ -1217,3 +1217,24 @@ export const useCreateMergeProposal = () => {
     }
   })
 }
+
+/**
+ * Hook pour inverser le sens de fusion d'une proposition EVENT_MERGE
+ */
+export const useSwapMergeDirection = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => proposalsApi.swapMergeDirection(id),
+    onSuccess: (response, id) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      queryClient.invalidateQueries({ queryKey: ['proposals', id] })
+      enqueueSnackbar(response.message || 'Sens de fusion inversé', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      const message = error.response?.data?.error || error.message || 'Erreur lors de l\'inversion'
+      enqueueSnackbar(message, { variant: 'error' })
+    }
+  })
+}
