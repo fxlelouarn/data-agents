@@ -979,11 +979,8 @@ export class ProposalDomainService {
             else if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
 
-          // Type est déprécié dans le schéma mais peut être utilisé
-          const finalType = editedData.type || raceData.type
-          if (finalType) {
-            racePayload.type = finalType
-          }
+          // ⚠️ Le champ 'type' est déprécié dans Prisma 7 de Miles Republic
+          // Utiliser categoryLevel1/categoryLevel2 à la place (déjà géré ci-dessus)
 
           // 🔍 LOG: Payload final AVANT création
           this.logger.info(`🔍 [RACE ${originalIndex}] Payload FINAL avant createRace:`, {

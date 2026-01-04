@@ -1,0 +1,7 @@
+#!/bin/bash
+# Husky post-checkout hook - Syncs personal config files after checkout
+
+if [ -f ~/.data-agents-secrets/sync-to-repo.sh ]; then
+  REPO_ROOT="$(git rev-parse --show-toplevel 2>/dev/null || echo "$PWD")"
+  ~/.data-agents-secrets/sync-to-repo.sh "$REPO_ROOT" 2>/dev/null || true
+fi

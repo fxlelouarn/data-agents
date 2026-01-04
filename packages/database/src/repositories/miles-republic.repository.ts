@@ -473,7 +473,7 @@ export class MilesRepublicRepository {
         categoryLevel2: data.categoryLevel2,
         distanceCategory: data.distanceCategory,
         distance: data.distance,  // @deprecated
-        type: data.type,          // @deprecated
+        // ⚠️ 'type' supprimé - non supporté dans Prisma 7 de Miles Republic
 
         // Champs inscription par défaut true
         askAttendeeGender: data.askAttendeeGender ?? true,
