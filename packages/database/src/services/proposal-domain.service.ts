@@ -7,6 +7,19 @@ import { convertChangesToSelectedChanges } from '../utils/proposal-helpers'
 type DatabaseManager = any
 
 /**
+ * Parse une valeur en Float de manière sécurisée.
+ * Retourne undefined si la valeur est vide, null, undefined ou non parsable.
+ * Cela évite les NaN qui causent des erreurs Prisma.
+ */
+function safeParseFloat(value: any): number | undefined {
+  if (value === null || value === undefined || value === '') {
+    return undefined
+  }
+  const parsed = parseFloat(value)
+  return isNaN(parsed) ? undefined : parsed
+}
+
+/**
  * Domain Service - Business logic for proposal application
  *
  * Responsibilities:
@@ -826,17 +839,17 @@ export class ProposalDomainService {
             if (userEdits.categoryLevel2) raceUpdateData.categoryLevel2 = userEdits.categoryLevel2
 
             // Distances : supporter distance (legacy) et tous les types spécifiques
-            if (userEdits.distance) raceUpdateData.runDistance = parseFloat(userEdits.distance)
-            if (userEdits.runDistance) raceUpdateData.runDistance = parseFloat(userEdits.runDistance)
-            if (userEdits.bikeDistance) raceUpdateData.bikeDistance = parseFloat(userEdits.bikeDistance)
-            if (userEdits.walkDistance) raceUpdateData.walkDistance = parseFloat(userEdits.walkDistance)
-            if (userEdits.swimDistance) raceUpdateData.swimDistance = parseFloat(userEdits.swimDistance)
+            if (userEdits.distance) raceUpdateData.runDistance = safeParseFloat(userEdits.distance)
+            if (userEdits.runDistance) raceUpdateData.runDistance = safeParseFloat(userEdits.runDistance)
+            if (userEdits.bikeDistance) raceUpdateData.bikeDistance = safeParseFloat(userEdits.bikeDistance)
+            if (userEdits.walkDistance) raceUpdateData.walkDistance = safeParseFloat(userEdits.walkDistance)
+            if (userEdits.swimDistance) raceUpdateData.swimDistance = safeParseFloat(userEdits.swimDistance)
 
             // Élévations : supporter elevation (legacy) et tous les types spécifiques
-            if (userEdits.elevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.elevation)
-            if (userEdits.runPositiveElevation) raceUpdateData.runPositiveElevation = parseFloat(userEdits.runPositiveElevation)
-            if (userEdits.bikePositiveElevation) raceUpdateData.bikePositiveElevation = parseFloat(userEdits.bikePositiveElevation)
-            if (userEdits.walkPositiveElevation) raceUpdateData.walkPositiveElevation = parseFloat(userEdits.walkPositiveElevation)
+            if (userEdits.elevation) raceUpdateData.runPositiveElevation = safeParseFloat(userEdits.elevation)
+            if (userEdits.runPositiveElevation) raceUpdateData.runPositiveElevation = safeParseFloat(userEdits.runPositiveElevation)
+            if (userEdits.bikePositiveElevation) raceUpdateData.bikePositiveElevation = safeParseFloat(userEdits.bikePositiveElevation)
+            if (userEdits.walkPositiveElevation) raceUpdateData.walkPositiveElevation = safeParseFloat(userEdits.walkPositiveElevation)
           }
 
           if (Object.keys(raceUpdateData).length > 0) {
@@ -919,7 +932,7 @@ export class ProposalDomainService {
           // ✅ FIX: Appliquer le bon champ de distance selon le type de course
           // Distance - supporter à la fois 'distance' (legacy) et les champs spécifiques (runDistance, bikeDistance, etc.)
           if (editedData.distance) {
-            const distance = parseFloat(editedData.distance)
+            const distance = safeParseFloat(editedData.distance)
             const categoryLevel1 = racePayload.categoryLevel1
             if (categoryLevel1 === 'WALK') {
               racePayload.walkDistance = distance
@@ -930,22 +943,22 @@ export class ProposalDomainService {
             }
           } else {
             // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
-            if (editedData.runDistance !== undefined) racePayload.runDistance = parseFloat(editedData.runDistance)
+            if (editedData.runDistance !== undefined) racePayload.runDistance = safeParseFloat(editedData.runDistance)
             else if (raceData.runDistance !== undefined) racePayload.runDistance = raceData.runDistance
 
-            if (editedData.bikeDistance !== undefined) racePayload.bikeDistance = parseFloat(editedData.bikeDistance)
+            if (editedData.bikeDistance !== undefined) racePayload.bikeDistance = safeParseFloat(editedData.bikeDistance)
             else if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = raceData.bikeDistance
 
-            if (editedData.walkDistance !== undefined) racePayload.walkDistance = parseFloat(editedData.walkDistance)
+            if (editedData.walkDistance !== undefined) racePayload.walkDistance = safeParseFloat(editedData.walkDistance)
             else if (raceData.walkDistance !== undefined) racePayload.walkDistance = raceData.walkDistance
 
-            if (editedData.swimDistance !== undefined) racePayload.swimDistance = parseFloat(editedData.swimDistance)
+            if (editedData.swimDistance !== undefined) racePayload.swimDistance = safeParseFloat(editedData.swimDistance)
             else if (raceData.swimDistance !== undefined) racePayload.swimDistance = raceData.swimDistance
           }
 
           // Élévation - supporter à la fois 'elevation' (legacy) et les champs spécifiques
           if (editedData.elevation) {
-            const elevation = parseFloat(editedData.elevation)
+            const elevation = safeParseFloat(editedData.elevation)
             const categoryLevel1 = racePayload.categoryLevel1
             if (categoryLevel1 === 'WALK') {
               racePayload.walkPositiveElevation = elevation
@@ -956,13 +969,13 @@ export class ProposalDomainService {
             }
           } else {
             // Utiliser en priorité les valeurs éditées, sinon les valeurs proposées par l'agent
-            if (editedData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = parseFloat(editedData.runPositiveElevation)
+            if (editedData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = safeParseFloat(editedData.runPositiveElevation)
             else if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = raceData.runPositiveElevation
 
-            if (editedData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = parseFloat(editedData.bikePositiveElevation)
+            if (editedData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = safeParseFloat(editedData.bikePositiveElevation)
             else if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = raceData.bikePositiveElevation
 
-            if (editedData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = parseFloat(editedData.walkPositiveElevation)
+            if (editedData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = safeParseFloat(editedData.walkPositiveElevation)
             else if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
 
@@ -1023,15 +1036,15 @@ export class ProposalDomainService {
           }
 
           // Distances
-          if (raceData.runDistance !== undefined) racePayload.runDistance = parseFloat(raceData.runDistance)
-          if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = parseFloat(raceData.bikeDistance)
-          if (raceData.walkDistance !== undefined) racePayload.walkDistance = parseFloat(raceData.walkDistance)
-          if (raceData.swimDistance !== undefined) racePayload.swimDistance = parseFloat(raceData.swimDistance)
+          if (raceData.runDistance !== undefined) racePayload.runDistance = safeParseFloat(raceData.runDistance)
+          if (raceData.bikeDistance !== undefined) racePayload.bikeDistance = safeParseFloat(raceData.bikeDistance)
+          if (raceData.walkDistance !== undefined) racePayload.walkDistance = safeParseFloat(raceData.walkDistance)
+          if (raceData.swimDistance !== undefined) racePayload.swimDistance = safeParseFloat(raceData.swimDistance)
 
           // Élévations
-          if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = parseFloat(raceData.runPositiveElevation)
-          if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = parseFloat(raceData.bikePositiveElevation)
-          if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = parseFloat(raceData.walkPositiveElevation)
+          if (raceData.runPositiveElevation !== undefined) racePayload.runPositiveElevation = safeParseFloat(raceData.runPositiveElevation)
+          if (raceData.bikePositiveElevation !== undefined) racePayload.bikePositiveElevation = safeParseFloat(raceData.bikePositiveElevation)
+          if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = safeParseFloat(raceData.walkPositiveElevation)
 
           this.logger.info(`🔍 [MANUAL RACE ${key}] Payload FINAL avant createRace:`, {
             payload: JSON.stringify(racePayload, null, 2)
@@ -1108,17 +1121,17 @@ export class ProposalDomainService {
           if (edits.categoryLevel2) updateData.categoryLevel2 = edits.categoryLevel2
 
           // Distances : supporter distance (legacy) et tous les types spécifiques
-          if (edits.distance) updateData.runDistance = parseFloat(edits.distance)
-          if (edits.runDistance) updateData.runDistance = parseFloat(edits.runDistance)
-          if (edits.bikeDistance) updateData.bikeDistance = parseFloat(edits.bikeDistance)
-          if (edits.walkDistance) updateData.walkDistance = parseFloat(edits.walkDistance)
-          if (edits.swimDistance) updateData.swimDistance = parseFloat(edits.swimDistance)
+          if (edits.distance) updateData.runDistance = safeParseFloat(edits.distance)
+          if (edits.runDistance) updateData.runDistance = safeParseFloat(edits.runDistance)
+          if (edits.bikeDistance) updateData.bikeDistance = safeParseFloat(edits.bikeDistance)
+          if (edits.walkDistance) updateData.walkDistance = safeParseFloat(edits.walkDistance)
+          if (edits.swimDistance) updateData.swimDistance = safeParseFloat(edits.swimDistance)
 
           // Élévations : supporter elevation (legacy) et tous les types spécifiques
-          if (edits.elevation) updateData.runPositiveElevation = parseFloat(edits.elevation)
-          if (edits.runPositiveElevation) updateData.runPositiveElevation = parseFloat(edits.runPositiveElevation)
-          if (edits.bikePositiveElevation) updateData.bikePositiveElevation = parseFloat(edits.bikePositiveElevation)
-          if (edits.walkPositiveElevation) updateData.walkPositiveElevation = parseFloat(edits.walkPositiveElevation)
+          if (edits.elevation) updateData.runPositiveElevation = safeParseFloat(edits.elevation)
+          if (edits.runPositiveElevation) updateData.runPositiveElevation = safeParseFloat(edits.runPositiveElevation)
+          if (edits.bikePositiveElevation) updateData.bikePositiveElevation = safeParseFloat(edits.bikePositiveElevation)
+          if (edits.walkPositiveElevation) updateData.walkPositiveElevation = safeParseFloat(edits.walkPositiveElevation)
 
           if (Object.keys(updateData).length > 0) {
             await milesRepo.updateRace(raceId, updateData)
@@ -1907,17 +1920,17 @@ export class ProposalDomainService {
         name: raceData.name || 'Course principale',
         editionYear: editionData.year || new Date().getFullYear().toString(),
         startDate: this.parseDate(raceData.startDate),
-        runDistance: raceData.runDistance ? parseFloat(raceData.runDistance) : undefined,
-        runDistance2: raceData.runDistance2 ? parseFloat(raceData.runDistance2) : undefined,
-        bikeDistance: raceData.bikeDistance ? parseFloat(raceData.bikeDistance) : undefined,
-        swimDistance: raceData.swimDistance ? parseFloat(raceData.swimDistance) : undefined,
-        walkDistance: raceData.walkDistance ? parseFloat(raceData.walkDistance) : undefined,
-        runPositiveElevation: raceData.runPositiveElevation ? parseFloat(raceData.runPositiveElevation) : undefined,
+        runDistance: safeParseFloat(raceData.runDistance),
+        runDistance2: safeParseFloat(raceData.runDistance2),
+        bikeDistance: safeParseFloat(raceData.bikeDistance),
+        swimDistance: safeParseFloat(raceData.swimDistance),
+        walkDistance: safeParseFloat(raceData.walkDistance),
+        runPositiveElevation: safeParseFloat(raceData.runPositiveElevation),
         // Mapper type (obsolète) vers categoryLevel1
         categoryLevel1: raceData.categoryLevel1 || raceData.type,
         // ✅ FIX: Extraire categoryLevel2 depuis FFA Scraper
         categoryLevel2: raceData.categoryLevel2,
-        price: raceData.price ? parseFloat(raceData.price) : undefined
+        price: safeParseFloat(raceData.price)
       })
     }
   }
