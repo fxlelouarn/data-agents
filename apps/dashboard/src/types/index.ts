@@ -118,6 +118,10 @@ export interface Proposal {
     blockType: string | null
     status: 'PENDING' | 'APPLIED' | 'FAILED'
   }>
+  // Date de début proposée (pour le tri)
+  proposedStartDate?: string
+  // Nombre total de propositions dans le groupe (eventId-editionId)
+  groupCount?: number
 }
 
 export interface AgentStatus {

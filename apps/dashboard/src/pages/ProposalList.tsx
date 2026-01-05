@@ -231,32 +231,60 @@ const ProposalList: React.FC = () => {
     return groups
   }, [filteredProposals])
 
-  // Clés des groupes dans l'ordre d'apparition (tri déjà effectué côté serveur)
-  // On utilise un Set pour préserver l'ordre d'insertion des propositions triées par le serveur
+  // Clés des groupes triées selon le paramètre groupSort
+  // Pour date-asc/date-desc: on trie par la date min/max des propositions du groupe
+  // Pour created-desc: on trie par la date de création la plus récente du groupe
   const sortedGroupKeys = useMemo(() => {
-    const orderedKeys: string[] = []
-    const seenKeys = new Set<string>()
+    const groupKeys = Object.keys(groupedProposals)
 
-    // Parcourir les propositions dans l'ordre retourné par le serveur
-    // et collecter les clés de groupe dans cet ordre
-    filteredProposals.forEach(proposal => {
-      let groupKey: string
-      if (proposal.type === 'NEW_EVENT') {
-        groupKey = `new-event-${proposal.id}`
-      } else if (proposal.type === 'EVENT_MERGE') {
-        groupKey = `event-merge-${proposal.id}`
+    // Calculer la date représentative pour chaque groupe
+    const getGroupSortDate = (groupKey: string): Date | null => {
+      const proposals = groupedProposals[groupKey]
+      if (!proposals || proposals.length === 0) return null
+
+      if (groupSort === 'created-desc') {
+        // Pour created-desc, prendre la date de création la plus récente
+        const dates = proposals
+          .map(p => p.createdAt ? new Date(p.createdAt) : null)
+          .filter((d): d is Date => d !== null && !isNaN(d.getTime()))
+        if (dates.length === 0) return null
+        return new Date(Math.max(...dates.map(d => d.getTime())))
       } else {
-        groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
+        // Pour date-asc/date-desc, utiliser proposedStartDate
+        const dates = proposals
+          .map(p => p.proposedStartDate ? new Date(p.proposedStartDate) : null)
+          .filter((d): d is Date => d !== null && !isNaN(d.getTime()))
+        if (dates.length === 0) return null
+        // Pour date-asc, prendre la date la plus proche (min)
+        // Pour date-desc, prendre la date la plus éloignée (max)
+        if (groupSort === 'date-asc') {
+          return new Date(Math.min(...dates.map(d => d.getTime())))
+        } else {
+          return new Date(Math.max(...dates.map(d => d.getTime())))
+        }
       }
+    }
 
-      if (!seenKeys.has(groupKey)) {
-        seenKeys.add(groupKey)
-        orderedKeys.push(groupKey)
+    // Trier les groupes
+    return groupKeys.sort((a, b) => {
+      const dateA = getGroupSortDate(a)
+      const dateB = getGroupSortDate(b)
+
+      // Les groupes sans date vont à la fin
+      if (!dateA && !dateB) return 0
+      if (!dateA) return 1
+      if (!dateB) return -1
+
+      if (groupSort === 'date-asc') {
+        return dateA.getTime() - dateB.getTime()
+      } else if (groupSort === 'date-desc') {
+        return dateB.getTime() - dateA.getTime()
+      } else {
+        // created-desc
+        return dateB.getTime() - dateA.getTime()
       }
     })
-
-    return orderedKeys
-  }, [filteredProposals])
+  }, [groupedProposals, groupSort])
 
   const handleToggleGroup = (groupKey: string, event: React.MouseEvent) => {
     event.stopPropagation()
@@ -926,7 +954,7 @@ const ProposalList: React.FC = () => {
                   </IconButton>
                   <Chip
                     size="small"
-                    label={proposals.length.toString()}
+                    label={(proposals[0]?.groupCount || proposals.length).toString()}
                     color="primary"
                     sx={{
                       minWidth: '32px',

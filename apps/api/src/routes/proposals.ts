@@ -890,11 +890,61 @@ const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLev
     })
   )
 
+  // Calculer le nombre de propositions par groupe (eventId-editionId)
+  // Pour les propositions groupées (non NEW_EVENT, non EVENT_MERGE), on compte
+  // le nombre total de propositions dans le même groupe (avec les mêmes filtres de base)
+  const groupCounts: Record<string, number> = {}
+
+  // Collecter les groupKeys uniques des propositions retournées
+  const groupKeysToCount = new Set<string>()
+  for (const p of enrichedProposals) {
+    if (p.type !== 'NEW_EVENT' && p.type !== 'EVENT_MERGE' && p.eventId && p.editionId) {
+      groupKeysToCount.add(`${p.eventId}-${p.editionId}`)
+    }
+  }
+
+  // Compter les propositions pour chaque groupe (avec les mêmes filtres de statut)
+  if (groupKeysToCount.size > 0) {
+    // Construire le filtre de base sans pagination
+    const countWhere: any = {
+      status: baseWhere.status,
+      type: { notIn: ['NEW_EVENT', 'EVENT_MERGE'] },
+      eventId: { not: null },
+      editionId: { not: null }
+    }
+
+    // Ajouter le filtre d'agent si présent
+    if (baseWhere.agent) {
+      countWhere.agent = baseWhere.agent
+    }
+
+    const groupCountResults = await db.prisma.proposal.groupBy({
+      by: ['eventId', 'editionId'],
+      where: countWhere,
+      _count: { id: true }
+    })
+
+    for (const result of groupCountResults) {
+      if (result.eventId && result.editionId) {
+        groupCounts[`${result.eventId}-${result.editionId}`] = result._count.id
+      }
+    }
+  }
+
+  // Ajouter groupCount à chaque proposition
+  const proposalsWithGroupCount = enrichedProposals.map(p => {
+    if (p.type === 'NEW_EVENT' || p.type === 'EVENT_MERGE') {
+      return { ...p, groupCount: 1 }
+    }
+    const groupKey = `${p.eventId}-${p.editionId}`
+    return { ...p, groupCount: groupCounts[groupKey] || 1 }
+  })
+
 // ⚡ Cache conservé entre les requêtes pour performance (cleanup périodique en tâche de fond)
 
   res.json({
     success: true,
-    data: enrichedProposals,
+    data: proposalsWithGroupCount,
     meta: {
       total,
       limit: parseInt(String(limit)),
@@ -1323,19 +1373,19 @@ router.post('/validate-block-group', requireAuth, [
   // ✅ PHASE 1: Construire le payload final (agent + user merged)
   // ✅ Two-Panes 2025-12-28: Si primaryProposalId est fourni, utiliser UNIQUEMENT ses changes (pas de merge)
   const baseChanges: Record<string, any> = {}
-  
+
   if (primaryProposalId) {
     // ✅ Mode Two-Panes: Utiliser uniquement les changes de la proposition prioritaire
     const primaryProposal = proposals.find((p: Proposal) => p.id === primaryProposalId)
     if (!primaryProposal) {
       throw createError(400, `Primary proposal ${primaryProposalId} not found in group`, 'PRIMARY_PROPOSAL_NOT_FOUND')
     }
-    
+
     const proposalChanges = primaryProposal.changes as Record<string, any>
     Object.entries(proposalChanges).forEach(([key, value]) => {
       baseChanges[key] = value
     })
-    
+
     console.log('✅ Two-Panes: Utilisation des changes de la proposition prioritaire uniquement:', {
       primaryProposalId,
       baseChangesKeys: Object.keys(baseChanges)
@@ -1344,7 +1394,7 @@ router.post('/validate-block-group', requireAuth, [
     // ⚠️ Mode legacy: Fusionner les changes de TOUTES les propositions du groupe
     // Ce mode est conservé pour rétrocompatibilité mais sera progressivement abandonné
     console.log('⚠️ Legacy mode: Fusion des changes de toutes les propositions')
-    
+
     for (const proposal of proposals) {
       const proposalChanges = proposal.changes as Record<string, any>
       Object.entries(proposalChanges).forEach(([key, value]) => {
@@ -1377,7 +1427,7 @@ router.post('/validate-block-group', requireAuth, [
 
   // Garder une référence à la proposition principale pour les logs et l'agentId
   // ✅ Two-Panes: Utiliser primaryProposal si fourni, sinon première proposition
-  const firstProposal = primaryProposalId 
+  const firstProposal = primaryProposalId
     ? proposals.find((p: Proposal) => p.id === primaryProposalId) || proposals[0]
     : proposals[0]
 
