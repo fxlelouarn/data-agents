@@ -1,0 +1,2 @@
+-- Add ANALYZER to AgentType enum
+ALTER TYPE "AgentType" ADD VALUE IF NOT EXISTS 'ANALYZER';
