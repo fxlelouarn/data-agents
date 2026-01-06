@@ -40,7 +40,7 @@ interface DuplicateDetectionConfig {
   minDuplicateScore: number
   maxDistanceKm: number
   dateToleranceDays: number
-  excludeStatuses: string
+  excludeStatuses: string | string[]  // Supporte ancien format (string) et nouveau (array)
   nameWeight: number
   locationWeight: number
   dateWeight: number
@@ -92,7 +92,7 @@ export class DuplicateDetectionAgent extends BaseAgent {
         minDuplicateScore: config.minDuplicateScore || config.config?.minDuplicateScore || 0.80,
         maxDistanceKm: config.maxDistanceKm || config.config?.maxDistanceKm || 15,
         dateToleranceDays: config.dateToleranceDays || config.config?.dateToleranceDays || 30,
-        excludeStatuses: config.excludeStatuses || config.config?.excludeStatuses || '',
+        excludeStatuses: config.excludeStatuses ?? config.config?.excludeStatuses ?? [],
         nameWeight: config.nameWeight || config.config?.nameWeight || 0.40,
         locationWeight: config.locationWeight || config.config?.locationWeight || 0.30,
         dateWeight: config.dateWeight || config.config?.dateWeight || 0.20,
@@ -188,10 +188,15 @@ export class DuplicateDetectionAgent extends BaseAgent {
     config: DuplicateDetectionConfig,
     lastProcessedId: number
   ): Promise<EventForScoring[]> {
-    // Parser les statuts à exclure
-    const excludeStatuses = config.excludeStatuses
-      ? config.excludeStatuses.split(',').map(s => s.trim()).filter(s => s)
-      : []
+    // Parser les statuts à exclure (supporte string ou array)
+    let excludeStatuses: string[] = []
+    if (config.excludeStatuses) {
+      if (Array.isArray(config.excludeStatuses)) {
+        excludeStatuses = config.excludeStatuses.filter(s => s)
+      } else {
+        excludeStatuses = config.excludeStatuses.split(',').map(s => s.trim()).filter(s => s)
+      }
+    }
 
     // Construire le where
     const where: any = {

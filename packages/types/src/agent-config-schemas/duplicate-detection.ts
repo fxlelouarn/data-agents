@@ -81,12 +81,19 @@ export const DuplicateDetectionAgentConfigSchema: ConfigSchema = {
     {
       name: "excludeStatuses",
       label: "Statuts à exclure",
-      type: "text",
+      type: "multiselect",
       category: "detection",
       required: false,
-      defaultValue: "",
-      description: "Statuts d'événements à ignorer (séparés par virgule)",
-      helpText: "Ex: DRAFT,REVIEW pour n'analyser que les événements LIVE"
+      defaultValue: [],
+      options: [
+        { value: "DEAD", label: "DEAD - Événement annulé" },
+        { value: "DRAFT", label: "DRAFT - Brouillon" },
+        { value: "REVIEW", label: "REVIEW - En révision" },
+        { value: "LIVE", label: "LIVE - Publié" },
+        { value: "DELETED", label: "DELETED - Supprimé" }
+      ],
+      description: "Statuts d'événements à ignorer lors de la détection",
+      helpText: "Sélectionnez les statuts à exclure de l'analyse de doublons"
     },
 
     // Pondération
