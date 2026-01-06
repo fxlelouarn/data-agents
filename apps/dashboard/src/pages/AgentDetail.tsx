@@ -444,7 +444,11 @@ const AgentDetail: React.FC = () => {
 
           {/* Progression du scraping (pour agents scraper, pas pour VALIDATOR) */}
           {agent.type !== 'VALIDATOR' && (agent.name.toLowerCase().includes('ffa') || agent.name.toLowerCase().includes('scraper')) && (
-            <ScraperProgressCard agentId={agent.id} agentName={agent.name} />
+            <ScraperProgressCard
+              agentId={agent.id}
+              agentName={agent.name}
+              cooldownDays={agent.config?.rescanDelayDays}
+            />
           )}
 
           {/* Statistiques (pour agents validator) */}

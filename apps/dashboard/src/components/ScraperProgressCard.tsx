@@ -20,6 +20,7 @@ import { useAgentState } from '@/hooks/useApi'
 interface ScraperProgressCardProps {
   agentId: string
   agentName: string
+  cooldownDays?: number  // rescanDelayDays depuis la config de l'agent
 }
 
 interface FFAProgress {
@@ -37,9 +38,9 @@ const FFA_LIGUES = [
   'MAR', 'MAY', 'N-A', 'N-C', 'NOR', 'OCC', 'PCA', 'P-F', 'P-L', 'REU', 'W-F'
 ]
 
-const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agentName }) => {
+const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agentName, cooldownDays: propCooldownDays }) => {
   const { data: stateData, isLoading } = useAgentState(agentId)
-  
+
   if (isLoading) {
     return (
       <Card>
@@ -77,7 +78,7 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
   })
 
   // Calculer le temps écoulé depuis le dernier cycle complet
-  const cooldownDays = 30 // À récupérer depuis la config de l'agent si possible
+  const cooldownDays = propCooldownDays || 30 // Utilise la config de l'agent ou 30j par défaut
   let daysSinceLastComplete = null
   let remainingDays = null
   let isInCooldown = false
@@ -104,7 +105,7 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
             Progression du scraping
           </Typography>
           {isInCooldown && (
-            <Chip 
+            <Chip
               icon={<ScheduleIcon />}
               label={`Cooldown: ${remainingDays}j`}
               color="warning"
@@ -123,8 +124,8 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
               {completedLiguesCount} / {totalLigues} ligues
             </Typography>
           </Box>
-          <LinearProgress 
-            variant="determinate" 
+          <LinearProgress
+            variant="determinate"
             value={progressPercent}
             sx={{ height: 8, borderRadius: 4 }}
           />
@@ -151,9 +152,9 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
               {Object.entries(progress.completedMonths)
                 .sort(([a], [b]) => a.localeCompare(b))
                 .map(([ligue, months]) => (
-                  <Box 
-                    key={ligue} 
-                    sx={{ 
+                  <Box
+                    key={ligue}
+                    sx={{
                       display: 'grid',
                       gridTemplateColumns: 'auto 1fr',
                       gap: 0.5,
@@ -161,18 +162,18 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
                     }}
                   >
                     <Chip label={ligue} size="small" color="default" />
-                    <Box sx={{ 
-                      display: 'flex', 
-                      gap: 0.5, 
+                    <Box sx={{
+                      display: 'flex',
+                      gap: 0.5,
                       flexWrap: 'wrap'
                     }}>
                       {months
                         .sort((a, b) => a.localeCompare(b))
                         .map(month => (
-                          <Chip 
-                            key={month} 
-                            label={month} 
-                            size="small" 
+                          <Chip
+                            key={month}
+                            label={month}
+                            size="small"
                             variant="outlined"
                           />
                         ))
@@ -197,7 +198,7 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
               {progress.totalCompetitionsScraped.toLocaleString()}
             </Typography>
           </Box>
-          
+
           {allLiguesCompleted && progress.lastCompletedAt && (
             <Box sx={{ textAlign: 'right' }}>
               <Typography variant="body2" color="text.secondary">
