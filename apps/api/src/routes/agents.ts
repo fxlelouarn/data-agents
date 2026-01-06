@@ -337,11 +337,14 @@ router.post('/:id/reset-cooldown', [
     throw createError(404, 'No progress state found for this agent', 'NO_PROGRESS_STATE')
   }
 
-  // Reset lastCompletedAt to null to exit cooldown
+  // Reset progress to start a fresh cycle
   const currentValue = progressState.value as any
   const updatedValue = {
     ...currentValue,
-    lastCompletedAt: null
+    lastCompletedAt: null,
+    completedMonths: {},  // Vider les paires ligue-mois complétées
+    currentLigue: currentValue.currentLigue || 'ARA',  // Garder ou reset au début
+    currentMonth: null  // Sera recalculé au prochain run
   }
 
   await db.prisma.agentState.update({
@@ -351,7 +354,7 @@ router.post('/:id/reset-cooldown', [
 
   res.json({
     success: true,
-    message: 'Cooldown reset successfully. The agent will resume scraping on next run.'
+    message: 'Cooldown reset successfully. Progress cleared, the agent will start a fresh cycle on next run.'
   })
 }))
 
