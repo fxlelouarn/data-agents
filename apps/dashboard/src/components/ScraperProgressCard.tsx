@@ -65,9 +65,12 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
     )
   }
 
-  // Calculer la progression globale
+  // Calculer la progression globale (ne compter que les ligues valides de FFA_LIGUES)
   const totalLigues = FFA_LIGUES.length
-  const completedLiguesCount = Object.keys(progress.completedMonths || {}).length
+  const completedLiguesCount = FFA_LIGUES.filter(ligue => {
+    const monthsForLigue = progress.completedMonths?.[ligue]
+    return monthsForLigue && monthsForLigue.length > 0
+  }).length
   const progressPercent = (completedLiguesCount / totalLigues) * 100
 
   // Vérifier si toutes les ligues sont complètement terminées
@@ -131,16 +134,18 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
           />
         </Box>
 
-        {/* Prochain */}
-        <Box sx={{ mb: 3 }}>
-          <Typography variant="body2" color="text.secondary" gutterBottom fontWeight="medium">
-            Prochain :
-          </Typography>
-          <Box sx={{ display: 'flex', gap: 0.5, ml: 1, alignItems: 'center' }}>
-            <Chip label={nextLigue} size="small" color="primary" />
-            <Chip label={nextMonth} size="small" variant="outlined" />
+        {/* Prochain (afficher seulement si on a une cible) */}
+        {(nextLigue || nextMonth) && (
+          <Box sx={{ mb: 3 }}>
+            <Typography variant="body2" color="text.secondary" gutterBottom fontWeight="medium">
+              Prochain :
+            </Typography>
+            <Box sx={{ display: 'flex', gap: 0.5, ml: 1, alignItems: 'center' }}>
+              {nextLigue && <Chip label={nextLigue} size="small" color="primary" />}
+              {nextMonth && <Chip label={nextMonth} size="small" variant="outlined" />}
+            </Box>
           </Box>
-        </Box>
+        )}
 
         {/* Réalisé */}
         {Object.keys(progress.completedMonths || {}).length > 0 && (
