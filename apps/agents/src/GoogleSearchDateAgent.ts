@@ -282,6 +282,26 @@ export class GoogleSearchDateAgent extends BaseAgent {
         throw new Error('Pas de connexion source - impossible de continuer')
       }
 
+      // Récupérer les IDs des événements en cooldown pour les exclure
+      const cooldownCutoff = Date.now() - (config.cooldownDays * 24 * 60 * 60 * 1000)
+      const cooldownStates = await this.stateService.getAllStates(this.config.id)
+      const eventIdsInCooldown: number[] = []
+
+      for (const [key, value] of Object.entries(cooldownStates || {})) {
+        if (key.startsWith('lastProcessed_')) {
+          const timestamp = value as number
+          if (timestamp > cooldownCutoff) {
+            // Cet événement est en cooldown
+            const eventId = parseInt(key.replace('lastProcessed_', ''))
+            if (!isNaN(eventId)) {
+              eventIdsInCooldown.push(eventId)
+            }
+          }
+        }
+      }
+
+      this.logger.info(`⏸️ ${eventIdsInCooldown.length} événements en cooldown (${config.cooldownDays}j) exclus de la recherche`)
+
       this.logger.info('📊 Exécution de la requête Prisma...')
 
       // Vérifier que this.sourceDb a bien la méthode event (minuscule - modèle Prisma)
@@ -305,24 +325,57 @@ export class GoogleSearchDateAgent extends BaseAgent {
         // Étape 1: Récupérer les IDs des Events qui ont des éditions TO_BE_CONFIRMED
         // ordonnés par la date future estimée pour un traitement déterministe
         // IMPORTANT: On filtre les éditions dont la startDate est dans le futur OU null (à confirmer)
-        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée, futur uniquement)')
+        // ET on exclut les événements en cooldown
+        this.logger.info('🔍 Étape 1: Récupération des Event IDs avec éditions TO_BE_CONFIRMED (ordre: date estimée, futur uniquement, hors cooldown)')
         const now = new Date()
-        const eventIds = await this.sourceDb.$queryRaw<{id: number, estimatedDate: Date | null}[]>`
-          SELECT DISTINCT e.id,
-                 ed."startDate" as "estimatedDate",
-                 e."createdAt"
-          FROM "Event" e
-          INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id
-          WHERE ed."calendarStatus" = 'TO_BE_CONFIRMED'
-            AND ed."status" = 'LIVE'
-            AND e.status = 'LIVE'
-            AND ed.year IN (${currentYear}, ${nextYear})
-            AND (ed."startDate" IS NULL OR ed."startDate" >= ${now})
-          ORDER BY
-            ed."startDate" ASC NULLS LAST,  -- Date estimée en premier (nulls à la fin)
-            e."createdAt" ASC               -- Puis par date de création comme fallback
-          LIMIT ${batchSize} OFFSET ${offset}
-        `
+
+        // Construire la clause d'exclusion des cooldowns
+        // Note: On demande plus d'événements pour compenser ceux qui pourraient être filtrés
+        const adjustedBatchSize = batchSize + Math.min(eventIdsInCooldown.length, 50)
+
+        let eventIds: {id: number, estimatedDate: Date | null}[]
+
+        if (eventIdsInCooldown.length > 0) {
+          // Utiliser $queryRawUnsafe pour pouvoir injecter le tableau d'IDs
+          const cooldownIdsStr = eventIdsInCooldown.join(',')
+          eventIds = await this.sourceDb.$queryRawUnsafe(`
+            SELECT DISTINCT e.id,
+                   ed."startDate" as "estimatedDate",
+                   e."createdAt"
+            FROM "Event" e
+            INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id
+            WHERE ed."calendarStatus" = 'TO_BE_CONFIRMED'
+              AND ed."status" = 'LIVE'
+              AND e.status = 'LIVE'
+              AND ed.year IN ($1, $2)
+              AND (ed."startDate" IS NULL OR ed."startDate" >= $3)
+              AND e.id NOT IN (${cooldownIdsStr})
+            ORDER BY
+              ed."startDate" ASC NULLS LAST,
+              e."createdAt" ASC
+            LIMIT $4 OFFSET $5
+          `, currentYear, nextYear, now, adjustedBatchSize, offset) as {id: number, estimatedDate: Date | null}[]
+        } else {
+          eventIds = await this.sourceDb.$queryRaw<{id: number, estimatedDate: Date | null}[]>`
+            SELECT DISTINCT e.id,
+                   ed."startDate" as "estimatedDate",
+                   e."createdAt"
+            FROM "Event" e
+            INNER JOIN "Edition" ed ON ed."currentEditionEventId" = e.id
+            WHERE ed."calendarStatus" = 'TO_BE_CONFIRMED'
+              AND ed."status" = 'LIVE'
+              AND e.status = 'LIVE'
+              AND ed.year IN (${currentYear}, ${nextYear})
+              AND (ed."startDate" IS NULL OR ed."startDate" >= ${now})
+            ORDER BY
+              ed."startDate" ASC NULLS LAST,
+              e."createdAt" ASC
+            LIMIT ${batchSize} OFFSET ${offset}
+          `
+        }
+
+        // Limiter au batchSize demandé (on a peut-être demandé plus pour compenser les cooldowns)
+        eventIds = eventIds.slice(0, batchSize)
 
         this.logger.info(`📊 Étape 1 terminée: ${eventIds.length} Event IDs récupérés`)
 
