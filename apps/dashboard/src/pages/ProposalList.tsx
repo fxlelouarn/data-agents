@@ -979,11 +979,11 @@ const ProposalList: React.FC = () => {
                 anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
                 transformOrigin={{ vertical: 'top', horizontal: 'left' }}
               >
-                <Box sx={{ p: 2, minWidth: 280 }}>
-                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                <Box sx={{ p: 2, minWidth: 250 }}>
+                  <Typography variant="body2" sx={{ mb: 1, fontWeight: 500 }}>
                     Période de l'événement
                   </Typography>
-                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 0.5 }}>
                     {(['ALL', '7_DAYS', '30_DAYS', '90_DAYS', 'THIS_YEAR'] as const).map((preset) => (
                         <Button
                           key={preset}
@@ -993,17 +993,17 @@ const ProposalList: React.FC = () => {
                             setDateFilterPreset(preset)
                             setDatePopoverAnchor(null)
                           }}
-                          sx={{ justifyContent: 'flex-start' }}
+                          sx={{ justifyContent: 'flex-start', fontSize: '0.813rem', textTransform: 'none' }}
                         >
                           {dateFilterPresetLabels[preset]}
                         </Button>
                       ))}
-                    <Divider sx={{ my: 1 }} />
+                    <Divider sx={{ my: 0.5 }} />
                     <Button
                       variant={dateFilterPreset === 'CUSTOM' ? 'contained' : 'text'}
                       size="small"
                       onClick={() => setDateFilterPreset('CUSTOM')}
-                      sx={{ justifyContent: 'flex-start' }}
+                      sx={{ justifyContent: 'flex-start', fontSize: '0.813rem', textTransform: 'none' }}
                     >
                       {dateFilterPresetLabels['CUSTOM']}
                     </Button>
