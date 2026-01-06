@@ -316,6 +316,45 @@ router.post('/:id/reset-cursor', [
   })
 }))
 
+// POST /api/agents/:id/reset-cooldown - Reset cooldown to restart scraping cycle
+router.post('/:id/reset-cooldown', [
+  param('id').isString().notEmpty(),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+
+  const agent = await db.getAgent(id)
+  if (!agent) {
+    throw createError(404, 'Agent not found', 'AGENT_NOT_FOUND')
+  }
+
+  // Get current progress state
+  const progressState = await db.prisma.agentState.findFirst({
+    where: { agentId: id, key: 'progress' }
+  })
+
+  if (!progressState) {
+    throw createError(404, 'No progress state found for this agent', 'NO_PROGRESS_STATE')
+  }
+
+  // Reset lastCompletedAt to null to exit cooldown
+  const currentValue = progressState.value as any
+  const updatedValue = {
+    ...currentValue,
+    lastCompletedAt: null
+  }
+
+  await db.prisma.agentState.update({
+    where: { id: progressState.id },
+    data: { value: updatedValue }
+  })
+
+  res.json({
+    success: true,
+    message: 'Cooldown reset successfully. The agent will resume scraping on next run.'
+  })
+}))
+
 // DELETE /api/agents/:id - Delete agent
 router.delete('/:id', [
   param('id').isString().notEmpty(),

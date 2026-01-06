@@ -189,6 +189,27 @@ export const useResetAgentCursor = () => {
   })
 }
 
+export const useResetAgentCooldown = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: (id: string) => agentsApi.resetCooldown(id),
+    onSuccess: (response, id) => {
+      queryClient.invalidateQueries({ queryKey: ['agents'] })
+      queryClient.invalidateQueries({ queryKey: ['agents', id] })
+      queryClient.invalidateQueries({ queryKey: ['agents', id, 'state'] })
+      enqueueSnackbar(response.message || 'Cooldown réinitialisé avec succès', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la réinitialisation du cooldown',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useAgentState = (id: string, key?: string) => {
   return useQuery({
     queryKey: ['agents', id, 'state', key],

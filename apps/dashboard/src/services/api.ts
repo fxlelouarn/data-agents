@@ -149,6 +149,9 @@ export const agentsApi = {
   resetCursor: (id: string): Promise<ApiResponse<{ message: string }>> =>
     api.post(`/agents/${id}/reset-cursor`).then(res => res.data),
 
+  resetCooldown: (id: string): Promise<ApiResponse<{ message: string }>> =>
+    api.post(`/agents/${id}/reset-cooldown`).then(res => res.data),
+
   getState: (id: string, key?: string): Promise<ApiResponse<any>> =>
     api.get(`/agents/${id}/state`, { params: key ? { key } : {} }).then(res => res.data),
 }

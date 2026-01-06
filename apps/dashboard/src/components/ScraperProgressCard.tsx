@@ -8,14 +8,16 @@ import {
   LinearProgress,
   Grid,
   Alert,
-  Divider
+  Divider,
+  Button
 } from '@mui/material'
 import {
   Schedule as ScheduleIcon,
   CheckCircle as CheckCircleIcon,
-  Refresh as RefreshIcon
+  Refresh as RefreshIcon,
+  PlayArrow as PlayArrowIcon
 } from '@mui/icons-material'
-import { useAgentState } from '@/hooks/useApi'
+import { useAgentState, useResetAgentCooldown } from '@/hooks/useApi'
 
 interface ScraperProgressCardProps {
   agentId: string
@@ -40,6 +42,7 @@ const FFA_LIGUES = [
 
 const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agentName, cooldownDays: propCooldownDays }) => {
   const { data: stateData, isLoading } = useAgentState(agentId)
+  const resetCooldownMutation = useResetAgentCooldown()
 
   if (isLoading) {
     return (
@@ -108,12 +111,24 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
             Progression du scraping
           </Typography>
           {isInCooldown && (
-            <Chip
-              icon={<ScheduleIcon />}
-              label={`Cooldown: ${remainingDays}j`}
-              color="warning"
-              size="small"
-            />
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Chip
+                icon={<ScheduleIcon />}
+                label={`Cooldown: ${remainingDays}j`}
+                color="warning"
+                size="small"
+              />
+              <Button
+                size="small"
+                variant="outlined"
+                color="primary"
+                startIcon={<PlayArrowIcon />}
+                onClick={() => resetCooldownMutation.mutate(agentId)}
+                disabled={resetCooldownMutation.isPending}
+              >
+                {resetCooldownMutation.isPending ? 'Relance...' : 'Relancer'}
+              </Button>
+            </Box>
           )}
         </Box>
 
