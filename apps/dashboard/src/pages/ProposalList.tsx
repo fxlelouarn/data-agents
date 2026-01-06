@@ -27,6 +27,7 @@ import {
   ListItemText,
   ListItemSecondaryAction,
   Divider,
+  Popover,
 } from '@mui/material'
 import {
   Search as SearchIcon,
@@ -47,11 +48,29 @@ import {
   Update as UpdateIcon,
   Edit as EditIcon,
   Merge as MergeIcon,
+  CalendarMonth as CalendarIcon,
 } from '@mui/icons-material'
 import { DataGridPro, GridColDef, GridToolbar, GridRowSelectionModel } from '@mui/x-data-grid-pro'
+import { DatePicker } from '@mui/x-date-pickers/DatePicker'
+import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
+import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
+import { fr } from 'date-fns/locale'
+import { format, addDays, endOfYear } from 'date-fns'
 import { useProposals, useBulkApproveProposals, useBulkRejectProposals, useBulkArchiveProposals, useBulkDeleteProposals, useDeleteProposal, useAgents } from '@/hooks/useApi'
 import { ProposalStatus, ProposalType } from '@/types'
 import { proposalStatusLabels, proposalStatusColors, proposalTypeLabels, proposalTypeStyles, categoryLevel1Labels, categoryLevel2Labels, categoryLevel2ByLevel1 } from '@/constants/proposals'
+
+// Types pour le filtre de période
+type DateFilterPreset = 'ALL' | '7_DAYS' | '30_DAYS' | '90_DAYS' | 'THIS_YEAR' | 'CUSTOM'
+
+const dateFilterPresetLabels: Record<DateFilterPreset, string> = {
+  'ALL': 'Toutes les dates',
+  '7_DAYS': '7 prochains jours',
+  '30_DAYS': '30 prochains jours',
+  '90_DAYS': '90 prochains jours',
+  'THIS_YEAR': 'Cette année',
+  'CUSTOM': 'Période personnalisée',
+}
 
 const getProposalTypeStyle = (type: ProposalType) => {
   return proposalTypeStyles[type] || {
@@ -124,6 +143,21 @@ const ProposalList: React.FC = () => {
     return (saved as 'date-asc' | 'date-desc' | 'created-desc') || 'date-asc'
   })
 
+  // Filtre par période de date (sur proposedStartDate)
+  const [dateFilterPreset, setDateFilterPreset] = useState<DateFilterPreset>(() => {
+    const saved = localStorage.getItem('proposalDateFilterPreset')
+    return (saved as DateFilterPreset) || 'ALL'
+  })
+  const [customDateFrom, setCustomDateFrom] = useState<Date | null>(() => {
+    const saved = localStorage.getItem('proposalCustomDateFrom')
+    return saved ? new Date(saved) : null
+  })
+  const [customDateTo, setCustomDateTo] = useState<Date | null>(() => {
+    const saved = localStorage.getItem('proposalCustomDateTo')
+    return saved ? new Date(saved) : null
+  })
+  const [datePopoverAnchor, setDatePopoverAnchor] = useState<HTMLElement | null>(null)
+
   // Sauvegarder les filtres dans localStorage quand ils changent
   React.useEffect(() => {
     localStorage.setItem('proposalStatusFilter', statusFilter)
@@ -154,6 +188,48 @@ const ProposalList: React.FC = () => {
     localStorage.setItem('proposalGroupSort', groupSort)
   }, [groupSort])
 
+  // Sauvegarder le filtre de date dans localStorage
+  React.useEffect(() => {
+    localStorage.setItem('proposalDateFilterPreset', dateFilterPreset)
+  }, [dateFilterPreset])
+
+  React.useEffect(() => {
+    if (customDateFrom) {
+      localStorage.setItem('proposalCustomDateFrom', customDateFrom.toISOString())
+    } else {
+      localStorage.removeItem('proposalCustomDateFrom')
+    }
+  }, [customDateFrom])
+
+  React.useEffect(() => {
+    if (customDateTo) {
+      localStorage.setItem('proposalCustomDateTo', customDateTo.toISOString())
+    } else {
+      localStorage.removeItem('proposalCustomDateTo')
+    }
+  }, [customDateTo])
+
+  // Calculer les dates de filtre effectives selon le preset
+  const effectiveDateRange = useMemo(() => {
+    const today = new Date()
+    today.setHours(0, 0, 0, 0)
+
+    switch (dateFilterPreset) {
+      case '7_DAYS':
+        return { from: today, to: addDays(today, 7) }
+      case '30_DAYS':
+        return { from: today, to: addDays(today, 30) }
+      case '90_DAYS':
+        return { from: today, to: addDays(today, 90) }
+      case 'THIS_YEAR':
+        return { from: today, to: endOfYear(today) }
+      case 'CUSTOM':
+        return { from: customDateFrom, to: customDateTo }
+      default:
+        return { from: null, to: null }
+    }
+  }, [dateFilterPreset, customDateFrom, customDateTo])
+
   // Debounce du terme de recherche pour éviter trop de requêtes API
   const [debouncedSearchTerm, setDebouncedSearchTerm] = useState(searchTerm)
 
@@ -179,6 +255,8 @@ const ProposalList: React.FC = () => {
       categoryLevel1: categoryLevel1Filter !== 'ALL' ? categoryLevel1Filter : undefined,
       categoryLevel2: categoryLevel2Filter !== 'ALL' ? categoryLevel2Filter : undefined,
       search: debouncedSearchTerm.trim() || undefined,
+      startDateFrom: effectiveDateRange.from ? format(effectiveDateRange.from, 'yyyy-MM-dd') : undefined,
+      startDateTo: effectiveDateRange.to ? format(effectiveDateRange.to, 'yyyy-MM-dd') : undefined,
     },
     paginationModel.pageSize,
     paginationModel.page * paginationModel.pageSize,
@@ -188,7 +266,7 @@ const ProposalList: React.FC = () => {
   // Reset pagination when filters or sort change
   React.useEffect(() => {
     setPaginationModel(prev => ({ ...prev, page: 0 }))
-  }, [statusFilter, typeFilter, agentFilter, categoryLevel1Filter, categoryLevel2Filter, groupSort, debouncedSearchTerm])
+  }, [statusFilter, typeFilter, agentFilter, categoryLevel1Filter, categoryLevel2Filter, groupSort, debouncedSearchTerm, dateFilterPreset, customDateFrom, customDateTo])
 
   const bulkApproveMutation = useBulkApproveProposals()
   const bulkRejectMutation = useBulkRejectProposals()
@@ -837,7 +915,7 @@ const ProposalList: React.FC = () => {
             )}
           </Grid>
 
-          {/* Ligne 2: Filtres par catégorie */}
+          {/* Ligne 2: Filtres par catégorie et période */}
           <Grid container spacing={2} alignItems="center" sx={{ mt: 1 }}>
             <Grid item xs={6} md={2}>
               <FormControl fullWidth size="small">
@@ -875,6 +953,90 @@ const ProposalList: React.FC = () => {
                 </FormControl>
               </Grid>
             )}
+
+            {/* Filtre par période de date */}
+            <Grid item xs={6} md={2}>
+              <Button
+                fullWidth
+                variant="outlined"
+                size="small"
+                startIcon={<CalendarIcon />}
+                onClick={(e) => setDatePopoverAnchor(e.currentTarget)}
+                sx={{
+                  height: 40,
+                  justifyContent: 'flex-start',
+                  textTransform: 'none',
+                  color: dateFilterPreset !== 'ALL' ? 'primary.main' : 'text.secondary',
+                  borderColor: dateFilterPreset !== 'ALL' ? 'primary.main' : 'divider',
+                }}
+              >
+                {dateFilterPresetLabels[dateFilterPreset]}
+              </Button>
+              <Popover
+                open={Boolean(datePopoverAnchor)}
+                anchorEl={datePopoverAnchor}
+                onClose={() => setDatePopoverAnchor(null)}
+                anchorOrigin={{ vertical: 'bottom', horizontal: 'left' }}
+                transformOrigin={{ vertical: 'top', horizontal: 'left' }}
+              >
+                <Box sx={{ p: 2, minWidth: 280 }}>
+                  <Typography variant="subtitle2" sx={{ mb: 1 }}>
+                    Période de l'événement
+                  </Typography>
+                  <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                    {(['ALL', '7_DAYS', '30_DAYS', '90_DAYS', 'THIS_YEAR'] as const).map((preset) => (
+                        <Button
+                          key={preset}
+                          variant={dateFilterPreset === preset ? 'contained' : 'text'}
+                          size="small"
+                          onClick={() => {
+                            setDateFilterPreset(preset)
+                            setDatePopoverAnchor(null)
+                          }}
+                          sx={{ justifyContent: 'flex-start' }}
+                        >
+                          {dateFilterPresetLabels[preset]}
+                        </Button>
+                      ))}
+                    <Divider sx={{ my: 1 }} />
+                    <Button
+                      variant={dateFilterPreset === 'CUSTOM' ? 'contained' : 'text'}
+                      size="small"
+                      onClick={() => setDateFilterPreset('CUSTOM')}
+                      sx={{ justifyContent: 'flex-start' }}
+                    >
+                      {dateFilterPresetLabels['CUSTOM']}
+                    </Button>
+                    {dateFilterPreset === 'CUSTOM' && (
+                      <LocalizationProvider dateAdapter={AdapterDateFns} adapterLocale={fr}>
+                        <Box sx={{ display: 'flex', flexDirection: 'column', gap: 1, mt: 1 }}>
+                          <DatePicker
+                            label="Du"
+                            value={customDateFrom}
+                            onChange={(date) => setCustomDateFrom(date)}
+                            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                          />
+                          <DatePicker
+                            label="Au"
+                            value={customDateTo}
+                            onChange={(date) => setCustomDateTo(date)}
+                            slotProps={{ textField: { size: 'small', fullWidth: true } }}
+                          />
+                          <Button
+                            variant="outlined"
+                            size="small"
+                            onClick={() => setDatePopoverAnchor(null)}
+                            sx={{ mt: 1 }}
+                          >
+                            Appliquer
+                          </Button>
+                        </Box>
+                      </LocalizationProvider>
+                    )}
+                  </Box>
+                </Box>
+              </Popover>
+            </Grid>
           </Grid>
         </CardContent>
       </Card>

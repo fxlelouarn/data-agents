@@ -675,12 +675,14 @@ router.get('/', [
   query('categoryLevel1').optional().isString(),
   query('categoryLevel2').optional().isString(),
   query('search').optional().isString(),
+  query('startDateFrom').optional().isISO8601(),
+  query('startDateTo').optional().isISO8601(),
   query('sort').optional().isIn(['date-asc', 'date-desc', 'created-desc']),
   query('limit').optional().isInt({ min: 1, max: 100 }),
   query('offset').optional().isInt({ min: 0 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
-const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLevel2, search, sort = 'created-desc', limit = 20, offset = 0 } = req.query
+const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLevel2, search, startDateFrom, startDateTo, sort = 'created-desc', limit = 20, offset = 0 } = req.query
 
   const routeStart = Date.now()
 
@@ -716,6 +718,20 @@ const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLev
     editionId: (editionId as string | undefined) || undefined,
     // Filtre par nom d'agent via relation
     ...(agentName ? { agent: { name: agentName as string } } : {})
+  }
+
+  // Ajouter le filtre de date sur proposedStartDate
+  if (startDateFrom || startDateTo) {
+    baseWhere.proposedStartDate = {}
+    if (startDateFrom) {
+      baseWhere.proposedStartDate.gte = new Date(startDateFrom as string)
+    }
+    if (startDateTo) {
+      // Ajouter 1 jour pour inclure la date de fin entière
+      const endDate = new Date(startDateTo as string)
+      endDate.setDate(endDate.getDate() + 1)
+      baseWhere.proposedStartDate.lt = endDate
+    }
   }
 
   // Ajouter la recherche textuelle si présente (Prisma)
@@ -816,6 +832,21 @@ const { status, type, eventId, editionId, agentName, categoryLevel1, categoryLev
       }
       categoryConditions.push(`(${searchConditions.join(' OR ')})`)
       params.push(`%${searchTerm}%`)
+      paramIndex++
+    }
+
+    // Conditions pour le filtre de date
+    if (startDateFrom) {
+      baseConditions.push(`"proposedStartDate" >= $${paramIndex}`)
+      params.push(new Date(startDateFrom as string))
+      paramIndex++
+    }
+    if (startDateTo) {
+      // Ajouter 1 jour pour inclure la date de fin entière
+      const endDate = new Date(startDateTo as string)
+      endDate.setDate(endDate.getDate() + 1)
+      baseConditions.push(`"proposedStartDate" < $${paramIndex}`)
+      params.push(endDate)
       paramIndex++
     }
 

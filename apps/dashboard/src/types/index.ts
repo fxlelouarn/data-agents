@@ -237,6 +237,8 @@ export interface ProposalFilters {
   categoryLevel1?: string
   categoryLevel2?: string
   search?: string
+  startDateFrom?: string  // Format: 'yyyy-MM-dd'
+  startDateTo?: string    // Format: 'yyyy-MM-dd'
 }
 
 export interface RunFilters {
