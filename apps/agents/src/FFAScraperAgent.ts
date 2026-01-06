@@ -167,15 +167,11 @@ export class FFAScraperAgent extends BaseAgent {
       progress.currentMonth = allMonths[0]
     }
 
-    // Déterminer les ligues à traiter
-    const currentLigueIndex = FFA_LIGUES.indexOf(progress.currentLigue as any)
-    const ligues: string[] = []
+    // NOUVELLE LOGIQUE: Parcourir toutes les ligues pour un ensemble de mois,
+    // puis passer aux mois suivants
+    // Ordre: [L1,L2,L3 pour M1,M2] → [L4,L5,L6 pour M1,M2] → ... → [L1,L2,L3 pour M3,M4] → ...
 
-    for (let i = 0; i < config.liguesPerRun && currentLigueIndex + i < FFA_LIGUES.length; i++) {
-      ligues.push(FFA_LIGUES[currentLigueIndex + i])
-    }
-
-    // Déterminer les mois à traiter en évitant ceux déjà complétés
+    // Déterminer le mois actuel
     let currentMonthIndex = allMonths.indexOf(progress.currentMonth)
 
     // Si le mois actuel n'est plus dans la fenêtre (expiré), recommencer au premier mois
@@ -185,42 +181,49 @@ export class FFAScraperAgent extends BaseAgent {
       progress.currentMonth = allMonths[0]
     }
 
-    // Trouver les mois non complétés pour les ligues sélectionnées
-    // On cherche les mois qui n'ont pas été complétés pour AU MOINS une des ligues
+    // Déterminer les mois à traiter (fenêtre fixe pour ce run)
     const months: string[] = []
+    for (let i = 0; i < config.monthsPerRun && currentMonthIndex + i < allMonths.length; i++) {
+      months.push(allMonths[currentMonthIndex + i])
+    }
 
-    for (let i = currentMonthIndex; i < allMonths.length && months.length < config.monthsPerRun; i++) {
-      const month = allMonths[i]
-      // Vérifier si ce mois n'est pas complété pour au moins une des ligues sélectionnées
-      const needsProcessing = ligues.some(ligue => {
-        const completedForLigue = progress.completedMonths[ligue] || []
-        return !completedForLigue.includes(month)
-      })
+    // Déterminer les ligues à traiter
+    const currentLigueIndex = FFA_LIGUES.indexOf(progress.currentLigue as any)
+    let ligues: string[] = []
+
+    // Chercher les prochaines ligues qui n'ont pas complété les mois actuels
+    for (let i = currentLigueIndex; i < FFA_LIGUES.length && ligues.length < config.liguesPerRun; i++) {
+      const ligue = FFA_LIGUES[i]
+      const completedForLigue = progress.completedMonths[ligue] || []
+
+      // Vérifier si cette ligue a besoin de traiter au moins un des mois
+      const needsProcessing = months.some(month => !completedForLigue.includes(month))
 
       if (needsProcessing) {
-        months.push(month)
+        ligues.push(ligue)
       } else {
-        this.logger.debug?.(`⏭️  Mois ${month} déjà complété pour toutes les ligues [${ligues.join(', ')}], skip`)
+        this.logger.debug?.(`⏭️  Ligue ${ligue} déjà complétée pour les mois [${months.join(', ')}], skip`)
       }
     }
 
-    // Si tous les mois sont complétés pour ces ligues, passer aux ligues suivantes
-    if (months.length === 0 && ligues.length > 0) {
-      const lastLigueIndex = FFA_LIGUES.indexOf(ligues[ligues.length - 1] as any)
-      if (lastLigueIndex + 1 < FFA_LIGUES.length) {
-        // Avancer aux prochaines ligues
-        this.logger.info(`✅ Toutes les ligues [${ligues.join(', ')}] ont complété tous les mois, passage aux suivantes`)
-        progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
-        progress.currentMonth = allMonths[0]
+    // Si toutes les ligues ont complété ces mois, passer aux mois suivants
+    if (ligues.length === 0 && months.length > 0) {
+      const nextMonthIndex = currentMonthIndex + config.monthsPerRun
+
+      if (nextMonthIndex < allMonths.length) {
+        // Avancer aux prochains mois et recommencer avec la première ligue
+        this.logger.info(`✅ Tous les mois [${months.join(', ')}] complétés pour toutes les ligues, passage aux mois suivants`)
+        progress.currentMonth = allMonths[nextMonthIndex]
+        progress.currentLigue = FFA_LIGUES[0]
         // Récursion pour obtenir les vraies prochaines cibles
         return this.getNextTargets(progress, config)
       }
     }
 
-    // Mettre à jour currentMonth si on a sauté des mois déjà complétés
-    if (months.length > 0 && months[0] !== progress.currentMonth) {
-      this.logger.info(`⏭️  Avance au mois ${months[0]} (${progress.currentMonth} déjà complété)`)
-      progress.currentMonth = months[0]
+    // Mettre à jour currentLigue si on a sauté des ligues déjà complétées
+    if (ligues.length > 0 && ligues[0] !== progress.currentLigue) {
+      this.logger.info(`⏭️  Avance à la ligue ${ligues[0]} (${progress.currentLigue} déjà complétée pour ces mois)`)
+      progress.currentLigue = ligues[0] as typeof FFA_LIGUES[number]
     }
 
     return { ligues, months }
@@ -1820,34 +1823,33 @@ export class FFAScraperAgent extends BaseAgent {
       }
 
       // Calculer la prochaine position de scraping
+      // NOUVELLE LOGIQUE: Parcourir toutes les ligues pour les mêmes mois,
+      // puis passer aux mois suivants
       const allMonths = generateMonthsToScrape(config.scrapingWindowMonths)
-      const lastProcessedMonth = months[months.length - 1]
+      const currentMonthIndex = allMonths.indexOf(months[0]) // Premier mois traité
       const lastProcessedLigue = ligues[ligues.length - 1]
-
-      const lastMonthIndex = allMonths.indexOf(lastProcessedMonth)
       const lastLigueIndex = FFA_LIGUES.indexOf(lastProcessedLigue as any)
 
-      // Avancer au mois suivant ou à la ligue suivante si tous les mois sont traités
-      // FIX: Lorsqu'on traite plusieurs ligues par run (liguesPerRun > 1),
-      // on doit revenir à la première ligue traitée au mois suivant
-      if (lastMonthIndex + 1 < allMonths.length) {
-        // Il reste des mois à traiter
-        // Revenir à la PREMIÈRE ligue du run, mais au mois SUIVANT
-        progress.currentMonth = allMonths[lastMonthIndex + 1]
-        progress.currentLigue = ligues[0]  // FIX: Utiliser ligues[0] au lieu de lastProcessedLigue
+      // Avancer à la ligue suivante, ou aux mois suivants si toutes les ligues sont traitées
+      if (lastLigueIndex + 1 < FFA_LIGUES.length) {
+        // Il reste des ligues à traiter pour ces mois
+        progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
+        // Garder les mêmes mois
+        progress.currentMonth = months[0]
         context.logger.info(`⏭️  Prochaine position: ${progress.currentLigue} - ${progress.currentMonth}`, {
           liguesTraitees: ligues,
-          moisTraite: lastProcessedMonth,
-          prochainMois: progress.currentMonth
+          moisTraites: months,
+          prochaineLigue: progress.currentLigue
         })
       } else {
-        // Tous les mois traités pour ces ligues, passer à la ligue suivante
-        if (lastLigueIndex + 1 < FFA_LIGUES.length) {
-          progress.currentLigue = FFA_LIGUES[lastLigueIndex + 1]
-          progress.currentMonth = allMonths[0] // Recommencer au premier mois
-          context.logger.info(`⏭️  Ligue complétée, passage à: ${progress.currentLigue} - ${progress.currentMonth}`)
+        // Toutes les ligues traitées pour ces mois, passer aux mois suivants
+        const nextMonthIndex = currentMonthIndex + config.monthsPerRun
+        if (nextMonthIndex < allMonths.length) {
+          progress.currentMonth = allMonths[nextMonthIndex]
+          progress.currentLigue = FFA_LIGUES[0] // Recommencer à la première ligue
+          context.logger.info(`⏭️  Mois complétés pour toutes les ligues, passage à: ${progress.currentLigue} - ${progress.currentMonth}`)
         } else {
-          // Toutes les ligues complétées, recommencer au début
+          // Tous les mois et toutes les ligues complétés, cycle terminé
           progress.currentLigue = FFA_LIGUES[0]
           progress.currentMonth = allMonths[0]
           context.logger.info(`🔄 Cycle complet terminé, redémarrage: ${progress.currentLigue} - ${progress.currentMonth}`)
