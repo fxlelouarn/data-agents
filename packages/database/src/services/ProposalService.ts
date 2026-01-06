@@ -75,46 +75,53 @@ export class ProposalService implements IProposalService {
   /**
    * Extrait la startDate depuis l'objet changes d'une proposition
    */
+  /**
+   * Convertit une valeur en Date si possible
+   */
+  private toDate(value: any): Date | undefined {
+    if (!value) return undefined
+
+    // Déjà un objet Date
+    if (value instanceof Date) {
+      return isNaN(value.getTime()) ? undefined : value
+    }
+
+    // String ISO ou autre format parsable
+    if (typeof value === 'string') {
+      const parsed = new Date(value)
+      return isNaN(parsed.getTime()) ? undefined : parsed
+    }
+
+    return undefined
+  }
+
   private extractStartDate(changes: Record<string, any>): Date | undefined {
     if (!changes) return undefined
 
     // Cas 1: changes.startDate directement (format { old, new } ou valeur directe)
     if (changes.startDate) {
-      const startDate = typeof changes.startDate === 'object' && changes.startDate.new
+      const startDate = typeof changes.startDate === 'object' && 'new' in changes.startDate
         ? changes.startDate.new
         : changes.startDate
 
-      if (startDate && typeof startDate === 'string') {
-        const parsed = new Date(startDate)
-        if (!isNaN(parsed.getTime())) {
-          return parsed
-        }
-      }
+      const parsed = this.toDate(startDate)
+      if (parsed) return parsed
     }
 
     // Cas 2: changes.edition.new.startDate (structure NEW_EVENT)
     if (changes.edition?.new?.startDate) {
-      const startDate = changes.edition.new.startDate
-      if (typeof startDate === 'string') {
-        const parsed = new Date(startDate)
-        if (!isNaN(parsed.getTime())) {
-          return parsed
-        }
-      }
+      const parsed = this.toDate(changes.edition.new.startDate)
+      if (parsed) return parsed
     }
 
     // Cas 3: changes.edition.startDate (autre variante)
     if (changes.edition?.startDate) {
-      const startDate = typeof changes.edition.startDate === 'object' && changes.edition.startDate.new
+      const startDate = typeof changes.edition.startDate === 'object' && 'new' in changes.edition.startDate
         ? changes.edition.startDate.new
         : changes.edition.startDate
 
-      if (startDate && typeof startDate === 'string') {
-        const parsed = new Date(startDate)
-        if (!isNaN(parsed.getTime())) {
-          return parsed
-        }
-      }
+      const parsed = this.toDate(startDate)
+      if (parsed) return parsed
     }
 
     return undefined
