@@ -546,6 +546,28 @@ export const useChangeTarget = () => {
   })
 }
 
+export const useLinkProposalToEdition = () => {
+  const queryClient = useQueryClient()
+  const { enqueueSnackbar } = useSnackbar()
+
+  return useMutation({
+    mutationFn: async ({ proposalId, eventId, editionId }: { proposalId: string; eventId: number; editionId: number }) => {
+      return proposalsApi.linkToEdition(proposalId, eventId, editionId)
+    },
+    onSuccess: (response, variables) => {
+      queryClient.invalidateQueries({ queryKey: ['proposals', variables.proposalId] })
+      queryClient.invalidateQueries({ queryKey: ['proposals'] })
+      enqueueSnackbar(response.message || 'Proposition liée avec succès', { variant: 'success' })
+    },
+    onError: (error: any) => {
+      enqueueSnackbar(
+        error.response?.data?.error?.message || 'Erreur lors de la liaison',
+        { variant: 'error' }
+      )
+    },
+  })
+}
+
 export const useCreateManualProposal = () => {
   const queryClient = useQueryClient()
   const { enqueueSnackbar } = useSnackbar()

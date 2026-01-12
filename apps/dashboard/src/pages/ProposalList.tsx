@@ -287,6 +287,10 @@ const ProposalList: React.FC = () => {
         groupKey = `new-event-${proposal.id}` // Chaque nouvel événement est dans son propre groupe
       } else if (proposal.type === 'EVENT_MERGE') {
         groupKey = `event-merge-${proposal.id}` // Chaque fusion est dans son propre groupe
+      } else if (!proposal.eventId && !proposal.editionId) {
+        // Propositions sans eventId ni editionId (ex: FFA Results sans match)
+        // Chacune doit être dans son propre groupe pour éviter le regroupement massif
+        groupKey = `unmatched-${proposal.id}`
       } else {
         groupKey = `${proposal.eventId || 'unknown'}-${proposal.editionId || 'unknown'}`
       }
@@ -417,10 +421,11 @@ const ProposalList: React.FC = () => {
     // PRIORITÉ 2: Essayer d'extraire le nom depuis les métadonnées de justification
     if (proposal.justification && Array.isArray(proposal.justification)) {
       for (const justif of proposal.justification) {
-        if (justif.metadata && justif.metadata.eventName) {
-          const eventName = justif.metadata.eventName
-          const eventCity = justif.metadata.eventCity
-          const year = justif.metadata.editionYear
+        // Support eventName (standard) ou ffaName (FFA Results Agent)
+        const eventName = justif.metadata?.eventName || justif.metadata?.ffaName
+        if (eventName) {
+          const eventCity = justif.metadata?.eventCity || justif.metadata?.ffaCity
+          const year = justif.metadata?.editionYear
 
           // Construire le titre avec le nom, ville et année
           const cityPart = eventCity ? ` - ${eventCity}` : ''
@@ -543,10 +548,13 @@ const ProposalList: React.FC = () => {
         // PRIORITÉ 2: Essayer d'extraire depuis les métadonnées de justification
         if (proposal.justification && Array.isArray(proposal.justification)) {
           for (const justif of proposal.justification) {
-            if (justif.metadata?.eventName) {
-              const eventName = justif.metadata.eventName
-              const year = justif.metadata.editionYear
-              return year ? `${eventName} - ${year}` : eventName
+            // Support eventName (standard) ou ffaName (FFA Results Agent)
+            const eventName = justif.metadata?.eventName || justif.metadata?.ffaName
+            if (eventName) {
+              const eventCity = justif.metadata?.eventCity || justif.metadata?.ffaCity
+              const year = justif.metadata?.editionYear
+              const cityPart = eventCity ? ` - ${eventCity}` : ''
+              return year ? `${eventName}${cityPart} - ${year}` : `${eventName}${cityPart}`
             }
           }
         }
@@ -1084,8 +1092,14 @@ const ProposalList: React.FC = () => {
                   const isExpandIcon = target.closest('.chevron-icon')
                   if (!isExpandIcon) {
                     e.preventDefault()
-                    // Naviguer vers la vue groupée
-                    window.location.href = `/proposals/group/${encodeURIComponent(groupKey)}`
+                    // Pour les propositions sans eventId (unmatched-*), naviguer vers la vue individuelle
+                    if (groupKey.startsWith('unmatched-')) {
+                      const proposalId = groupKey.replace('unmatched-', '')
+                      window.location.href = `/proposals/${proposalId}`
+                    } else {
+                      // Naviguer vers la vue groupée
+                      window.location.href = `/proposals/group/${encodeURIComponent(groupKey)}`
+                    }
                   }
                 }}
                 sx={{

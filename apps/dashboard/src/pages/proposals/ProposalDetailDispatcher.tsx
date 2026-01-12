@@ -6,6 +6,7 @@ import EditionUpdateDetail from './detail/edition-update/EditionUpdateDetail'
 import EventUpdateDetail from './detail/event-update/EventUpdateDetail'
 import NewEventDetail from './detail/new-event/NewEventDetail'
 import EventMergeDetail from './detail/event-merge/EventMergeDetail'
+import UnmatchedResultDetail from './detail/unmatched-result/UnmatchedResultDetail'
 
 const ProposalDetailDispatcher: React.FC = () => {
   const { id } = useParams<{ id: string }>()
@@ -24,7 +25,21 @@ const ProposalDetailDispatcher: React.FC = () => {
   }
 
   // Déterminer le type de la proposition
-  const proposalType = proposalData.data.type
+  const proposal = proposalData.data
+  const proposalType = proposal.type
+
+  // Détecter les propositions FFA Results sans match automatique
+  // Ces propositions ont type EDITION_UPDATE, pas d'eventId, et justificationType === 'ffa_source'
+  const isUnmatchedFFAResult =
+    proposalType === 'EDITION_UPDATE' &&
+    !proposal.eventId &&
+    proposal.justification?.some(
+      (j: any) => j.metadata?.justificationType === 'ffa_source'
+    )
+
+  if (isUnmatchedFFAResult) {
+    return <UnmatchedResultDetail proposalId={id!} />
+  }
 
   // Dispatcher selon le type
   switch (proposalType) {

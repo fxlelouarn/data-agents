@@ -106,19 +106,19 @@ export class AutoValidatorAgent extends BaseAgent {
   }
 
   /**
-   * Récupère l'ID de l'agent FFA Scraper par agentType
+   * Récupère les IDs des agents FFA (Scraper et Results) par agentType
    */
-  private async getFFAScraperAgentId(): Promise<string | null> {
+  private async getFFAAgentIds(): Promise<string[]> {
     const ffaAgents = await this.prisma.agent.findMany({
       where: {
-        config: {
-          path: ['agentType'],
-          equals: 'FFA_SCRAPER'
-        }
+        OR: [
+          { config: { path: ['agentType'], equals: 'FFA_SCRAPER' } },
+          { config: { path: ['agentType'], equals: 'FFA_RESULTS' } }
+        ]
       },
       select: { id: true }
     })
-    return ffaAgents.length > 0 ? ffaAgents[0].id : null
+    return ffaAgents.map(a => a.id)
   }
 
   /**
@@ -129,15 +129,23 @@ export class AutoValidatorAgent extends BaseAgent {
    * de nouvelles courses, ce que l'auto-validateur ne peut pas faire.
    */
   private async getEligibleProposals(
-    ffaAgentId: string,
+    ffaAgentIds: string[],
     config: AutoValidatorConfig
   ): Promise<{ proposals: any[]; totalCount: number }> {
+    if (ffaAgentIds.length === 0) {
+      return { proposals: [], totalCount: 0 }
+    }
+
+    // Construire la clause IN pour les IDs d'agents
+    const agentIdPlaceholders = ffaAgentIds.map((_, i) => `$${i + 1}`).join(', ')
+
     // Requête SQL brute pour exclure les propositions avec racesToAdd
     // car Prisma ne supporte pas bien les requêtes JSONB complexes
     const whereClause = `
       p.status = 'PENDING'
       AND p.type = 'EDITION_UPDATE'
-      AND p."agentId" = $1
+      AND p."agentId" IN (${agentIdPlaceholders})
+      AND p."eventId" IS NOT NULL
       AND (
         p.changes->'racesToAdd' IS NULL
         OR p.changes->'racesToAdd' = 'null'::jsonb
@@ -148,19 +156,21 @@ export class AutoValidatorAgent extends BaseAgent {
     // Compter le total de propositions éligibles (sans racesToAdd)
     const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `SELECT COUNT(*) as count FROM proposals p WHERE ${whereClause}`,
-      ffaAgentId
+      ...ffaAgentIds
     )
     const totalCount = Number(countResult[0]?.count || 0)
 
     // Récupérer les propositions avec limite
+    // Le paramètre limite est après tous les IDs d'agents
+    const limitParamIndex = ffaAgentIds.length + 1
     const proposals = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT p.*, a.name as "agentName"
        FROM proposals p
        LEFT JOIN agents a ON p."agentId" = a.id
        WHERE ${whereClause}
        ORDER BY p."createdAt" ASC
-       LIMIT $2`,
-      ffaAgentId,
+       LIMIT $${limitParamIndex}`,
+      ...ffaAgentIds,
       config.maxProposalsPerRun
     )
 
@@ -191,7 +201,7 @@ export class AutoValidatorAgent extends BaseAgent {
     // Bloc edition
     if (config.enableEditionBlock) {
       const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
-        'registrationClosingDate', 'registrationOpeningDate']
+        'registrationClosingDate', 'registrationOpeningDate', 'registrantsNumber']
       const hasEditionChanges = editionFields.some(field => changes[field] !== undefined)
       if (hasEditionChanges) {
         blocksToValidate.push('edition')
@@ -273,7 +283,7 @@ export class AutoValidatorAgent extends BaseAgent {
     // Déterminer si tous les blocs attendus sont validés
     const expectedBlocks = new Set<string>()
     const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
-      'registrationClosingDate', 'registrationOpeningDate']
+      'registrationClosingDate', 'registrationOpeningDate', 'registrantsNumber']
 
     if (editionFields.some(field => changes[field] !== undefined)) {
       expectedBlocks.add('edition')
@@ -348,7 +358,7 @@ export class AutoValidatorAgent extends BaseAgent {
     const filtered: Record<string, any> = {}
 
     const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
-      'registrationClosingDate', 'registrationOpeningDate', 'year']
+      'registrationClosingDate', 'registrationOpeningDate', 'year', 'registrantsNumber']
     const organizerFields = ['organizer']
     const racesFields = ['racesToAdd', 'racesToUpdate', 'racesToDelete', 'races']
 
@@ -402,21 +412,21 @@ export class AutoValidatorAgent extends BaseAgent {
 
       context.logger.info('✅ Connexion à Miles Republic établie')
 
-      // Récupérer l'ID de l'agent FFA
-      const ffaAgentId = await this.getFFAScraperAgentId()
-      if (!ffaAgentId) {
-        context.logger.warn('⚠️  Agent FFA Scraper non trouvé en base')
+      // Récupérer les IDs des agents FFA (Scraper et Results)
+      const ffaAgentIds = await this.getFFAAgentIds()
+      if (ffaAgentIds.length === 0) {
+        context.logger.warn('⚠️  Aucun agent FFA (Scraper ou Results) trouvé en base')
         return {
           success: true,
-          message: 'FFA Scraper agent not found - nothing to validate',
+          message: 'No FFA agents found - nothing to validate',
           metrics: runResult
         }
       }
 
-      context.logger.info(`📌 Agent FFA trouvé: ${ffaAgentId}`)
+      context.logger.info(`📌 Agents FFA trouvés: ${ffaAgentIds.join(', ')}`)
 
       // Récupérer les propositions éligibles
-      const { proposals, totalCount } = await this.getEligibleProposals(ffaAgentId, config)
+      const { proposals, totalCount } = await this.getEligibleProposals(ffaAgentIds, config)
       runResult.proposalsAnalyzed = proposals.length
 
       context.logger.info(`📊 ${proposals.length}/${totalCount} propositions EDITION_UPDATE en attente`)
