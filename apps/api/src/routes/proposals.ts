@@ -3883,15 +3883,18 @@ router.post('/:id/swap-merge-direction', [
  *
  * Cette route permet à l'utilisateur d'associer manuellement une proposition
  * qui n'a pas été automatiquement matchée à une édition existante.
+ *
+ * Note: eventId est optionnel car on récupère l'eventId directement depuis l'édition.
+ * Cela évite les erreurs de mismatch quand Meilisearch indexe des éditions (pas des événements).
  */
 router.patch('/:id/link-edition', requireAuth, [
   param('id').isString().notEmpty(),
-  body('eventId').isInt({ min: 1 }),
+  body('eventId').optional().isInt({ min: 1 }),
   body('editionId').isInt({ min: 1 }),
   validateRequest
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
-  const { eventId, editionId } = req.body
+  const { editionId } = req.body
 
   // 1. Vérifier que la proposition existe et n'a pas d'eventId
   const proposal = await db.prisma.proposal.findUnique({ where: { id } })
@@ -3920,6 +3923,7 @@ router.patch('/:id/link-edition', requireAuth, [
   const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
 
   // 3. Récupérer l'édition avec l'événement
+  // On récupère l'eventId directement depuis l'édition pour éviter les erreurs de mismatch
   const edition = await sourceDb.edition.findUnique({
     where: { id: editionId },
     include: {
@@ -3937,9 +3941,8 @@ router.patch('/:id/link-edition', requireAuth, [
     throw createError(404, 'Édition non trouvée dans Miles Republic', 'EDITION_NOT_FOUND')
   }
 
-  if (edition.event.id !== eventId) {
-    throw createError(400, 'L\'édition ne correspond pas à l\'événement spécifié', 'EVENT_EDITION_MISMATCH')
-  }
+  // Utiliser l'eventId de l'édition (source de vérité)
+  const eventId = edition.event.id
 
   // 4. Mettre à jour la proposition
   const updatedProposal = await db.prisma.proposal.update({
