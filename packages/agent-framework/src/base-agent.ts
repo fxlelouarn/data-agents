@@ -1,9 +1,9 @@
-import { 
-  IAgent, 
-  AgentConfig, 
-  AgentContext, 
-  AgentRunResult, 
-  AgentLogger 
+import {
+  IAgent,
+  AgentConfig,
+  AgentContext,
+  AgentRunResult,
+  AgentLogger
 } from './types'
 import { createLogger } from './logger'
 import { IDatabaseService, getDatabaseService } from './database-interface'
@@ -44,7 +44,7 @@ export abstract class BaseAgent implements IAgent {
       if (!this.config.name || !this.config.type || !this.config.frequency) {
         return false
       }
-      
+
       // Validate cron expression
       const cronRegex = /^(\*|[0-5]?\d) (\*|[01]?\d|2[0-3]) (\*|[012]?\d|3[01]) (\*|[0-9]|1[012]|JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC) (\*|[0-7]|SUN|MON|TUE|WED|THU|FRI|SAT)$/
       if (!cronRegex.test(this.config.frequency)) {
@@ -110,6 +110,11 @@ export abstract class BaseAgent implements IAgent {
     confidence: number = 0.8
   ) {
     const db = await this.getDb()
+
+    // Auto-extraction des métadonnées depuis la première justification
+    // Ces champs sont utilisés pour l'affichage dans le dashboard et les logs
+    const metadata = justification?.[0]?.metadata || {}
+
     return db.createProposal({
       agentId: this.config.id,
       type,
@@ -118,7 +123,11 @@ export abstract class BaseAgent implements IAgent {
       raceId,
       changes,
       justification,
-      confidence
+      confidence,
+      // Champs extraits automatiquement depuis metadata
+      eventName: metadata.eventName,
+      eventCity: metadata.eventCity,
+      editionYear: metadata.editionYear
     })
   }
 
@@ -169,15 +178,15 @@ export abstract class BaseAgent implements IAgent {
           // Try both DD/MM and MM/DD interpretations
           const date1 = new Date(parseInt(p3), parseInt(p2) - 1, parseInt(p1))
           const date2 = new Date(parseInt(p3), parseInt(p1) - 1, parseInt(p2))
-          
+
           // Return the more reasonable date (not too far in future/past)
           const now = new Date()
           const yearFromNow = new Date(now.getFullYear() + 1, 11, 31)
           const yearAgo = new Date(now.getFullYear() - 1, 0, 1)
-          
+
           if (date1 >= yearAgo && date1 <= yearFromNow) return date1
           if (date2 >= yearAgo && date2 <= yearFromNow) return date2
-          
+
           return date1 // Default to first interpretation
         }
       }
@@ -195,7 +204,7 @@ export abstract class BaseAgent implements IAgent {
     try {
       // Remove common currency symbols and units
       let cleaned = text.replace(/[€$£,\s]/g, '')
-      
+
       if (unit) {
         cleaned = cleaned.replace(new RegExp(unit, 'gi'), '')
       }
@@ -210,21 +219,21 @@ export abstract class BaseAgent implements IAgent {
 
   /**
    * Établit une connexion à une base de données source
-   * 
+   *
    * Cette méthode centralise la logique de connexion qui était auparavant
    * dupliquée dans chaque agent (GoogleSearchDateAgent, FFAScraperAgent).
-   * 
+   *
    * @param sourceDbId - ID de la base de données source dans la configuration
    * @returns Client Prisma connecté
    * @throws Error si la configuration est introuvable ou la connexion échoue
-   * 
+   *
    * @example
    * ```typescript
    * // Dans votre agent
    * const sourceDb = await this.connectToSource(config.sourceDatabase)
    * const events = await sourceDb.event.findMany({ ... })
    * ```
-   * 
+   *
    * @since 2025-11-05 - Refactoring pour éliminer duplication
    */
   protected async connectToSource(sourceDbId: string): Promise<PrismaClientType> {
