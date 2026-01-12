@@ -370,6 +370,9 @@ export const proposalsApi = {
   // Compte les propositions éligibles pour l'auto-validation
   getEligibleCount: (): Promise<ApiResponse<{ count: number }>> =>
     api.get('/proposals/eligible-count').then(res => res.data),
+
+  linkToEdition: (id: string, eventId: number, editionId: number): Promise<ApiResponse<Proposal>> =>
+    api.patch(`/proposals/${id}/link-edition`, { eventId, editionId }).then(res => res.data),
 }
 
 // Runs API

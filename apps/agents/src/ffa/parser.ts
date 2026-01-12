@@ -70,9 +70,22 @@ export function parseCompetitionsList(html: string, referenceDate?: Date): FFACo
       // Niveau
       const level = $cells.eq(4).text().trim()
 
-      // URL de la fiche détaillée
+      // URL de la fiche détaillée (colonne 7)
       const detailPath = $cells.eq(6).find('a').attr('href')
       const detailUrl = detailPath ? `https://www.athle.fr${detailPath}` : ''
+
+      // URL de la page résultats (colonne 8) - si disponible
+      // Le lien contient "frmbase=resultats" si les résultats sont publiés
+      const resultsLink = $cells.eq(7).find('a[href*="frmbase=resultats"]')
+      let resultsUrl: string | null = null
+      if (resultsLink.length > 0) {
+        const resultsPath = resultsLink.attr('href')
+        if (resultsPath) {
+          resultsUrl = resultsPath.startsWith('http')
+            ? resultsPath
+            : `https://www.athle.fr${resultsPath}`
+        }
+      }
 
       if (ffaId && name && date && city) {
         competitions.push({
@@ -84,7 +97,8 @@ export function parseCompetitionsList(html: string, referenceDate?: Date): FFACo
           ligue,
           level,
           type,
-          detailUrl
+          detailUrl,
+          resultsUrl
         })
       }
     } catch (error) {

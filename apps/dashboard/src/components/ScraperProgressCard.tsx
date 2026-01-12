@@ -215,7 +215,7 @@ const ScraperProgressCard: React.FC<ScraperProgressCardProps> = ({ agentId, agen
               Compétitions scrapées
             </Typography>
             <Typography variant="h5" color="primary" fontWeight="medium">
-              {progress.totalCompetitionsScraped.toLocaleString()}
+              {(progress.totalCompetitionsScraped ?? 0).toLocaleString()}
             </Typography>
           </Box>
 

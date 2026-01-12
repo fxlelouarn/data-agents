@@ -43,6 +43,10 @@ function loadAgentMetadata(): Record<string, AgentMetadata> {
     'duplicate-detection-agent': {
       version: AGENT_VERSIONS.DUPLICATE_DETECTION_AGENT,
       description: `Agent qui détecte automatiquement les événements doublons dans Miles Republic (v${AGENT_VERSIONS.DUPLICATE_DETECTION_AGENT})`
+    },
+    'ffa-results-agent': {
+      version: AGENT_VERSIONS.FFA_RESULTS_AGENT,
+      description: `Agent qui récupère le nombre de participants depuis les résultats FFA (v${AGENT_VERSIONS.FFA_RESULTS_AGENT})`
     }
   }
 }
@@ -77,6 +81,10 @@ function detectAgentType(name: string, config?: Record<string, any>): string | n
 
   if (lowerName.includes('duplicate') || lowerName.includes('detection')) {
     return 'DUPLICATE_DETECTION'
+  }
+
+  if (lowerName.includes('ffa') && lowerName.includes('results')) {
+    return 'FFA_RESULTS'
   }
 
   return null
@@ -188,6 +196,7 @@ export interface AvailableAgentInfo {
  */
 const agentTypeCategories: Record<string, 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATOR' | 'CLEANER' | 'ANALYZER'> = {
   FFA_SCRAPER: 'EXTRACTOR',
+  FFA_RESULTS: 'EXTRACTOR',
   GOOGLE_SEARCH_DATE: 'EXTRACTOR',
   AUTO_VALIDATOR: 'VALIDATOR',
   SLACK_EVENT: 'EXTRACTOR',

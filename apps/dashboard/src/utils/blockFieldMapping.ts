@@ -1,6 +1,6 @@
 /**
  * Configuration des champs par bloc pour la validation
- * 
+ *
  * Cette configuration définit quels champs appartiennent à chaque bloc
  * pour éviter les interférences lors de la validation par blocs.
  */
@@ -37,7 +37,8 @@ export const EDITION_FIELDS = [
   'calendarStatus',
   'timeZone',
   'registrationOpeningDate',
-  'registrationClosingDate'
+  'registrationClosingDate',
+  'registrantsNumber'
 ] as const
 
 /**

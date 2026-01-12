@@ -29,7 +29,7 @@ interface BlockChangesTableProps {
 // Mapping des champs par type de bloc
 const BLOCK_FIELDS: Record<string, string[]> = {
   event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'countrySubdivisionNameLevel1'],
-  edition: ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate'],
+  edition: ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate', 'registrantsNumber'],
   organizer: ['name', 'legalName', 'email', 'phone', 'address', 'city', 'zipCode', 'country', 'websiteUrl'],
   races: ['races', 'racesToUpdate', 'racesToAdd', 'manuallyAddedRaces', 'racesToDelete'],
 }
@@ -49,6 +49,7 @@ const FIELD_LABELS: Record<string, string> = {
   calendarStatus: 'Statut calendrier',
   registrationOpeningDate: 'Ouverture inscriptions',
   registrationClosingDate: 'Fermeture inscriptions',
+  registrantsNumber: 'Nombre de participants',
   legalName: 'Raison sociale',
   email: 'Email',
   phone: 'Téléphone',

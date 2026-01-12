@@ -3877,4 +3877,105 @@ router.post('/:id/swap-merge-direction', [
   })
 }))
 
+/**
+ * PATCH /api/proposals/:id/link-edition
+ * Lie une proposition FFA Results sans match à une édition Miles Republic
+ *
+ * Cette route permet à l'utilisateur d'associer manuellement une proposition
+ * qui n'a pas été automatiquement matchée à une édition existante.
+ */
+router.patch('/:id/link-edition', requireAuth, [
+  param('id').isString().notEmpty(),
+  body('eventId').isInt({ min: 1 }),
+  body('editionId').isInt({ min: 1 }),
+  validateRequest
+], asyncHandler(async (req: Request, res: Response) => {
+  const { id } = req.params
+  const { eventId, editionId } = req.body
+
+  // 1. Vérifier que la proposition existe et n'a pas d'eventId
+  const proposal = await db.prisma.proposal.findUnique({ where: { id } })
+
+  if (!proposal) {
+    throw createError(404, 'Proposition non trouvée', 'PROPOSAL_NOT_FOUND')
+  }
+
+  if (proposal.eventId) {
+    throw createError(400, 'Proposition déjà liée à un événement', 'PROPOSAL_ALREADY_LINKED')
+  }
+
+  // 2. Connexion à Miles Republic
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+
+  if (!milesRepublicConn) {
+    throw createError(500, 'Connexion Miles Republic non trouvée', 'DATABASE_CONNECTION_NOT_FOUND')
+  }
+
+  // Lazy load DatabaseManager
+  const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'link-edition')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+
+  // 3. Récupérer l'édition avec l'événement
+  const edition = await sourceDb.edition.findUnique({
+    where: { id: editionId },
+    include: {
+      event: {
+        select: {
+          id: true,
+          name: true,
+          city: true
+        }
+      }
+    }
+  })
+
+  if (!edition) {
+    throw createError(404, 'Édition non trouvée dans Miles Republic', 'EDITION_NOT_FOUND')
+  }
+
+  if (edition.event.id !== eventId) {
+    throw createError(400, 'L\'édition ne correspond pas à l\'événement spécifié', 'EVENT_EDITION_MISMATCH')
+  }
+
+  // 4. Mettre à jour la proposition
+  const updatedProposal = await db.prisma.proposal.update({
+    where: { id },
+    data: {
+      eventId: eventId.toString(),
+      editionId: editionId.toString(),
+      eventName: edition.event.name,
+      eventCity: edition.event.city,
+      editionYear: parseInt(edition.year, 10),
+      // Augmenter la confiance car l'utilisateur a validé le lien manuellement
+      confidence: 0.95,
+      // Ajouter une note dans la justification
+      justification: [
+        ...(proposal.justification as any[] || []),
+        {
+          type: 'text',
+          content: `Édition liée manuellement: ${edition.event.name} (${edition.year})`,
+          metadata: {
+            justificationType: 'manual_link',
+            linkedAt: new Date().toISOString(),
+            linkedEventId: eventId,
+            linkedEditionId: editionId,
+            linkedEventName: edition.event.name,
+            linkedEditionYear: edition.year
+          }
+        }
+      ]
+    }
+  })
+
+  res.json({
+    success: true,
+    data: updatedProposal,
+    message: `Proposition liée à "${edition.event.name}" (${edition.year})`
+  })
+}))
+
 export { router as proposalRouter }
