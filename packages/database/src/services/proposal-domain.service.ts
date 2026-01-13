@@ -2,6 +2,7 @@ import { ProposalRepository } from '../repositories/proposal.repository'
 import { MilesRepublicRepository } from '../repositories/miles-republic.repository'
 import { ApplyOptions, ProposalApplicationResult } from './interfaces'
 import { convertChangesToSelectedChanges } from '../utils/proposal-helpers'
+import { selectMainRace } from '../utils/main-race-selector'
 
 // DatabaseManager type to avoid circular dependency
 type DatabaseManager = any
@@ -358,18 +359,27 @@ export class ProposalDomainService {
         if (editionId && racesData.length > 0) {
           this.logger.info(`🆕 Création de ${racesData.length} course(s)`)
 
-          for (const raceData of racesData) {
+          // ✅ Sélectionner automatiquement la course principale (mainRace)
+          // Règle : plus grande distance (run ou bike), solo prioritaire sur équipe
+          const mainRaceIndex = selectMainRace(racesData)
+          this.logger.info(`🏆 Main race sélectionnée : index ${mainRaceIndex} (${racesData[mainRaceIndex]?.name || 'N/A'})`)
+
+          for (let i = 0; i < racesData.length; i++) {
+            const raceData = racesData[i]
             const race = await milesRepo.createRace({
               editionId: editionId,
               eventId: event.id,
               // ✅ Hériter timeZone de l'édition si non spécifié
               timeZone: raceData.timeZone || editionsData[0]?.timeZone,
               ...raceData,
+              // ✅ Assigner mainRaceEditionId à la course principale
+              mainRaceEditionId: i === mainRaceIndex ? editionId : undefined,
               // ✅ FIX: Les nouvelles courses doivent être inactives par défaut
               isActive: false
             })
             createdRaceIds.push(race.id)
-            this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${editionId}`)
+            const isMainLabel = i === mainRaceIndex ? ' ⭐ MAIN' : ''
+            this.logger.info(`Course créée: ${race.id} (${race.name}) pour l'édition ${editionId}${isMainLabel}`)
           }
         }
       }
@@ -1351,7 +1361,12 @@ export class ProposalDomainService {
 
             // Copier les courses de cette édition
             const racesToCopy = fullEdition.races || []
-            for (const race of racesToCopy) {
+
+            // ✅ Sélectionner la course principale pour la nouvelle édition
+            const mainRaceIndex = selectMainRace(racesToCopy)
+
+            for (let i = 0; i < racesToCopy.length; i++) {
+              const race = racesToCopy[i]
               await milesRepo.createRace({
                 editionId: newEdition.id,
                 eventId: keepEventId,
@@ -1366,11 +1381,13 @@ export class ProposalDomainService {
                 swimDistance: race.swimDistance || undefined,
                 runPositiveElevation: race.runPositiveElevation || undefined,
                 isActive: race.isActive,
+                // ✅ Assigner mainRaceEditionId à la course principale
+                mainRaceEditionId: i === mainRaceIndex ? newEdition.id : undefined,
               })
             }
 
             if (racesToCopy.length > 0) {
-              this.logger.info(`    📋 ${racesToCopy.length} course(s) copiée(s)`)
+              this.logger.info(`    📋 ${racesToCopy.length} course(s) copiée(s) (main: index ${mainRaceIndex})`)
             }
 
             copiedEditions.push({
@@ -1732,9 +1749,15 @@ export class ProposalDomainService {
    */
   private extractEventData(selectedChanges: Record<string, any>, agentId?: string): any {
     const city = this.extractNewValue(selectedChanges.city) || ''
-    const dept = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel2) || ''
+    // ✅ FIX: Extraire département depuis countrySubdivisionNameLevel2 OU department (Slack envoie "department")
+    const deptNameOrCode = this.extractNewValue(selectedChanges.countrySubdivisionNameLevel2)
+      || this.extractNewValue(selectedChanges.department)
+      || ''
     const region = this.extractNewValue(selectedChanges.countrySubdivision) || this.extractNewValue(selectedChanges.countrySubdivisionNameLevel1) || ''
     const country = this.extractNewValue(selectedChanges.country) || 'FR'
+
+    // Résoudre le code et le nom du département
+    const { deptCode, deptName } = this.resolveDepartment(deptNameOrCode)
 
     // ⚠️ CRITICAL: Log si 'id' est présent dans selectedChanges (ne devrait JAMAIS arriver)
     if ('id' in selectedChanges || this.extractNewValue(selectedChanges.id)) {
@@ -1748,15 +1771,15 @@ export class ProposalDomainService {
       city,
       country,
       countrySubdivisionNameLevel1: region,
-      countrySubdivisionNameLevel2: dept,
-      countrySubdivisionDisplayCodeLevel2: this.extractDepartmentCode(dept),
+      countrySubdivisionNameLevel2: deptName,
+      countrySubdivisionDisplayCodeLevel2: deptCode,
 
       // ✅ FIX 1.1 : Subdivision Level 1
       countrySubdivisionDisplayCodeLevel1: this.extractRegionCode(region),
 
       // ✅ FIX 1.6 : fullAddress éditable
       fullAddress: this.extractNewValue(selectedChanges.fullAddress) ||
-                   this.buildFullAddress(city, dept, country),
+                   this.buildFullAddress(city, deptName, country),
 
       // ✅ FIX 1.2 : Coordonnées (sera géocodé si manquant)
       latitude: this.extractNewValue(selectedChanges.latitude) ?
@@ -2323,6 +2346,82 @@ export class ProposalDomainService {
     }
 
     return departmentCodes[subdivisionName] || ''
+  }
+
+  /**
+   * Résout un département depuis un nom OU un code
+   * Retourne à la fois le code et le nom du département
+   *
+   * @param input - Nom ("Pas-de-Calais") ou code ("62", "2A", "971")
+   * @returns { deptCode, deptName }
+   */
+  private resolveDepartment(input?: string): { deptCode: string; deptName: string } {
+    if (!input) return { deptCode: '', deptName: '' }
+
+    const trimmed = input.trim()
+
+    // Mapping code → nom (inverse du mapping existant)
+    const codeToName: Record<string, string> = {
+      '01': 'Ain', '02': 'Aisne', '03': 'Allier', '04': 'Alpes-de-Haute-Provence',
+      '05': 'Hautes-Alpes', '06': 'Alpes-Maritimes', '07': 'Ardèche', '08': 'Ardennes',
+      '09': 'Ariège', '10': 'Aube', '11': 'Aude', '12': 'Aveyron',
+      '13': 'Bouches-du-Rhône', '14': 'Calvados', '15': 'Cantal', '16': 'Charente',
+      '17': 'Charente-Maritime', '18': 'Cher', '19': 'Corrèze',
+      '2A': 'Corse-du-Sud', '2B': 'Haute-Corse',
+      '21': 'Côte-d\'Or', '22': 'Côtes-d\'Armor', '23': 'Creuse', '24': 'Dordogne',
+      '25': 'Doubs', '26': 'Drôme', '27': 'Eure', '28': 'Eure-et-Loir',
+      '29': 'Finistère', '30': 'Gard', '31': 'Haute-Garonne', '32': 'Gers',
+      '33': 'Gironde', '34': 'Hérault', '35': 'Ille-et-Vilaine', '36': 'Indre',
+      '37': 'Indre-et-Loire', '38': 'Isère', '39': 'Jura', '40': 'Landes',
+      '41': 'Loir-et-Cher', '42': 'Loire', '43': 'Haute-Loire', '44': 'Loire-Atlantique',
+      '45': 'Loiret', '46': 'Lot', '47': 'Lot-et-Garonne', '48': 'Lozère',
+      '49': 'Maine-et-Loire', '50': 'Manche', '51': 'Marne', '52': 'Haute-Marne',
+      '53': 'Mayenne', '54': 'Meurthe-et-Moselle', '55': 'Meuse', '56': 'Morbihan',
+      '57': 'Moselle', '58': 'Nièvre', '59': 'Nord', '60': 'Oise',
+      '61': 'Orne', '62': 'Pas-de-Calais', '63': 'Puy-de-Dôme', '64': 'Pyrénées-Atlantiques',
+      '65': 'Hautes-Pyrénées', '66': 'Pyrénées-Orientales', '67': 'Bas-Rhin', '68': 'Haut-Rhin',
+      '69': 'Rhône', '70': 'Haute-Saône', '71': 'Saône-et-Loire', '72': 'Sarthe',
+      '73': 'Savoie', '74': 'Haute-Savoie', '75': 'Paris', '76': 'Seine-Maritime',
+      '77': 'Seine-et-Marne', '78': 'Yvelines', '79': 'Deux-Sèvres', '80': 'Somme',
+      '81': 'Tarn', '82': 'Tarn-et-Garonne', '83': 'Var', '84': 'Vaucluse',
+      '85': 'Vendée', '86': 'Vienne', '87': 'Haute-Vienne', '88': 'Vosges',
+      '89': 'Yonne', '90': 'Territoire de Belfort', '91': 'Essonne', '92': 'Hauts-de-Seine',
+      '93': 'Seine-Saint-Denis', '94': 'Val-de-Marne', '95': 'Val-d\'Oise',
+      '971': 'Guadeloupe', '972': 'Martinique', '973': 'Guyane', '974': 'La Réunion', '976': 'Mayotte'
+    }
+
+    // Normaliser le code si c'est un code de département
+    // "1" → "01", "2a" → "2A", "062" → "62"
+    const normalizeCode = (code: string): string => {
+      const upper = code.toUpperCase()
+      // Corse
+      if (/^2[AB]$/i.test(upper)) return upper
+      // DOM-TOM (3 chiffres)
+      if (/^97[1-6]$/.test(code)) return code
+      // Métropole avec zéro devant superflu (ex: "063" → "63")
+      if (/^0\d{2}$/.test(code)) return code.slice(1)
+      // Métropole un chiffre (ex: "1" → "01")
+      if (/^\d$/.test(code)) return '0' + code
+      // Métropole deux chiffres
+      if (/^\d{2}$/.test(code)) return code
+      return code
+    }
+
+    // Vérifier si c'est un code de département
+    if (/^(0?[1-9]|[1-8]\d|9[0-5]|2[ABab]|97[1-6])$/.test(trimmed)) {
+      const normalizedCode = normalizeCode(trimmed)
+      return {
+        deptCode: normalizedCode,
+        deptName: codeToName[normalizedCode] || ''
+      }
+    }
+
+    // Sinon, c'est un nom - utiliser extractDepartmentCode pour obtenir le code
+    const deptCode = this.extractDepartmentCode(trimmed)
+    return {
+      deptCode,
+      deptName: deptCode ? trimmed : ''  // Si on a trouvé le code, le nom est valide
+    }
   }
 
   /**

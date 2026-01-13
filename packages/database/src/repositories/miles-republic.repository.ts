@@ -423,6 +423,9 @@ export class MilesRepublicRepository {
     adultJustificativeOptions?: string  // 'MEDICAL_CERTIFICATE' | 'NONE'
     minorJustificativeOptions?: string  // 'HEALTH_QUESTIONNAIRE' | 'PARENTAL_AUTHORIZATION' | 'CHECKBOX_AUTHORIZATION' | 'NONE'
 
+    // Main Race
+    mainRaceEditionId?: number  // Si défini, cette course devient la course principale de l'édition
+
     // Flags
     isActive?: boolean
     isArchived?: boolean
@@ -504,6 +507,9 @@ export class MilesRepublicRepository {
         minorJustificativeOptions: data.minorJustificativeOptions,
         timeZone: data.timeZone,
         slug: data.slug,
+
+        // Main Race (course principale de l'édition)
+        mainRaceEditionId: data.mainRaceEditionId,
 
         // Flags
         isActive: data.isActive !== false,

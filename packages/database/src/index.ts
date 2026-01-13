@@ -38,6 +38,13 @@ export * from './logging'
 
 // Export utility functions
 export { convertChangesToSelectedChanges } from './utils/proposal-helpers'
+export {
+  selectMainRace,
+  selectMainRaceIndex,
+  isTeamRace,
+  getPrimaryDistance,
+  type MainRaceCandidate,
+} from './utils/main-race-selector'
 
 // Export block execution order utilities
 export {
