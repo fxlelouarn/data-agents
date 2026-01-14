@@ -169,7 +169,7 @@ describe('validateProposal', () => {
 
       const mockSourceDb = {
         event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
-        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'PREMIUM', year: '2026' }) }
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'PREMIUM', year: '2026', registrantsNumber: null }) }
       }
 
       const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
@@ -186,6 +186,193 @@ describe('validateProposal', () => {
         eventId: '123',
         editionId: '456',
         changes: {}
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: null }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(true)
+    })
+  })
+
+  describe('Propositions MR internes pour éditions premium', () => {
+    it('devrait accepter une proposition MR interne pour édition premium si registrantsNumber est vide', async () => {
+      const proposal = {
+        id: 'test-mr-1',
+        confidence: 1.0,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500, confidence: 1.0 }
+        },
+        justification: [
+          {
+            type: 'text',
+            content: 'Nombre de participants calculé depuis les inscriptions Miles Republic',
+            metadata: {
+              justificationType: 'mr_internal',
+              attendeeCount: 500,
+              customerType: 'ESSENTIAL'
+            }
+          }
+        ]
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'ESSENTIAL', year: 2025, registrantsNumber: null }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(true)
+    })
+
+    it('devrait rejeter une proposition MR interne si registrantsNumber est déjà renseigné', async () => {
+      const proposal = {
+        id: 'test-mr-2',
+        confidence: 1.0,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500, confidence: 1.0 }
+        },
+        justification: [
+          {
+            type: 'text',
+            content: 'Nombre de participants calculé depuis les inscriptions Miles Republic',
+            metadata: {
+              justificationType: 'mr_internal',
+              attendeeCount: 500
+            }
+          }
+        ]
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'PREMIUM', year: 2025, registrantsNumber: 450 }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(false)
+      expect(result.exclusionReason).toBe('premiumCustomer')
+      expect(result.reason).toContain('registrantsNumber déjà renseigné')
+    })
+
+    it('devrait rejeter une proposition MR interne qui modifie plus que registrantsNumber', async () => {
+      const proposal = {
+        id: 'test-mr-3',
+        confidence: 1.0,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500, confidence: 1.0 },
+          startDate: { old: null, new: '2025-06-15' } // Champ supplémentaire!
+        },
+        justification: [
+          {
+            type: 'text',
+            content: 'Nombre de participants calculé depuis les inscriptions Miles Republic',
+            metadata: {
+              justificationType: 'mr_internal',
+              attendeeCount: 500
+            }
+          }
+        ]
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'ESSENTIAL', year: 2025, registrantsNumber: null }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(false)
+      expect(result.exclusionReason).toBe('premiumCustomer')
+      expect(result.reason).toContain('modifie plus que registrantsNumber')
+    })
+
+    it('devrait rejeter une proposition non-MR interne pour édition premium', async () => {
+      const proposal = {
+        id: 'test-mr-4',
+        confidence: 0.95,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500 }
+        },
+        justification: [
+          {
+            type: 'text',
+            content: 'Résultats FFA: 500 participants',
+            metadata: {
+              justificationType: 'ffa_source', // PAS mr_internal!
+              ffaId: '12345'
+            }
+          }
+        ]
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, isFeatured: false }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'PREMIUM', year: 2025, registrantsNumber: null }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(false)
+      expect(result.exclusionReason).toBe('premiumCustomer')
+      expect(result.reason).toContain('client premium')
+    })
+
+    it('devrait rejeter une proposition MR interne si événement est featured', async () => {
+      const proposal = {
+        id: 'test-mr-5',
+        confidence: 1.0,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500 }
+        },
+        justification: [
+          {
+            type: 'text',
+            content: 'Nombre de participants calculé depuis les inscriptions Miles Republic',
+            metadata: {
+              justificationType: 'mr_internal'
+            }
+          }
+        ]
+      }
+
+      const mockSourceDb = {
+        event: { findUnique: jest.fn().mockResolvedValue({ id: 123, name: 'UTMB', isFeatured: true }) },
+        edition: { findUnique: jest.fn().mockResolvedValue({ id: 456, customerType: 'PREMIUM', year: 2025, registrantsNumber: null }) }
+      }
+
+      const result = await validateProposal(proposal, mockSourceDb, defaultConfig, mockLogger)
+
+      expect(result.isValid).toBe(false)
+      expect(result.exclusionReason).toBe('featuredEvent')
+    })
+
+    it('devrait accepter une proposition sans justification pour édition non-premium', async () => {
+      const proposal = {
+        id: 'test-mr-6',
+        confidence: 0.9,
+        eventId: '123',
+        editionId: '456',
+        changes: {
+          registrantsNumber: { old: null, new: 500 }
+        },
+        justification: null // Pas de justification
       }
 
       const mockSourceDb = {
