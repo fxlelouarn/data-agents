@@ -122,11 +122,45 @@ export class AutoValidatorAgent extends BaseAgent {
   }
 
   /**
+   * Récupère les editionIds éligibles depuis Miles Republic
+   * (customerType = null ET event.isFeatured = false/null)
+   *
+   * Cette méthode pré-filtre les éditions pour éviter de récupérer
+   * des propositions qui seront systématiquement rejetées.
+   */
+  private async getEligibleEditionIds(editionIds: number[]): Promise<Set<number>> {
+    if (editionIds.length === 0) return new Set()
+
+    // Limiter à 5000 IDs pour éviter des requêtes trop lourdes
+    const limitedIds = editionIds.slice(0, 5000)
+
+    const eligibleEditions = await this.sourceDb.edition.findMany({
+      where: {
+        id: { in: limitedIds },
+        customerType: null,
+        event: {
+          OR: [
+            { isFeatured: false },
+            { isFeatured: null }
+          ]
+        }
+      },
+      select: { id: true }
+    })
+
+    return new Set(eligibleEditions.map((e: { id: number }) => e.id))
+  }
+
+  /**
    * Récupère les propositions éligibles pour la validation automatique
    * Retourne les propositions (limitées) et le compte total
    *
    * IMPORTANT: On exclut les propositions avec racesToAdd car elles créent
    * de nouvelles courses, ce que l'auto-validateur ne peut pas faire.
+   *
+   * IMPORTANT: On pré-filtre les éditions via Miles Republic pour exclure
+   * les éditions premium (customerType != null) et les événements featured,
+   * évitant ainsi une boucle infinie sur des propositions non-éligibles.
    */
   private async getEligibleProposals(
     ffaAgentIds: string[],
@@ -139,12 +173,43 @@ export class AutoValidatorAgent extends BaseAgent {
     // Construire la clause IN pour les IDs d'agents
     const agentIdPlaceholders = ffaAgentIds.map((_, i) => `$${i + 1}`).join(', ')
 
+    // ÉTAPE 1: Récupérer tous les editionIds PENDING distincts
+    const pendingEditionIds = await this.prisma.$queryRawUnsafe<{ editionId: string }[]>(
+      `SELECT DISTINCT p."editionId"
+       FROM proposals p
+       WHERE p.status = 'PENDING'
+         AND p.type = 'EDITION_UPDATE'
+         AND p."agentId" IN (${agentIdPlaceholders})
+         AND p."editionId" IS NOT NULL`,
+      ...ffaAgentIds
+    )
+
+    if (pendingEditionIds.length === 0) {
+      return { proposals: [], totalCount: 0 }
+    }
+
+    // ÉTAPE 2: Filtrer via Miles Republic (exclure premium et featured)
+    const editionIdsInt = pendingEditionIds.map(r => parseInt(r.editionId)).filter(id => !isNaN(id))
+    const eligibleEditionIds = await this.getEligibleEditionIds(editionIdsInt)
+
+    if (eligibleEditionIds.size === 0) {
+      this.logger.info(`⚠️  Aucune édition éligible parmi ${editionIdsInt.length} propositions PENDING (toutes premium ou featured)`)
+      return { proposals: [], totalCount: 0 }
+    }
+
+    this.logger.info(`📊 ${eligibleEditionIds.size}/${editionIdsInt.length} éditions éligibles (non-premium, non-featured)`)
+
+    // ÉTAPE 3: Construire le filtre SQL avec les editionIds éligibles
+    const eligibleIdsArray = Array.from(eligibleEditionIds)
+    const editionIdPlaceholders = eligibleIdsArray.map((_, i) => `$${ffaAgentIds.length + i + 1}`).join(', ')
+
     // Requête SQL brute pour exclure les propositions avec racesToAdd
     // car Prisma ne supporte pas bien les requêtes JSONB complexes
     const whereClause = `
       p.status = 'PENDING'
       AND p.type = 'EDITION_UPDATE'
       AND p."agentId" IN (${agentIdPlaceholders})
+      AND p."editionId"::int IN (${editionIdPlaceholders})
       AND p."eventId" IS NOT NULL
       AND (
         p.changes->'racesToAdd' IS NULL
@@ -153,16 +218,17 @@ export class AutoValidatorAgent extends BaseAgent {
       )
     `
 
-    // Compter le total de propositions éligibles (sans racesToAdd)
+    // Compter le total de propositions éligibles (sans racesToAdd, sans premium)
     const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `SELECT COUNT(*) as count FROM proposals p WHERE ${whereClause}`,
-      ...ffaAgentIds
+      ...ffaAgentIds,
+      ...eligibleIdsArray
     )
     const totalCount = Number(countResult[0]?.count || 0)
 
     // Récupérer les propositions avec limite
-    // Le paramètre limite est après tous les IDs d'agents
-    const limitParamIndex = ffaAgentIds.length + 1
+    // Le paramètre limite est après tous les IDs d'agents et editionIds
+    const limitParamIndex = ffaAgentIds.length + eligibleIdsArray.length + 1
     const proposals = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT p.*, a.name as "agentName"
        FROM proposals p
@@ -171,6 +237,7 @@ export class AutoValidatorAgent extends BaseAgent {
        ORDER BY p."createdAt" ASC
        LIMIT $${limitParamIndex}`,
       ...ffaAgentIds,
+      ...eligibleIdsArray,
       config.maxProposalsPerRun
     )
 
