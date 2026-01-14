@@ -13,7 +13,7 @@ import { AutoValidatorConfig, ValidationResult, RaceChange } from './types'
  * Critères de validation:
  * 1. Confiance >= minConfidence
  * 2. Event.isFeatured = false/null
- * 3. Edition.customerType = null
+ * 3. Edition.customerType = null OU proposition MR interne (justificationType: 'mr_internal')
  * 4. Pas de création de nouvelles courses (tous les raceId doivent exister)
  */
 export async function validateProposal(
@@ -77,25 +77,69 @@ export async function validateProposal(
   }
 
   // 3. Vérifier Edition.customerType
+  // EXCEPTION: Les propositions MR internes (justificationType: 'mr_internal') sont
+  // valides même pour les éditions premium car c'est notre propre donnée (comptage Attendees)
+  const isMRInternalProposal = isMRInternal(proposal)
+
   if (editionId) {
     try {
       const edition = await sourceDb.edition.findUnique({
         where: { id: parseInt(editionId) },
-        select: { id: true, customerType: true, year: true }
+        select: { id: true, customerType: true, year: true, registrantsNumber: true }
       })
 
       if (!edition) {
         logger.warn(`Edition ${editionId} non trouvée dans Miles Republic`)
         // On continue quand même
       } else if (edition.customerType !== null) {
-        return {
-          isValid: false,
-          reason: `Édition avec client premium: customerType = ${edition.customerType}`,
-          exclusionReason: 'premiumCustomer',
-          details: {
-            editionId: edition.id,
-            editionYear: edition.year,
-            customerType: edition.customerType
+        // Exception: propositions MR internes pour éditions premium
+        // On accepte si:
+        // - C'est une proposition MR interne (données Attendees)
+        // - registrantsNumber n'est pas déjà renseigné
+        // - La proposition ne modifie QUE registrantsNumber
+        if (isMRInternalProposal) {
+          const onlyRegistrantsNumber = isOnlyRegistrantsNumberChange(changes)
+
+          if (edition.registrantsNumber !== null) {
+            return {
+              isValid: false,
+              reason: `Édition premium avec registrantsNumber déjà renseigné: ${edition.registrantsNumber}`,
+              exclusionReason: 'premiumCustomer',
+              details: {
+                editionId: edition.id,
+                editionYear: edition.year,
+                customerType: edition.customerType,
+                existingRegistrantsNumber: edition.registrantsNumber
+              }
+            }
+          }
+
+          if (!onlyRegistrantsNumber) {
+            return {
+              isValid: false,
+              reason: `Édition premium: proposition MR interne mais modifie plus que registrantsNumber`,
+              exclusionReason: 'premiumCustomer',
+              details: {
+                editionId: edition.id,
+                editionYear: edition.year,
+                customerType: edition.customerType,
+                changedFields: Object.keys(changes)
+              }
+            }
+          }
+
+          // OK: proposition MR interne, registrantsNumber vide, ne modifie que ce champ
+          logger.info(`✅ Proposition MR interne acceptée pour édition premium ${edition.id}`)
+        } else {
+          return {
+            isValid: false,
+            reason: `Édition avec client premium: customerType = ${edition.customerType}`,
+            exclusionReason: 'premiumCustomer',
+            details: {
+              editionId: edition.id,
+              editionYear: edition.year,
+              customerType: edition.customerType
+            }
           }
         }
       }
@@ -247,4 +291,26 @@ export function getValidatableBlocks(
   }
 
   return blocks
+}
+
+/**
+ * Vérifie si une proposition provient de données MR internes (comptage Attendees)
+ * Ces propositions sont identifiées par justificationType: 'mr_internal'
+ */
+function isMRInternal(proposal: any): boolean {
+  const justification = proposal.justification
+  if (!Array.isArray(justification)) return false
+
+  return justification.some((j: any) =>
+    j.metadata?.justificationType === 'mr_internal'
+  )
+}
+
+/**
+ * Vérifie si les changements ne contiennent QUE registrantsNumber
+ * Utilisé pour les propositions MR internes sur éditions premium
+ */
+function isOnlyRegistrantsNumberChange(changes: Record<string, any>): boolean {
+  const keys = Object.keys(changes)
+  return keys.length === 1 && keys[0] === 'registrantsNumber'
 }

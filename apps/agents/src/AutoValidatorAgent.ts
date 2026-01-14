@@ -123,10 +123,13 @@ export class AutoValidatorAgent extends BaseAgent {
 
   /**
    * Récupère les editionIds éligibles depuis Miles Republic
-   * (customerType = null ET event.isFeatured = false/null)
+   * Critères: event.isFeatured = false/null (on exclut les featured)
    *
-   * Cette méthode pré-filtre les éditions pour éviter de récupérer
-   * des propositions qui seront systématiquement rejetées.
+   * Note: On n'exclut plus customerType != null ici car les propositions
+   * MR internes (justificationType: 'mr_internal') sont valides même pour
+   * les éditions premium - c'est notre propre donnée.
+   * Le filtrage sur customerType se fait dans validator.ts avec exception
+   * pour les propositions MR internes.
    */
   private async getEligibleEditionIds(editionIds: number[]): Promise<Set<number>> {
     if (editionIds.length === 0) return new Set()
@@ -134,10 +137,11 @@ export class AutoValidatorAgent extends BaseAgent {
     // Limiter à 5000 IDs pour éviter des requêtes trop lourdes
     const limitedIds = editionIds.slice(0, 5000)
 
+    // On filtre uniquement sur isFeatured, pas sur customerType
+    // Les propositions MR internes pour éditions premium sont valides
     const eligibleEditions = await this.sourceDb.edition.findMany({
       where: {
         id: { in: limitedIds },
-        customerType: null,
         event: {
           OR: [
             { isFeatured: false },
