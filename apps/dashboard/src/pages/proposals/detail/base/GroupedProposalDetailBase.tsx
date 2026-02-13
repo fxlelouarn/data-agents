@@ -367,13 +367,8 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
       return
     }
 
-    // Compter les courses proposées
-    const firstProposal = groupProposals[0]
-    const changes = firstProposal?.changes
-    const existingRaces = firstProposal?.existingRaces || []
-    const racesToAdd = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
-    const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
-    const racesCount = existingRaces.length + (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
+    // Compter toutes les courses consolidées (y compris racesExisting "Info")
+    const racesCount = workingGroup?.consolidatedRaces?.length || 0
 
     if (racesCount > 0) {
       // Ouvrir la modale pour demander si on propage aux courses
@@ -862,47 +857,18 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
     updateFieldEditor('startDate', newStartDate)
     console.log('📅 [DATE PROPAGATION] startDate mise à jour pour l\'édition')
 
-    // Propager à toutes les courses via le hook
-    const firstProposal = groupProposals[0]
-    const changes = firstProposal?.changes
-    const existingRaces = (firstProposal as any)?.existingRaces || []
+    // ✅ Propager à TOUTES les courses via workingGroup.consolidatedRaces
+    // Cela inclut racesToUpdate, racesToAdd ET racesExisting (courses "Info")
+    const allRaces = workingGroup?.consolidatedRaces || []
+    console.log(`🏁 [DATE PROPAGATION] ${allRaces.length} courses à propager`)
 
-    console.log('🏁 [DATE PROPAGATION] Données courses:', {
-      changesKeys: Object.keys(changes || {}),
-      racesToUpdate: changes?.racesToUpdate,
-      racesToAdd: changes?.racesToAdd,
-      existingRacesCount: existingRaces.length,
-      existingRaces: existingRaces.map((r: any) => ({ id: r.id, name: r.name }))
+    allRaces.forEach((race) => {
+      console.log(`  ✅ Propagation vers course ${race.raceId}:`, {
+        raceName: race.fields?.name || race.originalFields?.name,
+        newStartDate
+      })
+      updateRaceEditor(race.raceId, 'startDate', newStartDate)
     })
-
-    // Courses existantes à modifier (racesToUpdate)
-    const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
-    if (Array.isArray(racesToUpdate)) {
-      console.log(`🔄 [DATE PROPAGATION] racesToUpdate: ${racesToUpdate.length} courses`)
-      racesToUpdate.forEach((raceUpdate: any, index: number) => {
-        // ✅ FIX 2025-12-10: Utiliser le vrai raceId pour éviter mélange dans propositions groupées
-        // Fallback vers existing-{index} si raceId absent (compatibilité)
-        const key = raceUpdate.raceId ? raceUpdate.raceId.toString() : `existing-${index}`
-        console.log(`  ✅ Propagation vers course ${key}:`, {
-          key,
-          raceId: raceUpdate.raceId,
-          raceName: raceUpdate.raceName,
-          newStartDate
-        })
-        updateRaceEditor(key, 'startDate', newStartDate)
-      })
-    }
-
-    // Nouvelles courses (racesToAdd)
-    const races = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
-    if (Array.isArray(races)) {
-      console.log(`➕ [DATE PROPAGATION] racesToAdd: ${races.length} courses`)
-      races.forEach((_: any, index: number) => {
-        const key = `new-${index}`
-        console.log(`  ✅ Propagation vers racesToAdd[${index}]:`, { key, newStartDate })
-        updateRaceEditor(key, 'startDate', newStartDate)
-      })
-    }
 
     // ✅ FIX 2025-11-17 : Sauvegarder explicitement via le hook
     // Cela sauvegarde à la fois startDate ET toutes les modifications de courses
@@ -1330,15 +1296,7 @@ const GroupedProposalDetailBase: React.FC<GroupedProposalDetailBaseProps> = ({
           }}
           onConfirm={confirmDatePropagation}
           newStartDate={datePropagationModal.newStartDate}
-          affectedRacesCount={(() => {
-            const firstProposal = groupProposals[0]
-            const changes = firstProposal?.changes
-            // ✅ FIX 2025-11-17 : Compter uniquement les courses PROPOSÉES (nouvelles + à modifier)
-            // existingRaces contient TOUTES les courses en base, pas seulement celles affectées
-            const racesToAdd = changes?.racesToAdd?.new || changes?.racesToAdd || changes?.races || []
-            const racesToUpdate = changes?.racesToUpdate?.new || changes?.racesToUpdate || []
-            return (Array.isArray(racesToAdd) ? racesToAdd.length : 0) + (Array.isArray(racesToUpdate) ? racesToUpdate.length : 0)
-          })()}
+          affectedRacesCount={workingGroup?.consolidatedRaces?.length || 0}
         />
       )}
 

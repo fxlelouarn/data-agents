@@ -636,7 +636,6 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                           <Typography
                             variant="body2"
                             fontWeight={hasChange ? 'bold' : 'normal'}
-                            sx={{ fontStyle: isExistingUnchanged ? 'italic' : 'normal' }}
                           >
                             {field.label}
                           </Typography>
@@ -649,13 +648,7 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
                           </TableCell>
                         )}
                         <TableCell>
-                          {isExistingUnchanged ? (
-                            <Typography variant="body2" color="text.disabled" sx={{ fontStyle: 'italic' }}>
-                              Aucun changement
-                            </Typography>
-                          ) : (
-                            renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format, race)
-                          )}
+                          {renderEditableCell(race.raceId, field.key, displayValue, isModified, hasChange, field.format, race)}
                         </TableCell>
                       </TableRow>
                     )
