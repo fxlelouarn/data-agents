@@ -576,6 +576,11 @@ export class FFAScraperAgent extends BaseAgent {
         }
 
         if (!matchingRace) {
+          if (!ffaRace.distance || ffaRace.distance <= 0) {
+            this.logger.info(`⚠️  Course FFA sans distance ignorée: ${ffaRace.name} - pas de proposition sans distance`)
+            continue
+          }
+
           this.logger.info(`➡️  Course FFA non matchée: ${ffaRace.name} (${ffaRace.distance}m) - sera ajoutée`)
 
           // Inférer les catégories à partir du nom et des distances

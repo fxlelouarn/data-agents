@@ -404,8 +404,7 @@ export function matchRaces(
     const inputDistanceKm = inputRace.distance || 0
 
     if (inputDistanceKm === 0) {
-      logger.debug(`Race "${inputRace.name}" has no distance - treating as new`)
-      unmatched.push(inputRace)
+      logger.debug(`Race "${inputRace.name}" has no distance - skipping (won't propose without distance)`)
       continue
     }
 
@@ -503,7 +502,8 @@ export function matchRacesByDistanceAndName(
   // Convert FFA races to RaceMatchInput format
   const raceInputs: RaceMatchInput[] = ffaRaces.map(r => ({
     name: r.name,
-    distance: r.runDistance || r.distance, // Support both formats
+    // Sum all distance types to match how DbRace totalDistanceKm is computed
+    distance: (r.runDistance || 0) + (r.walkDistance || 0) + (r.bikeDistance || 0) + (r.swimDistance || 0) || r.distance,
     startTime: r.startTime
   }))
 

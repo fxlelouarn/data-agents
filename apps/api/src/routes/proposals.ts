@@ -2291,9 +2291,9 @@ router.post('/:id/convert-to-edition-update', [
       // Importer la fonction de matching hybride depuis agent-framework
       const { matchRacesByDistanceAndName } = await import('@data-agents/agent-framework')
 
-      // Utiliser l'algorithme de matching hybride avec tolérance 5% par défaut
+      // Utiliser l'algorithme de matching hybride avec tolérance 10% (cohérent avec DEFAULT_MATCHING_CONFIG)
       // TODO: Récupérer la tolérance depuis la config de l'agent si disponible
-      const matchingResult = matchRacesByDistanceAndName(ffaRaces, existingRaces, logger, 0.05)
+      const matchingResult = matchRacesByDistanceAndName(ffaRaces, existingRaces, logger, 0.10)
 
       logger.info(`  📊 Matching result: ${matchingResult.matched.length} matched, ${matchingResult.unmatched.length} unmatched`)
 
