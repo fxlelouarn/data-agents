@@ -21,29 +21,29 @@ import {
   createUrlSourceJustification,
   createMatchingJustification,
   // Services partagés
-  inferRaceCategories,
   getTimezoneFromLocation,
   getDefaultTimezone,
   normalizeRaceName,
 } from '@data-agents/database'
 import {
   matchEvent,
-  matchRaces,
   calculateNewEventConfidence,
   calculateAdjustedConfidence,
   EventMatchInput,
   EventMatchResult,
-  RaceMatchInput,
   DbRace,
   DEFAULT_MATCHING_CONFIG,
   createConsoleLogger,
   ConnectionManager,
   DatabaseManager,
   PrismaClientType,
-  MeilisearchMatchingConfig
+  MeilisearchMatchingConfig,
+  LLMMatchingService,
+  buildNewEventChanges as sharedBuildNewEventChanges,
+  buildEditionUpdateChanges as sharedBuildEditionUpdateChanges,
 } from '@data-agents/agent-framework'
+import type { ProposalInput } from '@data-agents/types'
 import { settingsService } from '../../config/settings'
-import { zonedTimeToUtc } from 'date-fns-tz'
 import { ExtractedEventData, ExtractedRace } from './extractors/types'
 
 /**
@@ -93,61 +93,40 @@ const logger = createConsoleLogger('SlackProposalService', 'slack-proposal-servi
 const connectionManager = new ConnectionManager()
 
 /**
- * Enrichit une course avec les catégories inférées si non fournies
- * @param race - Course à enrichir
- * @param eventName - Nom de l'événement (optionnel, utilisé comme contexte pour l'inférence)
+ * Convertit les données extraites Slack en ProposalInput générique pour le shared builder
  */
-function enrichRaceWithCategories(race: ExtractedRace, eventName?: string): ExtractedRace {
-  // Si les catégories sont déjà définies, ne pas les écraser
-  if (race.categoryLevel1) {
-    return race
-  }
-
-  // Inférer les catégories depuis le nom, la distance, et le contexte de l'événement
-  const distanceKm = race.distance ? race.distance / 1000 : undefined
-  const [categoryLevel1, categoryLevel2] = inferRaceCategories(
-    race.name,
-    distanceKm,
-    undefined, // bikeDistance
-    undefined, // swimDistance
-    undefined, // walkDistance
-    eventName  // event context for inference
-  )
-
+function toProposalInput(data: ExtractedEventData): ProposalInput {
   return {
-    ...race,
-    categoryLevel1,
-    categoryLevel2,
+    eventName: data.eventName,
+    eventCity: data.eventCity,
+    eventCountry: data.eventCountry || 'France',
+    eventDepartment: data.eventDepartment,
+    editionYear: data.editionYear,
+    editionDate: data.editionDate,
+    editionEndDate: data.editionEndDate,
+    timeZone: getTimezoneFromLocation({
+      department: data.eventDepartment,
+      country: data.eventCountry,
+    }),
+    races: data.races?.map(r => ({
+      name: r.name,
+      distance: r.distance,
+      elevation: r.elevation,
+      startTime: r.startTime,
+      price: r.price,
+      categoryLevel1: r.categoryLevel1,
+      categoryLevel2: r.categoryLevel2,
+    })),
+    organizer: (data.organizerName || data.organizerEmail || data.organizerWebsite) ? {
+      name: data.organizerName,
+      email: data.organizerEmail,
+      phone: data.organizerPhone,
+      websiteUrl: data.organizerWebsite,
+    } : undefined,
+    registrationUrl: data.registrationUrl,
+    confidence: data.confidence || 0.5,
+    source: 'slack',
   }
-}
-
-/**
- * Calcule la date de départ d'une course avec heure et timezone
- *
- * @param editionDate - Date de l'édition (format YYYY-MM-DD)
- * @param startTime - Heure de départ (format HH:mm)
- * @param timeZone - Timezone IANA
- * @returns Date UTC ou undefined
- */
-function calculateRaceStartDate(
-  editionDate: string | undefined,
-  startTime: string | undefined,
-  timeZone: string
-): Date | undefined {
-  if (!editionDate) {
-    return undefined
-  }
-
-  // Si on a une heure de départ
-  if (startTime) {
-    const [hours, minutes] = startTime.split(':').map(Number)
-    const localDateStr = `${editionDate}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-    return zonedTimeToUtc(localDateStr, timeZone)
-  }
-
-  // Sinon, minuit local
-  const localMidnight = `${editionDate}T00:00:00`
-  return zonedTimeToUtc(localMidnight, timeZone)
 }
 
 /**
@@ -266,297 +245,6 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
 }
 
 /**
- * Construit les changements pour une proposition NEW_EVENT
- * Enrichit automatiquement les courses avec catégories et dates/heures
- *
- * Structure alignée sur le FFA Scraper :
- * - Champs event au niveau racine avec { new, confidence }
- * - Edition imbriquée dans edition.new avec races et organizer
- */
-function buildNewEventChanges(data: ExtractedEventData) {
-  // Déterminer la timezone depuis la localisation
-  const timeZone = getTimezoneFromLocation({
-    department: data.eventDepartment,
-    country: data.eventCountry,
-  })
-
-  // Normaliser l'année depuis editionYear ou editionDate
-  const normalizedYear = normalizeEditionYear(data)
-  const confidence = data.confidence || 0.5
-
-  // Calculer les dates de l'édition avec timezone
-  let editionStartDate: Date | undefined
-  let editionEndDate: Date | undefined
-
-  // Helper pour trouver l'heure la plus tôt/tard parmi les courses
-  const racesWithTime = data.races?.filter(r => r.startTime) || []
-  const sortedTimes = racesWithTime
-    .map(r => r.startTime!)
-    .sort((a, b) => a.localeCompare(b))
-  const earliestTime = sortedTimes[0] || '00:00'
-  const latestTime = sortedTimes[sortedTimes.length - 1] || '23:59'
-
-  if (data.editionDate) {
-    // Trouver l'heure de course la plus tôt du jour
-    editionStartDate = calculateRaceStartDate(data.editionDate, earliestTime, timeZone)
-  }
-
-  if (data.editionEndDate || data.editionDate) {
-    const endDateStr = data.editionEndDate || data.editionDate
-    // Trouver l'heure de course la plus tard du dernier jour
-    editionEndDate = calculateRaceStartDate(endDateStr, latestTime, timeZone)
-  }
-
-  // Construire l'objet edition.new (contient races et organizer)
-  const editionNew: any = {
-    year: normalizedYear?.toString(),
-    startDate: editionStartDate,
-    endDate: editionEndDate,
-    timeZone
-  }
-
-  // Ajouter les courses dans edition.new.races - avec enrichissement
-  if (data.races && data.races.length > 0) {
-    editionNew.races = data.races.map(race => {
-      // Enrichir avec les catégories si non définies
-      const enrichedRace = enrichRaceWithCategories(race, data.eventName)
-
-      // Calculer la date de départ avec heure et timezone
-      const startDate = calculateRaceStartDate(data.editionDate, race.startTime, timeZone)
-
-      return {
-        name: enrichedRace.name,
-        startDate, // Date complète avec heure et timezone
-        startTime: enrichedRace.startTime, // Garder aussi l'heure locale pour référence
-        runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined, // Convertir en km
-        runPositiveElevation: enrichedRace.elevation,
-        categoryLevel1: enrichedRace.categoryLevel1,
-        categoryLevel2: enrichedRace.categoryLevel2,
-        timeZone
-      }
-    })
-  }
-
-  // Ajouter l'organisateur dans edition.new.organizer
-  if (data.organizerName || data.organizerEmail || data.organizerWebsite) {
-    editionNew.organizer = {
-      name: data.organizerName,
-      email: data.organizerEmail,
-      phone: data.organizerPhone,
-      websiteUrl: data.organizerWebsite
-    }
-  }
-
-  // Ajouter l'URL d'inscription
-  if (data.registrationUrl) {
-    editionNew.registrationUrl = data.registrationUrl
-  }
-
-  // Structure alignée sur FFA Scraper : champs au niveau racine avec { new, confidence }
-  const changes: any = {
-    name: { new: data.eventName, confidence },
-    city: { new: data.eventCity, confidence },
-    country: { new: data.eventCountry || 'France', confidence },
-    edition: { new: editionNew, confidence }
-  }
-
-  // Ajouter le département si présent
-  if (data.eventDepartment) {
-    changes.department = { new: data.eventDepartment, confidence }
-  }
-
-  return changes
-}
-
-/**
- * Construit les changements pour une proposition EDITION_UPDATE
- * Enrichit automatiquement les courses avec catégories et dates/heures
- * Utilise matchRaces() pour séparer racesToUpdate (courses existantes) et racesToAdd (nouvelles courses)
- */
-async function buildEditionUpdateChanges(
-  data: ExtractedEventData,
-  matchResult: EventMatchResult,
-  existingRaces: DbRace[]
-) {
-  const changes: any = {}
-
-  // Déterminer la timezone depuis la localisation
-  const timeZone = getTimezoneFromLocation({
-    department: data.eventDepartment,
-    country: data.eventCountry,
-  })
-
-  // Helper pour trouver l'heure la plus tôt/tard parmi les courses
-  const racesWithTime = data.races?.filter(r => r.startTime) || []
-  const sortedTimes = racesWithTime
-    .map(r => r.startTime!)
-    .sort((a, b) => a.localeCompare(b))
-  const earliestTime = sortedTimes[0] || '00:00'
-  const latestTime = sortedTimes[sortedTimes.length - 1] || '23:59'
-
-  // Mettre à jour la date si différente (avec timezone)
-  if (data.editionDate) {
-    // Trouver l'heure de course la plus tôt du jour
-    const startDate = calculateRaceStartDate(data.editionDate, earliestTime, timeZone)
-
-    changes.startDate = {
-      old: matchResult.edition?.startDate,
-      new: startDate
-    }
-  }
-
-  if (data.editionEndDate) {
-    // Trouver l'heure de course la plus tard du dernier jour
-    const endDate = calculateRaceStartDate(data.editionEndDate, latestTime, timeZone)
-
-    changes.endDate = {
-      old: null,
-      new: endDate
-    }
-  }
-
-  // Ajouter la timezone
-  changes.timeZone = {
-    old: null,
-    new: timeZone
-  }
-
-  // Matcher les courses extraites avec les courses existantes
-  if (data.races && data.races.length > 0) {
-    // Convertir les courses extraites au format RaceMatchInput
-    const raceInputs: RaceMatchInput[] = data.races.map(race => ({
-      name: race.name,
-      distance: race.distance ? race.distance / 1000 : undefined, // Convertir m → km pour le matching
-      startTime: race.startTime
-    }))
-
-    // Effectuer le matching
-    const { matched, unmatched } = await matchRaces(raceInputs, existingRaces, logger)
-
-    logger.info(`Race matching: ${matched.length} matched, ${unmatched.length} new`, {
-      matched: matched.map(m => `"${m.input.name}" → "${m.db.name}"`),
-      unmatched: unmatched.map(u => u.name)
-    })
-
-    // Construire racesToUpdate pour les courses matchées
-    if (matched.length > 0) {
-      changes.racesToUpdate = {
-        old: null,
-        new: matched.map(({ input, db }) => {
-          // Retrouver la course originale extraite pour les données complètes
-          const originalRace = data.races!.find(r => r.name === input.name)!
-          const enrichedRace = enrichRaceWithCategories(originalRace, data.eventName)
-          const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
-
-          // Construire l'objet de mise à jour avec les différences
-          const updates: any = {}
-
-          // Comparer et ajouter les champs modifiés
-          if (startDate) {
-            updates.startDate = { old: db.startDate, new: startDate }
-          }
-          if (enrichedRace.distance && enrichedRace.distance / 1000 !== db.runDistance) {
-            updates.runDistance = { old: db.runDistance, new: enrichedRace.distance / 1000 }
-          }
-          if (enrichedRace.elevation && enrichedRace.elevation !== db.runPositiveElevation) {
-            updates.runPositiveElevation = { old: db.runPositiveElevation, new: enrichedRace.elevation }
-          }
-          // Only propose category if DB doesn't have one (preserve existing categories)
-          if (enrichedRace.categoryLevel1 && !(db as any).categoryLevel1) {
-            updates.categoryLevel1 = { old: null, new: enrichedRace.categoryLevel1 }
-          }
-          if (enrichedRace.categoryLevel2 && !(db as any).categoryLevel2) {
-            updates.categoryLevel2 = { old: null, new: enrichedRace.categoryLevel2 }
-          }
-
-          return {
-            raceId: db.id,
-            raceName: db.name,
-            updates,
-            currentData: {
-              id: db.id,
-              name: db.name,
-              startDate: db.startDate,
-              runDistance: db.runDistance,
-              runPositiveElevation: db.runPositiveElevation,
-              categoryLevel1: (db as any).categoryLevel1,
-              categoryLevel2: (db as any).categoryLevel2
-            }
-          }
-        })
-      }
-    }
-
-    // Construire racesToAdd pour les nouvelles courses
-    if (unmatched.length > 0) {
-      changes.racesToAdd = {
-        old: null,
-        new: unmatched.map(unmatchedInput => {
-          // Retrouver la course originale extraite
-          const originalRace = data.races!.find(r => r.name === unmatchedInput.name)!
-          const enrichedRace = enrichRaceWithCategories(originalRace, data.eventName)
-          const startDate = calculateRaceStartDate(data.editionDate, originalRace.startTime, timeZone)
-
-          return {
-            name: enrichedRace.name,
-            startDate,
-            startTime: enrichedRace.startTime,
-            runDistance: enrichedRace.distance ? enrichedRace.distance / 1000 : undefined,
-            runPositiveElevation: enrichedRace.elevation,
-            categoryLevel1: enrichedRace.categoryLevel1,
-            categoryLevel2: enrichedRace.categoryLevel2,
-            timeZone
-          }
-        })
-      }
-    }
-
-    // Identify existing DB races that were NOT matched (for display in UI)
-    const matchedDbRaceIds = new Set(matched.map(m => m.db.id))
-    const unmatchedDbRaces = existingRaces.filter(r => !matchedDbRaceIds.has(r.id))
-
-    if (unmatchedDbRaces.length > 0) {
-      changes.racesExisting = {
-        old: null,
-        new: unmatchedDbRaces.map(race => ({
-          raceId: race.id,
-          raceName: race.name,
-          runDistance: race.runDistance,
-          walkDistance: race.walkDistance,
-          runPositiveElevation: race.runPositiveElevation,
-          categoryLevel1: (race as any).categoryLevel1,
-          categoryLevel2: (race as any).categoryLevel2,
-          startDate: race.startDate
-        }))
-      }
-    }
-  }
-
-  // Ajouter l'organisateur si présent
-  if (data.organizerName || data.organizerEmail || data.organizerWebsite) {
-    changes.organizer = {
-      old: null,
-      new: {
-        name: data.organizerName,
-        email: data.organizerEmail,
-        phone: data.organizerPhone,
-        websiteUrl: data.organizerWebsite
-      }
-    }
-  }
-
-  // URL d'inscription
-  if (data.registrationUrl) {
-    changes.registrationUrl = {
-      old: null,
-      new: data.registrationUrl
-    }
-  }
-
-  return changes
-}
-
-/**
  * Construit les justifications pour la Proposal
  * Utilise les helpers du contrat standardisé
  *
@@ -655,11 +343,20 @@ export async function createProposalFromSlack(
       }
     }
 
+    // 3b. Préparer la config LLM matching si disponible
+    const llmConfig = await settingsService.getLLMMatchingConfig()
+    const llmService = llmConfig ? new LLMMatchingService(llmConfig, {
+      info: (msg: string) => logger.info(msg),
+      debug: (msg: string) => logger.info(msg),
+      warn: (msg: string) => logger.warn(msg),
+      error: (msg: string) => logger.error(msg),
+    }) : undefined
+
     // 4. Effectuer le matching
     const matchResult = await matchEvent(
       matchInput,
       sourceDb,
-      { ...DEFAULT_MATCHING_CONFIG, meilisearch: meilisearchConfig },
+      { ...DEFAULT_MATCHING_CONFIG, meilisearch: meilisearchConfig, llm: llmConfig, llmService },
       logger
     )
 
@@ -695,7 +392,8 @@ export async function createProposalFromSlack(
     if (matchResult.type === 'NO_MATCH' || matchResult.confidence < DEFAULT_MATCHING_CONFIG.similarityThreshold || !matchResult.edition) {
       // Pas de match, match trop faible, ou événement trouvé sans édition → NEW_EVENT
       proposalType = ProposalType.NEW_EVENT
-      changes = buildNewEventChanges(extractedData)
+      const proposalInput = toProposalInput(extractedData)
+      changes = sharedBuildNewEventChanges(proposalInput)
       confidence = calculateNewEventConfidence(
         extractedData.confidence, // Base sur confiance extraction
         matchResult,
@@ -736,7 +434,13 @@ export async function createProposalFromSlack(
         logger.info(`Found ${existingRaces.length} existing races for edition ${editionId}`)
       }
 
-      changes = await buildEditionUpdateChanges(extractedData, matchResult, existingRaces)
+      const proposalInputForUpdate = toProposalInput(extractedData)
+      changes = await sharedBuildEditionUpdateChanges(proposalInputForUpdate, matchResult, existingRaces, undefined, {
+        llmService,
+        eventName: extractedData.eventName,
+        editionYear: normalizeEditionYear(extractedData),
+        eventCity: extractedData.eventCity,
+      })
 
       // FIX 5: Deduplicate racesToAdd against existing PENDING proposals for same event/edition
       if (changes.racesToAdd?.new?.length > 0 && matchResult.event?.id && matchResult.edition?.id) {

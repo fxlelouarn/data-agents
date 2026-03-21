@@ -2581,7 +2581,7 @@ router.get('/:id/check-existing-event', [
     throw createError(500, 'Miles Republic connection not found', 'CONNECTION_NOT_FOUND')
   }
 
-  const { DatabaseManager, createConsoleLogger, matchEvent } = await import('@data-agents/agent-framework')
+  const { DatabaseManager, createConsoleLogger, matchEvent, LLMMatchingService } = await import('@data-agents/agent-framework')
   const logger = createConsoleLogger('API', 'check-existing-event')
   const dbManager = DatabaseManager.getInstance(logger)
   const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
@@ -2597,6 +2597,15 @@ router.get('/:id/check-existing-event', [
     }
   }
 
+  // 4b. Préparer la config LLM matching si disponible
+  const llmConfig = await settingsService.getLLMMatchingConfig()
+  const llmService = llmConfig ? new LLMMatchingService(llmConfig, {
+    info: (msg: string) => logger.info(msg),
+    debug: (msg: string) => logger.info(msg),
+    warn: (msg: string) => logger.warn(msg),
+    error: (msg: string) => logger.error(msg),
+  }) : undefined
+
   // 5. Appeler matchEvent
   const result = await matchEvent(
     {
@@ -2607,7 +2616,7 @@ router.get('/:id/check-existing-event', [
       editionYear: parseInt(editionData.year)
     },
     sourceDb,
-    { similarityThreshold, meilisearch: meilisearchConfig },
+    { similarityThreshold, meilisearch: meilisearchConfig, llm: llmConfig, llmService },
     logger
   )
 

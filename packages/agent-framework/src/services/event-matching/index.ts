@@ -24,7 +24,8 @@ export {
 } from './event-matcher'
 
 // LLM Matching Service
-export { LLMMatchingService } from './llm-matching.service'
+export { LLMMatchingService, EventJudgeResult } from './llm-matching.service'
+export { EventJudgeCandidate } from './llm-prompts'
 
 // Types
 export {

@@ -18,7 +18,9 @@ import {
   MatchingLogger,
   RaceMatchInput,
   DbRace,
-  MeilisearchMatchingConfig
+  MeilisearchMatchingConfig,
+  LLMMatchingService,
+  LLMMatchingConfig
 } from '@data-agents/agent-framework'
 
 /**
@@ -120,6 +122,16 @@ export async function matchCompetition(
   const input = ffaToMatchInput(competition)
   const adaptedLogger = adaptLogger(logger)
 
+  // Build LLM config from env vars
+  const llmConfig: LLMMatchingConfig | undefined = process.env.LLM_MATCHING_API_KEY ? {
+    apiKey: process.env.LLM_MATCHING_API_KEY,
+    model: process.env.LLM_MATCHING_MODEL,
+    enabled: process.env.LLM_MATCHING_ENABLED !== 'false',
+    shadowMode: process.env.LLM_MATCHING_SHADOW_MODE === 'true',
+  } : undefined
+
+  const llmService = llmConfig ? new LLMMatchingService(llmConfig, adaptedLogger) : undefined
+
   const result = await matchEvent(
     input,
     sourceDb,
@@ -127,7 +139,9 @@ export async function matchCompetition(
       similarityThreshold: config.similarityThreshold,
       distanceTolerancePercent: config.distanceTolerancePercent,
       confidenceBase: config.confidenceBase,
-      meilisearch: meilisearchConfig
+      meilisearch: meilisearchConfig,
+      llm: llmConfig,
+      llmService,
     },
     adaptedLogger
   )

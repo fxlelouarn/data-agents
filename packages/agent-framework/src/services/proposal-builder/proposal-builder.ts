@@ -16,7 +16,7 @@ import {
   isMidnightInTimezone,
   isSameDateInTimezone,
 } from './race-utils'
-import { matchRaces } from '../event-matching'
+import { matchRaces, RaceMatchLLMContext } from '../event-matching'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
 
 // ---------------------------------------------------------------------------
@@ -198,7 +198,8 @@ export async function buildEditionUpdateChanges(
   matchedRaces?: {
     matched: Array<{ input: any; db: any }>
     unmatched: any[]
-  }
+  },
+  llmContext?: RaceMatchLLMContext
 ): Promise<Record<string, any>> {
   const changes: Record<string, any> = {}
   const timeZone = input.timeZone || 'Europe/Paris'
@@ -346,7 +347,7 @@ export async function buildEditionUpdateChanges(
           distance: race.distance ? race.distance / 1000 : undefined, // m → km
           startTime: race.startTime,
         }))
-        const result = await matchRaces(raceInputs, existingRaces)
+        const result = await matchRaces(raceInputs, existingRaces, undefined, undefined, llmContext)
         matched = result.matched
         unmatched = result.unmatched
       }
