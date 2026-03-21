@@ -253,7 +253,7 @@ export async function matchEvent(
       const departmentPenalty = !candidate.departmentMatch && validatedBestScore >= 0.85
         ? 0.25 * validatedBestScore
         : 0
-      const dateMultiplier = 0.8 + (candidate.dateProximity * 0.2)
+      const dateMultiplier = 0.5 + (candidate.dateProximity * 0.5)
 
       if (validatedBestScore >= 0.9) {
         if (candidate.departmentMatch) {
