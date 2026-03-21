@@ -46,19 +46,20 @@ interface ProposalInput {
   eventName: string
   eventCity?: string
   eventCountry?: string
-  eventDepartment?: string              // dept code (e.g. "59")
-  countrySubdivisionNameLevel1?: string  // region name (e.g. "Hauts-de-France")
-  countrySubdivisionCodeLevel1?: string  // region code (e.g. "HDF")
-  countrySubdivisionNameLevel2?: string  // department name (e.g. "Nord")
-  countrySubdivisionCodeLevel2?: string  // normalized dept code
+  eventDepartment?: string                        // dept code (e.g. "59")
+  countrySubdivisionNameLevel1?: string            // region name (e.g. "Hauts-de-France")
+  countrySubdivisionDisplayCodeLevel1?: string     // region display code (e.g. "HDF")
+  countrySubdivisionNameLevel2?: string            // department name (e.g. "Nord")
+  countrySubdivisionDisplayCodeLevel2?: string     // normalized dept code
 
   // Edition
   editionYear?: number
-  editionDate?: string                   // ISO date
+  editionDate?: string                             // ISO date
   editionEndDate?: string
-  timeZone?: string                      // IANA (e.g. "Europe/Paris")
-  calendarStatus?: string
+  timeZone?: string                                // IANA (e.g. "Europe/Paris")
+  calendarStatus?: string                          // e.g. "CONFIRMED"
   registrationClosingDate?: string
+  dataSource?: string                              // e.g. "FEDERATION"
 
   // Races
   races?: ProposalRaceInput[]
@@ -78,21 +79,27 @@ interface ProposalInput {
   websiteUrl?: string
 
   // Meta
-  confidence: number                     // source confidence (0-1)
-  source: string                         // e.g. "ffa", "slack", "google"
+  confidence: number                               // source confidence (0-1)
+  source: string                                   // e.g. "ffa", "slack", "google"
 }
 
 interface ProposalRaceInput {
   name: string
-  distance?: number                      // meters
-  elevation?: number                     // D+ meters
-  startTime?: string                     // HH:mm local
-  raceDate?: string                      // for multi-day (DD/MM or ISO)
+  distance?: number                                // ALWAYS in meters, builder converts to km
+  elevation?: number                               // D+ in meters
+  startTime?: string                               // HH:mm local
+  raceDate?: string                                // for multi-day (DD/MM or ISO)
   price?: number
   categoryLevel1?: string
   categoryLevel2?: string
 }
 ```
+
+**Distance convention:** `ProposalRaceInput.distance` is always in **meters** (matching source data from FFA and Claude extraction). The builder converts to km when assigning to `runDistance`/`walkDistance`/`bikeDistance` fields.
+
+**Output structure convention:**
+- `buildNewEventChanges` returns `{ field: { new: value, confidence } }` format
+- `buildEditionUpdateChanges` returns `{ field: { old: value, new: value } }` format
 
 ## New Service: Proposal Builder
 
@@ -125,27 +132,29 @@ Responsibilities:
 - Includes regional subdivision data if provided
 - Includes organizer data with classified URLs
 
-#### `buildEditionUpdateChanges(input: ProposalInput, matchResult: EventMatchResult, existingRaces: DbRace[]): Record<string, any>`
+#### `buildEditionUpdateChanges(input: ProposalInput, matchResult: EventMatchResult, existingRaces: DbRace[], matchedRaces?: MatchedRacesResult): Record<string, any>`
 
 Builds the `changes` object for an EDITION_UPDATE proposal.
+
+The `matchedRaces` parameter is **optional**. If not provided, the builder calls `matchRaces()` from agent-framework internally. If provided (e.g. by the FFA agent which has richer matching with category-awareness and multi-day logic), the builder uses the pre-matched result directly. This allows agents with specialized matching needs to keep their logic without duplicating the proposal construction.
 
 Responsibilities:
 - Compares edition dates with 6-hour tolerance threshold
 - Compares and merges organizer data (with URL classification: website vs facebook vs instagram)
-- Matches extracted races with existing races (via `matchRaces()` from agent-framework)
+- Uses provided `matchedRaces` or calls `matchRaces()` internally as fallback
 - For matched races: proposes updates (startDate, elevation, timezone) only if meaningfully different
 - For unmatched extracted races: adds to `racesToAdd` with proper distance field and categories
-- For unmatched DB races: cascades edition date change while preserving precise race times
+- For unmatched DB races: cascades edition date change while preserving precise race times (only when edition date actually changes)
 - Returns `{ startDate, endDate, timeZone, calendarStatus, organizer, racesToUpdate, racesToAdd, racesExisting, registrationClosingDate }`
 
 ### Utilities in `race-utils.ts`
 
-#### `assignDistanceByCategory(distanceKm: number, categoryLevel1: string): Record<string, number>`
+#### `assignDistanceByCategory(distanceMeters: number, categoryLevel1: string): Record<string, number>`
 
-Returns the correct distance field based on category:
-- WALK → `{ walkDistance: distanceKm }`
-- CYCLING → `{ bikeDistance: distanceKm }`
-- Others → `{ runDistance: distanceKm }`
+Converts meters to km and returns the correct distance field based on category:
+- WALK → `{ walkDistance: distanceMeters / 1000 }`
+- CYCLING → `{ bikeDistance: distanceMeters / 1000 }`
+- Others → `{ runDistance: distanceMeters / 1000 }`
 
 #### `cascadeDateToRace(newEditionDate: Date, existingRaceDate: Date, timezone: string): Date`
 
@@ -161,9 +170,13 @@ Derives edition start/end dates from race data:
 - endDate = last race time
 - Falls back to midnight in edition timezone if no race times
 
-#### `inferRaceCategories(name: string, distance?: number): { categoryLevel1: string, categoryLevel2: string }`
+#### `inferRaceCategories(name: string, distanceMeters?: number, walkDistanceMeters?: number, bikeDistanceMeters?: number, swimDistanceMeters?: number, eventName?: string): { categoryLevel1: string, categoryLevel2: string }`
 
-Infers race categories from name and distance if not already set. Reuses existing logic from FFA Scraper.
+Infers race categories from name, distances, and event context if not already set. Reuses and consolidates existing logic from `@data-agents/database` `inferRaceCategories()` and FFA Scraper.
+
+#### `normalizeRaceName(name: string, categoryLevel1?: string): string`
+
+Standardizes race names by removing redundant category/distance info already captured in structured fields. For example: "Trail 10km - La Course des Fous" → "La Course des Fous" when categoryLevel1 is already TRAIL and distance is set.
 
 ## Agent Migration
 
@@ -175,7 +188,7 @@ Infers race categories from name and distance if not already set. Reuses existin
 - Maps ligue to region/department subdivision data
 - Maps FFARace[] to ProposalRaceInput[]
 
-**Replace:** ~300 lines of inline proposal construction with calls to:
+**Replace:** ~550 lines of inline proposal construction with calls to:
 - `buildNewEventChanges(input)`
 - `buildEditionUpdateChanges(input, matchResult, existingRaces)`
 
@@ -184,6 +197,7 @@ Infers race categories from name and distance if not already set. Reuses existin
 - Deduplication (hash + intra-run cache)
 - Progress tracking
 - `matchEvent()` calls
+- Custom race matching logic (category-aware, multi-day, distance tolerance) — FFA passes its pre-matched result to `buildEditionUpdateChanges()` via the optional `matchedRaces` parameter
 
 ### Slack Agent (`SlackProposalService.ts`)
 
