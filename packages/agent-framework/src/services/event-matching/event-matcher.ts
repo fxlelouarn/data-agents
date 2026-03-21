@@ -298,6 +298,87 @@ export async function matchEvent(
       return { type: 'NO_MATCH', confidence: 0 }
     }
 
+    // 9.5 LLM Event Judge for gray zone (0.30-0.95)
+    if (best.combined < 0.95 && config.llmService) {
+      const llmCandidates = scoredCandidates.slice(0, config.llm?.maxCandidates ?? 5).map(c => {
+        const candidateEdition = c.event.editions?.find((e: any) => e.year === searchYear)
+        return {
+          eventId: c.event.id,
+          eventName: c.event.name,
+          eventCity: c.event.city,
+          department: c.event.department,
+          editionYear: candidateEdition?.year,
+          editionDate: candidateEdition?.startDate ? (typeof candidateEdition.startDate === 'string' ? candidateEdition.startDate : candidateEdition.startDate.toISOString()) : undefined,
+          score: c.combined,
+        }
+      })
+
+      const llmResult = await config.llmService.judgeEventMatchWithLLM(
+        input.eventName, input.eventCity, input.eventDepartment,
+        input.editionDate.toISOString(), llmCandidates
+      )
+
+      if (config.llm?.shadowMode) {
+        // Shadow mode: log comparison, use fuse.js result
+        if (llmResult) {
+          const fuseDecision = best.combined >= config.similarityThreshold ? 'FUZZY_MATCH' : 'NO_MATCH'
+          const llmDecision = llmResult.eventId ? 'FUZZY_MATCH' : 'NO_MATCH'
+          logger.info(`  🤖 Shadow mode event judge: fuse=${fuseDecision}, llm=${llmDecision}, diverged=${fuseDecision !== llmDecision}`)
+          config.onShadowResult?.({
+            matchType: 'event' as const,
+            inputSummary: `${input.eventName} (${input.eventCity})`,
+            currentResult: { type: fuseDecision, bestScore: best.combined, bestEventId: best.event.id },
+            llmResult,
+            diverged: fuseDecision !== llmDecision,
+            responseTimeMs: 0,
+          })
+        }
+        // Fall through to existing logic
+      } else if (llmResult) {
+        if (llmResult.eventId) {
+          // LLM confirmed a match
+          const matchedCandidate = scoredCandidates.find(c => c.event.id === llmResult.eventId)
+          if (matchedCandidate) {
+            const matchedEdition = matchedCandidate.event.editions?.find((e: any) => e.year === searchYear)
+            logger.info(`  🤖 LLM confirmed match: "${matchedCandidate.event.name}" (confidence: ${llmResult.confidence}, reason: ${llmResult.reason})`)
+
+            const rejectedMatches: RejectedMatch[] = scoredCandidates.slice(0, 3).map(candidate => {
+              const ce = candidate.event.editions?.find((e: any) => e.year === searchYear)
+              return {
+                eventId: candidate.event.id, eventName: candidate.event.name,
+                eventSlug: candidate.event.slug, eventCity: candidate.event.city,
+                eventDepartment: candidate.event.department,
+                editionId: ce?.id, editionYear: ce?.year,
+                matchScore: candidate.combined, nameScore: candidate.nameScore,
+                cityScore: candidate.cityScore, departmentMatch: candidate.departmentMatch,
+                dateProximity: candidate.dateProximity
+              }
+            })
+
+            return {
+              type: 'FUZZY_MATCH' as const,
+              event: {
+                id: matchedCandidate.event.id,
+                name: matchedCandidate.event.name,
+                city: matchedCandidate.event.city,
+                slug: matchedCandidate.event.slug,
+                similarity: llmResult.confidence,
+              },
+              edition: matchedEdition ? { id: matchedEdition.id, year: matchedEdition.year, startDate: matchedEdition.startDate } : undefined,
+              confidence: llmResult.confidence,
+              rejectedMatches,
+            }
+          }
+        } else {
+          // LLM says no match
+          logger.info(`  🤖 LLM says NO_MATCH: ${llmResult.reason}`)
+          return { type: 'NO_MATCH' as const, confidence: 0 }
+        }
+      }
+      // LLM failed or unavailable → fall through to existing logic
+      logger.info('  🤖 LLM event judge unavailable, using fuse.js score')
+    }
+
     // 10. Find matching edition
     const edition = best.event.editions?.find((e: any) => e.year === searchYear)
 
