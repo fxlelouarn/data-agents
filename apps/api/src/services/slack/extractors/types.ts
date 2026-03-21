@@ -81,6 +81,7 @@ Tu dois extraire les informations suivantes si elles sont EXPLICITEMENT présent
 RÈGLES CRITIQUES:
 - N'INVENTE JAMAIS de données. Si une information n'est pas explicitement dans le texte, NE L'INCLUS PAS.
 - Pour les dates: tu dois trouver une date EXPLICITE (ex: "5 mars 2025", "05/03/2025"). N'invente JAMAIS de date.
+- Si une date est mentionnée SANS année (ex: "Samedi 25 Avril", "le 15 mars", "dimanche 8 juin"), c'est une date EXPLICITE. Utilise la date du jour fournie pour déduire l'année: choisis la PROCHAINE occurrence future de cette date (pas une date passée). Exemple: si on est le 2026-03-21 et l'affiche dit "Samedi 25 Avril", la date est 2026-04-25.
 - Si le contenu est principalement du code JavaScript/CSS ou du charabia technique, retourne {"error": "page_spa_no_content", "eventName": null}
 - Si tu ne trouves pas de date précise, omets editionDate ET editionYear - ne les invente pas.
 - Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.
