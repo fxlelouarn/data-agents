@@ -373,7 +373,7 @@ function buildNewEventChanges(data: ExtractedEventData) {
  * Enrichit automatiquement les courses avec catégories et dates/heures
  * Utilise matchRaces() pour séparer racesToUpdate (courses existantes) et racesToAdd (nouvelles courses)
  */
-function buildEditionUpdateChanges(
+async function buildEditionUpdateChanges(
   data: ExtractedEventData,
   matchResult: EventMatchResult,
   existingRaces: DbRace[]
@@ -431,7 +431,7 @@ function buildEditionUpdateChanges(
     }))
 
     // Effectuer le matching
-    const { matched, unmatched } = matchRaces(raceInputs, existingRaces, logger)
+    const { matched, unmatched } = await matchRaces(raceInputs, existingRaces, logger)
 
     logger.info(`Race matching: ${matched.length} matched, ${unmatched.length} new`, {
       matched: matched.map(m => `"${m.input.name}" → "${m.db.name}"`),
@@ -736,7 +736,7 @@ export async function createProposalFromSlack(
         logger.info(`Found ${existingRaces.length} existing races for edition ${editionId}`)
       }
 
-      changes = buildEditionUpdateChanges(extractedData, matchResult, existingRaces)
+      changes = await buildEditionUpdateChanges(extractedData, matchResult, existingRaces)
 
       // FIX 5: Deduplicate racesToAdd against existing PENDING proposals for same event/edition
       if (changes.racesToAdd?.new?.length > 0 && matchResult.event?.id && matchResult.edition?.id) {

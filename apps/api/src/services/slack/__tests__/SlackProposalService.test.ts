@@ -85,35 +85,159 @@ jest.mock('@data-agents/database', () => ({
   }))
 }))
 
-jest.mock('@data-agents/agent-framework', () => ({
-  matchEvent: jest.fn(),
-  matchRaces: jest.fn().mockReturnValue({
-    matched: [],
-    unmatched: []
-  }),
-  calculateNewEventConfidence: jest.fn().mockReturnValue(0.7),
-  calculateAdjustedConfidence: jest.fn().mockReturnValue(0.85),
-  DEFAULT_MATCHING_CONFIG: {
-    similarityThreshold: 0.75,
-    dateWindowDays: 90
-  },
-  createConsoleLogger: jest.fn().mockReturnValue({
-    info: jest.fn(),
-    error: jest.fn(),
-    warn: jest.fn(),
-    debug: jest.fn()
-  }),
-  ConnectionManager: jest.fn().mockImplementation(() => ({
-    connectToSource: jest.fn().mockResolvedValue({
-      race: {
-        findMany: jest.fn().mockResolvedValue([])
+jest.mock('@data-agents/agent-framework', () => {
+  // Mock implementations of the shared builder functions.
+  // These replicate the essential behavior so that existing tests can verify
+  // the SlackProposalService wiring without needing the real agent-framework
+  // (which can't be loaded via jest.requireActual due to .js import extensions).
+  function mockBuildNewEventChanges(input: any) {
+    const { inferRaceCategories, getTimezoneFromLocation } = require('@data-agents/database')
+    const timeZone = input.timeZone || getTimezoneFromLocation({
+      department: input.eventDepartment,
+      country: input.eventCountry,
+    })
+    const confidence = input.confidence
+
+    const races = (input.races || []).map((race: any) => {
+      let cat1 = race.categoryLevel1
+      let cat2 = race.categoryLevel2
+      if (!cat1) {
+        const distanceKm = race.distance ? race.distance / 1000 : undefined
+        ;[cat1, cat2] = inferRaceCategories(race.name, distanceKm, undefined, undefined, undefined, input.eventName)
+      }
+      return {
+        name: race.name,
+        startTime: race.startTime,
+        runDistance: race.distance ? race.distance / 1000 : undefined,
+        categoryLevel1: cat1,
+        categoryLevel2: cat2,
+        timeZone,
       }
     })
-  })),
-  DatabaseManager: {
-    getInstance: jest.fn().mockReturnValue({})
+
+    const editionNew: any = {
+      year: input.editionYear?.toString(),
+      timeZone,
+    }
+    if (races.length > 0) editionNew.races = races
+    if (input.organizer) editionNew.organizer = input.organizer
+    if (input.registrationUrl) editionNew.registrationUrl = input.registrationUrl
+
+    return {
+      name: { new: input.eventName, confidence },
+      city: { new: input.eventCity, confidence },
+      country: { new: input.eventCountry || 'France', confidence },
+      edition: { new: editionNew, confidence },
+    }
   }
-}))
+
+  async function mockBuildEditionUpdateChanges(input: any, matchResult: any, existingRaces: any[]) {
+    const { inferRaceCategories, getTimezoneFromLocation } = require('@data-agents/database')
+    const { matchRaces } = require('@data-agents/agent-framework')
+    const timeZone = input.timeZone || getTimezoneFromLocation({
+      department: input.eventDepartment,
+      country: input.eventCountry,
+    })
+    const changes: any = {}
+
+    if (input.editionDate) {
+      changes.startDate = { old: matchResult.edition?.startDate || null, new: new Date(input.editionDate) }
+    }
+    if (input.editionEndDate) {
+      changes.endDate = { old: null, new: new Date(input.editionEndDate) }
+    }
+    changes.timeZone = { old: null, new: timeZone }
+
+    if (input.races && input.races.length > 0) {
+      const raceInputs = input.races.map((r: any) => ({
+        name: r.name,
+        distance: r.distance ? r.distance / 1000 : undefined,
+        startTime: r.startTime,
+      }))
+      const { matched, unmatched } = await matchRaces(raceInputs, existingRaces)
+
+      if (matched.length > 0) {
+        changes.racesToUpdate = {
+          old: null,
+          new: matched.map(({ input: mi, db }: any) => {
+            const orig = input.races.find((r: any) => r.name === mi.name) || mi
+            let cat1 = orig.categoryLevel1
+            let cat2 = orig.categoryLevel2
+            if (!cat1) {
+              const distKm = orig.distance ? orig.distance / 1000 : undefined
+              ;[cat1, cat2] = inferRaceCategories(orig.name, distKm, undefined, undefined, undefined, input.eventName)
+            }
+            const updates: any = {}
+            if (orig.distance && orig.distance / 1000 !== db.runDistance) {
+              updates.runDistance = { old: db.runDistance, new: orig.distance / 1000 }
+            }
+            if (cat1 && !db.categoryLevel1) {
+              updates.categoryLevel1 = { old: null, new: cat1 }
+            }
+            if (cat2 && !db.categoryLevel2) {
+              updates.categoryLevel2 = { old: null, new: cat2 }
+            }
+            return { raceId: db.id, raceName: db.name, updates, currentData: { ...db } }
+          }),
+        }
+      }
+      if (unmatched.length > 0) {
+        changes.racesToAdd = {
+          old: null,
+          new: unmatched.map((u: any) => {
+            const orig = input.races.find((r: any) => r.name === u.name) || u
+            return {
+              name: orig.name,
+              runDistance: orig.distance ? orig.distance / 1000 : undefined,
+              timeZone,
+            }
+          }),
+        }
+      }
+    }
+
+    if (input.organizer) {
+      changes.organizer = { old: null, new: input.organizer }
+    }
+    if (input.registrationUrl) {
+      changes.registrationUrl = { old: null, new: input.registrationUrl }
+    }
+
+    return changes
+  }
+
+  return {
+    matchEvent: jest.fn(),
+    matchRaces: jest.fn().mockResolvedValue({
+      matched: [],
+      unmatched: []
+    }),
+    calculateNewEventConfidence: jest.fn().mockReturnValue(0.7),
+    calculateAdjustedConfidence: jest.fn().mockReturnValue(0.85),
+    DEFAULT_MATCHING_CONFIG: {
+      similarityThreshold: 0.75,
+      dateWindowDays: 90
+    },
+    createConsoleLogger: jest.fn().mockReturnValue({
+      info: jest.fn(),
+      error: jest.fn(),
+      warn: jest.fn(),
+      debug: jest.fn()
+    }),
+    ConnectionManager: jest.fn().mockImplementation(() => ({
+      connectToSource: jest.fn().mockResolvedValue({
+        race: {
+          findMany: jest.fn().mockResolvedValue([])
+        }
+      })
+    })),
+    DatabaseManager: {
+      getInstance: jest.fn().mockReturnValue({})
+    },
+    buildNewEventChanges: jest.fn().mockImplementation(mockBuildNewEventChanges),
+    buildEditionUpdateChanges: jest.fn().mockImplementation(mockBuildEditionUpdateChanges),
+  }
+})
 
 // Mock settingsService to avoid DATABASE_URL requirement
 jest.mock('../../../config/settings', () => ({
@@ -121,6 +245,7 @@ jest.mock('../../../config/settings', () => ({
     isMeilisearchConfigured: jest.fn().mockResolvedValue(false),
     getMeilisearchUrl: jest.fn().mockResolvedValue(null),
     getMeilisearchApiKey: jest.fn().mockResolvedValue(null),
+    getLLMMatchingConfig: jest.fn().mockResolvedValue(undefined),
     getSettings: jest.fn().mockResolvedValue({
       meilisearchUrl: null,
       meilisearchApiKey: null
@@ -380,7 +505,7 @@ describe('SlackProposalService', () => {
       }
 
       // Mock matchRaces to return all races as unmatched (nouvelles courses)
-      ;(matchRaces as jest.Mock).mockReturnValue({
+      ;(matchRaces as jest.Mock).mockResolvedValue({
         matched: [],
         unmatched: [
           { name: 'Race A', runDistance: 10 },
@@ -1261,7 +1386,7 @@ describe('SlackProposalService - Enrichment', () => {
       })
 
       // Mock matchRaces avec une course qui a déjà une catégorie
-      matchRaces.mockReturnValue({
+      matchRaces.mockResolvedValue({
         matched: [{
           input: { name: 'La Bataille', distance: 27.5 },
           db: {
@@ -1325,7 +1450,7 @@ describe('SlackProposalService - Enrichment', () => {
       })
 
       // Mock: 1 course matchée, 2 courses DB non matchées
-      matchRaces.mockReturnValue({
+      matchRaces.mockResolvedValue({
         matched: [{
           input: { name: 'La Bataille', distance: 27.5 },
           db: { id: 175550, name: 'Trail la bataille 25 km', runDistance: 25 }

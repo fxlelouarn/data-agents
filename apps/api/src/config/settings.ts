@@ -65,6 +65,15 @@ interface SystemSettings {
    * Résultat de la dernière exécution de l'auto-apply
    */
   autoApplyLastRunResult: AutoApplyLastRunResult | null
+
+  /** Clé API pour le matching LLM */
+  llmMatchingApiKey: string | null
+  /** Modèle LLM à utiliser */
+  llmMatchingModel: string | null
+  /** Activer le matching LLM */
+  enableLlmMatching: boolean
+  /** Mode shadow : log seulement, pas de décision */
+  llmMatchingShadowMode: boolean
 }
 
 const defaultSettings: Omit<SystemSettings, 'autoApplyLastRunResult'> & { autoApplyLastRunResult?: any } = {
@@ -76,8 +85,12 @@ const defaultSettings: Omit<SystemSettings, 'autoApplyLastRunResult'> & { autoAp
   enableAutoApplyUpdates: false,
   autoApplyIntervalMinutes: 60,
   autoApplyLastRunAt: null,
-  autoApplyNextRunAt: null
+  autoApplyNextRunAt: null,
   // autoApplyLastRunResult is omitted - will use Prisma.JsonNull for null values
+  llmMatchingApiKey: null,
+  llmMatchingModel: null,
+  enableLlmMatching: false,
+  llmMatchingShadowMode: true,
 }
 
 class SettingsService {
@@ -111,13 +124,17 @@ class SettingsService {
         autoApplyIntervalMinutes: settings.autoApplyIntervalMinutes,
         autoApplyLastRunAt: settings.autoApplyLastRunAt,
         autoApplyNextRunAt: settings.autoApplyNextRunAt,
-        autoApplyLastRunResult: settings.autoApplyLastRunResult as AutoApplyLastRunResult | null
+        autoApplyLastRunResult: settings.autoApplyLastRunResult as AutoApplyLastRunResult | null,
+        llmMatchingApiKey: settings.llmMatchingApiKey,
+        llmMatchingModel: settings.llmMatchingModel,
+        enableLlmMatching: settings.enableLlmMatching,
+        llmMatchingShadowMode: settings.llmMatchingShadowMode,
       }
 
       console.log('⚙️ System Settings loaded from database')
     } catch (error) {
       console.error('❌ Failed to load settings from database:', error)
-      this.settings = { ...defaultSettings, autoApplyLastRunResult: null }
+      this.settings = { ...defaultSettings, autoApplyLastRunResult: null } as SystemSettings
     }
   }
 
@@ -143,7 +160,11 @@ class SettingsService {
         autoApplyIntervalMinutes: created.autoApplyIntervalMinutes,
         autoApplyLastRunAt: created.autoApplyLastRunAt,
         autoApplyNextRunAt: created.autoApplyNextRunAt,
-        autoApplyLastRunResult: created.autoApplyLastRunResult as AutoApplyLastRunResult | null
+        autoApplyLastRunResult: created.autoApplyLastRunResult as AutoApplyLastRunResult | null,
+        llmMatchingApiKey: created.llmMatchingApiKey,
+        llmMatchingModel: created.llmMatchingModel,
+        enableLlmMatching: created.enableLlmMatching,
+        llmMatchingShadowMode: created.llmMatchingShadowMode,
       }
     }
 
@@ -157,7 +178,11 @@ class SettingsService {
       autoApplyIntervalMinutes: settings.autoApplyIntervalMinutes,
       autoApplyLastRunAt: settings.autoApplyLastRunAt,
       autoApplyNextRunAt: settings.autoApplyNextRunAt,
-      autoApplyLastRunResult: settings.autoApplyLastRunResult as AutoApplyLastRunResult | null
+      autoApplyLastRunResult: settings.autoApplyLastRunResult as AutoApplyLastRunResult | null,
+      llmMatchingApiKey: settings.llmMatchingApiKey,
+      llmMatchingModel: settings.llmMatchingModel,
+      enableLlmMatching: settings.enableLlmMatching,
+      llmMatchingShadowMode: settings.llmMatchingShadowMode,
     }
   }
 
@@ -237,6 +262,18 @@ class SettingsService {
       case 'autoApplyLastRunResult':
         // JSON object, no validation needed
         break
+      case 'llmMatchingApiKey':
+      case 'llmMatchingModel':
+        if (value !== null && typeof value !== 'string') {
+          throw new Error(`${key} must be a string or null`)
+        }
+        break
+      case 'enableLlmMatching':
+      case 'llmMatchingShadowMode':
+        if (typeof value !== 'boolean') {
+          throw new Error(`${key} must be a boolean`)
+        }
+        break
       default:
         throw new Error(`Unknown setting: ${key}`)
     }
@@ -253,6 +290,17 @@ class SettingsService {
     })
 
     console.log(`⚙️ Updated ${key} to: ${key.includes('ApiKey') && value ? '[REDACTED]' : value}`)
+  }
+
+  async getLLMMatchingConfig(): Promise<{ apiKey: string, model: string, enabled: boolean, shadowMode: boolean } | undefined> {
+    const settings = await this.getSettings()
+    if (!settings.llmMatchingApiKey || !settings.enableLlmMatching) return undefined
+    return {
+      apiKey: settings.llmMatchingApiKey,
+      model: settings.llmMatchingModel ?? 'claude-haiku-4-5-20251001',
+      enabled: settings.enableLlmMatching,
+      shadowMode: settings.llmMatchingShadowMode,
+    }
   }
 
   /**
