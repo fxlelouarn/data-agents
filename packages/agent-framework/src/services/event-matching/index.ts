@@ -32,7 +32,9 @@ export {
   RaceMatchInput,
   DbRace,
   RaceMatchResult,
-  MeilisearchMatchingConfig
+  MeilisearchMatchingConfig,
+  LLMMatchingConfig,
+  ShadowLogEntry
 } from './types'
 
 // Stopwords and keywords

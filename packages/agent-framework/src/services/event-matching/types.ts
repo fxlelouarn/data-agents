@@ -82,6 +82,35 @@ export interface MeilisearchMatchingConfig {
 }
 
 /**
+ * Configuration for LLM-assisted matching
+ */
+export interface LLMMatchingConfig {
+  /** Anthropic API key */
+  apiKey: string
+  /** Model to use (default: 'claude-haiku-4-5-20251001') */
+  model?: string
+  /** Enable LLM matching (default: true) */
+  enabled?: boolean
+  /** Max candidates to send to LLM for event judge (default: 5) */
+  maxCandidates?: number
+  /** Shadow mode: log LLM results but use current matching (default: false) */
+  shadowMode?: boolean
+}
+
+/**
+ * Entry for shadow mode comparison logging
+ */
+export interface ShadowLogEntry {
+  matchType: 'race' | 'event'
+  proposalId?: string
+  inputSummary: string
+  currentResult: any
+  llmResult: any
+  diverged: boolean
+  responseTimeMs: number
+}
+
+/**
  * Configuration for the matching algorithm
  */
 export interface MatchingConfig {
@@ -93,6 +122,12 @@ export interface MatchingConfig {
   confidenceBase?: number
   /** Optional Meilisearch configuration for improved search */
   meilisearch?: MeilisearchMatchingConfig
+  /** Optional LLM configuration for improved matching */
+  llm?: LLMMatchingConfig
+  /** Pre-created LLM service instance (reused across calls) */
+  llmService?: any
+  /** Callback for shadow mode logging */
+  onShadowResult?: (log: ShadowLogEntry) => void
 }
 
 /**
@@ -122,6 +157,9 @@ export interface RaceMatchInput {
   name: string
   distance?: number  // in km
   startTime?: string
+  categoryLevel1?: string   // e.g. 'TRAIL', 'RUNNING'
+  categoryLevel2?: string   // e.g. 'ULTRA_TRAIL', 'MARATHON'
+  elevation?: number        // D+ in meters
 }
 
 /**
