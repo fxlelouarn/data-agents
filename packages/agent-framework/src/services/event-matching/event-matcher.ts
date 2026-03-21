@@ -451,7 +451,12 @@ export async function matchRaces(
   llmContext?: RaceMatchLLMContext
 ): Promise<RaceMatchResult> {
   // Try LLM matching first if available
+  // Store LLM result for shadow mode comparison (computed before distance matching)
+  let _shadowLLMResult: RaceMatchResult | null = null
+  let _shadowElapsed = 0
+
   if (llmContext?.llmService && llmContext.eventName) {
+    const startTime = Date.now()
     const llmResult = await llmContext.llmService.matchRacesWithLLM(
       llmContext.eventName,
       llmContext.editionYear ?? new Date().getFullYear(),
@@ -459,11 +464,18 @@ export async function matchRaces(
       dbRaces,
       inputRaces
     )
-    if (llmResult) {
+    _shadowElapsed = Date.now() - startTime
+
+    if (llmContext.shadowMode) {
+      // Shadow mode: store LLM result for comparison, fall through to distance matching
+      _shadowLLMResult = llmResult
+      logger.info(`🤖 Shadow mode: LLM race matching result stored (${llmResult ? llmResult.matched.length + ' matched' : 'null'}), running distance matching...`)
+    } else if (llmResult) {
       logger.info(`🤖 LLM race matching: ${llmResult.matched.length} matched, ${llmResult.unmatched.length} unmatched`)
       return llmResult
+    } else {
+      logger.info('🤖 LLM race matching unavailable, falling back to distance-based matching')
     }
-    logger.info('🤖 LLM race matching unavailable, falling back to distance-based matching')
   }
 
   const matched: Array<{ input: RaceMatchInput, db: DbRace }> = []
@@ -578,7 +590,27 @@ export async function matchRaces(
     }
   }
 
-  return { matched, unmatched }
+  const distanceResult = { matched, unmatched }
+
+  // Shadow mode: log comparison between LLM and distance results
+  if (_shadowLLMResult && llmContext?.shadowMode) {
+    const diverged = _shadowLLMResult.matched.length !== distanceResult.matched.length ||
+      _shadowLLMResult.matched.some(lm => {
+        const dm = distanceResult.matched.find(d => d.input.name === lm.input.name)
+        return !dm || String(dm.db.id) !== String(lm.db.id)
+      })
+    logger.info(`  🤖 Shadow comparison: distance=${distanceResult.matched.length} matched, llm=${_shadowLLMResult.matched.length} matched, diverged=${diverged}`)
+    llmContext.onShadowResult?.({
+      matchType: 'race' as const,
+      inputSummary: `${llmContext.eventName} (${llmContext.eventCity})`,
+      currentResult: { matched: distanceResult.matched.map(m => ({ input: m.input.name, dbId: m.db.id })), unmatched: distanceResult.unmatched.map(u => u.name) },
+      llmResult: { matched: _shadowLLMResult.matched.map(m => ({ input: m.input.name, dbId: m.db.id })), unmatched: _shadowLLMResult.unmatched.map(u => u.name) },
+      diverged,
+      responseTimeMs: _shadowElapsed,
+    })
+  }
+
+  return distanceResult
 }
 
 /**
