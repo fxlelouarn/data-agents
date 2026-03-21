@@ -294,16 +294,14 @@ export class FFAResultsAgent extends BaseAgent {
   }
 
   /**
-   * Vérifie si une proposition similaire existe déjà
+   * Vérifie si une proposition PENDING existe déjà pour cette édition
    */
-  private async hasExistingProposal(ffaId: string): Promise<boolean> {
+  private async hasExistingProposalForEdition(editionId: string): Promise<boolean> {
     const existing = await this.prisma.proposal.findFirst({
       where: {
-        status: 'PENDING',
-        justification: {
-          path: ['$[*].metadata.ffaId'],
-          string_contains: ffaId
-        }
+        agentId: this.config.id,
+        editionId,
+        status: 'PENDING'
       }
     })
     return !!existing
@@ -323,12 +321,6 @@ export class FFAResultsAgent extends BaseAgent {
     matchResult: EventMatchResult,
     config: FFAResultsConfig
   ): Promise<ProposalData | null> {
-    // Vérifier si une proposition existe déjà pour cette compétition
-    if (await this.hasExistingProposal(competition.ffaId)) {
-      this.logger.debug(`Proposition existante pour ${competition.ffaId}, ignoré`)
-      return null
-    }
-
     // Cas 1 : Bon match trouvé (>= 0.9)
     const hasGoodMatch = matchResult.type !== 'NO_MATCH' &&
                          matchResult.event &&
@@ -338,6 +330,12 @@ export class FFAResultsAgent extends BaseAgent {
     if (hasGoodMatch) {
       const event = matchResult.event!
       const edition = matchResult.edition!
+
+      // Vérifier si une proposition PENDING existe déjà pour cette édition
+      if (await this.hasExistingProposalForEdition(edition.id.toString())) {
+        this.logger.debug(`Proposition existante pour édition ${edition.id}, ignoré`)
+        return null
+      }
 
       this.logger.info(`✅ Match trouvé: "${competition.name}" → "${event.name}" (score: ${(matchResult.confidence * 100).toFixed(0)}%)`)
 
@@ -500,6 +498,12 @@ export class FFAResultsAgent extends BaseAgent {
       })
 
       if (count > 0) {
+        // Vérifier si une proposition PENDING existe déjà pour cette édition
+        if (await this.hasExistingProposalForEdition(edition.id.toString())) {
+          context.logger.debug(`Proposition existante pour édition ${edition.id}, ignorée`)
+          continue
+        }
+
         context.logger.info(`✅ ${edition.event.name} (${edition.year}): ${count} participants`)
 
         proposals.push({
