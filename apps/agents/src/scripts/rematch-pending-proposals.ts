@@ -11,6 +11,8 @@
  *   npx ts-node apps/agents/src/scripts/rematch-pending-proposals.ts --limit 50 --type new-events
  *   npx ts-node apps/agents/src/scripts/rematch-pending-proposals.ts --limit 50 --type races
  *   npx ts-node apps/agents/src/scripts/rematch-pending-proposals.ts --limit 10 --dry-run
+ *   npx ts-node apps/agents/src/scripts/rematch-pending-proposals.ts --limit 100 --min-confidence 0.85
+ *   npx ts-node apps/agents/src/scripts/rematch-pending-proposals.ts --limit 100 --concurrency 5
  *
  * Environment variables required:
  *   DATABASE_URL             - data-agents database
@@ -19,6 +21,7 @@
  */
 
 import { PrismaClient } from '@prisma/client'
+import pLimit from 'p-limit'
 import {
   matchEvent,
   matchRaces,
@@ -44,6 +47,7 @@ const hasFlag = (name: string) => args.includes(`--${name}`)
 const LIMIT = parseInt(getArg('limit') || '100', 10)
 const TYPE_FILTER = getArg('type') as 'new-events' | 'races' | undefined
 const DRY_RUN = hasFlag('dry-run')
+const MIN_CONFIDENCE = parseFloat(getArg('min-confidence') || '0.80')
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -78,7 +82,7 @@ const stats = {
 // ---------------------------------------------------------------------------
 async function main() {
   console.log('=== Rematch PENDING proposals with LLM ===')
-  console.log(`Limit: ${LIMIT}, Type: ${TYPE_FILTER || 'all'}, Dry-run: ${DRY_RUN}`)
+  console.log(`Limit: ${LIMIT}, Type: ${TYPE_FILTER || 'all'}, Dry-run: ${DRY_RUN}, Min confidence: ${MIN_CONFIDENCE}`)
   console.log()
 
   // Connect to Miles Republic
@@ -158,6 +162,11 @@ async function processNewEvents(sourceDb: any) {
       )
 
       if (matchResult.type !== 'NO_MATCH' && matchResult.event && matchResult.edition) {
+        if (matchResult.confidence < MIN_CONFIDENCE) {
+          stats.newEvents.confirmed++
+          logger.info(`  ⚠️ MATCH FOUND but below threshold: "${matchResult.event.name}" (id:${matchResult.event.id}, confidence:${matchResult.confidence.toFixed(2)} < ${MIN_CONFIDENCE}) — skipping`)
+          continue
+        }
         stats.newEvents.reclassified++
         logger.info(`  ✅ MATCH FOUND: "${matchResult.event.name}" (id:${matchResult.event.id}, confidence:${matchResult.confidence.toFixed(2)})`)
 
