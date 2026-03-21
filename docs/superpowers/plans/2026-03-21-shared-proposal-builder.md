@@ -23,6 +23,8 @@
 | `packages/agent-framework/src/services/proposal-builder/index.ts` | Create | Public exports |
 | `packages/agent-framework/src/services/proposal-builder/__tests__/race-utils.test.ts` | Create | Tests for race utilities |
 | `packages/agent-framework/src/services/proposal-builder/__tests__/proposal-builder.test.ts` | Create | Tests for builder functions |
+| `packages/agent-framework/src/services/proposal-builder/__tests__/regression-slack.test.ts` | Create | Regression tests: old Slack builder vs new shared builder |
+| `packages/agent-framework/src/services/proposal-builder/__tests__/regression-ffa.test.ts` | Create | Regression tests: old FFA builder vs new shared builder |
 | `apps/api/src/services/slack/SlackProposalService.ts` | Modify | Replace local builders with shared builder |
 | `apps/agents/src/FFAScraperAgent.ts` | Modify | Replace inline proposal construction with shared builder |
 
@@ -559,7 +561,280 @@ Includes date cascade, distance by category, URL classification."
 
 ---
 
-## Task 4: Migrate Slack Agent
+## Task 4: Regression tests (old vs new builders)
+
+**Files:**
+- Create: `packages/agent-framework/src/services/proposal-builder/__tests__/regression-slack.test.ts`
+- Create: `packages/agent-framework/src/services/proposal-builder/__tests__/regression-ffa.test.ts`
+
+These tests capture the exact output of the OLD builders (copied inline as reference functions) and compare with the NEW shared builder. This guarantees behavior is preserved or only intentionally improved.
+
+- [ ] **Step 1: Create Slack regression tests**
+
+Create `packages/agent-framework/src/services/proposal-builder/__tests__/regression-slack.test.ts`:
+
+The test should:
+1. Copy the OLD `buildNewEventChanges` and `buildEditionUpdateChanges` from `SlackProposalService.ts` as local reference functions (frozen snapshot of current behavior)
+2. Call both the OLD and NEW builders with the same realistic inputs
+3. Compare outputs field by field
+4. **Expected differences** (improvements) should be explicitly tested:
+   - Walk races: old produces `{ runDistance: 5 }`, new produces `{ walkDistance: 5 }` ← IMPROVEMENT
+   - Cycling races: old produces `{ runDistance: 42 }`, new produces `{ bikeDistance: 42 }` ← IMPROVEMENT
+5. **Everything else must be identical**: event name, city, country, edition dates, organizer, race count, race names, running distances
+
+Test scenarios to cover:
+- **NEW_EVENT with mixed race types** (running + walk + cycling): Verifies the distance field improvement
+- **NEW_EVENT with organizer**: Verifies organizer data preserved
+- **EDITION_UPDATE with race matching**: Verifies racesToUpdate/racesToAdd structure is compatible
+- **EDITION_UPDATE with timezone**: Verifies dates are identical
+
+```typescript
+describe('Slack builder regression: old vs new', () => {
+  // Copy of OLD buildNewEventChanges from SlackProposalService.ts (frozen snapshot)
+  function oldBuildNewEventChanges(data) {
+    // ... paste the exact current implementation here ...
+  }
+
+  const { buildNewEventChanges } = require('../proposal-builder')
+
+  describe('NEW_EVENT', () => {
+    const slackInput = {
+      eventName: 'Trail des Vignes',
+      eventCity: 'Beaune',
+      eventCountry: 'France',
+      eventDepartment: '21',
+      editionYear: 2026,
+      editionDate: '2026-09-20',
+      races: [
+        { name: 'Trail 30km', distance: 30000, elevation: 1200, startTime: '08:00',
+          categoryLevel1: 'TRAIL', categoryLevel2: 'LONG_TRAIL' },
+        { name: 'Marche 10km', distance: 10000, startTime: '09:00',
+          categoryLevel1: 'WALK', categoryLevel2: 'HIKING' }
+      ],
+      organizer: { name: 'AS Beaune Trail' },
+      confidence: 0.85,
+      source: 'slack'
+    }
+
+    it('should preserve event-level fields', () => {
+      const newChanges = buildNewEventChanges(slackInput)
+      expect(newChanges.name).toEqual({ new: 'Trail des Vignes', confidence: 0.85 })
+      expect(newChanges.city).toEqual({ new: 'Beaune', confidence: 0.85 })
+      expect(newChanges.country).toEqual({ new: 'France', confidence: 0.85 })
+    })
+
+    it('should preserve edition structure', () => {
+      const newChanges = buildNewEventChanges(slackInput)
+      expect(newChanges.edition.new.year).toBe('2026')
+      expect(newChanges.edition.new.timeZone).toBe('Europe/Paris')
+      expect(newChanges.edition.new.races).toHaveLength(2)
+      expect(newChanges.edition.new.organizer.name).toBe('AS Beaune Trail')
+    })
+
+    it('should IMPROVE: walk race uses walkDistance instead of runDistance', () => {
+      const newChanges = buildNewEventChanges(slackInput)
+      const walkRace = newChanges.edition.new.races.find(r => r.name === 'Marche 10km')
+      // OLD behavior: { runDistance: 10 } — WRONG for walks
+      // NEW behavior: { walkDistance: 10 } — CORRECT
+      expect(walkRace.walkDistance).toBe(10)
+      expect(walkRace.runDistance).toBeUndefined()
+    })
+
+    it('should preserve: running/trail race still uses runDistance', () => {
+      const newChanges = buildNewEventChanges(slackInput)
+      const trailRace = newChanges.edition.new.races.find(r => r.name === 'Trail 30km')
+      expect(trailRace.runDistance).toBe(30)
+      expect(trailRace.walkDistance).toBeUndefined()
+    })
+
+    it('should preserve race count and names', () => {
+      const newChanges = buildNewEventChanges(slackInput)
+      const raceNames = newChanges.edition.new.races.map(r => r.name).sort()
+      expect(raceNames).toEqual(['Marche 10km', 'Trail 30km'])
+    })
+  })
+})
+```
+
+- [ ] **Step 2: Create FFA regression tests**
+
+Create `packages/agent-framework/src/services/proposal-builder/__tests__/regression-ffa.test.ts`:
+
+Test scenarios:
+- **NEW_EVENT with FFA data** (subdivision data, CONFIRMED status, FEDERATION dataSource):
+  - Verify subdivision fields are present (new builder gains)
+  - Verify calendarStatus and dataSource are present
+  - Verify race distance by category (already correct in FFA, must stay correct)
+- **EDITION_UPDATE with pre-matched races**:
+  - Verify racesToUpdate structure matches expected format
+  - Verify racesToAdd for unmatched input races
+  - Verify racesExisting for unmatched DB races
+  - Verify date cascade: unmatched DB race at midnight gets new date, race with precise time preserves hour
+- **EDITION_UPDATE date tolerance**:
+  - Verify that a 2-hour difference does NOT produce a startDate change
+  - Verify that a 12-hour difference DOES produce a startDate change
+
+```typescript
+describe('FFA builder regression: old vs new', () => {
+  const { buildNewEventChanges, buildEditionUpdateChanges } = require('../proposal-builder')
+
+  describe('NEW_EVENT with FFA-specific fields', () => {
+    const ffaInput = {
+      eventName: 'Trail des Loups',
+      eventCity: 'Grenoble',
+      eventCountry: 'France',
+      eventDepartment: '38',
+      countrySubdivisionNameLevel1: 'Auvergne-Rhône-Alpes',
+      countrySubdivisionDisplayCodeLevel1: 'ARA',
+      countrySubdivisionNameLevel2: 'Isère',
+      countrySubdivisionDisplayCodeLevel2: '38',
+      editionYear: 2026,
+      editionDate: '2026-06-15',
+      timeZone: 'Europe/Paris',
+      calendarStatus: 'CONFIRMED',
+      dataSource: 'FEDERATION',
+      races: [
+        { name: 'Ultra 80km', distance: 80000, elevation: 4500, startTime: '06:00',
+          categoryLevel1: 'TRAIL', categoryLevel2: 'ULTRA_TRAIL' },
+        { name: 'Marche nordique 15km', distance: 15000, startTime: '09:00',
+          categoryLevel1: 'WALK', categoryLevel2: 'NORDIC_WALK' }
+      ],
+      organizer: {
+        name: 'Grenoble Trail Club',
+        email: 'contact@gtc.fr',
+        websiteUrl: 'https://traildesloups.fr',
+      },
+      confidence: 0.9,
+      source: 'ffa'
+    }
+
+    it('should include subdivision data', () => {
+      const changes = buildNewEventChanges(ffaInput)
+      expect(changes.countrySubdivisionNameLevel1.new).toBe('Auvergne-Rhône-Alpes')
+      expect(changes.countrySubdivisionDisplayCodeLevel1.new).toBe('ARA')
+    })
+
+    it('should include calendarStatus and dataSource', () => {
+      const changes = buildNewEventChanges(ffaInput)
+      expect(changes.edition.new.calendarStatus).toBe('CONFIRMED')
+      expect(changes.dataSource.new).toBe('FEDERATION')
+    })
+
+    it('should use walkDistance for nordic walk race', () => {
+      const changes = buildNewEventChanges(ffaInput)
+      const walkRace = changes.edition.new.races.find(r =>
+        r.name.includes('nordique') || r.name.includes('Marche')
+      )
+      expect(walkRace.walkDistance).toBe(15)
+      expect(walkRace.runDistance).toBeUndefined()
+    })
+
+    it('should use runDistance for ultra trail race', () => {
+      const changes = buildNewEventChanges(ffaInput)
+      const trailRace = changes.edition.new.races.find(r =>
+        r.name.includes('Ultra') || r.name.includes('80')
+      )
+      expect(trailRace.runDistance).toBe(80)
+    })
+  })
+
+  describe('EDITION_UPDATE with date tolerance', () => {
+    const baseInput = {
+      eventName: 'Trail Test',
+      editionDate: '2026-06-15',
+      timeZone: 'Europe/Paris',
+      races: [],
+      confidence: 0.9,
+      source: 'ffa'
+    }
+
+    const matchResult = {
+      type: 'FUZZY_MATCH',
+      event: { id: 100, name: 'Trail Test', city: 'Test' },
+      edition: { id: 200, year: 2026, startDate: null },
+      confidence: 0.9
+    }
+
+    it('should NOT propose startDate change for <6h difference', () => {
+      // June 15 midnight Paris = June 14 22:00 UTC
+      // June 15 at 01:00 Paris = June 14 23:00 UTC → 1h diff
+      matchResult.edition.startDate = new Date('2026-06-14T23:00:00Z')
+      const changes = buildEditionUpdateChanges(baseInput, matchResult, [])
+      expect(changes.startDate).toBeUndefined()
+    })
+
+    it('should propose startDate change for >6h difference', () => {
+      // June 15 midnight Paris vs June 14 at 06:00 UTC → 16h diff
+      matchResult.edition.startDate = new Date('2026-06-14T06:00:00Z')
+      const changes = buildEditionUpdateChanges(baseInput, matchResult, [])
+      expect(changes.startDate).toBeDefined()
+      expect(changes.startDate.old).toEqual(new Date('2026-06-14T06:00:00Z'))
+    })
+  })
+
+  describe('EDITION_UPDATE with date cascade on unmatched DB races', () => {
+    it('should cascade date to midnight race (replace entirely)', () => {
+      const input = {
+        eventName: 'Trail Test',
+        editionDate: '2026-06-16', // new date = June 16
+        timeZone: 'Europe/Paris',
+        races: [
+          { name: 'Trail 20km', distance: 20000, startTime: '09:00' }
+        ],
+        confidence: 0.9,
+        source: 'ffa'
+      }
+
+      const matchResult = {
+        type: 'FUZZY_MATCH',
+        event: { id: 100, name: 'Trail Test', city: 'Test' },
+        edition: { id: 200, year: 2026, startDate: new Date('2026-06-14T22:00:00Z') }, // June 15 midnight Paris
+        confidence: 0.9
+      }
+
+      // DB has a matched race and an unmatched race at midnight
+      const existingRaces = [
+        { id: 1, name: 'Trail 20 km', runDistance: 20, startDate: new Date('2026-06-15T07:00:00Z') },
+        { id: 2, name: 'Kids Run', runDistance: 1, startDate: new Date('2026-06-14T22:00:00Z') } // midnight Paris
+      ]
+
+      // Pre-match: Trail 20km matched, Kids Run unmatched
+      const preMatched = {
+        matched: [{ input: { name: 'Trail 20km', distance: 20 }, db: existingRaces[0] }],
+        unmatched: []
+      }
+
+      const changes = buildEditionUpdateChanges(input, matchResult, existingRaces, preMatched)
+
+      // Kids Run should be in racesExisting with cascaded date (June 16 midnight Paris)
+      expect(changes.racesExisting).toBeDefined()
+      const kidsRun = changes.racesExisting.new.find(r => r.raceName === 'Kids Run')
+      expect(kidsRun).toBeDefined()
+    })
+  })
+})
+```
+
+- [ ] **Step 3: Run regression tests**
+
+Run: `npx jest --testPathPatterns="regression" --verbose`
+Expected: All PASS
+
+- [ ] **Step 4: Commit**
+
+```bash
+git add packages/agent-framework/src/services/proposal-builder/__tests__/regression-slack.test.ts
+git add packages/agent-framework/src/services/proposal-builder/__tests__/regression-ffa.test.ts
+git commit -m "test(proposal-builder): add regression tests old vs new builders
+
+Compare shared builder output against expected behavior from both
+Slack and FFA agents. Explicitly marks expected improvements
+(walkDistance/bikeDistance) vs preserved behavior."
+```
+
+---
+
+## Task 5: Migrate Slack Agent (verify regression tests pass after)
 
 **Files:**
 - Modify: `apps/api/src/services/slack/SlackProposalService.ts`
@@ -653,7 +928,12 @@ Expected: No type errors
 Run: `npx jest --testPathPatterns="proposal-type-decision|SlackProposalService" --verbose`
 Expected: All PASS
 
-- [ ] **Step 7: Commit**
+- [ ] **Step 7: Run regression tests to verify behavior preserved**
+
+Run: `npx jest --testPathPatterns="regression-slack" --verbose`
+Expected: All PASS — event fields preserved, distance improvements confirmed
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add apps/api/src/services/slack/SlackProposalService.ts
@@ -666,7 +946,7 @@ date cascade, URL classification, race name normalization."
 
 ---
 
-## Task 5: Migrate FFA Scraper
+## Task 6: Migrate FFA Scraper (verify regression tests pass after)
 
 **Files:**
 - Modify: `apps/agents/src/FFAScraperAgent.ts`
@@ -786,7 +1066,12 @@ Expected: No type errors
 Run: `npx jest --testPathPatterns="proposal-builder|date-penalty" --verbose`
 Expected: All PASS
 
-- [ ] **Step 8: Commit**
+- [ ] **Step 8: Run regression tests to verify behavior preserved**
+
+Run: `npx jest --testPathPatterns="regression-ffa" --verbose`
+Expected: All PASS — subdivision data, date tolerance, date cascade all working
+
+- [ ] **Step 9: Commit**
 
 ```bash
 git add apps/agents/src/FFAScraperAgent.ts
@@ -799,7 +1084,7 @@ Builder handles distance assignment, date cascade, organizer URLs."
 
 ---
 
-## Task 6: Final verification
+## Task 7: Final verification
 
 - [ ] **Step 1: Full type check**
 
