@@ -1,0 +1,285 @@
+/**
+ * LLM Prompt Templates and Tool Schemas for Event/Race Matching
+ *
+ * This module provides:
+ * - sanitizeName: cleans names for safe inclusion in prompts
+ * - buildRaceMatchingPrompt: prompt for LLM to match proposed races with DB races
+ * - buildEventJudgePrompt: prompt for LLM to judge if a candidate event matches
+ * - raceMatchingTool: Anthropic tool schema for structured race matching output
+ * - eventJudgeTool: Anthropic tool schema for structured event judge output
+ */
+
+import { DbRace, RaceMatchInput } from './types'
+
+/**
+ * Candidate event for LLM event judge
+ */
+export interface EventJudgeCandidate {
+  eventId: number
+  eventName: string
+  eventCity: string
+  department?: string
+  editionYear?: number
+  editionDate?: string
+  score: number
+}
+
+/**
+ * Sanitize a name for safe inclusion in an LLM prompt.
+ * - Replaces control characters (newlines, tabs, etc.) with spaces
+ * - Collapses multiple spaces into one
+ * - Trims leading/trailing whitespace
+ * - Truncates to 200 characters
+ */
+export function sanitizeName(name: string): string {
+  return name
+    .replace(/[\n\r\t\x00-\x1f]/g, ' ')
+    .replace(/ {2,}/g, ' ')
+    .trim()
+    .slice(0, 200)
+}
+
+/**
+ * Format the distance info of a DB race into a human-readable string.
+ * Combines run, bike, swim, walk distances.
+ */
+function formatDbRaceDistance(race: DbRace): string {
+  const parts: string[] = []
+
+  if (race.runDistance && race.runDistance > 0) {
+    parts.push(`${race.runDistance}km`)
+  }
+  if (race.bikeDistance && race.bikeDistance > 0) {
+    parts.push(`vélo ${race.bikeDistance}km`)
+  }
+  if (race.swimDistance && race.swimDistance > 0) {
+    parts.push(`nat ${race.swimDistance}m`)
+  }
+  if (race.walkDistance && race.walkDistance > 0) {
+    parts.push(`marche ${race.walkDistance}km`)
+  }
+
+  return parts.length > 0 ? parts.join(' + ') : 'distance inconnue'
+}
+
+/**
+ * Format a start time from a startDate value.
+ * Returns "HH:MM" from UTC hours/minutes, or "?" if null/undefined.
+ */
+function formatStartTime(startDate: Date | string | null | undefined): string {
+  if (!startDate) return '?'
+  const d = startDate instanceof Date ? startDate : new Date(startDate)
+  if (isNaN(d.getTime())) return '?'
+  const hours = String(d.getUTCHours()).padStart(2, '0')
+  const minutes = String(d.getUTCMinutes()).padStart(2, '0')
+  return `${hours}:${minutes}`
+}
+
+/**
+ * Build a prompt (in French) asking the LLM to match proposed races
+ * against existing DB races for a given event/edition.
+ *
+ * @param eventName - Name of the event
+ * @param editionYear - Year of the edition
+ * @param eventCity - City of the event
+ * @param dbRaces - Existing races from the database
+ * @param inputRaces - Proposed races to match
+ */
+export function buildRaceMatchingPrompt(
+  eventName: string,
+  editionYear: number,
+  eventCity: string,
+  dbRaces: DbRace[],
+  inputRaces: RaceMatchInput[]
+): string {
+  const safeEventName = sanitizeName(eventName)
+  const safeCity = sanitizeName(eventCity)
+
+  const dbRaceLines = dbRaces.map((race) => {
+    const distance = formatDbRaceDistance(race)
+    const elevation = race.runPositiveElevation ? ` D+${race.runPositiveElevation}m` : ''
+    const startTime = formatStartTime(race.startDate)
+    const name = sanitizeName(race.name)
+    return `  [id:${race.id}] ${name} — ${distance}${elevation} — départ ${startTime}`
+  }).join('\n')
+
+  const inputRaceLines = inputRaces.map((race, index) => {
+    const label = String.fromCharCode(65 + index) // A, B, C...
+    const name = sanitizeName(race.name)
+    const distancePart = race.distance && race.distance > 0 ? `${race.distance}km` : 'distance inconnue'
+    const elevationPart = race.elevation ? ` D+${race.elevation}m` : ''
+    const startTimePart = race.startTime ? ` départ ${race.startTime}` : ''
+    const categoryPart = race.categoryLevel1 ? ` [${race.categoryLevel1}${race.categoryLevel2 ? '/' + race.categoryLevel2 : ''}]` : ''
+    return `  [${label}] ${name} — ${distancePart}${elevationPart}${startTimePart}${categoryPart}`
+  }).join('\n')
+
+  return `Tu es un expert en courses sportives. Tu dois identifier les correspondances entre des courses proposées et des courses existantes en base de données pour l'événement "${safeEventName}" ${editionYear} à ${safeCity}.
+
+## Courses existantes en base de données
+
+${dbRaceLines || '  (aucune course existante)'}
+
+## Courses proposées (à analyser)
+
+${inputRaceLines || '  (aucune course proposée)'}
+
+## Instructions
+
+Pour chaque course proposée (A, B, C...), détermine si elle correspond à une course existante (même course reformatée) ou s'il s'agit d'une nouvelle course.
+
+Une correspondance est valide si :
+- Les noms sont similaires ou décrivent la même épreuve
+- Les distances sont compatibles (marge de 15%)
+- La distance peut être 0 ou absente si les noms correspondent clairement
+
+Utilise l'outil race_matching_result pour structurer ta réponse.`
+}
+
+/**
+ * Build a prompt (in French) asking the LLM to judge whether any candidate
+ * event matches the input event.
+ *
+ * @param inputName - Name of the input event
+ * @param inputCity - City of the input event
+ * @param inputDepartment - Department code (optional)
+ * @param inputDate - Date string of the input event (optional)
+ * @param candidates - Candidate events from the database
+ */
+export function buildEventJudgePrompt(
+  inputName: string,
+  inputCity: string,
+  inputDepartment: string | undefined,
+  inputDate: string | undefined,
+  candidates: EventJudgeCandidate[]
+): string {
+  const safeName = sanitizeName(inputName)
+  const safeCity = sanitizeName(inputCity)
+
+  const inputLines = [
+    `  Nom : ${safeName}`,
+    `  Ville : ${safeCity}`,
+    inputDepartment ? `  Département : ${inputDepartment}` : null,
+    inputDate ? `  Date : ${inputDate}` : null,
+  ].filter(Boolean).join('\n')
+
+  const candidateLines = candidates.map((c) => {
+    const safeCandidateName = sanitizeName(c.eventName)
+    const safeCandidateCity = sanitizeName(c.eventCity)
+    const deptPart = c.department ? ` (dépt ${c.department})` : ''
+    const yearPart = c.editionYear ? ` — édition ${c.editionYear}` : ''
+    const datePart = c.editionDate ? ` (${c.editionDate})` : ''
+    return `  [id:${c.eventId}] ${safeCandidateName} — ${safeCandidateCity}${deptPart}${yearPart}${datePart} — score fuse.js : ${c.score}`
+  }).join('\n')
+
+  return `Tu es un expert en événements sportifs. Tu dois déterminer si un événement en cours d'import correspond à un événement existant dans la base de données.
+
+## Événement à importer
+
+${inputLines}
+
+## Candidats trouvés par recherche textuelle
+
+${candidateLines || '  (aucun candidat)'}
+
+## Instructions
+
+Analyse le nom, la ville, le département et la date de l'événement à importer et compare-les avec les candidats.
+
+Un match est valide si les deux événements décrivent le même événement sportif (même nom de marque, même lieu), même si la formulation diffère légèrement.
+
+Ne valide PAS un match si :
+- Les noms désignent clairement des événements différents
+- Les villes sont incompatibles sans raison évidente
+- La date est trop éloignée (plus de 6 mois d'écart)
+
+Utilise l'outil event_judge_result pour structurer ta réponse.`
+}
+
+/**
+ * Anthropic tool schema for structured race matching output.
+ */
+export const raceMatchingTool = {
+  name: 'race_matching_result',
+  description: 'Résultat du matching des courses proposées avec les courses existantes',
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      matches: {
+        type: 'array',
+        description: 'Liste des correspondances trouvées entre courses proposées et existantes',
+        items: {
+          type: 'object',
+          properties: {
+            proposedIndex: {
+              type: 'string',
+              description: 'Lettre de la course proposée (A, B, C...)',
+            },
+            existingRaceId: {
+              type: 'number',
+              description: 'ID de la course existante en base de données',
+            },
+            confidence: {
+              type: 'number',
+              description: 'Score de confiance du match (0-1)',
+            },
+            reason: {
+              type: 'string',
+              description: 'Explication du match',
+            },
+          },
+          required: ['proposedIndex', 'existingRaceId', 'confidence', 'reason'],
+        },
+      },
+      newRaces: {
+        type: 'array',
+        description: 'Liste des courses proposées sans correspondance (nouvelles courses)',
+        items: {
+          type: 'object',
+          properties: {
+            proposedIndex: {
+              type: 'string',
+              description: 'Lettre de la course proposée (A, B, C...)',
+            },
+            reason: {
+              type: 'string',
+              description: 'Explication pourquoi cette course est nouvelle',
+            },
+          },
+          required: ['proposedIndex', 'reason'],
+        },
+      },
+    },
+    required: ['matches', 'newRaces'],
+  },
+}
+
+/**
+ * Anthropic tool schema for structured event judge output.
+ * Uses found: boolean pattern instead of nullable object.
+ */
+export const eventJudgeTool = {
+  name: 'event_judge_result',
+  description: "Résultat du jugement sur la correspondance entre l'événement à importer et les candidats",
+  input_schema: {
+    type: 'object' as const,
+    properties: {
+      found: {
+        type: 'boolean',
+        description: "true si un candidat correspond à l'événement à importer, false sinon",
+      },
+      eventId: {
+        type: 'number',
+        description: "ID de l'événement candidat correspondant (uniquement si found=true)",
+      },
+      confidence: {
+        type: 'number',
+        description: 'Score de confiance du match entre 0 et 1 (uniquement si found=true)',
+      },
+      reason: {
+        type: 'string',
+        description: 'Explication du jugement (match ou non-match)',
+      },
+    },
+    required: ['found', 'reason'],
+  },
+}
