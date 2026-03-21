@@ -337,6 +337,16 @@ export class FFAResultsAgent extends BaseAgent {
         return null
       }
 
+      // Vérifier si le registrantsNumber est déjà identique en base
+      const currentEdition = await this.sourceDb.edition.findUnique({
+        where: { id: typeof edition.id === 'string' ? parseInt(edition.id) : edition.id },
+        select: { registrantsNumber: true }
+      })
+      if (currentEdition?.registrantsNumber === registrantsNumber) {
+        this.logger.debug(`registrantsNumber déjà à ${registrantsNumber} pour édition ${edition.id}, ignoré`)
+        return null
+      }
+
       this.logger.info(`✅ Match trouvé: "${competition.name}" → "${event.name}" (score: ${(matchResult.confidence * 100).toFixed(0)}%)`)
 
       return {
