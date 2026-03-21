@@ -62,6 +62,23 @@ Proposed races ──► Has DB races? ──► YES ──► LLM Race Matcher 
 - There are proposed races AND existing races in the database
 - LLM matching is enabled in config
 
+### Type extensions needed
+
+`RaceMatchInput` (types.ts) currently only has `name`, `distance`, `startTime`. The prompt needs category info for better matching. Add optional fields:
+
+```typescript
+interface RaceMatchInput {
+  name: string
+  distance?: number
+  startTime?: string
+  categoryLevel1?: string   // NEW — optional, used in LLM prompt if available
+  categoryLevel2?: string   // NEW — optional, used in LLM prompt if available
+  elevation?: number        // NEW — optional, D+ in meters for better matching signal
+}
+```
+
+These are optional additions — existing callers are not affected.
+
 ### Prompt design
 
 The prompt sends structured data about existing and proposed races, asking the LLM to identify correspondences:
@@ -108,13 +125,16 @@ The LLM can reason about things the current system cannot:
 LLM response is parsed and converted to the existing `RaceMatchResult` format:
 
 ```typescript
+// Existing interface (types.ts) — field is `db`, not `dbRace`
 interface RaceMatchResult {
-  matched: Array<{ input: RaceMatchInput, dbRace: DbRace, confidence: number }>
+  matched: Array<{ input: RaceMatchInput, db: DbRace }>
   unmatched: RaceMatchInput[]
 }
 ```
 
-- `matches[].existingRaceId` → lookup in dbRaces to build `dbRace` reference
+Note: The LLM returns a `confidence` per match, but this is NOT added to `RaceMatchResult` to avoid breaking existing consumers. Instead, confidence is logged for shadow mode analysis. If confidence proves useful downstream, we can extend the interface later with an optional field.
+
+- `matches[].existingRaceId` → lookup in dbRaces array to build `db` reference
 - `newRaces[].proposedIndex` → added to `unmatched` array
 - Any proposed race not mentioned in response → added to `unmatched` (safe default)
 
@@ -168,11 +188,18 @@ Réponds UNIQUEMENT en JSON valide :
 - Homonym handling: "Corrida de Noël" in dept 19 vs dept 56 = different events (no hand-tuned penalty needed)
 - Date reasoning: edition 2025 on April 20 → edition 2026 likely around same date → April 19 matches
 
-### Thresholds
+### Thresholds and match type interaction
 
 - Score < 0.30 → NO_MATCH directly (no LLM call)
 - Score ≥ 0.95 → EXACT_MATCH directly (no LLM call)
 - Score 0.30-0.95 → LLM Event Judge
+
+**How LLM result interacts with `similarityThreshold` (default 0.75)**:
+
+Currently, scores below `similarityThreshold` result in NO_MATCH. When LLM is active:
+- If LLM confirms a match (e.g., score was 0.45 but LLM says "yes, same event with confidence 0.90"): the result becomes `FUZZY_MATCH` with the LLM's confidence as the new score. The `similarityThreshold` is bypassed — the LLM's judgment overrides the heuristic threshold.
+- If LLM says no match: `NO_MATCH` regardless of the fuse.js score.
+- The `similarityThreshold` remains relevant only as a fallback decision boundary when LLM is disabled or fails.
 
 ### Output conversion
 
@@ -215,9 +242,21 @@ interface LLMMatchingConfig {
 **API side**: `settingsService.getLLMMatchingConfig()`
 **Agents side**: Environment variables `LLM_MATCHING_API_KEY`, `LLM_MATCHING_MODEL`, `LLM_MATCHING_ENABLED`
 
+### SDK dependency
+
+`@anthropic-ai/sdk` is currently only in `apps/api/package.json`. Since `llm-matching.service.ts` lives in `packages/agent-framework`, the SDK must be added to `packages/agent-framework/package.json` as a dependency:
+
+```bash
+cd packages/agent-framework && npm install @anthropic-ai/sdk
+```
+
+This does NOT create a circular dependency — `@anthropic-ai/sdk` is an external package.
+
 ### LLM client
 
-Uses the Anthropic SDK (already in project dependencies):
+Uses the Anthropic SDK:
+
+Use Anthropic's **tool use** feature for structured output instead of raw JSON parsing. This eliminates most parsing failures:
 
 ```typescript
 import Anthropic from '@anthropic-ai/sdk'
@@ -227,8 +266,12 @@ const response = await client.messages.create({
   model: config.model ?? 'claude-haiku-4-5-20251001',
   max_tokens: 1024,
   messages: [{ role: 'user', content: prompt }],
+  tools: [raceMatchingTool],  // JSON schema for structured output
+  tool_choice: { type: 'tool', name: 'race_matching_result' },
 })
 ```
+
+The tool schemas enforce the expected response format at the API level, reducing fallback-to-current-matching triggers caused by malformed JSON.
 
 ### Error handling
 
@@ -240,6 +283,15 @@ LLM called → success → use LLM result
 ```
 
 No retries. Failure is logged and the existing matching result is used. The user never sees a difference.
+
+### Input sanitization
+
+Event and race names come from external sources (FFA website, Slack user input). Before constructing prompts:
+- Strip newlines and control characters from all name/city fields
+- Truncate names to 200 characters max
+- Limit total races in prompt to 40 (20 existing + 20 proposed). If exceeded, fall back to distance-based matching for races, or truncate candidates to top 5 for event judge.
+
+This prevents prompt injection and keeps token usage predictable.
 
 ### Logging
 
@@ -267,6 +319,8 @@ Before enabling LLM as decision-maker:
 2. LLM is called in parallel (fire-and-forget, no blocking)
 3. Both results are logged, only current result is used
 4. Divergences are analyzed to evaluate LLM quality
+
+**Shadow mode logging**: Comparisons are stored in a dedicated `llm_matching_logs` table (new Prisma model) with fields: `proposalId`, `matchType` (race/event), `currentResult` (JSON), `llmResult` (JSON), `diverged` (boolean), `responseTimeMs`, `createdAt`. This makes analysis queryable via SQL rather than digging through stdout logs.
 
 Metrics to track:
 - False negatives recovered (LLM found a match that fuse.js missed)
