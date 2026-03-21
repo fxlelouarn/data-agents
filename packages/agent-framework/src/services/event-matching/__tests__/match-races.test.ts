@@ -24,7 +24,7 @@ describe('matchRaces', () => {
   })
 
   describe('Tolérance de distance (15% par défaut)', () => {
-    it('devrait matcher avec 10% de différence (< 15%)', () => {
+    it('devrait matcher avec 10% de différence (< 15%)', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'La Bataille', distance: 27.5 } // 27.5km
       ]
@@ -37,14 +37,14 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
       expect(result.matched[0].db.id).toBe(1)
     })
 
-    it('devrait matcher avec 7% de différence (< 15%)', () => {
+    it('devrait matcher avec 7% de différence (< 15%)', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Les Orchis', distance: 15 } // 15km
       ]
@@ -57,14 +57,14 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
       expect(result.matched[0].db.id).toBe(2)
     })
 
-    it('ne devrait PAS matcher avec 20% de différence (> 15%)', () => {
+    it('ne devrait PAS matcher avec 20% de différence (> 15%)', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Ultra Trail', distance: 100 } // 100km
       ]
@@ -77,7 +77,7 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Pas de match par distance, mais fuzzy fallback possible
       // Le nom "Ultra Trail" vs "Trail 80km" pourrait matcher
@@ -85,7 +85,7 @@ describe('matchRaces', () => {
       expect(result.matched.length + result.unmatched.length).toBe(1)
     })
 
-    it('devrait respecter une tolérance custom si fournie', () => {
+    it('devrait respecter une tolérance custom si fournie', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Semi Marathon', distance: 21.1 }
       ]
@@ -99,10 +99,10 @@ describe('matchRaces', () => {
       ]
 
       // Avec tolérance 5%, ne devrait pas matcher
-      const result5 = matchRaces(inputRaces, dbRaces, mockLogger, 0.05)
+      const result5 = await matchRaces(inputRaces, dbRaces, mockLogger, 0.05)
 
       // Avec tolérance 15%, devrait matcher
-      const result15 = matchRaces(inputRaces, dbRaces, mockLogger, 0.15)
+      const result15 = await matchRaces(inputRaces, dbRaces, mockLogger, 0.15)
 
       // 9% > 5% donc pas de match par distance avec 5%
       // Mais fuzzy fallback peut matcher car même nom
@@ -111,7 +111,7 @@ describe('matchRaces', () => {
   })
 
   describe('Fuzzy fallback quand pas de match par distance', () => {
-    it('devrait matcher par nom quand la distance est trop différente', () => {
+    it('devrait matcher par nom quand la distance est trop différente', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Les Orchis', distance: 15 } // 15km
       ]
@@ -131,13 +131,13 @@ describe('matchRaces', () => {
 
       // Avec tolérance 5%, 15km vs 14km = 7% > 5% donc pas de match par distance
       // Mais fuzzy fallback devrait trouver "orchis" dans les deux noms
-      const result = matchRaces(inputRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(1)
       expect(result.matched[0].db.name).toContain('orchis')
     })
 
-    it('devrait matcher "Rando 10km" avec "Randonnée 11,5 km" par fuzzy', () => {
+    it('devrait matcher "Rando 10km" avec "Randonnée 11,5 km" par fuzzy', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Rando 10km', distance: 10 }
       ]
@@ -151,14 +151,14 @@ describe('matchRaces', () => {
       ]
 
       // Distance différente mais noms similaires
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Le fuzzy match devrait trouver la similarité "rando" / "randonnée"
       expect(result.matched).toHaveLength(1)
       expect(result.matched[0].db.id).toBe(1)
     })
 
-    it('ne devrait PAS matcher des noms complètement différents', () => {
+    it('ne devrait PAS matcher des noms complètement différents', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Ultra Marathon des Volcans', distance: 50 }
       ]
@@ -171,7 +171,7 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Noms trop différents, pas de match
       expect(result.unmatched).toHaveLength(1)
@@ -180,7 +180,7 @@ describe('matchRaces', () => {
   })
 
   describe('Éviter les doublons de courses DB matchées', () => {
-    it('ne devrait pas matcher deux courses input à la même course DB', () => {
+    it('ne devrait pas matcher deux courses input à la même course DB', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Trail 10km', distance: 10 },
         { name: '10 kilomètres', distance: 10 }
@@ -194,14 +194,14 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Une seule course DB, donc un seul match possible
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(1)
     })
 
-    it('devrait matcher chaque course DB une seule fois', () => {
+    it('devrait matcher chaque course DB une seule fois', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'La Caburotte', distance: 55 },
         { name: 'La Cabu', distance: 53 }, // Même course, nom différent
@@ -215,7 +215,7 @@ describe('matchRaces', () => {
         }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // La première course input devrait matcher
       // La deuxième ne peut plus matcher (DB déjà prise)
@@ -233,7 +233,7 @@ describe('matchRaces', () => {
       { id: 175546, name: 'Randonnée 11,5 km', walkDistance: 11.5 },
     ]
 
-    it('devrait matcher toutes les courses avec les bons IDs', () => {
+    it('devrait matcher toutes les courses avec les bons IDs', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'La Caburotte', distance: 55 },
         { name: 'La Bataille', distance: 27.5 },
@@ -242,7 +242,7 @@ describe('matchRaces', () => {
         { name: 'Rando 10km', distance: 10 },
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Avec tolérance 15% + fuzzy fallback, toutes devraient matcher
       expect(result.matched.length).toBeGreaterThanOrEqual(4)
@@ -261,12 +261,12 @@ describe('matchRaces', () => {
       expect(mignonetteMatch?.db.id).toBe(175547)
     })
 
-    it('devrait identifier L\'Alambic Ultra 85km comme nouvelle course', () => {
+    it('devrait identifier L\'Alambic Ultra 85km comme nouvelle course', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'L\'Alambic Ultra', distance: 85 },
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Pas de course 85km dans la DB, devrait être unmatched
       expect(result.unmatched).toHaveLength(1)
@@ -275,7 +275,7 @@ describe('matchRaces', () => {
   })
 
   describe('Courses sans distance', () => {
-    it('devrait traiter une course input sans distance comme nouvelle', () => {
+    it('devrait traiter une course input sans distance comme nouvelle', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Course mystère', distance: 0 }
       ]
@@ -284,12 +284,12 @@ describe('matchRaces', () => {
         { id: 1, name: 'Trail 10km', runDistance: 10 }
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       expect(result.unmatched).toHaveLength(1)
     })
 
-    it('devrait pouvoir matcher par nom une course DB sans distance', () => {
+    it('devrait pouvoir matcher par nom une course DB sans distance', async () => {
       const inputRaces: RaceMatchInput[] = [
         { name: 'Randonnée découverte', distance: 5 }
       ]
@@ -298,7 +298,7 @@ describe('matchRaces', () => {
         { id: 1, name: 'Randonnée découverte', runDistance: 0 } // Pas de distance en DB
       ]
 
-      const result = matchRaces(inputRaces, dbRaces, mockLogger)
+      const result = await matchRaces(inputRaces, dbRaces, mockLogger)
 
       // Le fallback sur les courses sans distance devrait matcher par nom
       expect(result.matched).toHaveLength(1)

@@ -18,8 +18,13 @@ export {
   levenshteinDistance,
   normalizeString,
   normalizeRaceName,
-  removeEditionNumber
+  removeEditionNumber,
+  // LLM context type for race matching
+  RaceMatchLLMContext
 } from './event-matcher'
+
+// LLM Matching Service
+export { LLMMatchingService } from './llm-matching.service'
 
 // Types
 export {

@@ -26,6 +26,16 @@ import {
   MeilisearchMatchingConfig
 } from './types'
 import { getMeilisearchService } from '@data-agents/database'
+import { LLMMatchingService } from './llm-matching.service'
+
+export interface RaceMatchLLMContext {
+  llmService?: LLMMatchingService
+  eventName?: string
+  editionYear?: number
+  eventCity?: string
+  shadowMode?: boolean
+  onShadowResult?: (log: any) => void
+}
 
 /**
  * Default matching configuration
@@ -352,12 +362,29 @@ export async function matchEvent(
  *    - If multiple DB races → Fuzzy match on name
  *    - If no DB race → New race
  */
-export function matchRaces(
+export async function matchRaces(
   inputRaces: RaceMatchInput[],
   dbRaces: DbRace[],
   logger: MatchingLogger = defaultLogger,
-  tolerancePercent: number = 0.15 // TECH DEBT: Should be configurable in platform Settings (see docs/TECH_DEBT.md)
-): RaceMatchResult {
+  tolerancePercent: number = 0.15, // TECH DEBT: Should be configurable in platform Settings (see docs/TECH_DEBT.md)
+  llmContext?: RaceMatchLLMContext
+): Promise<RaceMatchResult> {
+  // Try LLM matching first if available
+  if (llmContext?.llmService && llmContext.eventName) {
+    const llmResult = await llmContext.llmService.matchRacesWithLLM(
+      llmContext.eventName,
+      llmContext.editionYear ?? new Date().getFullYear(),
+      llmContext.eventCity ?? '',
+      dbRaces,
+      inputRaces
+    )
+    if (llmResult) {
+      logger.info(`🤖 LLM race matching: ${llmResult.matched.length} matched, ${llmResult.unmatched.length} unmatched`)
+      return llmResult
+    }
+    logger.info('🤖 LLM race matching unavailable, falling back to distance-based matching')
+  }
+
   const matched: Array<{ input: RaceMatchInput, db: DbRace }> = []
   const unmatched: RaceMatchInput[] = []
   const matchedDbIds = new Set<number | string>() // Track matched DB races to avoid duplicates
@@ -482,15 +509,15 @@ export function matchRaces(
  * the old matchRacesByDistanceAndName signature with `runDistance`
  * instead of `distance`, and returns `{ ffa, db }` instead of `{ input, db }`.
  */
-export function matchRacesByDistanceAndName(
+export async function matchRacesByDistanceAndName(
   ffaRaces: any[],
   dbRaces: DbRace[],
   logger: any,
   tolerancePercent: number = 0.05
-): {
+): Promise<{
   matched: Array<{ ffa: any, db: DbRace }>,
   unmatched: any[]
-} {
+}> {
   // Adapt logger to MatchingLogger interface
   const adaptedLogger: MatchingLogger = {
     info: (msg, data) => logger.info?.(msg, data) || console.log(msg, data),
@@ -507,7 +534,7 @@ export function matchRacesByDistanceAndName(
     startTime: r.startTime
   }))
 
-  const result = matchRaces(raceInputs, dbRaces, adaptedLogger, tolerancePercent)
+  const result = await matchRaces(raceInputs, dbRaces, adaptedLogger, tolerancePercent)
 
   // Convert back to FFA-style output
   return {

@@ -140,15 +140,15 @@ export async function matchCompetition(
  *
  * @deprecated Utiliser matchRaces de @data-agents/agent-framework directement
  */
-export function matchRacesByDistanceAndName(
+export async function matchRacesByDistanceAndName(
   ffaRaces: FFARace[],
   dbRaces: DbRace[],
   logger: any,
   tolerancePercent: number = 0.05
-): {
+): Promise<{
   matched: Array<{ ffa: FFARace, db: DbRace }>,
   unmatched: FFARace[]
-} {
+}> {
   const adaptedLogger = adaptLogger(logger)
 
   // Convertir FFARace en RaceMatchInput
@@ -158,7 +158,7 @@ export function matchRacesByDistanceAndName(
     startTime: r.startTime
   }))
 
-  const result = matchRacesGeneric(raceInputs, dbRaces, adaptedLogger, tolerancePercent)
+  const result = await matchRacesGeneric(raceInputs, dbRaces, adaptedLogger, tolerancePercent)
 
   // Reconvertir les résultats vers le format FFA
   return {

@@ -1,6 +1,6 @@
 /**
  * Tests pour le matching hybride distance + nom des courses
- * 
+ *
  * Cas testés :
  * - Distance unique : Match automatique
  * - Distance multiple + nom similaire : Fuzzy match
@@ -22,7 +22,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 1: Distance unique - Match automatique', () => {
-    it('devrait matcher automatiquement quand une seule course a cette distance', () => {
+    it('devrait matcher automatiquement quand une seule course a cette distance', async () => {
       const ffaRaces = [
         {
           name: '10km',
@@ -42,7 +42,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-    const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+    const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
@@ -52,7 +52,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 2: Distance multiple + noms similaires - Fuzzy match', () => {
-    it('devrait distinguer Marche vs Course relais avec même distance', () => {
+    it('devrait distinguer Marche vs Course relais avec même distance', async () => {
       const ffaRaces = [
         {
           name: 'Marche 4,3 km - Course HS non officielle',
@@ -87,7 +87,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(2)
       expect(result.unmatched).toHaveLength(0)
@@ -98,12 +98,12 @@ describe('matchRacesByDistanceAndName', () => {
 
       expect(marcheMatch).toBeDefined()
       expect(marcheMatch!.db.name).toBe('Marche 4,3 km')
-      
+
       expect(relaisMatch).toBeDefined()
       expect(relaisMatch!.db.name).toBe('Course relais adulte 4,3 km')
     })
 
-    it('devrait matcher des courses enfants avec tranches d\'âge', () => {
+    it('devrait matcher des courses enfants avec tranches d\'âge', async () => {
       const ffaRaces = [
         {
           name: 'Course enfants 800 m - 6 ans – 10 ans - Course HS non officielle',
@@ -136,7 +136,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(2)
       expect(result.unmatched).toHaveLength(0)
@@ -150,7 +150,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 3: Distance multiple + noms trop différents - Nouvelle course', () => {
-    it('devrait créer une nouvelle course si le nom est trop différent', () => {
+    it('devrait créer une nouvelle course si le nom est trop différent', async () => {
       const ffaRaces = [
         {
           name: 'Ultra marathon des volcans',
@@ -178,7 +178,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       // Le nom "Ultra marathon des volcans" est trop différent de "Marche nordique" et "Course enfants"
       // → Devrait être traité comme nouvelle course
@@ -188,7 +188,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 4: Pas de distance correspondante - Nouvelle course', () => {
-    it('devrait créer une nouvelle course si aucune distance ne correspond', () => {
+    it('devrait créer une nouvelle course si aucune distance ne correspond', async () => {
       const ffaRaces = [
         {
           name: '15km',
@@ -216,7 +216,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)
@@ -225,7 +225,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 5: Tolérance de distance (5%)', () => {
-    it('devrait matcher avec une différence de distance <= 5%', () => {
+    it('devrait matcher avec une différence de distance <= 5%', async () => {
       const ffaRaces = [
         {
           name: 'Semi-Marathon',
@@ -245,13 +245,13 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(1)
       expect(result.unmatched).toHaveLength(0)
     })
 
-    it('ne devrait pas matcher avec une différence de distance > 5%', () => {
+    it('ne devrait pas matcher avec une différence de distance > 5%', async () => {
       const ffaRaces = [
         {
           name: '10km',
@@ -271,7 +271,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)
@@ -279,7 +279,7 @@ describe('matchRacesByDistanceAndName', () => {
   })
 
   describe('Cas 6: Course sans distance - Nouvelle course', () => {
-    it('devrait traiter une course sans distance comme nouvelle course', () => {
+    it('devrait traiter une course sans distance comme nouvelle course', async () => {
       const ffaRaces = [
         {
           name: 'Course mystère',
@@ -299,7 +299,7 @@ describe('matchRacesByDistanceAndName', () => {
         }
       ]
 
-      const result = matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
+      const result = await matchRacesByDistanceAndName(ffaRaces, dbRaces, mockLogger, 0.05)
 
       expect(result.matched).toHaveLength(0)
       expect(result.unmatched).toHaveLength(1)

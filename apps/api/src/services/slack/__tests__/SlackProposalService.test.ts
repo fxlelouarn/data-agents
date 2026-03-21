@@ -87,7 +87,7 @@ jest.mock('@data-agents/database', () => ({
 
 jest.mock('@data-agents/agent-framework', () => ({
   matchEvent: jest.fn(),
-  matchRaces: jest.fn().mockReturnValue({
+  matchRaces: jest.fn().mockResolvedValue({
     matched: [],
     unmatched: []
   }),
@@ -380,7 +380,7 @@ describe('SlackProposalService', () => {
       }
 
       // Mock matchRaces to return all races as unmatched (nouvelles courses)
-      ;(matchRaces as jest.Mock).mockReturnValue({
+      ;(matchRaces as jest.Mock).mockResolvedValue({
         matched: [],
         unmatched: [
           { name: 'Race A', runDistance: 10 },
@@ -1261,7 +1261,7 @@ describe('SlackProposalService - Enrichment', () => {
       })
 
       // Mock matchRaces avec une course qui a déjà une catégorie
-      matchRaces.mockReturnValue({
+      matchRaces.mockResolvedValue({
         matched: [{
           input: { name: 'La Bataille', distance: 27.5 },
           db: {
@@ -1325,7 +1325,7 @@ describe('SlackProposalService - Enrichment', () => {
       })
 
       // Mock: 1 course matchée, 2 courses DB non matchées
-      matchRaces.mockReturnValue({
+      matchRaces.mockResolvedValue({
         matched: [{
           input: { name: 'La Bataille', distance: 27.5 },
           db: { id: 175550, name: 'Trail la bataille 25 km', runDistance: 25 }
