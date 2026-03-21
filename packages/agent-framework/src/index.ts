@@ -15,6 +15,9 @@ export type { SourceConnectionConfig, PrismaClientType } from './connection-mana
 // matchRacesByDistanceAndName is exported from here for backwards compatibility
 export * from './services/event-matching'
 
+// Shared proposal builder (NEW_EVENT and EDITION_UPDATE changes objects)
+export * from './services/proposal-builder/index.js'
+
 // Legacy type alias for backwards compatibility
 export type { DbRace as RaceWithDistance } from './services/event-matching'
 
