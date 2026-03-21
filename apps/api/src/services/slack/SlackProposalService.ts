@@ -692,8 +692,8 @@ export async function createProposalFromSlack(
     const hasOrganizerInfo = !!(extractedData.organizerEmail || extractedData.organizerWebsite)
     const raceCount = extractedData.races?.length || 0
 
-    if (matchResult.type === 'NO_MATCH' || matchResult.confidence < DEFAULT_MATCHING_CONFIG.similarityThreshold) {
-      // Pas de match ou match trop faible → NEW_EVENT
+    if (matchResult.type === 'NO_MATCH' || matchResult.confidence < DEFAULT_MATCHING_CONFIG.similarityThreshold || !matchResult.edition) {
+      // Pas de match, match trop faible, ou événement trouvé sans édition → NEW_EVENT
       proposalType = ProposalType.NEW_EVENT
       changes = buildNewEventChanges(extractedData)
       confidence = calculateNewEventConfidence(
@@ -702,6 +702,10 @@ export async function createProposalFromSlack(
         hasOrganizerInfo,
         raceCount
       )
+
+      if (matchResult.event && !matchResult.edition) {
+        logger.info(`Event "${matchResult.event.name}" found but no edition for searched year → creating NEW_EVENT`)
+      }
     } else {
       // Match trouvé → EDITION_UPDATE
       proposalType = ProposalType.EDITION_UPDATE
