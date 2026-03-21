@@ -10,6 +10,7 @@
     "tsc": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.80.0",
     "@data-agents/database": "*",
     "@data-agents/types": "*",
     "@prisma/client": "^6.19.0",
