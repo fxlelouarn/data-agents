@@ -1,0 +1,93 @@
+name: Sync Miles Republic Schema
+
+on:
+  schedule:
+    # Every day at 06:00 UTC
+    - cron: '0 6 * * *'
+  workflow_dispatch: # Allow manual trigger
+
+permissions:
+  contents: write
+  pull-requests: write
+
+jobs:
+  sync-schema:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Fetch schema from Peyce-dev/app
+        env:
+          GH_TOKEN: ${{ secrets.PEYCE_REPO_TOKEN }}
+        run: |
+          # Download the source schema
+          SOURCE_SCHEMA=$(gh api "repos/Peyce-dev/app/contents/packages/db/prisma/schema.prisma?ref=staging" --jq '.content' | base64 -d)
+
+          if [ -z "$SOURCE_SCHEMA" ]; then
+            echo "❌ Failed to fetch schema"
+            exit 1
+          fi
+
+          # Our custom header
+          HEADER='generator client {
+            provider        = "prisma-client-js"
+            output          = "../../../node_modules/.prisma/client-miles"
+            previewFeatures = ["fullTextSearchPostgres", "driverAdapters", "typedSql", "postgresqlExtensions"]
+          }
+
+          datasource db {
+            provider   = "postgresql"
+            url        = env("DATABASE_URL")
+            directUrl  = env("DATABASE_DIRECT_URL")
+            extensions = [citext]
+          }'
+
+          # Extract models + enums (skip generator + datasource from source)
+          MODELS=$(echo "$SOURCE_SCHEMA" | awk '
+            BEGIN { skip=1; blank_after=0 }
+            /^datasource / { skip=1; blank_after=1; next }
+            /^generator / { skip=1; blank_after=1; next }
+            skip && /^\}/ { skip=0; blank_after=1; next }
+            skip { next }
+            blank_after && /^$/ { blank_after=0; next }
+            { blank_after=0; print }
+          ')
+
+          echo "$HEADER" > apps/agents/prisma/miles-republic.prisma
+          echo "" >> apps/agents/prisma/miles-republic.prisma
+          echo "$MODELS" >> apps/agents/prisma/miles-republic.prisma
+
+      - name: Check for changes
+        id: changes
+        run: |
+          if git diff --quiet apps/agents/prisma/miles-republic.prisma; then
+            echo "changed=false" >> $GITHUB_OUTPUT
+            echo "ℹ️ Schema is up to date"
+          else
+            echo "changed=true" >> $GITHUB_OUTPUT
+            echo "📊 Schema changes detected:"
+            git diff --stat apps/agents/prisma/miles-republic.prisma
+          fi
+
+      - name: Create Pull Request
+        if: steps.changes.outputs.changed == 'true'
+        uses: peter-evans/create-pull-request@v6
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          commit-message: 'chore(prisma): sync Miles Republic schema from Peyce-dev/app'
+          title: 'chore(prisma): sync Miles Republic schema'
+          body: |
+            Automated sync of the Miles Republic Prisma schema from [Peyce-dev/app](https://github.com/Peyce-dev/app) (staging branch).
+
+            This PR was created automatically by the daily sync workflow. Please review the changes and merge if everything looks good.
+
+            After merging, the Prisma client will be regenerated on the next `npm install` or `npx prisma generate`.
+          branch: chore/sync-miles-republic-schema
+          delete-branch: true
+          labels: dependencies, automated
