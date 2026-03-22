@@ -141,8 +141,8 @@ export function calculateRaceStartDate(
 
     baseDateStr = `${adjustedYear}-${String(raceMonth + 1).padStart(2, '0')}-${String(raceDay).padStart(2, '0')}`
   } else {
-    // Use the edition date directly (already YYYY-MM-DD)
-    baseDateStr = editionDate
+    // Use the edition date — strip time part if full ISO datetime was passed
+    baseDateStr = editionDate.includes('T') ? editionDate.split('T')[0] : editionDate
   }
 
   if (startTime) {
@@ -169,19 +169,21 @@ export function calculateEditionDates(
   timezone: string
 ): { startDate: Date; endDate: Date } {
   const tz = timezone || DEFAULT_TIMEZONE
+  // Normalize: strip time part if full ISO datetime was passed
+  const baseDateStr = editionDate.includes('T') ? editionDate.split('T')[0] : editionDate
 
   if (races.length === 0) {
-    const midnight = fromZonedTime(`${editionDate}T00:00:00`, tz)
+    const midnight = fromZonedTime(`${baseDateStr}T00:00:00`, tz)
     return { startDate: midnight, endDate: midnight }
   }
 
   // Build list of race dates (filter out invalid dates)
   const raceDates: Date[] = races
-    .map(race => calculateRaceStartDate(editionDate, race.startTime, tz, race.raceDate))
+    .map(race => calculateRaceStartDate(baseDateStr, race.startTime, tz, race.raceDate))
     .filter((d): d is Date => d != null && !isNaN(d.getTime()))
 
   if (raceDates.length === 0) {
-    const midnight = fromZonedTime(`${editionDate}T00:00:00`, tz)
+    const midnight = fromZonedTime(`${baseDateStr}T00:00:00`, tz)
     return { startDate: midnight, endDate: midnight }
   }
 

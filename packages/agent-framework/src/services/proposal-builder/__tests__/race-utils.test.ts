@@ -197,6 +197,13 @@ describe('calculateRaceStartDate', () => {
     expect(result?.toISOString()).toBe('2025-06-20T07:00:00.000Z')
   })
 
+  it('with full ISO datetime as editionDate (should strip time part)', () => {
+    // Rematch script passes editionDate as full ISO datetime
+    const result = calculateRaceStartDate('2026-03-08T00:00:00.000Z', '09:00', 'Europe/Paris')
+    // Mar 8 2026 09:00 Paris (UTC+1 winter) = 08:00 UTC
+    expect(result?.toISOString()).toBe('2026-03-08T08:00:00.000Z')
+  })
+
   it('with raceDate and year rollover (Dec → Jan)', () => {
     // editionDate = "2025-12-28", raceDate = "03/01" → should be 2026
     const result = calculateRaceStartDate('2025-12-28', '10:00', 'Europe/Paris', '03/01')
