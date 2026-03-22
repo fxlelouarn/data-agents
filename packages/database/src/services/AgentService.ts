@@ -46,37 +46,30 @@ export class AgentService implements IAgentService {
       orderBy: { updatedAt: 'desc' }
     })
 
-    // Ajouter les erreurs de configuration pour chaque agent
-    const agentsWithValidation = await Promise.all(
-      agents.map(async (agent) => {
-        const validation = await this.validateConfiguration(agent.id)
-        const hasCriticalErrors = validation.errors.some(e => e.severity === 'error')
+    // Validate all agents in parallel, reusing already-loaded agent data
+    // Pre-fetch all database connections once (instead of N times)
+    const dbConnectionsNeeded = agents
+      .map(a => (a.config as any)?.sourceDatabase)
+      .filter(Boolean)
+    const uniqueDbIds = [...new Set(dbConnectionsNeeded)]
+    const dbConnectionMap = new Map<string, any>()
+    if (uniqueDbIds.length > 0) {
+      await Promise.all(uniqueDbIds.map(async (dbId) => {
+        try {
+          const conn = await this.connectionService.getConnection(dbId)
+          if (conn) dbConnectionMap.set(dbId, conn)
+        } catch { /* ignore */ }
+      }))
+    }
 
-        // Si l'agent a des erreurs critiques et est encore actif, le désactiver
-        let updatedAgent = agent
-        if (hasCriticalErrors && agent.isActive) {
-          console.log(`Désactivation automatique de l'agent ${agent.name} (${agent.id}) à cause d'erreurs de configuration`)
-          updatedAgent = await this.prisma.agent.update({
-            where: { id: agent.id },
-            data: { isActive: false },
-            include: {
-              _count: {
-                select: {
-                  runs: true,
-                  proposals: true,
-                }
-              }
-            }
-          })
-        }
-
-        return {
-          ...updatedAgent,
-          configurationErrors: validation.errors,
-          hasConfigurationErrors: !validation.isValid
-        }
-      })
-    )
+    const agentsWithValidation = agents.map((agent) => {
+      const validation = this.validateConfigurationSync(agent, dbConnectionMap)
+      return {
+        ...agent,
+        configurationErrors: validation.errors,
+        hasConfigurationErrors: !validation.isValid
+      }
+    })
 
     return agentsWithValidation
   }
@@ -227,6 +220,47 @@ export class AgentService implements IAgentService {
   /**
    * Valide la configuration d'un agent
    */
+  /**
+   * Synchronous validation using pre-loaded data (no DB queries).
+   * Used by getAgents() to avoid N+1 queries.
+   */
+  private validateConfigurationSync(
+    agent: { id: string; config: any },
+    dbConnectionMap: Map<string, any>
+  ): ValidationResult {
+    const config = agent.config as any || {}
+    const configSchema = config.configSchema || {}
+    const errors: Array<{ field: string; message: string; severity: 'error' | 'warning' }> = []
+
+    for (const [fieldName, fieldConfig] of Object.entries(configSchema)) {
+      const fieldDef = fieldConfig as any
+      if (fieldDef.required) {
+        const value = config[fieldName]
+        if (!value || (Array.isArray(value) && value.length === 0) || value === '') {
+          let message = `Le champ "${fieldDef.label || fieldName}" est requis`
+          if (fieldDef.type === 'database_select') {
+            message = `Aucune base de données source sélectionnée. Sélectionnez une base de données active.`
+          }
+          errors.push({ field: fieldName, message, severity: 'error' })
+        }
+      }
+    }
+
+    if (configSchema.sourceDatabase && config.sourceDatabase) {
+      const database = dbConnectionMap.get(config.sourceDatabase)
+      if (!database) {
+        errors.push({ field: 'sourceDatabase', message: 'La base de données sélectionnée n\'existe plus', severity: 'error' })
+      } else if (!database.isActive) {
+        errors.push({ field: 'sourceDatabase', message: `La base de données "${database.name}" est désactivée`, severity: 'warning' })
+      }
+    }
+
+    return {
+      isValid: errors.filter(e => e.severity === 'error').length === 0,
+      errors
+    }
+  }
+
   async validateConfiguration(agentId: string): Promise<ValidationResult> {
     return handleAsyncOperation(async () => {
       const agent = await this.prisma.agent.findUnique({ where: { id: agentId } })
