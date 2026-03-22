@@ -221,6 +221,15 @@ async function processNewEvents(sourceDb: any) {
             { llmService, eventName, editionYear: typeof matchResult.edition.year === 'string' ? parseInt(matchResult.edition.year) : matchResult.edition.year, eventCity }
           )
 
+          // Sanitize Invalid Date values before writing to DB
+          const sanitizedChanges = JSON.parse(
+            JSON.stringify(newChanges, (_key, value) => {
+              if (value instanceof Date && isNaN(value.getTime())) return null
+              if (typeof value === 'string' && value === 'Invalid Date') return null
+              return value
+            })
+          )
+
           // Update the proposal
           await prisma.proposal.update({
             where: { id: proposal.id },
@@ -228,7 +237,7 @@ async function processNewEvents(sourceDb: any) {
               type: 'EDITION_UPDATE',
               eventId: matchResult.event.id.toString(),
               editionId: matchResult.edition.id.toString(),
-              changes: newChanges,
+              changes: sanitizedChanges,
               confidence: matchResult.confidence,
             }
           })
