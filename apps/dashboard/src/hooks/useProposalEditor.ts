@@ -521,7 +521,11 @@ export function useProposalEditor(
           createdAt: proposal.createdAt as any
         }],
         currentValue,
-        selectedValue: value
+        // ⚠️ Ne PAS initialiser selectedValue ici — il ne doit être set que
+        // lors d'une modification manuelle par l'utilisateur. Sinon la cascade
+        // de date d'édition s'applique à toutes les courses dès le chargement,
+        // écrasant les heures individuelles proposées par l'agent.
+        selectedValue: undefined
       })
     })
 
@@ -2126,7 +2130,7 @@ export function useProposalEditor(
       const { getBlockForField } = require('@/utils/blockFieldMapping')
       workingGroup.consolidatedChanges.forEach(c => {
         if (getBlockForField(c.field) === blockKey) {
-          const value = workingGroup.userModifiedChanges[c.field] ?? c.selectedValue
+          const value = workingGroup.userModifiedChanges[c.field] ?? c.selectedValue ?? c.options[0]?.proposedValue
           if (value !== undefined) {
             payload[c.field] = value
           }
