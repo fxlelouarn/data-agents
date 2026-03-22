@@ -351,6 +351,12 @@ export async function enrichProposal(proposal: any) {
   const startTime = Date.now()
   const proposalId = proposal.id
 
+  // Skip enrichment if proposal already has cached eventName (set at creation time)
+  // This avoids querying Miles Republic for the vast majority of proposals
+  if (proposal.eventName && proposal.type !== 'EVENT_UPDATE') {
+    return proposal
+  }
+
   // EVENT_UPDATE: Enrich with event name, city and status
   if (proposal.type === 'EVENT_UPDATE' && proposal.eventId) {
     try {

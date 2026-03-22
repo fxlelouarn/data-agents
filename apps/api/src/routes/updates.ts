@@ -2,7 +2,6 @@ import { Router } from 'express'
 import { param, query, body, validationResult } from 'express-validator'
 import { getDatabaseService } from '../services/database'
 import { asyncHandler, createError } from '../middleware/error-handler'
-import { enrichProposal } from './proposals'
 import { sortBlocksByDependencies, explainExecutionOrder, validateRequiredBlocks, BlockApplication } from '@data-agents/database'
 
 const router = Router()
@@ -150,15 +149,9 @@ router.get('/', [
 
   const total = await db.prisma.proposalApplication.count({ where })
 
-  // Enrichir les propositions avec les infos contextuelles
-  const enrichedApplications = await Promise.all(
-    applications.map(async (app: any) => ({
-      ...app,
-      proposal: await enrichProposal(app.proposal)
-    }))
-  )
-
-  const transformedUpdates = enrichedApplications.map(app => transformApplicationForAPI(app))
+  // Skip enrichment for listing — eventName/eventCity/editionYear are already cached in proposals table
+  // enrichProposal() queries Miles Republic per proposal which is too slow for listings
+  const transformedUpdates = applications.map((app: any) => transformApplicationForAPI(app))
 
   res.json({
     success: true,
