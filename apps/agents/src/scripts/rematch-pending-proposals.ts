@@ -243,6 +243,7 @@ async function processNewEvents(sourceDb: any) {
     } catch (error: any) {
       stats.newEvents.errors++
       logger.error(`  ❌ Error processing proposal ${proposal.id}: ${error.message}`)
+      if (error.stack) logger.error(`  Stack: ${error.stack.split('\n').slice(0, 3).join(' → ')}`)
     }
   }
 }

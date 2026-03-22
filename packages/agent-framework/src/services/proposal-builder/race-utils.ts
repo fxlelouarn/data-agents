@@ -35,6 +35,7 @@ export function assignDistanceByCategory(
  * Checks whether a UTC date corresponds to midnight (00:00:00) in the given timezone.
  */
 export function isMidnightInTimezone(date: Date, timezone: string): boolean {
+  if (!date || isNaN(date.getTime())) return true // treat invalid dates as midnight (safe default)
   const formatter = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
     hour: '2-digit',
@@ -174,11 +175,15 @@ export function calculateEditionDates(
     return { startDate: midnight, endDate: midnight }
   }
 
-  // Build list of race dates
-  const raceDates: Date[] = races.map(race => {
-    const startDate = calculateRaceStartDate(editionDate, race.startTime, tz, race.raceDate)
-    return startDate!
-  })
+  // Build list of race dates (filter out invalid dates)
+  const raceDates: Date[] = races
+    .map(race => calculateRaceStartDate(editionDate, race.startTime, tz, race.raceDate))
+    .filter((d): d is Date => d != null && !isNaN(d.getTime()))
+
+  if (raceDates.length === 0) {
+    const midnight = fromZonedTime(`${editionDate}T00:00:00`, tz)
+    return { startDate: midnight, endDate: midnight }
+  }
 
   // endDate = last race time
   const endDate = raceDates[raceDates.length - 1]
