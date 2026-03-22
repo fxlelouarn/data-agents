@@ -408,7 +408,16 @@ export class FlexibleScheduler {
 
   async getAgentStatus(agentId: string): Promise<any> {
     try {
-      const agent = await this.db.getAgent(agentId)
+      // Only fetch agent + last run, not 100 logs
+      const agent = await this.db.prisma.agent.findUnique({
+        where: { id: agentId },
+        include: {
+          runs: {
+            orderBy: { startedAt: 'desc' },
+            take: 1
+          }
+        }
+      })
       if (!agent) return null
 
       const job = this.jobs.get(agentId)
