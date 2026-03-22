@@ -54,6 +54,7 @@ model Event {
   userEventFavorites                  UserEventFavorite[]
   revalidatedAt                       DateTime?
   isRecommended                       Boolean             @default(false)
+  promoPrefix                         String?             @unique
 
   localizedContents EventLocalizedContent[]
 
@@ -131,6 +132,10 @@ model Edition {
   calendarStatus CalendarStatus @default(CONFIRMED)
   clientStatus   ClientStatus?
 
+  // Fees pricing configuration
+  feesPricingMode FeesPricingMode @default(ENHANCED)
+  feesHasPremium  Boolean         @default(false)
+
   editionHubspotId                  String?
   editionSwellId                    String?
   federationId                      String?
@@ -154,6 +159,12 @@ model Edition {
   editionMediaContents               EditionMediaContent[]
   editionPartners                    EditionPartner[]
   localizedContents                  EditionLocalizedContent[]
+  exportPresets                      ExportPreset[]
+  raceResultContestMappings          RaceResultContestMapping[]
+  raceResultSyncLogs                 RaceResultSyncLog[]
+  raceResultSyncCancelFlag           RaceResultSyncCancelFlag?
+  partnerOptionEditions              PartnerOptionEdition[]
+  orderReads                         OrderRead[]
 
   @@index([eventId])
   @@index([slug])
@@ -170,6 +181,7 @@ model EditionPartner {
   instagramUrl      String?
   facebookUrl       String?
   logoUrl           String?
+  sortOrder         Int                              @default(0)
   localizedContents EditionPartnerLocalizedContent[]
 
   edition   Edition @relation(fields: [editionId], references: [id])
@@ -203,6 +215,22 @@ model EditionLocalizedContent {
   @@index([editionId])
 }
 
+model OptionLocalizedContent {
+  form    Form   @relation(fields: [formKey], references: [key], onDelete: Cascade)
+  formKey String
+
+  locale      String
+  title       String?
+  description String?
+  entries     Json?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@id([formKey, locale])
+  @@index([formKey])
+}
+
 enum MedusaVersion {
   V1
   V2
@@ -226,6 +254,7 @@ model EmailConfig {
   group                     Group?   @relation(fields: [groupId], references: [id])
   groupId                   Int?
   showBibPickupInstructions Boolean  @default(true)
+  showPracticalInfo         Boolean  @default(false)
 
   @@index([editionId])
   @@index([raceId])
@@ -258,12 +287,13 @@ model BibAssignmentRule {
   index            Int
   start            Int
   end              Int
-  ruleType         BibAssignmentRuleType
+  ruleType         BibAssignmentRuleType?
   gender           Gender?
   response         String?
   productVariantId String?
 
   races                                Race[]
+  criteriaRelation                     BibAssignmentRuleCriterion[]
   editionBibsAssignmentConfigurationId String                             @db.Uuid
   editionBibsAssignmentConfiguration   EditionBibsAssignmentConfiguration @relation(fields: [editionBibsAssignmentConfigurationId], references: [id])
   formKey                              String?
@@ -278,6 +308,34 @@ enum BibAssignmentRuleType {
   GENDER
   FORM_RESPONSE
   PRODUCT_VARIANT
+}
+
+enum BibAssignmentCriterionType {
+  GENDER
+  FORM_RESPONSE
+  PRODUCT_VARIANT
+}
+
+model BibAssignmentRuleCriterion {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  type  BibAssignmentCriterionType
+  index Int
+
+  gender           Gender?
+  formKey          String?
+  response         String?
+  productVariantId String?
+
+  bibAssignmentRuleId String            @db.Uuid
+  bibAssignmentRule   BibAssignmentRule @relation(fields: [bibAssignmentRuleId], references: [id], onDelete: Cascade)
+
+  form Form? @relation(fields: [formKey], references: [key])
+
+  @@index([bibAssignmentRuleId])
+  @@index([formKey])
 }
 
 model EditionInfo {
@@ -412,6 +470,7 @@ model Race {
   categoryLevel1                 String?
   categoryLevel2                 String?
   askAttendeeGender              Boolean               @default(true)
+  allowNonBinaryGender           Boolean               @default(false)
   askAttendeeBirthDate           Boolean               @default(true)
   askAttendeePhoneNumber         Boolean               @default(true)
   askAttendeeNationality         Boolean               @default(true)
@@ -421,8 +480,10 @@ model Race {
   maxTeamSize                    Int?
   showClubOrAssoInput            Boolean               @default(true)
   showPublicationConsentCheckbox Boolean               @default(true)
+  showPrice                      Boolean               @default(true)
   isWaitingList                  Boolean               @default(false)
   resaleEnabled                  Boolean               @default(false)
+  resaleOptionsRefundDisabled    Boolean               @default(true)
   displayOrder                   Int?
 
   raceVariantStoreId String? @unique()
@@ -454,7 +515,6 @@ model Race {
   attendees                    Attendees[]
   tags                         RaceTag[]
   raceSegments                 RaceSegment[]
-  reductions                   Reduction[]
   partnerOptionRaces           PartnerOptionRace[]
   bibAssignmentRules           BibAssignmentRule[]
   groups                       GroupRace[]
@@ -465,19 +525,23 @@ model Race {
   stockDisplayThreshold      RaceStockDisplayThreshold @default(BELOW)
   stockDisplayThresholdValue Int                       @default(10)
 
+  raceResultContestMappings RaceResultContestMapping[]
+  orderReads                OrderRead[]
+
   @@index([editionId])
   @@index([eventId])
   @@index([isArchived])
 }
 
 model RaceWaitingListConfiguration {
-  id           String                   @id @default(uuid()) @db.Uuid
-  createdAt    DateTime                 @default(now())
-  updatedAt    DateTime                 @updatedAt
-  enabled      Boolean                  @default(false)
-  delay        Float?
-  autoRelease  Boolean?
-  releaseOrder WaitingListReleaseOrder?
+  id               String                   @id @default(uuid()) @db.Uuid
+  createdAt        DateTime                 @default(now())
+  updatedAt        DateTime                 @updatedAt
+  enabled          Boolean                  @default(false)
+  delay            Float?
+  autoRelease      Boolean?
+  additionalFields String[]                 @default([])
+  releaseOrder     WaitingListReleaseOrder?
 
   race   Race @relation(fields: [raceId], references: [id])
   raceId Int  @unique(map: "RaceWaitingListConfiguration_raceId_unique")
@@ -730,9 +794,12 @@ model Attendees {
   clubOrAssociation        String?
   licenseNumber            String?
   licenseType              String?
-  /// true means that the attendee will not have to complete the add competition pass steps again
+  ffaMutationFlag          Boolean?
+  /// true means that the attendee will not have to complete the add license experience steps again
   completedCompetitionPass Boolean?
   hideInResults            Boolean?        @default(false)
+  fftriReceivePromo        Boolean?
+  fftriSendInvoice         Boolean?
   isRegisteredByOrganizer  Boolean?        @default(false)
   postalAddressAreaLevel1  String?
   postalAddressAreaLevel2  String?
@@ -760,16 +827,19 @@ model Attendees {
   groupId                  Int?
   draftOrderId             String?
 
-  FormResponse             FormResponse[]
-  UploadedDocument         UploadedDocument[]
-  raceSegments             AttendeeOnRaceSegment[]
-  attendeeEvents           AttendeeEvent[]
-  teamRegistration         TeamRegistration?
-  thirdPartyDocumentStatus DocumentStatus?
-  bibAssignment            BibAssignment?
-  optionTransmissions      OptionTransmission[]
-  checklistValidation      ChecklistValidation[]
-  note                     AttendeeNote?
+  FormResponse                 FormResponse[]
+  UploadedDocument             UploadedDocument[]
+  raceSegments                 AttendeeOnRaceSegment[]
+  attendeeEvents               AttendeeEvent[]
+  teamRegistration             TeamRegistration?
+  thirdPartyDocumentStatus     DocumentStatus?
+  bibAssignment                BibAssignment?
+  optionTransmissions          OptionTransmission[]
+  checklistValidation          ChecklistValidation[]
+  note                         AttendeeNote?
+  waitingListHistoryAsReseller WaitingListHistory[]    @relation("WaitingListHistoryReseller")
+  waitingListHistoryAsBuyer    WaitingListHistory[]    @relation("WaitingListHistoryBuyer")
+  orderRead                    OrderRead?
 
   @@index([raceId])
   @@index([attendeeProfileId])
@@ -872,14 +942,40 @@ model AttendeeNote {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  content      String   @db.Text
-  createdBy    String
+  content   String  @db.Text
+  createdBy String
   updatedBy String?
 
   attendee   Attendees @relation(fields: [attendeeId], references: [id], onDelete: Cascade)
   attendeeId String    @unique @db.Uuid
 
   @@index([attendeeId])
+}
+
+model WaitingListHistory {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+
+  event      WaitingListHistoryEvent
+  resellerId String?                 @db.Uuid
+  buyerId    String?                 @db.Uuid
+
+  reseller Attendees? @relation("WaitingListHistoryReseller", fields: [resellerId], references: [id], onDelete: Cascade)
+  buyer    Attendees? @relation("WaitingListHistoryBuyer", fields: [buyerId], references: [id], onDelete: Cascade)
+
+  @@index([resellerId])
+  @@index([buyerId])
+}
+
+enum WaitingListHistoryEvent {
+  RESALE_STARTED
+  RESALE_COMPLETED
+  RESALE_CANCELED
+  BUYER_WAITING
+  BUYER_EXPIRED
+  BUYER_DECLINED
+  BUYER_CONTACTED
+  BUYER_COMPLETED
 }
 
 model Account {
@@ -935,6 +1031,7 @@ model User {
   sessions           Session[]
   userGroups         UserGroup[]
   userEventFavorites UserEventFavorite[]
+  exportPresets      ExportPreset[]
 }
 
 model VerificationToken {
@@ -1022,6 +1119,31 @@ model Webhook {
   canBeSentByOrganizer Boolean     @default(false)
 }
 
+/// Email template configuration for native email sending (replaces webhooks)
+/// API keys are stored in environment variables (BREVO_API_KEY, MAILJET_API_KEY)
+model EmailTemplate {
+  id         String        @id @default(uuid()) @db.Uuid
+  createdAt  DateTime      @default(now())
+  updatedAt  DateTime      @updatedAt
+  /// The module/webhook type this template is for
+  module     WebhookType   @unique
+  /// Email provider to use (brevo or mailjet)
+  provider   EmailProvider
+  /// Template ID in the email provider (Brevo/Mailjet)
+  templateId Int
+  /// JSON schema describing the variables sent to the template (for documentation)
+  variables  Json?
+  /// Whether this template is active (if false, falls back to webhook)
+  isActive   Boolean       @default(true)
+
+  @@index([module])
+}
+
+enum EmailProvider {
+  BREVO
+  MAILJET
+}
+
 model Volunteer {
   id        Int    @id @default(autoincrement())
   firstname String
@@ -1040,10 +1162,12 @@ model Form {
   isArchived              Boolean   @default(false)
   editableByAttendeeUntil DateTime?
 
-  FormFunnelConfig   FormFunnelConfig[]
-  FormResponse       FormResponse[]
-  bibAssignmentRules BibAssignmentRule[]
-  fillJustifications FillJustification[]
+  FormFunnelConfig          FormFunnelConfig[]
+  FormResponse              FormResponse[]
+  bibAssignmentRules        BibAssignmentRule[]
+  bibAssignmentRuleCriteria BibAssignmentRuleCriterion[]
+  fillJustifications        FillJustification[]
+  localizedContents         OptionLocalizedContent[]
 }
 
 model FormFunnelConfig {
@@ -1062,14 +1186,18 @@ model FormFunnelConfig {
 }
 
 model PartnerOption {
-  id                 String              @id @default(uuid()) @db.Uuid
-  logoUrl            String?
-  visibility         Boolean             @default(true)
-  createdAt          DateTime            @default(now())
-  updatedAt          DateTime            @updatedAt
-  partnerOptionRaces PartnerOptionRace[]
-  config             Json?
-  medusaProductId    String?
+  id                    String                  @id @default(uuid()) @db.Uuid
+  logoUrl               String?
+  visibility            Boolean                 @default(true)
+  createdAt             DateTime                @default(now())
+  updatedAt             DateTime                @updatedAt
+  partnerOptionRaces    PartnerOptionRace[]
+  partnerOptionEditions PartnerOptionEdition[]
+  config                Json?
+  medusaProductId       String?
+
+  raceResultContestMappings RaceResultContestMapping[]
+  raceResultSyncLogs        RaceResultSyncLog[]
 }
 
 model PartnerOptionRace {
@@ -1081,6 +1209,17 @@ model PartnerOptionRace {
 
   @@unique([raceId, partnerId])
   @@index([raceId])
+}
+
+model PartnerOptionEdition {
+  partnerId String        @db.Uuid
+  partner   PartnerOption @relation(fields: [partnerId], references: [id])
+  editionId Int
+  edition   Edition       @relation(fields: [editionId], references: [id])
+  formData  Json?
+
+  @@unique([editionId, partnerId])
+  @@index([editionId])
 }
 
 model FormResponse {
@@ -1100,6 +1239,7 @@ model FormResponse {
 model Fees {
   amountType FeesType
   amount     Int
+  minAmount  Int? // Minimum fee in cents (e.g., 50 = 0.50 EUR)
   appliedTo  FeesAppliedToPersona
   receiver   String?
   bibOrOther FeesBibOrOther
@@ -1113,29 +1253,29 @@ model Fees {
   @@index([productId])
 }
 
-model Reduction {
-  id        String   @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  reductionType ReductionType
-  gender        Gender?
-  amountType    FeesType
-  amount        Int
-  isDisabled    Boolean
-  validFrom     DateTime?
-  validUntil    DateTime?
-
-  group   Group? @relation(fields: [groupId], references: [id])
-  groupId Int?
-
-  races Race[]
-}
-
 model ParticipantsExportFormat {
   code        String  @unique
   displayName String
   isSpecific  Boolean @default(true)
+}
+
+model ExportPreset {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  name      String
+  config    Json // { raceIds, columns, format, delivery }
+  isDefault Boolean @default(false)
+
+  edition   Edition @relation(fields: [editionId], references: [id], onDelete: Cascade)
+  editionId Int
+  user      User    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  userId    String
+
+  @@unique([editionId, name])
+  @@index([editionId])
+  @@index([userId])
 }
 
 model RaceSegment {
@@ -1243,6 +1383,8 @@ model Group {
   isActive                Boolean
   registrationOpeningDate DateTime?
   registrationClosingDate DateTime?
+  canReferentEdit         Boolean   @default(false)
+  canReferentAddManually  Boolean   @default(false)
 
   edition   Edition @relation(fields: [editionId], references: [id])
   editionId Int
@@ -1250,7 +1392,6 @@ model Group {
   races        GroupRace[]
   userGroups   UserGroup[]
   attendees    Attendees[]
-  reductions   Reduction[]
   emailConfigs EmailConfig[]
 
   @@index([editionId])
@@ -1376,6 +1517,7 @@ enum FormType {
   SELECT_PRODUCT
   DOUBLE_SELECT_PRODUCT
   ADDITIONAL_DOCUMENT
+  TERMS_AND_CONDITIONS
 }
 
 enum FormExclusionState {
@@ -1415,6 +1557,14 @@ enum WebhookType {
   CONFIRM_ORGANIZER_REGISTRATION
   APPROVE_ORGANIZER_REGISTRATION
   INVITE_ORGANIZER
+  RESALE_STARTED_TO_RESELLER
+  RESALE_EXPIRED_TO_RESELLER
+  RESALE_COMPLETED_TO_RESELLER
+  RESALE_CANCELED_TO_RESELLER
+  RESALE_CANCELED_TO_BUYER
+  RESALE_STARTED_TO_BUYER
+  GIFT_CARD_CONFIRMATION
+  GIFT_CARD_SENT_TO_RECIPIENT
 }
 
 enum DecisionReasonType {
@@ -1535,6 +1685,7 @@ enum RaceType {
 enum Gender {
   MALE
   FEMALE
+  NON_BINARY
 }
 
 enum AttendeeStatus {
@@ -1542,6 +1693,7 @@ enum AttendeeStatus {
   PAID
   PAID_MANUALLY
   FREE
+  /// @deprecated Use WaitingListHistory table instead
   WAITING_LIST
 }
 
@@ -1550,6 +1702,7 @@ enum PaymentMethod {
   CHEQUE
   CASH
   OTHER
+  GROUP
 }
 
 enum UserRole {
@@ -1711,6 +1864,9 @@ enum Federation {
   FFN
   FINA
   FFESSM
+  UCI
+  LF3
+  FCWB
 }
 
 enum FeesResource {
@@ -1727,11 +1883,19 @@ enum FeesType {
 enum FeesAppliedToPersona {
   RUNNER
   ORGANIZER
+  RESELLER
+  STANDBY_RUNNER
 }
 
 enum FeesBibOrOther {
   BIB
   OTHER
+}
+
+enum FeesPricingMode {
+  ESSENTIAL
+  ENHANCED
+  CUSTOM
 }
 
 enum LicenseNumberType {
@@ -1763,6 +1927,9 @@ enum OtherLicenseNumberType {
   FFN
   FINA
   FFESSM
+  UCI
+  LF3
+  FCWB
 
   // Allow connected federations to be used as other license number type
   FFA
@@ -1778,8 +1945,8 @@ enum RaceAgeCategoryType {
 
 enum AdultJustificativeType {
   MEDICAL_CERTIFICATE
-  NONE
   ADULT_HEALTH_QUESTIONNAIRE
+  NONE
 }
 
 enum MinorJustificativeType {
@@ -1806,14 +1973,6 @@ enum DistanceCategoryType {
   L
   XL
   XXL
-}
-
-enum ReductionType {
-  LICENSED
-  MINOR
-  GENDER
-  GROUP
-  ALL
 }
 
 enum CustomerType {
@@ -1861,6 +2020,7 @@ enum WaitingListReleaseOrder {
 enum EditionPartnerRole {
   ORGANIZER
   TIMER
+  SPONSOR
 }
 
 enum OrganizerRequestReason {
@@ -1875,4 +2035,127 @@ enum RaceStockDisplayThreshold {
   BELOW
   ALWAYS
   NEVER
+}
+
+// RaceResult Integration
+// Stores the mapping between Miles Race and RaceResult Contest, plus sync state
+
+model RaceResultContestMapping {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  raceId          Int
+  editionId       Int
+  partnerOptionId String @db.Uuid
+
+  // RaceResult identifiers
+  raceResultEventId     String
+  raceResultContestId   Int
+  raceResultContestName String?
+
+  race          Race          @relation(fields: [raceId], references: [id])
+  edition       Edition       @relation(fields: [editionId], references: [id])
+  partnerOption PartnerOption @relation(fields: [partnerOptionId], references: [id])
+
+  @@unique([raceId, partnerOptionId])
+  @@index([editionId])
+  @@index([partnerOptionId])
+}
+
+model RaceResultSyncLog {
+  id        String   @id @default(uuid()) @db.Uuid
+  createdAt DateTime @default(now())
+
+  editionId       Int
+  partnerOptionId String                  @db.Uuid
+  direction       RaceResultSyncDirection
+  status          RaceResultSyncStatus
+  attendeeCount   Int                     @default(0)
+  errorMessage    String?
+  details         Json?
+
+  edition       Edition       @relation(fields: [editionId], references: [id])
+  partnerOption PartnerOption @relation(fields: [partnerOptionId], references: [id])
+
+  @@index([editionId])
+  @@index([partnerOptionId])
+  @@index([createdAt])
+}
+
+enum RaceResultSyncDirection {
+  PUSH_PARTICIPANTS
+  PULL_RESULTS
+}
+
+enum RaceResultSyncStatus {
+  SUCCESS
+  PARTIAL
+  FAILED
+}
+
+model RaceResultSyncCancelFlag {
+  editionId Int      @id
+  createdAt DateTime @default(now())
+  edition   Edition  @relation(fields: [editionId], references: [id])
+}
+
+model OrderRead {
+  attendeeId String @id @db.Uuid
+
+  orderId   String
+  cartId    String
+  eventId   Int
+  editionId Int
+  raceId    Int
+
+  eventName   String
+  editionYear Int
+  raceName    String
+
+  attendeeEmail String
+
+  boughtAt DateTime
+
+  bibAmount        Decimal @default(0) @db.Decimal(10, 2)
+  reductionAmount  Decimal @default(0) @db.Decimal(10, 2)
+  bibOrganizerFees Decimal @default(0) @db.Decimal(10, 2)
+  bibRunnerFees    Decimal @default(0) @db.Decimal(10, 2)
+
+  optionAmount     Decimal @default(0) @db.Decimal(10, 2)
+  optionRunnerFees Decimal @default(0) @db.Decimal(10, 2)
+  optionOtherFees  Decimal @default(0) @db.Decimal(10, 2)
+  optionMrFees     Decimal @default(0) @db.Decimal(10, 2)
+
+  adminFees    Decimal @default(0) @db.Decimal(10, 2)
+  adminRefunds Decimal @default(0) @db.Decimal(10, 2)
+
+  partnerOptionAmount Decimal @default(0) @db.Decimal(10, 2)
+  partnerOptionMrFees Decimal @default(0) @db.Decimal(10, 2)
+
+  resaleFeesMr   Decimal @default(0) @db.Decimal(10, 2)
+  resaleFeesOrga Decimal @default(0) @db.Decimal(10, 2)
+
+  plannedTransfer Decimal @default(0) @db.Decimal(10, 2)
+  orderAmount     Decimal @default(0) @db.Decimal(10, 2)
+  paidAmount      Decimal @default(0) @db.Decimal(10, 2)
+
+  orderStatus   String
+  paymentStatus String
+  currency      String
+
+  purchaseDetails Json?
+
+  groupName String?
+  teamName  String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendee Attendees @relation(fields: [attendeeId], references: [id])
+  edition  Edition   @relation(fields: [editionId], references: [id])
+  race     Race      @relation(fields: [raceId], references: [id])
+
+  @@index([editionId, raceId])
+  @@index([boughtAt])
 }
