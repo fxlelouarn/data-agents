@@ -1779,6 +1779,7 @@ enum RaceAgeCategoryType {
 enum AdultJustificativeType {
   MEDICAL_CERTIFICATE
   NONE
+  ADULT_HEALTH_QUESTIONNAIRE
 }
 
 enum MinorJustificativeType {
