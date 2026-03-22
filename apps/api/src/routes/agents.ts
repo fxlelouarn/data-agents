@@ -155,7 +155,11 @@ router.post('/:id/toggle', [
 ], asyncHandler(async (req: Request, res: Response) => {
   const { id } = req.params
 
-  const existingAgent = await db.getAgent(id)
+  // Lightweight fetch — only need isActive, not 100 logs
+  const existingAgent = await db.prisma.agent.findUnique({
+    where: { id },
+    select: { id: true, isActive: true }
+  })
   if (!existingAgent) {
     throw createError(404, 'Agent not found', 'AGENT_NOT_FOUND')
   }
