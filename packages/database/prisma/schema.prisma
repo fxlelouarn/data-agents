@@ -164,6 +164,10 @@ model Settings {
   autoApplyLastRunResult   Json?
   autoApplyNextRunAt       DateTime?
   enableAutoApplyUpdates   Boolean   @default(false)
+  llmMatchingApiKey        String?
+  llmMatchingModel         String?   @default("claude-haiku-4-5-20251001")
+  enableLlmMatching        Boolean   @default(false)
+  llmMatchingShadowMode    Boolean   @default(true)
 
   @@map("settings")
 }
@@ -240,4 +244,21 @@ enum ApplicationStatus {
   PENDING
   APPLIED
   FAILED
+}
+
+model LlmMatchingLog {
+  id              String   @id @default(cuid())
+  matchType       String
+  proposalId      String?
+  inputSummary    String
+  currentResult   Json
+  llmResult       Json
+  diverged        Boolean
+  responseTimeMs  Int
+  createdAt       DateTime @default(now())
+
+  @@map("llm_matching_logs")
+  @@index([matchType, createdAt])
+  @@index([diverged, createdAt])
+  @@index([proposalId])
 }
