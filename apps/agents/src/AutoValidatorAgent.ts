@@ -207,8 +207,7 @@ export class AutoValidatorAgent extends BaseAgent {
     const eligibleIdsArray = Array.from(eligibleEditionIds)
     const editionIdPlaceholders = eligibleIdsArray.map((_, i) => `$${ffaAgentIds.length + i + 1}`).join(', ')
 
-    // Requête SQL brute pour exclure les propositions avec racesToAdd
-    // car Prisma ne supporte pas bien les requêtes JSONB complexes
+    // Requête SQL brute — accepte les propositions avec 0 à 3 racesToAdd
     const whereClause = `
       p.status = 'PENDING'
       AND p.type = 'EDITION_UPDATE'
@@ -218,7 +217,7 @@ export class AutoValidatorAgent extends BaseAgent {
       AND (
         p.changes->'racesToAdd' IS NULL
         OR p.changes->'racesToAdd' = 'null'::jsonb
-        OR jsonb_array_length(COALESCE(p.changes->'racesToAdd'->'new', p.changes->'racesToAdd', '[]'::jsonb)) = 0
+        OR jsonb_array_length(COALESCE(p.changes->'racesToAdd'->'new', p.changes->'racesToAdd', '[]'::jsonb)) <= 3
       )
     `
 
@@ -286,7 +285,7 @@ export class AutoValidatorAgent extends BaseAgent {
 
     // Bloc races (seulement si pas de nouvelles courses)
     if (config.enableRacesBlock) {
-      const hasRaceChanges = changes.racesToUpdate || changes.races
+      const hasRaceChanges = changes.racesToUpdate || changes.racesToAdd || changes.races
       if (hasRaceChanges) {
         blocksToValidate.push('races')
       }
@@ -362,7 +361,7 @@ export class AutoValidatorAgent extends BaseAgent {
     if (changes.organizer) {
       expectedBlocks.add('organizer')
     }
-    if (changes.racesToUpdate || changes.races) {
+    if (changes.racesToUpdate || changes.racesToAdd || changes.races) {
       expectedBlocks.add('races')
     }
 

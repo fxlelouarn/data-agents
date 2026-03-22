@@ -176,24 +176,30 @@ export async function validateProposal(
 /**
  * Vérifie si les changements contiennent des créations de nouvelles courses
  *
- * Une course est considérée comme "nouvelle" si elle n'a pas de raceId.
- * L'agent Auto-Validateur ne peut PAS créer de nouvelles courses.
+ * Autorise jusqu'à 3 nouvelles courses (racesToAdd).
+ * Au-delà de 3, la proposition est trop risquée pour l'auto-validation.
+ * Les courses dans racesToUpdate doivent toutes avoir un raceId.
  */
+const MAX_NEW_RACES_ALLOWED = 3
+
 function checkForNewRaces(changes: Record<string, any>, logger: any): ValidationResult {
-  // Vérifier racesToAdd
+  // Vérifier racesToAdd — autorisé si <= MAX_NEW_RACES_ALLOWED
   if (changes.racesToAdd) {
     const racesToAdd = changes.racesToAdd.new || changes.racesToAdd
-    if (Array.isArray(racesToAdd) && racesToAdd.length > 0) {
-      logger.info(`🚫 racesToAdd détecté: ${racesToAdd.length} nouvelle(s) course(s)`)
+    if (Array.isArray(racesToAdd) && racesToAdd.length > MAX_NEW_RACES_ALLOWED) {
+      logger.info(`🚫 racesToAdd: ${racesToAdd.length} courses (max ${MAX_NEW_RACES_ALLOWED})`)
       return {
         isValid: false,
-        reason: `Proposition contient ${racesToAdd.length} nouvelle(s) course(s) à créer`,
+        reason: `Proposition contient ${racesToAdd.length} nouvelle(s) course(s) à créer (max: ${MAX_NEW_RACES_ALLOWED})`,
         exclusionReason: 'newRaces',
         details: {
           newRacesCount: racesToAdd.length,
           newRaces: racesToAdd.map((r: any) => r.name || 'Unknown')
         }
       }
+    }
+    if (Array.isArray(racesToAdd) && racesToAdd.length > 0) {
+      logger.info(`✅ racesToAdd: ${racesToAdd.length} course(s) (autorisé, <= ${MAX_NEW_RACES_ALLOWED})`)
     }
   }
 
@@ -256,7 +262,7 @@ function hasEditionChanges(changes: Record<string, any>): boolean {
  * Vérifie si les changements contiennent des modifications de courses
  */
 function hasRaceChanges(changes: Record<string, any>): boolean {
-  return !!(changes.racesToUpdate || changes.races || changes.racesToDelete)
+  return !!(changes.racesToUpdate || changes.racesToAdd || changes.races || changes.racesToDelete)
 }
 
 /**
@@ -278,14 +284,13 @@ export function getValidatableBlocks(
     blocks.push('organizer')
   }
 
-  // Bloc races (seulement updates, pas de nouvelles courses)
+  // Bloc races (updates + nouvelles courses si <= 3)
   if (config.enableRacesBlock && hasRaceChanges(changes)) {
-    // Double check: pas de nouvelles courses
-    const hasNewRaces = changes.racesToAdd ||
-      (changes.races && Array.isArray(changes.races.new || changes.races) &&
-        (changes.races.new || changes.races).some((r: any) => !r.id && !r.raceId))
+    const racesToAdd = changes.racesToAdd?.new || changes.racesToAdd
+    const newRacesCount = Array.isArray(racesToAdd) ? racesToAdd.length : 0
 
-    if (!hasNewRaces) {
+    // Accepter si pas de nouvelles courses OU <= MAX autorisé
+    if (newRacesCount <= MAX_NEW_RACES_ALLOWED) {
       blocks.push('races')
     }
   }
