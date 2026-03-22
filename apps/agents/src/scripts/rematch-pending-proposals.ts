@@ -113,18 +113,44 @@ async function main() {
 }
 
 // ---------------------------------------------------------------------------
+// Mark a proposal as already processed by rematch (append justification)
+// ---------------------------------------------------------------------------
+async function markAsRematched(proposalId: string, reason: string) {
+  const proposal = await prisma.proposal.findUnique({ where: { id: proposalId } })
+  if (!proposal) return
+
+  const justifications = (proposal.justification as any[]) || []
+  justifications.push({
+    type: 'rematch_no_match',
+    content: reason,
+    metadata: { rematchedAt: new Date().toISOString() }
+  })
+
+  await prisma.proposal.update({
+    where: { id: proposalId },
+    data: { justification: justifications as any }
+  })
+}
+
+// ---------------------------------------------------------------------------
 // Process NEW_EVENT proposals
 // ---------------------------------------------------------------------------
 async function processNewEvents(sourceDb: any) {
   console.log('\n--- Processing NEW_EVENT proposals ---')
 
-  const proposals = await prisma.proposal.findMany({
+  const allProposals = await prisma.proposal.findMany({
     where: { type: 'NEW_EVENT', status: 'PENDING' },
     orderBy: { createdAt: 'desc' },
     take: LIMIT,
   })
 
-  console.log(`Found ${proposals.length} PENDING NEW_EVENT proposals`)
+  // Filter out proposals already processed by a previous rematch run
+  const proposals = allProposals.filter(p => {
+    const justifications = (p.justification as any[]) || []
+    return !justifications.some((j: any) => j.type === 'rematch_no_match')
+  })
+
+  console.log(`Found ${allProposals.length} PENDING NEW_EVENT proposals (${allProposals.length - proposals.length} already rematched, ${proposals.length} to process)`)
 
   for (const proposal of proposals) {
     stats.newEvents.processed++
@@ -164,6 +190,9 @@ async function processNewEvents(sourceDb: any) {
         if (matchResult.confidence < MIN_CONFIDENCE) {
           stats.newEvents.confirmed++
           logger.info(`  ⚠️ MATCH FOUND but below threshold: "${matchResult.event.name}" (id:${matchResult.event.id}, confidence:${matchResult.confidence.toFixed(2)} < ${MIN_CONFIDENCE}) — skipping`)
+          if (!DRY_RUN) {
+            await markAsRematched(proposal.id, `Match below threshold: "${matchResult.event.name}" (confidence: ${matchResult.confidence.toFixed(2)})`)
+          }
           continue
         }
         stats.newEvents.reclassified++
@@ -248,6 +277,9 @@ async function processNewEvents(sourceDb: any) {
       } else {
         stats.newEvents.confirmed++
         logger.info(`  — No match, confirmed as NEW_EVENT`)
+        if (!DRY_RUN) {
+          await markAsRematched(proposal.id, 'No match found')
+        }
       }
     } catch (error: any) {
       stats.newEvents.errors++
