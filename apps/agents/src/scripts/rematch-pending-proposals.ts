@@ -190,14 +190,23 @@ async function processNewEvents(sourceDb: any) {
             editionDate: editionDate.toISOString(),
             editionYear: typeof matchResult.edition.year === 'string' ? parseInt(matchResult.edition.year) : matchResult.edition.year,
             timeZone: editionData?.timeZone || 'Europe/Paris',
-            races: races.map((r: any) => ({
-              name: r.name,
-              distance: r.distance ? r.distance * 1000 : undefined, // km → m for input
-              elevation: r.elevationGain || r.runPositiveElevation,
-              startTime: r.startDate ? new Date(r.startDate).toISOString().slice(11, 16) : undefined,
-              categoryLevel1: r.categoryLevel1,
-              categoryLevel2: r.categoryLevel2,
-            })),
+            races: races.map((r: any) => {
+              let startTime: string | undefined
+              if (r.startDate) {
+                try {
+                  const d = new Date(r.startDate)
+                  if (!isNaN(d.getTime())) startTime = d.toISOString().slice(11, 16)
+                } catch { /* ignore invalid dates */ }
+              }
+              return {
+                name: r.name,
+                distance: r.distance ? r.distance * 1000 : undefined, // km → m for input
+                elevation: r.elevationGain || r.runPositiveElevation,
+                startTime,
+                categoryLevel1: r.categoryLevel1,
+                categoryLevel2: r.categoryLevel2,
+              }
+            }),
             organizer: changes.organizer?.new,
             registrationUrl: changes.websiteUrl?.new || changes.registrationUrl?.new,
             confidence: proposal.confidence || 0.8,
