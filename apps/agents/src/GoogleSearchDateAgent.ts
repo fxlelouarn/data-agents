@@ -10,6 +10,7 @@ import axios from 'axios'
 import { fromZonedTime, toZonedTime } from 'date-fns-tz'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { verifyDateFromSource } from './google/date-verifier'
 
 // Interface pour la configuration spécifique de l'agent
 interface GoogleSearchDateConfig {
@@ -199,8 +200,38 @@ export class GoogleSearchDateAgent extends BaseAgent {
             continue
           }
 
+          // 5b. Verify dates against source pages
+          const verifiedDates: typeof extractedDates = []
+          for (const date of extractedDates) {
+            const dateStr = date.date.toISOString().split('T')[0]
+            const result = await verifyDateFromSource(
+              date.source,
+              dateStr,
+              event.name,
+              event.city,
+              process.env.ANTHROPIC_API_KEY
+            )
+
+            if (result === null) {
+              context.logger.info(`  ⚠️ Page inaccessible: ${date.source} — date ignorée`)
+              continue
+            }
+
+            if (result.confirmed) {
+              context.logger.info(`  ✅ Date ${dateStr} confirmée: ${result.reason}`)
+              verifiedDates.push(date)
+            } else {
+              context.logger.info(`  ❌ Date ${dateStr} non confirmée: ${result.reason}`)
+            }
+          }
+
+          if (verifiedDates.length === 0) {
+            context.logger.info(`Aucune date vérifiée pour: ${event.name}`)
+            continue
+          }
+
           // 6. Créer les propositions
-          const eventProposals = await this.createDateProposals(event, extractedDates, searchResults)
+          const eventProposals = await this.createDateProposals(event, verifiedDates, searchResults)
           proposals.push(...eventProposals)
 
           context.logger.info(`${eventProposals.length} proposition(s) créée(s) pour l'événement: ${event.name}`)
