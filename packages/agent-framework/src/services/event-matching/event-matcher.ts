@@ -315,7 +315,7 @@ export async function matchEvent(
 
       const llmResult = await config.llmService.judgeEventMatchWithLLM(
         input.eventName, input.eventCity, input.eventDepartment,
-        input.editionDate.toISOString(), llmCandidates
+        input.editionDate.toISOString(), llmCandidates, input.organizerName
       )
 
       if (config.llm?.shadowMode) {
@@ -370,9 +370,21 @@ export async function matchEvent(
             }
           }
         } else {
-          // LLM says no match
+          // LLM says no match — preserve rejectedMatches for traceability
           logger.info(`  🤖 LLM says NO_MATCH: ${llmResult.reason}`)
-          return { type: 'NO_MATCH' as const, confidence: 0 }
+          const rejectedMatches: RejectedMatch[] = scoredCandidates.slice(0, 3).map(candidate => {
+            const ce = candidate.event.editions?.find((e: any) => e.year === searchYear)
+            return {
+              eventId: candidate.event.id, eventName: candidate.event.name,
+              eventSlug: candidate.event.slug, eventCity: candidate.event.city,
+              eventDepartment: candidate.event.department,
+              editionId: ce?.id, editionYear: ce?.year,
+              matchScore: candidate.combined, nameScore: candidate.nameScore,
+              cityScore: candidate.cityScore, departmentMatch: candidate.departmentMatch,
+              dateProximity: candidate.dateProximity
+            }
+          })
+          return { type: 'NO_MATCH' as const, confidence: 0, rejectedMatches }
         }
       }
       // LLM failed or unavailable → fall through to existing logic

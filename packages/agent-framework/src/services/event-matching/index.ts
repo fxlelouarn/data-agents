@@ -61,3 +61,6 @@ export {
   getDepartmentName,
   normalizeDepartmentCode
 } from './departments'
+
+// Geo lookup
+export { lookupDepartmentFromCity } from './geo-lookup'

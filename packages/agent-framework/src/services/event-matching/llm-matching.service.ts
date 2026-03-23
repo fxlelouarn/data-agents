@@ -140,7 +140,8 @@ export class LLMMatchingService {
     inputCity: string,
     inputDepartment: string | undefined,
     inputDate: string | undefined,
-    candidates: EventJudgeCandidate[]
+    candidates: EventJudgeCandidate[],
+    inputOrganizer?: string
   ): Promise<EventJudgeResult | null> {
     if (!this.client) {
       return null
@@ -148,7 +149,7 @@ export class LLMMatchingService {
 
     try {
       const slicedCandidates = candidates.slice(0, this.config.maxCandidates ?? 5)
-      const prompt = buildEventJudgePrompt(inputName, inputCity, inputDepartment, inputDate, slicedCandidates)
+      const prompt = buildEventJudgePrompt(inputName, inputCity, inputDepartment, inputDate, slicedCandidates, inputOrganizer)
       const model = this.config.model ?? DEFAULT_MODEL
 
       const response = await Promise.race([

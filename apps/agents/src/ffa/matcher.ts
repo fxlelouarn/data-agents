@@ -44,7 +44,8 @@ function ffaToMatchInput(competition: FFACompetitionDetails): EventMatchInput {
     eventCity: competition.competition.city,
     eventDepartment: competition.competition.department,
     editionDate: competition.competition.date,
-    editionYear: competition.competition.date.getFullYear()
+    editionYear: competition.competition.date.getFullYear(),
+    organizerName: competition.organizerName,
   }
 }
 

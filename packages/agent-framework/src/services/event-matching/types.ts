@@ -19,6 +19,8 @@ export interface EventMatchInput {
   editionDate: Date
   /** Optional: year to match (extracted from editionDate if not provided) */
   editionYear?: number
+  /** Optional: organizer name (helps LLM judge same-name events in different cities) */
+  organizerName?: string
 }
 
 /**

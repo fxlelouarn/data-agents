@@ -41,6 +41,8 @@ import {
   LLMMatchingService,
   buildNewEventChanges as sharedBuildNewEventChanges,
   buildEditionUpdateChanges as sharedBuildEditionUpdateChanges,
+  lookupDepartmentFromCity,
+  getDepartmentName,
 } from '@data-agents/agent-framework'
 import type { ProposalInput } from '@data-agents/types'
 import { settingsService } from '../../config/settings'
@@ -96,16 +98,19 @@ const connectionManager = new ConnectionManager()
  * Convertit les données extraites Slack en ProposalInput générique pour le shared builder
  */
 function toProposalInput(data: ExtractedEventData): ProposalInput {
+  const dept = data.eventDepartment
   return {
     eventName: data.eventName,
     eventCity: data.eventCity,
     eventCountry: data.eventCountry || 'France',
-    eventDepartment: data.eventDepartment,
+    eventDepartment: dept,
+    countrySubdivisionDisplayCodeLevel2: dept || undefined,
+    countrySubdivisionNameLevel2: dept ? getDepartmentName(dept) : undefined,
     editionYear: data.editionYear,
     editionDate: data.editionDate,
     editionEndDate: data.editionEndDate,
     timeZone: getTimezoneFromLocation({
-      department: data.eventDepartment,
+      department: dept,
       country: data.eventCountry,
     }),
     races: data.races?.map(r => ({
@@ -126,6 +131,33 @@ function toProposalInput(data: ExtractedEventData): ProposalInput {
     registrationUrl: data.registrationUrl,
     confidence: data.confidence || 0.5,
     source: 'slack',
+  }
+}
+
+/**
+ * Enrichit un ProposalInput avec le département inféré depuis la ville via Meilisearch geonames.
+ * Ne fait rien si le département est déjà renseigné ou si Meilisearch n'est pas configuré.
+ */
+async function enrichWithDepartment(
+  input: ProposalInput,
+  meilisearchConfig?: MeilisearchMatchingConfig
+): Promise<ProposalInput> {
+  if (input.countrySubdivisionDisplayCodeLevel2 || !input.eventCity || !meilisearchConfig) {
+    return input
+  }
+
+  const deptCode = await lookupDepartmentFromCity(input.eventCity, meilisearchConfig)
+  if (!deptCode) {
+    return input
+  }
+
+  logger.info(`Inferred department ${deptCode} (${getDepartmentName(deptCode)}) from city "${input.eventCity}"`)
+  return {
+    ...input,
+    eventDepartment: deptCode,
+    countrySubdivisionDisplayCodeLevel2: deptCode,
+    countrySubdivisionNameLevel2: getDepartmentName(deptCode),
+    timeZone: input.timeZone || getTimezoneFromLocation({ department: deptCode, country: input.eventCountry }),
   }
 }
 
@@ -240,7 +272,8 @@ function extractedDataToMatchInput(data: ExtractedEventData): EventMatchInput | 
     eventCity: data.eventCity || '',
     eventDepartment: data.eventDepartment,
     editionDate,
-    editionYear: data.editionYear || editionDate.getFullYear()
+    editionYear: data.editionYear || editionDate.getFullYear(),
+    organizerName: data.organizerName,
   }
 }
 
@@ -343,6 +376,15 @@ export async function createProposalFromSlack(
       }
     }
 
+    // 3a. Inférer le département si absent via geonames
+    if (!matchInput.eventDepartment && matchInput.eventCity && meilisearchConfig) {
+      const inferredDept = await lookupDepartmentFromCity(matchInput.eventCity, meilisearchConfig)
+      if (inferredDept) {
+        matchInput.eventDepartment = inferredDept
+        logger.info(`Inferred department ${inferredDept} from city "${matchInput.eventCity}" for matching`)
+      }
+    }
+
     // 3b. Préparer la config LLM matching si disponible
     const llmConfig = await settingsService.getLLMMatchingConfig()
     const llmService = llmConfig ? new LLMMatchingService(llmConfig, {
@@ -392,7 +434,7 @@ export async function createProposalFromSlack(
     if (matchResult.type === 'NO_MATCH' || matchResult.confidence < DEFAULT_MATCHING_CONFIG.similarityThreshold || !matchResult.edition) {
       // Pas de match, match trop faible, ou événement trouvé sans édition → NEW_EVENT
       proposalType = ProposalType.NEW_EVENT
-      const proposalInput = toProposalInput(extractedData)
+      const proposalInput = await enrichWithDepartment(toProposalInput(extractedData), meilisearchConfig)
       changes = sharedBuildNewEventChanges(proposalInput)
       confidence = calculateNewEventConfidence(
         extractedData.confidence, // Base sur confiance extraction
@@ -434,7 +476,7 @@ export async function createProposalFromSlack(
         logger.info(`Found ${existingRaces.length} existing races for edition ${editionId}`)
       }
 
-      const proposalInputForUpdate = toProposalInput(extractedData)
+      const proposalInputForUpdate = await enrichWithDepartment(toProposalInput(extractedData), meilisearchConfig)
       changes = await sharedBuildEditionUpdateChanges(proposalInputForUpdate, matchResult, existingRaces, undefined, {
         llmService,
         eventName: extractedData.eventName,

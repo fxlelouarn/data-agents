@@ -150,7 +150,8 @@ export function buildEventJudgePrompt(
   inputCity: string,
   inputDepartment: string | undefined,
   inputDate: string | undefined,
-  candidates: EventJudgeCandidate[]
+  candidates: EventJudgeCandidate[],
+  inputOrganizer?: string
 ): string {
   const safeName = sanitizeName(inputName)
   const safeCity = sanitizeName(inputCity)
@@ -160,6 +161,7 @@ export function buildEventJudgePrompt(
     `  Ville : ${safeCity}`,
     inputDepartment ? `  Département : ${inputDepartment}` : null,
     inputDate ? `  Date : ${inputDate}` : null,
+    inputOrganizer ? `  Organisateur : ${sanitizeName(inputOrganizer)}` : null,
   ].filter(Boolean).join('\n')
 
   const candidateLines = candidates.map((c) => {
@@ -186,6 +188,10 @@ ${candidateLines || '  (aucun candidat)'}
 Analyse le nom, la ville, le département et la date de l'événement à importer et compare-les avec les candidats.
 
 Un match est valide si les deux événements décrivent le même événement sportif (même nom de marque, même lieu), même si la formulation diffère légèrement.
+
+Indices importants :
+- Si l'organisateur est le même, c'est un fort indice que les événements sont identiques même si la ville diffère (changement de lieu entre éditions)
+- Des villes proches dans des départements voisins peuvent correspondre au même événement
 
 Ne valide PAS un match si :
 - Les noms désignent clairement des événements différents
