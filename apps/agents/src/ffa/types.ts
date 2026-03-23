@@ -149,6 +149,9 @@ export interface FFARace {
   /** Dénivelé positif en mètres */
   positiveElevation?: number
 
+  /** Prix d'inscription en euros */
+  price?: number
+
   /** Catégories autorisées (ex: "CA->MA") */
   categories?: string
 

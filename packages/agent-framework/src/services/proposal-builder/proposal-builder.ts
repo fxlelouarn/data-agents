@@ -76,6 +76,11 @@ export function buildNewEventChanges(input: ProposalInput): Record<string, any> 
       timeZone,
     }
 
+    // Add price if present
+    if (race.price !== undefined) {
+      raceObj.price = race.price
+    }
+
     // Remove undefined values
     for (const key of Object.keys(raceObj)) {
       if (raceObj[key] === undefined) {
