@@ -16,6 +16,8 @@ import {
   extractTotalPages,
   extractTotalResults
 } from './parser'
+import { LLMEventExtractor } from '@data-agents/agent-framework'
+import type { ExtractedEventData } from '@data-agents/agent-framework'
 
 /**
  * User-Agent réaliste pour les requêtes
@@ -179,13 +181,13 @@ export async function fetchCompetitionsList(
  * Récupère les détails d'une compétition depuis sa fiche
  */
 export async function fetchCompetitionDetails(
-  detailUrl: string,
   competition: FFACompetition,
-  humanDelayMs: number = 2000
+  extractor?: LLMEventExtractor
 ): Promise<FFACompetitionDetails | null> {
+  const detailUrl = competition.detailUrl
   try {
     // Attendre le délai humain
-    await humanDelay(humanDelayMs)
+    await humanDelay(2000)
 
     // Effectuer la requête
     const response = await axios.get(detailUrl, {
@@ -200,7 +202,27 @@ export async function fetchCompetitionDetails(
 
     const html = response.data
 
-    // Parser les détails
+    // Try LLM extraction first
+    if (extractor) {
+      try {
+        const result = await extractor.extract(
+          { type: 'html', content: html },
+          {
+            context: `Page détail FFA, compétition ${competition.level}, ${competition.city} (${competition.department})`,
+            cssSelector: '#epreuves',
+          }
+        )
+
+        if (result.success && result.data) {
+          return mapExtractedToFFADetails(result.data, competition, html)
+        }
+        console.warn(`[SCRAPER] LLM extraction failed for ${competition.name}, falling back to cheerio`)
+      } catch (err) {
+        console.warn(`[SCRAPER] LLM extraction error for ${competition.name}, falling back to cheerio`)
+      }
+    }
+
+    // Fallback to cheerio parser
     const details = parseCompetitionDetails(html, competition)
 
     return details
@@ -217,6 +239,47 @@ export async function fetchCompetitionDetails(
       }
     }
     return null
+  }
+}
+
+/**
+ * Map LLM ExtractedEventData to FFACompetitionDetails format.
+ * Uses cheerio for date parsing as fallback.
+ */
+function mapExtractedToFFADetails(
+  data: ExtractedEventData,
+  competition: FFACompetition,
+  html: string
+): FFACompetitionDetails {
+  // Use cheerio for multi-day date parsing (robust existing logic)
+  const cheerioDetails = parseCompetitionDetails(html, competition)
+
+  return {
+    competition,
+    startDate: data.editionDate ? new Date(data.editionDate) : cheerioDetails.startDate,
+    endDate: data.editionEndDate ? new Date(data.editionEndDate) : cheerioDetails.endDate,
+    organizerName: data.organizerName,
+    organizerEmail: data.organizerEmail,
+    organizerPhone: data.organizerPhone,
+    organizerWebsite: data.organizerWebsite,
+    races: (data.races || []).map(race => ({
+      name: race.name,
+      distance: race.distance,
+      positiveElevation: race.elevation,
+      startTime: race.startTime,
+      raceDate: race.raceDate,
+      price: race.price,
+      type: mapCategoryToType(race.categoryLevel1),
+    })),
+  }
+}
+
+function mapCategoryToType(categoryLevel1?: string): 'running' | 'trail' | 'walk' | 'other' {
+  switch (categoryLevel1) {
+    case 'RUNNING': return 'running'
+    case 'TRAIL': return 'trail'
+    case 'WALK': return 'walk'
+    default: return 'other'
   }
 }
 

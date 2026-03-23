@@ -9,7 +9,7 @@
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMEventExtractor } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -43,6 +43,7 @@ export class FFAScraperAgent extends BaseAgent {
   private stateService: IAgentStateService
   private prisma: typeof prisma
   private meilisearchConfig?: MeilisearchMatchingConfig
+  private extractor?: LLMEventExtractor
 
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
@@ -261,7 +262,7 @@ export class FFAScraperAgent extends BaseAgent {
 
     // Récupérer les détails de chaque compétition
     const detailsPromises = limitedCompetitions.map(comp =>
-      fetchCompetitionDetails(comp.detailUrl, comp, config.humanDelayMs)
+      fetchCompetitionDetails(comp, this.extractor)
     )
 
     const details = await Promise.all(detailsPromises)
@@ -905,6 +906,7 @@ export class FFAScraperAgent extends BaseAgent {
         elevation: race.positiveElevation,
         startTime: race.startTime,
         raceDate: race.raceDate,
+        price: race.price,
         categoryLevel1,
         categoryLevel2: categoryLevel2 ?? undefined,
       }
@@ -1194,6 +1196,16 @@ export class FFAScraperAgent extends BaseAgent {
         context.logger.info('🔍 Meilisearch configuré pour le matching')
       } else {
         context.logger.debug('Meilisearch non configuré, utilisation du fallback SQL')
+      }
+
+      // Initialize LLM extractor for FFA page analysis
+      if (process.env.LLM_MATCHING_API_KEY) {
+        this.extractor = new LLMEventExtractor({
+          apiKey: process.env.LLM_MATCHING_API_KEY,
+          model: process.env.LLM_MATCHING_MODEL,
+          logger: this.logger,
+        })
+        this.logger.info('LLM event extractor initialized for FFA page analysis')
       }
 
       // Charger la progression
