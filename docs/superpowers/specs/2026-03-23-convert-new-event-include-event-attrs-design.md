@@ -15,26 +15,35 @@ Include the event attributes from the NEW_EVENT proposal in the converted EDITIO
 
 ## Scope
 
-**Event fields to transfer**: `name`, `city`, `country`, `countrySubdivisionNameLevel1` (department), `websiteUrl`
+**Event fields to transfer**: All top-level fields from the NEW_EVENT proposal that belong to `EVENT_FIELDS` (defined in `blockFieldMapping.ts`): `name`, `city`, `country`, `countrySubdivisionNameLevel1/2`, `countrySubdivisionDisplayCodeLevel1/2`, `websiteUrl`, `facebookUrl`, `instagramUrl`, `latitude`, `longitude`, `fullAddress`, `dataSource`.
 
-Only fields where the proposed value differs from the existing event value are included — no noise from identical values.
+The backend iterates over `originalChanges` keys and checks membership in `EVENT_FIELDS` rather than hardcoding a list — this stays in sync automatically.
+
+Only fields where the proposed value differs from the existing event value are included — no noise from identical values. Falsy values (`null`, `undefined`, empty string) are treated as equivalent "no value".
 
 ## Changes
 
 ### 1. Backend — `apps/api/src/routes/proposals.ts` (endpoint `convert-to-edition-update`)
 
-- Fetch the existing Event from Miles Republic (currently only the Edition is fetched)
-- Extract the target event fields from `originalChanges` (top-level fields in NEW_EVENT format: `{ new: value, confidence }`)
-- For each field, compare proposed vs existing value; if different, add to `editionChanges` with `{ old, new, confidence }` format
+- Fetch the existing Event via `sourceDb.event.findUnique({ where: { id: eventId } })` — the `eventId` is already available from `req.body`. Add a defensive 404 check (though the event should always exist since the edition references it).
+- Iterate over `originalChanges` keys. For each key that belongs to `EVENT_FIELDS`, extract the proposed value (`originalChanges[field]?.new`) and compare to the existing event value (`existingEvent[field]`). Skip if both are falsy or identical.
+- If different, add to `editionChanges` with `{ old, new, confidence }` format
 - These fields are then naturally routed by the existing block field mapping to the "event" block
 
 ### 2. Frontend — `apps/dashboard/src/pages/proposals/detail/edition-update/EditionUpdateDetail.tsx`
 
-- Add event/edition field separation (filter `consolidatedChanges` using EVENT_FIELDS, same as `EditionUpdateGroupedDetail.tsx` lines 229-243)
+- Import `CategorizedEventChangesTable` and the `EVENT_FIELDS` list from `blockFieldMapping.ts`
+- Add event/edition field separation (filter `consolidatedChanges` using EVENT_FIELDS, same pattern as `EditionUpdateGroupedDetail.tsx` lines 229-243)
 - Add `CategorizedEventChangesTable` rendering with block validation for the "event" block
 - Show the event block only when event changes exist or the block is already validated
 
-### 3. No changes needed
+**Important**: `EditionUpdateDetail.tsx` uses `ProposalDetailBase` (simple view), which has a different context than `GroupedProposalDetailBase`. The simple view does NOT expose `handleApproveField` or `validateBlockWithDependencies`. The event block must follow the same prop pattern already used for the edition block in this file: `showActions={false}`, `showConfidence={false}`, `showCurrentValue={false}`.
+
+### 3. Frontend improvement (nice-to-have) — `EditionUpdateGroupedDetail.tsx`
+
+Replace the hardcoded `eventFields` array (lines 230-232) with the shared `EVENT_FIELDS` constant from `blockFieldMapping.ts` to avoid divergence.
+
+### 4. No changes needed
 
 - `proposal-domain.service.ts` — Already routes event fields to `milesRepo.updateEvent()` when blockType='event'
 - `blockFieldMapping.ts` — Already defines EVENT_FIELDS including all target fields
