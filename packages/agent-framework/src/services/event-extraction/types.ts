@@ -15,8 +15,8 @@ export type ExtractionSource =
 export interface ExtractionOptions {
   /** Agent-specific context for the prompt (e.g. "Page FFA, compétition départementale") */
   context?: string
-  /** CSS selector to extract a specific section from HTML (e.g. "#epreuves") */
-  cssSelector?: string
+  /** CSS selector(s) to extract from HTML. String, comma-separated, or array. */
+  cssSelector?: string | string[]
   /** Timeout in ms (default: 15000) */
   timeout?: number
 }

@@ -44,4 +44,19 @@ describe('preprocessHtml', () => {
     const result = preprocessHtml(html)
     expect(result).not.toMatch(/\n{3,}/)
   })
+
+  it('extracts multiple CSS selectors as array', () => {
+    const html = '<div id="info"><p>Organizer: ACME</p></div><div id="other">skip</div><section id="epreuves"><p>10km trail</p></section>'
+    const result = preprocessHtml(html, ['#info', '#epreuves'])
+    expect(result).toContain('Organizer: ACME')
+    expect(result).toContain('10km trail')
+    expect(result).not.toContain('skip')
+  })
+
+  it('extracts multiple CSS selectors via comma-separated string', () => {
+    const html = '<div id="info"><p>Contact</p></div><section id="epreuves"><p>Marathon</p></section><div>noise</div>'
+    const result = preprocessHtml(html, '#info, #epreuves')
+    expect(result).toContain('Contact')
+    expect(result).toContain('Marathon')
+  })
 })

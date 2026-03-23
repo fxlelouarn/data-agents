@@ -209,7 +209,7 @@ export async function fetchCompetitionDetails(
           { type: 'html', content: html },
           {
             context: `Page détail FFA, compétition ${competition.level}, ${competition.city} (${competition.department})`,
-            cssSelector: '#epreuves',
+            cssSelector: ['#infoPratique', '#epreuves'],
           }
         )
 
