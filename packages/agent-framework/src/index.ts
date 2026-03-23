@@ -19,7 +19,16 @@ export * from './services/event-matching'
 export * from './services/proposal-builder/index.js'
 
 // Shared LLM event extraction (used by FFA, Slack, and future agents)
-export * from './services/event-extraction'
+export type {
+  ExtractionSource,
+  ExtractionOptions,
+  ExtractionResult as EventExtractionResult,
+  ExtractedEventData,
+  ExtractedRace,
+  LLMExtractorConfig,
+} from './services/event-extraction/types'
+export { LLMEventExtractor } from './services/event-extraction/llm-event-extractor'
+export { preprocessHtml } from './services/event-extraction/html-preprocessor'
 
 // Legacy type alias for backwards compatibility
 export type { DbRace as RaceWithDistance } from './services/event-matching'
