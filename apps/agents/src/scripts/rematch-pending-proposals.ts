@@ -47,6 +47,7 @@ const LIMIT = parseInt(getArg('limit') || '100', 10)
 const TYPE_FILTER = getArg('type') as 'new-events' | 'races' | undefined
 const DRY_RUN = hasFlag('dry-run')
 const MIN_CONFIDENCE = parseFloat(getArg('min-confidence') || '0.80')
+const SINCE = getArg('since') // ISO date string, e.g. '2026-03-22T10:00:00Z'
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -138,14 +139,19 @@ async function markAsRematched(proposalId: string, reason: string) {
 async function processNewEvents(sourceDb: any) {
   console.log('\n--- Processing NEW_EVENT proposals ---')
 
+  const whereClause: any = { type: 'NEW_EVENT', status: 'PENDING' }
+  if (SINCE) {
+    whereClause.createdAt = { gte: new Date(SINCE) }
+  }
+
   const allProposals = await prisma.proposal.findMany({
-    where: { type: 'NEW_EVENT', status: 'PENDING' },
+    where: whereClause,
     orderBy: { createdAt: 'desc' },
     take: LIMIT,
   })
 
-  // Filter out proposals already processed by a previous rematch run
-  const proposals = allProposals.filter(p => {
+  // Filter out proposals already processed by a previous rematch run (unless --since is used)
+  const proposals = SINCE ? allProposals : allProposals.filter(p => {
     const justifications = (p.justification as any[]) || []
     return !justifications.some((j: any) => j.type === 'rematch_no_match')
   })
