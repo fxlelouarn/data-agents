@@ -989,6 +989,10 @@ export class ProposalDomainService {
             else if (raceData.walkPositiveElevation !== undefined) racePayload.walkPositiveElevation = raceData.walkPositiveElevation
           }
 
+          // Price
+          if (editedData.price !== undefined) racePayload.price = safeParseFloat(editedData.price)
+          else if (raceData.price !== undefined) racePayload.price = safeParseFloat(raceData.price)
+
           // ⚠️ Le champ 'type' est déprécié dans Prisma 7 de Miles Republic
           // Utiliser categoryLevel1/categoryLevel2 à la place (déjà géré ci-dessus)
 
