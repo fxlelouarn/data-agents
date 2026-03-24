@@ -52,6 +52,7 @@ const TYPE_FILTER = getArg('type') as 'new-events' | 'races' | undefined
 const DRY_RUN = hasFlag('dry-run')
 const MIN_CONFIDENCE = parseFloat(getArg('min-confidence') || '0.80')
 const SINCE = getArg('since') // ISO date string, e.g. '2026-03-22T10:00:00Z'
+const FUTURE_ONLY = hasFlag('future-only') // Only process events with edition date in the future
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -198,11 +199,36 @@ async function processNewEvents(sourceDb: any) {
   const allProposals = await prisma.proposal.findMany({
     where: whereClause,
     orderBy: { createdAt: 'desc' },
-    take: LIMIT,
+    take: LIMIT ? LIMIT + 500 : undefined, // Fetch extra to account for future-only filtering
   })
 
+  // Filter out past events if --future-only
+  let filteredProposals = allProposals
+  if (FUTURE_ONLY) {
+    const now = new Date()
+    filteredProposals = allProposals.filter(p => {
+      const changes = p.changes as any
+      const startDate = changes?.edition?.new?.startDate
+      if (startDate) {
+        return new Date(startDate) >= now
+      }
+      // No start date — check editionYear
+      const year = p.editionYear || changes?.edition?.new?.year
+      if (year) {
+        return parseInt(String(year)) >= now.getFullYear()
+      }
+      return true // Keep if we can't determine
+    })
+    console.log(`Future-only filter: ${allProposals.length} → ${filteredProposals.length} proposals`)
+  }
+
+  // Apply limit after filtering
+  if (LIMIT) {
+    filteredProposals = filteredProposals.slice(0, LIMIT)
+  }
+
   // Filter out proposals already processed by a previous rematch run (unless --since is used)
-  const proposals = SINCE ? allProposals : allProposals.filter(p => {
+  const proposals = SINCE ? filteredProposals : filteredProposals.filter(p => {
     const justifications = (p.justification as any[]) || []
     return !justifications.some((j: any) => j.type === 'rematch_no_match')
   })
