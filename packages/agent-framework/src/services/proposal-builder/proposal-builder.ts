@@ -508,8 +508,17 @@ export async function buildEditionUpdateChanges(
           return raceObj
         })
 
-      if (racesToAdd.length > 0) {
-        changes.racesToAdd = { old: null, new: racesToAdd }
+      // Deduplicate racesToAdd by name + distance
+      const seenRaces = new Set<string>()
+      const dedupedRacesToAdd = racesToAdd.filter((r: any) => {
+        const key = `${(r.name || '').toLowerCase().trim()}|${r.runDistance || r.walkDistance || r.bikeDistance || 0}`
+        if (seenRaces.has(key)) return false
+        seenRaces.add(key)
+        return true
+      })
+
+      if (dedupedRacesToAdd.length > 0) {
+        changes.racesToAdd = { old: null, new: dedupedRacesToAdd }
       }
     }
 
