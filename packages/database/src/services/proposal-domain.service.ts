@@ -357,15 +357,45 @@ export class ProposalDomainService {
       if (options.blockType === 'races' || !options.blockType) {
         const editionId = createdEditionIds[0] || existingEditionId
         if (editionId && racesData.length > 0) {
-          this.logger.info(`🆕 Création de ${racesData.length} course(s)`)
+          // ✅ FIX: Deduplicate racesData (input can contain duplicates)
+          const seenRaces = new Set<string>()
+          const dedupedRacesData = racesData.filter((r: any) => {
+            const key = `${(r.name || '').toLowerCase().trim()}|${r.runDistance || r.walkDistance || r.bikeDistance || 0}`
+            if (seenRaces.has(key)) {
+              this.logger.warn(`⏭️  Doublon détecté dans racesData: "${r.name}" — skip`)
+              return false
+            }
+            seenRaces.add(key)
+            return true
+          })
+
+          this.logger.info(`🆕 Création de ${dedupedRacesData.length} course(s)${dedupedRacesData.length < racesData.length ? ` (${racesData.length - dedupedRacesData.length} doublon(s) supprimé(s))` : ''}`)
 
           // ✅ Sélectionner automatiquement la course principale (mainRace)
           // Règle : plus grande distance (run ou bike), solo prioritaire sur équipe
-          const mainRaceIndex = selectMainRace(racesData)
-          this.logger.info(`🏆 Main race sélectionnée : index ${mainRaceIndex} (${racesData[mainRaceIndex]?.name || 'N/A'})`)
+          const mainRaceIndex = selectMainRace(dedupedRacesData)
+          this.logger.info(`🏆 Main race sélectionnée : index ${mainRaceIndex} (${dedupedRacesData[mainRaceIndex]?.name || 'N/A'})`)
 
-          for (let i = 0; i < racesData.length; i++) {
-            const raceData = racesData[i]
+          // Also check for races already in the edition (replay protection)
+          const existingRacesInNewEdition = await milesRepo.findRacesByEditionId(editionId)
+
+          for (let i = 0; i < dedupedRacesData.length; i++) {
+            const raceData = dedupedRacesData[i]
+
+            // Skip if already exists (replay protection)
+            const raceName = (raceData.name || '').toLowerCase().trim()
+            const raceDistance = raceData.runDistance || raceData.walkDistance || raceData.bikeDistance || 0
+            const alreadyExists = existingRacesInNewEdition.find((er: any) =>
+              er.name?.toLowerCase().trim() === raceName &&
+              (er.runDistance || er.walkDistance || er.bikeDistance || 0) === raceDistance &&
+              !er.isArchived
+            )
+            if (alreadyExists) {
+              this.logger.info(`⏭️  Course "${raceName}" existe déjà dans l'édition (id: ${alreadyExists.id}) — skip`)
+              createdRaceIds.push(alreadyExists.id)
+              continue
+            }
+
             const race = await milesRepo.createRace({
               editionId: editionId,
               eventId: event.id,
