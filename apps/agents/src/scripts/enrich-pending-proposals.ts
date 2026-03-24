@@ -264,10 +264,8 @@ async function main() {
       continue
     }
 
-    // Skip already-enriched proposals (at least one race has a price)
-    const existingRaces: any[] = p.changes?.edition?.new?.races || []
-    const alreadyHasPrice = existingRaces.some((r: any) => r.price != null)
-    if (alreadyHasPrice) {
+    // Skip already-enriched proposals
+    if (p.changes?._enrichedAt) {
       stats.skipped++
       continue
     }
@@ -332,8 +330,17 @@ async function main() {
     // Enrich
     const enrichResult = enrichProposal(p.changes, llmData)
 
+    // Mark as enriched (even if no changes — avoids reprocessing)
+    p.changes._enrichedAt = new Date().toISOString()
+
     if (!enrichResult.updated) {
       console.log(`${prefix} — ${p.eventName} (no changes)`)
+      if (!DRY_RUN) {
+        await prisma.proposal.update({
+          where: { id: p.id },
+          data: { changes: p.changes as any },
+        })
+      }
       await delay(DELAY_MS)
       continue
     }
