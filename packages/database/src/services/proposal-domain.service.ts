@@ -890,6 +890,9 @@ export class ProposalDomainService {
           toAdd: racesToAddWithIndex.length
         })
 
+        // Pre-fetch existing races for deduplication
+        const existingRacesInEdition = await milesRepo.findRacesByEditionId(numericEditionId)
+
         for (const { race: raceData, originalIndex } of racesToAddWithIndex) {
           // ✅ FIX: Utiliser originalIndex pour accéder aux raceEdits
           const editedData = raceEdits[`new-${originalIndex}`] || {}
@@ -923,6 +926,19 @@ export class ProposalDomainService {
           if ('raceId' in editedData) {
             this.logger.warn(`⚠️  Champ 'raceId' détecté dans editedData[${originalIndex}]: ${editedData.raceId} - SUPPRESSION`)
             delete editedData.raceId
+          }
+
+          // ✅ FIX: Skip if a race with the same name and distance already exists in this edition
+          const raceName = (editedData.name || raceData.name || '').toLowerCase().trim()
+          const raceDistance = raceData.runDistance || raceData.walkDistance || raceData.bikeDistance || 0
+          const duplicate = existingRacesInEdition.find((er: any) =>
+            er.name?.toLowerCase().trim() === raceName &&
+            (er.runDistance || er.walkDistance || er.bikeDistance || 0) === raceDistance &&
+            !er.isArchived
+          )
+          if (duplicate) {
+            this.logger.info(`  ⏭️  Course "${raceName}" (${raceDistance}km) existe déjà dans l'édition (id: ${duplicate.id}) — skip`)
+            continue
           }
 
           // Appliquer les modifications utilisateur, sinon les valeurs proposées
