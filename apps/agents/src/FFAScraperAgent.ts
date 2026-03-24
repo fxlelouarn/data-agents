@@ -36,7 +36,46 @@ import { normalizeFFARaceName } from './ffa/parser'
 import { matchCompetition, calculateAdjustedConfidence, calculateNewEventConfidence } from './ffa/matcher'
 import { getDepartmentName, normalizeDepartmentCode } from '@data-agents/agent-framework'
 import { hasIdenticalPendingProposal, filterNewChanges } from './ffa/deduplication'
-import { fromZonedTime } from 'date-fns-tz'
+
+/**
+ * Convert a local date/time in a given timezone to UTC.
+ * Uses Intl.DateTimeFormat to compute the real offset — works correctly
+ * regardless of server TZ and handles DST transitions properly.
+ */
+function localToUtcRobust(year: number, month: number, day: number, hours: number, minutes: number, timeZone: string): Date {
+  // Create a UTC date with the local time values
+  const utcGuess = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0))
+
+  // Get what this UTC instant looks like in the target timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(utcGuess)
+  const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10)
+
+  // Compute offset: what's the difference between UTC and the timezone at this moment?
+  const zonedHour = get('hour') === 24 ? 0 : get('hour')
+  const zonedMinute = get('minute')
+  const zonedDay = get('day')
+
+  // Offset in minutes = (local - UTC) for this instant
+  let offsetMinutes = (zonedHour * 60 + zonedMinute) - (hours * 60 + minutes)
+
+  // Handle day boundary
+  if (zonedDay !== day) {
+    if (zonedDay > day || (zonedDay === 1 && day > 27)) {
+      offsetMinutes += 24 * 60  // timezone is ahead, crossed into next day
+    } else {
+      offsetMinutes -= 24 * 60  // timezone is behind
+    }
+  }
+
+  // The actual UTC time = local time - offset
+  return new Date(Date.UTC(year, month, day, hours, minutes, 0, 0) - offsetMinutes * 60 * 1000)
+}
 
 export class FFAScraperAgent extends BaseAgent {
   private sourceDb: any
@@ -861,22 +900,18 @@ export class FFAScraperAgent extends BaseAgent {
       // Parser l'heure locale (format HH:MM)
       const [hours, minutes] = race.startTime.split(':').map(Number)
 
-      // Créer une date en heure locale (pas UTC !)
-      const localDateStr = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      // Convertir heure locale → UTC en utilisant l'offset réel du timezone à cette date
+      const utcDate = localToUtcRobust(year, month, day, hours, minutes, timeZone)
 
-      // Convertir en UTC en tenant compte du DST
-      const utcDate = fromZonedTime(localDateStr, timeZone)
-
-      this.logger.info(`🕐 Conversion timezone: ${localDateStr} ${timeZone} -> ${utcDate.toISOString()} (course: ${race.name})`)
+      this.logger.info(`🕐 Conversion timezone: ${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} ${race.startTime} ${timeZone} -> ${utcDate.toISOString()} (course: ${race.name})`)
 
       return utcDate
     }
 
     // Sinon, minuit heure locale (00:00 local time)
-    const localMidnight = `${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
-    const utcDate = fromZonedTime(localMidnight, timeZone)
+    const utcDate = localToUtcRobust(year, month, day, 0, 0, timeZone)
 
-    this.logger.info(`🕐 Minuit locale ${localMidnight} ${timeZone} -> ${utcDate.toISOString()}`)
+    this.logger.info(`🕐 Minuit locale ${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} ${timeZone} -> ${utcDate.toISOString()}`)
 
     return utcDate
   }
