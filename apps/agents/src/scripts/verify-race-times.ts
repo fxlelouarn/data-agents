@@ -227,15 +227,16 @@ async function main() {
     // Compare each race
     let hasAnyMismatch = false
     const fixes: Array<{ storedIdx: number, oldUtc: string, newUtc: string, raceName: string }> = []
+    const usedStoredIndices = new Set<number>()
 
-    for (const parsed of parsedRaces) {
+    for (let pi = 0; pi < parsedRaces.length; pi++) {
+      const parsed = parsedRaces[pi]
       if (!parsed.startTime) continue
 
       // Determine the date for this race
       let raceDateStr = baseDateStr
       if (parsed.raceDate) {
         const [dayStr, monthStr] = parsed.raceDate.split('/')
-        // Use year from edition
         const year = baseDateStr ? baseDateStr.substring(0, 4) : '2026'
         raceDateStr = `${year}-${monthStr}-${dayStr.padStart(2, '0')}`
       }
@@ -246,16 +247,27 @@ async function main() {
       const expectedUtc = localTimeToUtc(raceDateStr, parsed.startTime, timeZone)
       const expectedIso = expectedUtc.toISOString()
 
-      // Find matching stored race (by name similarity or index)
-      const matchingStored = storedRaces.find(sr => {
-        if (!sr.startDate) return false
-        // Match by rough name similarity
-        const parsedWords = parsed.name.toLowerCase().split(/\s+/).filter(w => w.length >= 3)
+      // Find matching stored race: first try name similarity, then fall back to index
+      let matchingStored: StoredRace | undefined
+
+      // Strategy 1: match by name (skip already used)
+      const parsedWords = parsed.name.toLowerCase().split(/\s+/).filter(w => w.length >= 3)
+      for (const sr of storedRaces) {
+        if (!sr.startDate || usedStoredIndices.has(sr.index)) continue
         const storedWords = sr.name.toLowerCase().split(/\s+/).filter(w => w.length >= 3)
-        return parsedWords.some(pw => storedWords.some(sw => sw.includes(pw) || pw.includes(sw)))
-      })
+        if (parsedWords.some(pw => storedWords.some(sw => sw.includes(pw) || pw.includes(sw)))) {
+          matchingStored = sr
+          break
+        }
+      }
+
+      // Strategy 2: fall back to same index position
+      if (!matchingStored && pi < storedRaces.length && storedRaces[pi].startDate && !usedStoredIndices.has(storedRaces[pi].index)) {
+        matchingStored = storedRaces[pi]
+      }
 
       if (!matchingStored || !matchingStored.startDate) continue
+      usedStoredIndices.add(matchingStored.index)
 
       const storedUtc = matchingStored.startDate
       const storedDate = new Date(storedUtc)
