@@ -216,12 +216,20 @@ async function main() {
     }
 
     // Determine the base date for conversion
-    // Use the edition startDate or the first race's stored date
+    // Try multiple sources: edition startDate, first stored race startDate, editionYear
     const editionStartDate = p.changes.edition?.new?.startDate || p.changes.startDate?.new
     let baseDateStr: string | undefined
     if (editionStartDate) {
       const d = new Date(editionStartDate)
       baseDateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+    }
+    // Fallback: use the first stored race's startDate
+    if (!baseDateStr) {
+      const firstRaceWithDate = storedRaces.find(r => r.startDate)
+      if (firstRaceWithDate?.startDate) {
+        const d = new Date(firstRaceWithDate.startDate)
+        baseDateStr = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}-${String(d.getUTCDate()).padStart(2, '0')}`
+      }
     }
 
     // Compare each race
