@@ -9,8 +9,7 @@ import {
   Box
 } from '@mui/material'
 import { Warning as WarningIcon } from '@mui/icons-material'
-import { format } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 
 interface ConfirmEditionDateUpdateModalProps {
   open: boolean
@@ -37,13 +36,7 @@ const ConfirmEditionDateUpdateModal: React.FC<ConfirmEditionDateUpdateModalProps
 }) => {
   const formatDate = (dateString: string): string => {
     if (!dateString) return 'Date non disponible'
-    try {
-      const date = new Date(dateString)
-      if (isNaN(date.getTime())) return 'Date invalide'
-      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
-    } catch (error) {
-      return 'Date invalide'
-    }
+    return formatDateInTimezone(dateString, 'Europe/Paris')
   }
 
   const formattedCurrentDate = formatDate(currentEditionDate)

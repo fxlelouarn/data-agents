@@ -26,8 +26,7 @@ import {
   OpenInNew as OpenInNewIcon,
   SmartToy as AgentIcon
 } from '@mui/icons-material'
-import { format } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 import { Link } from 'react-router-dom'
 import { Proposal } from '@/types'
 import { FieldDiff, RaceDiff } from '@/hooks/useProposalEditor'
@@ -214,10 +213,7 @@ function formatValue(field: string, value: any): string {
   // Dates
   if (field === 'startDate' || field === 'endDate') {
     try {
-      const date = new Date(value)
-      if (!isNaN(date.getTime())) {
-        return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
-      }
+      return formatDateInTimezone(String(value), 'Europe/Paris')
     } catch {
       // Fallback
     }
@@ -666,15 +662,7 @@ const SourceInfoSection: React.FC<SourceInfoSectionProps> = ({ proposal }) => {
   const p = proposal as any
 
   const formatDate = (dateString: string) => {
-    try {
-      const date = new Date(dateString)
-      if (isNaN(date.getTime())) {
-        return dateString
-      }
-      return format(date, 'dd MMM yyyy à HH:mm', { locale: fr })
-    } catch {
-      return dateString
-    }
+    return formatDateInTimezone(dateString, 'Europe/Paris', 'dd MMM yyyy à HH:mm')
   }
 
   return (

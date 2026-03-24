@@ -4,8 +4,8 @@ import {
   CheckCircle as ValidateIcon,
   Edit as EditIcon
 } from '@mui/icons-material'
-import { format, isValid, parseISO } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { isValid, parseISO } from 'date-fns'
+import { formatDateInTimezone } from '@/utils/timezone'
 import CategorizedEventChangesTable from '../CategorizedEventChangesTable'
 import CategorizedEditionChangesTable from '../CategorizedEditionChangesTable'
 import RacesChangesTable from '../edition-update/RacesChangesTable'
@@ -32,7 +32,7 @@ function formatValue(value: any, isSimple = false, timezone?: string): React.Rea
     try {
       const date = parseISO(value)
       if (isValid(date)) {
-        return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+        return formatDateInTimezone(value, timezone || 'Europe/Paris')
       }
     } catch {
       // Fallback to string

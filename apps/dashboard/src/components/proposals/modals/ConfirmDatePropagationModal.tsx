@@ -9,8 +9,7 @@ import {
   Box
 } from '@mui/material'
 import { Warning as WarningIcon } from '@mui/icons-material'
-import { format } from 'date-fns'
-import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 
 interface ConfirmDatePropagationModalProps {
   open: boolean
@@ -31,7 +30,7 @@ const ConfirmDatePropagationModal: React.FC<ConfirmDatePropagationModalProps> = 
   newStartDate,
   affectedRacesCount
 }) => {
-  const formattedDate = format(new Date(newStartDate), 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+  const formattedDate = formatDateInTimezone(newStartDate, 'Europe/Paris')
 
   return (
     <Dialog open={open} onClose={onClose} maxWidth="sm" fullWidth>

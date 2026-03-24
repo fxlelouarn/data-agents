@@ -1,5 +1,5 @@
 import React, { useState } from 'react'
-import { format } from 'date-fns'
+// format removed — use formatDateInTimezone instead
 import { fr } from 'date-fns/locale'
 import { formatDateInTimezone } from '@/utils/timezone'
 import { proposalTypeLabels } from '@/constants/proposals'
@@ -101,16 +101,7 @@ export const useProposalLogic = () => {
 
   const formatDateTime = (dateString: string, timezone?: string) => {
     try {
-      if (timezone) {
-        // Utiliser la timezone spécifiée
-        return formatDateInTimezone(dateString, timezone, 'EEEE dd/MM/yyyy HH:mm')
-      }
-      // Fallback: afficher en heure locale du navigateur
-      const date = new Date(dateString)
-      if (isNaN(date.getTime())) {
-        return dateString
-      }
-      return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+      return formatDateInTimezone(dateString, timezone || 'Europe/Paris', 'EEEE dd/MM/yyyy HH:mm')
     } catch (error) {
       return dateString
     }
