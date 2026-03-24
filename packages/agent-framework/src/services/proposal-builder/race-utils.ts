@@ -3,11 +3,52 @@
  * Ported from FFAScraperAgent and SlackProposalService.
  */
 
-import { fromZonedTime } from 'date-fns-tz'
 import { inferRaceCategories } from '@data-agents/database'
 import type { ProposalRaceInput } from '@data-agents/types'
 
 const DEFAULT_TIMEZONE = 'Europe/Paris'
+
+/**
+ * Convert a local date/time in a given timezone to UTC.
+ * Uses Intl.DateTimeFormat — deterministic regardless of server TZ.
+ */
+function localToUtc(localDateStr: string, timeZone: string): Date {
+  // Parse the local date string
+  const [datePart, timePart] = localDateStr.split('T')
+  const [yearStr, monthStr, dayStr] = datePart.split('-')
+  const [hourStr, minuteStr] = (timePart || '00:00:00').split(':')
+  const year = parseInt(yearStr, 10)
+  const month = parseInt(monthStr, 10) - 1
+  const day = parseInt(dayStr, 10)
+  const hours = parseInt(hourStr, 10)
+  const minutes = parseInt(minuteStr, 10)
+
+  // Create a UTC date with the local time values
+  const utcGuess = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0))
+
+  // Get what this UTC instant looks like in the target timezone
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(utcGuess)
+  const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10)
+
+  const zonedHour = get('hour') === 24 ? 0 : get('hour')
+  const zonedMinute = get('minute')
+  const zonedDay = get('day')
+
+  // Compute offset: difference between timezone and UTC at this instant
+  let offsetMinutes = (zonedHour * 60 + zonedMinute) - (hours * 60 + minutes)
+  if (zonedDay !== day) {
+    if (zonedDay > day || (zonedDay === 1 && day > 27)) offsetMinutes += 24 * 60
+    else offsetMinutes -= 24 * 60
+  }
+
+  return new Date(Date.UTC(year, month, day, hours, minutes, 0, 0) - offsetMinutes * 60 * 1000)
+}
 
 /**
  * Converts a distance in meters to km and assigns it to the correct field
@@ -96,7 +137,7 @@ export function cascadeDateToRace(
   }).format(newEditionDate)
 
   const newLocalDateTimeStr = `${newLocalDate}T${raceLocalTime}`
-  return fromZonedTime(newLocalDateTimeStr, timezone)
+  return localToUtc(newLocalDateTimeStr, timezone)
 }
 
 /**
@@ -148,12 +189,12 @@ export function calculateRaceStartDate(
   if (startTime) {
     const [hours, minutes] = startTime.split(':').map(Number)
     const localDateStr = `${baseDateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-    return fromZonedTime(localDateStr, tz)
+    return localToUtc(localDateStr, tz)
   }
 
   // No time provided — return midnight in local timezone
   const localMidnight = `${baseDateStr}T00:00:00`
-  return fromZonedTime(localMidnight, tz)
+  return localToUtc(localMidnight, tz)
 }
 
 /**
@@ -173,7 +214,7 @@ export function calculateEditionDates(
   const baseDateStr = editionDate.includes('T') ? editionDate.split('T')[0] : editionDate
 
   if (races.length === 0) {
-    const midnight = fromZonedTime(`${baseDateStr}T00:00:00`, tz)
+    const midnight = localToUtc(`${baseDateStr}T00:00:00`, tz)
     return { startDate: midnight, endDate: midnight }
   }
 
@@ -183,7 +224,7 @@ export function calculateEditionDates(
     .filter((d): d is Date => d != null && !isNaN(d.getTime()))
 
   if (raceDates.length === 0) {
-    const midnight = fromZonedTime(`${baseDateStr}T00:00:00`, tz)
+    const midnight = localToUtc(`${baseDateStr}T00:00:00`, tz)
     return { startDate: midnight, endDate: midnight }
   }
 
