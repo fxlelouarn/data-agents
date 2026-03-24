@@ -307,7 +307,7 @@ export const proposalsApi = {
   checkExistingEvent: (id: string): Promise<{
     hasMatch: boolean
     match?: {
-      type: 'EXACT_MATCH' | 'FUZZY_MATCH'
+      type: 'EXACT_MATCH' | 'FUZZY_MATCH' | 'REJECTED'
       eventId: number
       eventName: string
       eventSlug: string
@@ -315,7 +315,25 @@ export const proposalsApi = {
       editionId?: number
       editionYear?: string
       confidence: number
+      nameScore?: number
+      cityScore?: number
+      departmentMatch?: boolean
+      dateProximity?: number
     }
+    matches?: Array<{
+      type: 'EXACT_MATCH' | 'FUZZY_MATCH' | 'REJECTED'
+      eventId: number
+      eventName: string
+      eventSlug: string
+      eventCity: string
+      editionId?: number
+      editionYear?: string
+      confidence: number
+      nameScore?: number
+      cityScore?: number
+      departmentMatch?: boolean
+      dateProximity?: number
+    }>
     proposalData: {
       eventName: string | null
       eventCity: string | null

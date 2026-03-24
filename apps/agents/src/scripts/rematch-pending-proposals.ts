@@ -120,16 +120,63 @@ async function main() {
 // ---------------------------------------------------------------------------
 // Mark a proposal as already processed by rematch (append justification)
 // ---------------------------------------------------------------------------
-async function markAsRematched(proposalId: string, reason: string) {
+async function markAsRematched(proposalId: string, reason: string, matchResult?: any) {
   const proposal = await prisma.proposal.findUnique({ where: { id: proposalId } })
   if (!proposal) return
 
   const justifications = (proposal.justification as any[]) || []
+
+  // Store the rematch result
   justifications.push({
     type: 'rematch_no_match',
     content: reason,
     metadata: { rematchedAt: new Date().toISOString() }
   })
+
+  // If the match found candidates (even rejected), merge them into rejected_matches
+  // so the dashboard can display them as "Événements similaires détectés"
+  if (matchResult?.event) {
+    const existingRejected = justifications.find((j: any) => j.type === 'rejected_matches')
+    const currentRejected: any[] = existingRejected?.metadata?.rejectedMatches || []
+
+    // Build rejected match entry from the match result
+    // Start from rejectedMatches detail if available, then override with match data
+    const rejectedDetail = matchResult.rejectedMatches?.[0] || {}
+    const newRejected: any = {
+      ...rejectedDetail,
+      eventId: matchResult.event.id,
+      eventName: matchResult.event.name,
+      eventSlug: matchResult.event.slug || rejectedDetail.eventSlug || '',
+      eventCity: matchResult.event.city || rejectedDetail.eventCity || '',
+      matchScore: matchResult.confidence || matchResult.event.similarity,
+      nameScore: rejectedDetail.nameScore || 0,
+      cityScore: rejectedDetail.cityScore || 0,
+      departmentMatch: rejectedDetail.departmentMatch || false,
+      dateProximity: rejectedDetail.dateProximity || 0,
+    }
+
+    // Add edition info if available
+    if (matchResult.edition) {
+      newRejected.editionId = matchResult.edition.id
+      newRejected.editionYear = matchResult.edition.year
+    }
+
+    // Avoid duplicates
+    const alreadyExists = currentRejected.some((r: any) => r.eventId === newRejected.eventId)
+    if (!alreadyExists) {
+      currentRejected.push(newRejected)
+
+      if (existingRejected) {
+        existingRejected.metadata.rejectedMatches = currentRejected
+      } else {
+        justifications.push({
+          type: 'rejected_matches',
+          content: `${currentRejected.length} événement(s) similaire(s) rejeté(s)`,
+          metadata: { rejectedMatches: currentRejected }
+        })
+      }
+    }
+  }
 
   await prisma.proposal.update({
     where: { id: proposalId },
@@ -202,7 +249,7 @@ async function processNewEvents(sourceDb: any) {
           stats.newEvents.confirmed++
           logger.info(`  ⚠️ MATCH FOUND but below threshold: "${matchResult.event.name}" (id:${matchResult.event.id}, confidence:${matchResult.confidence.toFixed(2)} < ${MIN_CONFIDENCE}) — skipping`)
           if (!DRY_RUN) {
-            await markAsRematched(proposal.id, `Match below threshold: "${matchResult.event.name}" (confidence: ${matchResult.confidence.toFixed(2)})`)
+            await markAsRematched(proposal.id, `Match below threshold: "${matchResult.event.name}" (confidence: ${matchResult.confidence.toFixed(2)})`, matchResult)
           }
           continue
         }
@@ -289,7 +336,7 @@ async function processNewEvents(sourceDb: any) {
         stats.newEvents.confirmed++
         logger.info(`  — No match, confirmed as NEW_EVENT`)
         if (!DRY_RUN) {
-          await markAsRematched(proposal.id, 'No match found')
+          await markAsRematched(proposal.id, 'No match found', matchResult)
         }
       }
     } catch (error: any) {

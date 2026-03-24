@@ -2635,49 +2635,86 @@ router.get('/:id/check-existing-event', [
     editionDate: editionData.startDate
   }
 
-  if (result.type === 'NO_MATCH') {
-    return res.json({ hasMatch: false, proposalData })
-  }
-
-  // 7. Vérifier si l'événement trouvé est différent des rejectedMatches
-  // et a un score supérieur au meilleur rejectedMatch
+  // 7. Collect rejectedMatches from justification (from initial matching + rematch runs)
   const justification = proposal.justification as any[] | null
   const rejectedMatchesJustif = justification?.find(
-    (j: any) => j.type === 'rejected_matches' || j.type === 'text'
+    (j: any) => j.type === 'rejected_matches'
   )
-  const rejectedMatches = rejectedMatchesJustif?.metadata?.rejectedMatches || []
+  const storedRejectedMatches: any[] = rejectedMatchesJustif?.metadata?.rejectedMatches || []
 
-  if (rejectedMatches.length > 0) {
-    const foundEventId = result.event!.id
+  // Also check the initial text justification for rejectedMatches (legacy format)
+  const textJustif = justification?.find(
+    (j: any) => j.type === 'text' && j.metadata?.rejectedMatches
+  )
+  const legacyRejected: any[] = textJustif?.metadata?.rejectedMatches || []
 
-    // Vérifier si l'événement trouvé est dans les rejectedMatches
-    const isInRejectedMatches = rejectedMatches.some(
-      (rm: any) => rm.eventId === foundEventId
-    )
-
-    // Trouver le meilleur score parmi les rejectedMatches
-    const bestRejectedScore = Math.max(...rejectedMatches.map((rm: any) => rm.matchScore || 0))
-
-    // Ne pas afficher l'alerte si:
-    // - L'événement est déjà dans rejectedMatches (même eventId)
-    // - OU le score est inférieur ou égal au meilleur score rejeté
-    if (isInRejectedMatches || result.confidence <= bestRejectedScore) {
-      return res.json({ hasMatch: false, proposalData })
+  // Merge and deduplicate all rejected matches
+  const allRejected = [...storedRejectedMatches]
+  for (const rm of legacyRejected) {
+    if (!allRejected.some((r: any) => r.eventId === rm.eventId)) {
+      allRejected.push(rm)
     }
   }
 
+  if (result.type === 'NO_MATCH') {
+    // Even with no live match, show stored rejectedMatches if any
+    if (allRejected.length > 0) {
+      return res.json({
+        hasMatch: true,
+        matches: allRejected.map((rm: any) => ({
+          type: 'REJECTED',
+          eventId: rm.eventId,
+          eventName: rm.eventName,
+          eventSlug: rm.eventSlug || '',
+          eventCity: rm.eventCity || '',
+          editionId: rm.editionId,
+          editionYear: rm.editionYear,
+          confidence: rm.matchScore || 0,
+          nameScore: rm.nameScore,
+          cityScore: rm.cityScore,
+          departmentMatch: rm.departmentMatch,
+          dateProximity: rm.dateProximity,
+        })),
+        proposalData
+      })
+    }
+    return res.json({ hasMatch: false, proposalData })
+  }
+
+  // 8. Build response with live match + any additional rejected matches
+  const liveMatch = {
+    type: result.type,
+    eventId: result.event!.id,
+    eventName: result.event!.name,
+    eventSlug: result.event!.slug || '',
+    eventCity: result.event!.city,
+    editionId: result.edition?.id,
+    editionYear: result.edition?.year,
+    confidence: result.confidence
+  }
+
+  // Add rejected matches that are different from the live match
+  const additionalMatches = allRejected
+    .filter((rm: any) => rm.eventId !== result.event!.id)
+    .map((rm: any) => ({
+      type: 'REJECTED',
+      eventId: rm.eventId,
+      eventName: rm.eventName,
+      eventSlug: rm.eventSlug || '',
+      eventCity: rm.eventCity || '',
+      editionId: rm.editionId,
+      editionYear: rm.editionYear,
+      confidence: rm.matchScore || 0,
+      nameScore: rm.nameScore,
+      cityScore: rm.cityScore,
+      departmentMatch: rm.departmentMatch,
+      dateProximity: rm.dateProximity,
+    }))
+
   return res.json({
     hasMatch: true,
-    match: {
-      type: result.type,
-      eventId: result.event!.id,
-      eventName: result.event!.name,
-      eventSlug: result.event!.slug || '',
-      eventCity: result.event!.city,
-      editionId: result.edition?.id,
-      editionYear: result.edition?.year,
-      confidence: result.confidence
-    },
+    match: liveMatch,
+    matches: [liveMatch, ...additionalMatches],
     proposalData
   })
 }))

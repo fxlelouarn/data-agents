@@ -90,10 +90,11 @@ const NewEventDetail: React.FC<NewEventDetailProps> = ({ proposalId }) => {
         return (
           <>
             {/* Alerte si un événement correspondant existe maintenant */}
-            {checkExistingResult?.hasMatch && checkExistingResult.match && (
+            {checkExistingResult?.hasMatch && (checkExistingResult.match || checkExistingResult.matches) && (
               <ExistingEventAlert
                 proposalId={proposal.id}
-                match={checkExistingResult.match}
+                match={checkExistingResult.match || checkExistingResult.matches![0]}
+                matches={checkExistingResult.matches}
                 proposalYear={editionYear}
               />
             )}

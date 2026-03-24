@@ -8,45 +8,55 @@ import {
   Typography,
   Link as MuiLink
 } from '@mui/material'
-import { OpenInNew as ExternalLinkIcon } from '@mui/icons-material'
+import { OpenInNew as ExternalLinkIcon, CheckCircle as CheckIcon } from '@mui/icons-material'
 import { useNavigate } from 'react-router-dom'
 import { useConvertToEditionUpdate, useBulkArchiveProposals } from '@/hooks/useApi'
 
+interface MatchCandidate {
+  type: 'EXACT_MATCH' | 'FUZZY_MATCH' | 'REJECTED'
+  eventId: number
+  eventName: string
+  eventSlug: string
+  eventCity: string
+  editionId?: number
+  editionYear?: string
+  confidence: number
+  nameScore?: number
+  cityScore?: number
+  departmentMatch?: boolean
+  dateProximity?: number
+}
+
 interface ExistingEventAlertProps {
   proposalId: string
-  match: {
-    type: 'EXACT_MATCH' | 'FUZZY_MATCH'
-    eventId: number
-    eventName: string
-    eventSlug: string
-    eventCity: string
-    editionId?: number
-    editionYear?: string
-    confidence: number
-  }
+  match: MatchCandidate
+  matches?: MatchCandidate[]
   proposalYear: number
 }
 
-export function ExistingEventAlert({ proposalId, match, proposalYear }: ExistingEventAlertProps) {
+export function ExistingEventAlert({ proposalId, match, matches, proposalYear }: ExistingEventAlertProps) {
   const navigate = useNavigate()
   const convertMutation = useConvertToEditionUpdate()
   const archiveMutation = useBulkArchiveProposals()
 
-  const handleConvert = () => {
-    if (!match.editionId) {
+  // Use matches array if provided, otherwise single match
+  const allMatches = matches && matches.length > 0 ? matches : [match]
+
+  const handleConvert = (m: MatchCandidate) => {
+    if (!m.editionId) {
       alert("L'édition n'existe pas encore dans Miles Republic. Créez-la d'abord puis revenez sur cette page.")
       return
     }
 
-    if (confirm(`Convertir cette proposition en mise à jour de l'édition ${match.editionYear} de "${match.eventName}" ?`)) {
+    if (confirm(`Convertir cette proposition en mise à jour de l'édition ${m.editionYear} de "${m.eventName}" ?`)) {
       convertMutation.mutate(
         {
           proposalId,
-          eventId: match.eventId,
-          editionId: match.editionId,
-          eventName: match.eventName,
-          eventSlug: match.eventSlug,
-          editionYear: match.editionYear!
+          eventId: m.eventId,
+          editionId: m.editionId,
+          eventName: m.eventName,
+          eventSlug: m.eventSlug,
+          editionYear: m.editionYear!
         },
         {
           onSuccess: (data) => {
@@ -57,31 +67,51 @@ export function ExistingEventAlert({ proposalId, match, proposalYear }: Existing
     }
   }
 
-  const handleArchive = () => {
-    if (confirm('Archiver cette proposition ? Elle ne sera plus visible dans la liste des propositions en attente.')) {
-      archiveMutation.mutate(
-        {
-          proposalIds: [proposalId],
-          archiveReason: `Événement déjà créé dans Miles Republic: ${match.eventName} (ID ${match.eventId})`
-        },
-        {
-          onSuccess: () => {
-            navigate('/proposals')
-          }
-        }
-      )
-    }
-  }
-
   const isLoading = convertMutation.isPending || archiveMutation.isPending
 
   return (
     <Alert severity="warning" sx={{ mb: 2 }}>
-      <AlertTitle>Un événement correspondant existe maintenant</AlertTitle>
-      <Box sx={{ mb: 2 }}>
-        <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, mb: 0.5 }}>
+      <AlertTitle>Événements similaires détectés</AlertTitle>
+      <Typography variant="body2" sx={{ mb: 2 }}>
+        L'algorithme de matching a trouvé ces événements existants. Si l'un d'entre eux correspond, sélectionnez-le pour convertir cette proposition.
+      </Typography>
+
+      {allMatches.map((m, idx) => (
+        <Box
+          key={m.eventId}
+          sx={(theme) => ({
+            mb: 1.5,
+            p: 1.5,
+            border: 1,
+            borderColor: 'divider',
+            borderRadius: 1,
+            bgcolor: theme.palette.mode === 'dark' ? 'rgba(255,255,255,0.03)' : 'grey.50',
+          })}
+        >
+          <Box sx={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', mb: 0.5 }}>
+            <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
+              <Chip label={`#${idx + 1}`} size="small" variant="outlined" />
+              <Chip
+                label={`Score: ${(m.confidence * 100).toFixed(0)}%`}
+                size="small"
+                color={m.type === 'EXACT_MATCH' ? 'success' : 'primary'}
+              />
+              {m.departmentMatch && (
+                <Chip label="Même département" size="small" color="success" variant="outlined" />
+              )}
+            </Box>
+            <Button
+              variant="contained"
+              size="small"
+              startIcon={<CheckIcon />}
+              onClick={() => handleConvert(m)}
+              disabled={!m.editionId || isLoading}
+            >
+              Sélectionner
+            </Button>
+          </Box>
           <MuiLink
-            href={`https://fr.milesrepublic.com/event/${match.eventSlug}`}
+            href={`https://fr.milesrepublic.com/event/${m.eventSlug}`}
             target="_blank"
             rel="noopener noreferrer"
             sx={{
@@ -93,46 +123,31 @@ export function ExistingEventAlert({ proposalId, match, proposalYear }: Existing
               '&:hover': { textDecoration: 'underline' }
             }}
           >
-            {match.eventName}
+            {m.eventName}
             <ExternalLinkIcon sx={{ fontSize: '1rem' }} />
           </MuiLink>
+          <Typography variant="body2" color="text.secondary">
+            {m.eventCity}
+            {m.editionYear && ` • Édition ${m.editionYear}`}
+          </Typography>
+          {m.nameScore !== undefined && (
+            <Typography variant="caption" color="text.secondary" sx={{ mt: 0.5, display: 'block' }}>
+              Nom: {(m.nameScore * 100).toFixed(0)}%
+              {m.cityScore !== undefined && <> &nbsp; Ville: {(m.cityScore * 100).toFixed(0)}%</>}
+              {m.dateProximity !== undefined && <> &nbsp; Date: {(m.dateProximity * 100).toFixed(0)}%</>}
+            </Typography>
+          )}
+          {!m.editionId && (
+            <Typography variant="caption" color="error" sx={{ mt: 0.5, display: 'block' }}>
+              L'édition {proposalYear} n'existe pas encore — créez-la d'abord.
+            </Typography>
+          )}
         </Box>
-        <Typography variant="body2" color="text.secondary">
-          {match.eventCity}
-          {match.editionYear && ` • Édition ${match.editionYear}`}
-        </Typography>
-        <Chip
-          label={`Score: ${(match.confidence * 100).toFixed(0)}%`}
-          size="small"
-          color={match.type === 'EXACT_MATCH' ? 'success' : 'primary'}
-          sx={{ mt: 1 }}
-        />
-      </Box>
+      ))}
 
-      <Box sx={{ display: 'flex', gap: 1, flexWrap: 'wrap' }}>
-        <Button
-          variant="contained"
-          size="small"
-          onClick={handleConvert}
-          disabled={!match.editionId || isLoading}
-        >
-          Convertir en mise à jour
-        </Button>
-        <Button
-          variant="outlined"
-          size="small"
-          onClick={handleArchive}
-          disabled={isLoading}
-        >
-          Archiver
-        </Button>
-      </Box>
-
-      {!match.editionId && (
-        <Typography variant="caption" color="text.secondary" sx={{ mt: 1, display: 'block' }}>
-          L'édition {proposalYear} n'existe pas encore dans Miles Republic. Créez-la d'abord pour pouvoir convertir.
-        </Typography>
-      )}
+      <Typography variant="body2" color="text.secondary" sx={{ mt: 1, p: 1, bgcolor: 'action.hover', borderRadius: 1 }}>
+        <strong>Astuce :</strong> Si aucun de ces événements ne correspond, vous pouvez ignorer cette alerte et approuver la création du nouvel événement.
+      </Typography>
     </Alert>
   )
 }

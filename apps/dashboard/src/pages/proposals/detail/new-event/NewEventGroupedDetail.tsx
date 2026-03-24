@@ -79,10 +79,11 @@ const NewEventGroupedDetail: React.FC<NewEventGroupedDetailProps> = ({ groupKey 
         return (
           <>
             {/* Alerte si un événement correspondant existe maintenant */}
-            {checkExistingResult?.hasMatch && checkExistingResult.match && firstProposalId && (
+            {checkExistingResult?.hasMatch && (checkExistingResult.match || checkExistingResult.matches) && firstProposalId && (
               <ExistingEventAlert
                 proposalId={firstProposalId}
-                match={checkExistingResult.match}
+                match={checkExistingResult.match || checkExistingResult.matches![0]}
+                matches={checkExistingResult.matches}
                 proposalYear={context.groupProposals[0]?.editionYear || new Date().getFullYear()}
               />
             )}
@@ -281,10 +282,11 @@ const MainContent: React.FC<MainContentProps> = ({
   return (
     <>
       {/* Alerte si un événement correspondant existe maintenant */}
-      {checkExistingResult?.hasMatch && checkExistingResult.match && firstProposalId && (
+      {checkExistingResult?.hasMatch && (checkExistingResult.match || checkExistingResult.matches) && firstProposalId && (
         <ExistingEventAlert
           proposalId={firstProposalId}
-          match={checkExistingResult.match}
+          match={checkExistingResult.match || checkExistingResult.matches![0]}
+          matches={checkExistingResult.matches}
           proposalYear={editionYear}
         />
       )}
