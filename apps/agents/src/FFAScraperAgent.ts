@@ -9,7 +9,7 @@
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMEventExtractor } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -514,11 +514,20 @@ export class FFAScraperAgent extends BaseAgent {
     }
 
     // Call the shared builder with pre-matched races
+    // Use LLM race matching if available, otherwise fall back to pre-matched result
+    const llmRaceContext = this.llmConfig ? {
+      llmService: new LLMMatchingService(this.llmConfig, this.logger),
+      eventName: ffaData.competition.name,
+      editionYear: ffaData.competition.date.getFullYear(),
+      eventCity: ffaData.competition.city,
+    } : undefined
+
     const changes = await sharedBuildEditionUpdateChanges(
       proposalInput,
       builderMatchResult,
       existingRaces,
-      preMatchedResult
+      llmRaceContext ? undefined : preMatchedResult,  // Skip pre-match if LLM is available
+      llmRaceContext
     )
 
     // =========================================================================
