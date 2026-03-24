@@ -1018,14 +1018,19 @@ export class FFAScraperAgent extends BaseAgent {
     // Calculer la confiance selon le type de proposition
     // Pour NEW_EVENT: logique inversée (pas de match = confiance haute)
     // Pour UPDATE: logique classique (bon match = confiance haute)
-    const confidence = matchResult.type === 'NO_MATCH'
-      ? calculateNewEventConfidence(config.confidenceBase, competition, matchResult)
-      : calculateAdjustedConfidence(config.confidenceBase, competition, matchResult)
+    let confidence: number
+    if (matchResult.type === 'NO_MATCH') {
+      // Use LLM confidence if available, otherwise fall back to heuristic
+      confidence = matchResult.llmNewEventConfidence ??
+        calculateNewEventConfidence(config.confidenceBase, competition, matchResult)
+    } else {
+      confidence = calculateAdjustedConfidence(config.confidenceBase, competition, matchResult)
+    }
 
     if (matchResult.type === 'NO_MATCH') {
       // Créer un nouvel événement via le builder partagé
       const proposalInput = this.toProposalInput(competition)
-      proposalInput.confidence = confidence  // Override with calculated confidence
+      proposalInput.confidence = confidence
       const changes = sharedBuildNewEventChanges(proposalInput)
 
       proposals.push({
@@ -1044,7 +1049,9 @@ export class FFAScraperAgent extends BaseAgent {
             source: competition.competition.detailUrl,
             level: competition.competition.level,
             organizerEmail: competition.organizerEmail,
-            rejectedMatches: matchResult.rejectedMatches || []  // Top 3 matches rejetés
+            rejectedMatches: matchResult.rejectedMatches || [],  // Top 3 matches rejetés
+            llmNewEventConfidence: matchResult.llmNewEventConfidence,
+            llmReason: matchResult.llmReason,
           }
         }]
       })

@@ -182,11 +182,11 @@ export class LLMMatchingService {
         reason: string
       }
 
-      // No match case
+      // No match case — preserve LLM confidence (how sure it is this is a NEW event)
       if (llmResult.found === false || llmResult.eventId == null) {
         return {
           eventId: null,
-          confidence: 0,
+          confidence: llmResult.confidence ?? 0,
           reason: llmResult.reason,
         }
       }

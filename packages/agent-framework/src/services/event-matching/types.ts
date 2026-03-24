@@ -49,6 +49,12 @@ export interface EventMatchResult {
   /** Overall confidence score (0-1) */
   confidence: number
 
+  /** LLM confidence that this is a NEW event (only set when type=NO_MATCH and LLM was used) */
+  llmNewEventConfidence?: number
+
+  /** LLM reason for the judgment */
+  llmReason?: string
+
   /** Top 3 rejected matches for NEW_EVENT proposals */
   rejectedMatches?: RejectedMatch[]
 }

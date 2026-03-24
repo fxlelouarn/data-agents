@@ -211,6 +211,12 @@ export interface MatchResult {
     departmentMatch: boolean
     dateProximity: number
   }>
+
+  /** LLM confidence that this is a NEW event (only when type=NO_MATCH and LLM was used) */
+  llmNewEventConfidence?: number
+
+  /** LLM reason for the judgment */
+  llmReason?: string
 }
 
 // ============================================================================

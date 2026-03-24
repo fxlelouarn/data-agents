@@ -334,9 +334,17 @@ async function processNewEvents(sourceDb: any) {
         }
       } else {
         stats.newEvents.confirmed++
-        logger.info(`  — No match, confirmed as NEW_EVENT`)
+        const llmConf = matchResult.llmNewEventConfidence
+        logger.info(`  — No match, confirmed as NEW_EVENT${llmConf != null ? ` (LLM confidence: ${llmConf.toFixed(2)})` : ''}`)
         if (!DRY_RUN) {
           await markAsRematched(proposal.id, 'No match found', matchResult)
+          // Update proposal confidence with LLM score if available
+          if (llmConf != null) {
+            await prisma.proposal.update({
+              where: { id: proposal.id },
+              data: { confidence: llmConf },
+            })
+          }
         }
       }
     } catch (error: any) {

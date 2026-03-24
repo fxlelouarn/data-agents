@@ -370,8 +370,8 @@ export async function matchEvent(
             }
           }
         } else {
-          // LLM says no match — preserve rejectedMatches for traceability
-          logger.info(`  🤖 LLM says NO_MATCH: ${llmResult.reason}`)
+          // LLM says no match — preserve rejectedMatches and LLM confidence
+          logger.info(`  🤖 LLM says NO_MATCH (new event confidence: ${llmResult.confidence}): ${llmResult.reason}`)
           const rejectedMatches: RejectedMatch[] = scoredCandidates.slice(0, 3).map(candidate => {
             const ce = candidate.event.editions?.find((e: any) => e.year === searchYear)
             return {
@@ -384,7 +384,13 @@ export async function matchEvent(
               dateProximity: candidate.dateProximity
             }
           })
-          return { type: 'NO_MATCH' as const, confidence: 0, rejectedMatches }
+          return {
+            type: 'NO_MATCH' as const,
+            confidence: 0,
+            llmNewEventConfidence: llmResult.confidence,
+            llmReason: llmResult.reason,
+            rejectedMatches,
+          }
         }
       }
       // LLM failed or unavailable → fall through to existing logic

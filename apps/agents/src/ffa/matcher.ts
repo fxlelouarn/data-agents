@@ -80,7 +80,9 @@ function matchResultToFFA(result: EventMatchResult): MatchResult {
       cityScore: rm.cityScore,
       departmentMatch: rm.departmentMatch,
       dateProximity: rm.dateProximity
-    }))
+    })),
+    llmNewEventConfidence: result.llmNewEventConfidence,
+    llmReason: result.llmReason,
   }
 }
 

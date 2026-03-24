@@ -198,6 +198,21 @@ Ne valide PAS un match si :
 - Les villes sont incompatibles sans raison évidente
 - La date est trop éloignée (plus de 6 mois d'écart)
 
+## Score de confiance
+
+Le champ confidence est OBLIGATOIRE dans tous les cas :
+
+**Si found=true** (match trouvé) : confiance que le match est correct.
+- 0.95+ : même nom, même ville, même date — quasi certain
+- 0.85-0.94 : très probable (nom similaire, même ville/département)
+- 0.70-0.84 : probable mais avec une différence (ville voisine, nom légèrement différent)
+
+**Si found=false** (pas de match) : confiance que c'est un VRAI nouvel événement.
+- 0.95+ : aucun candidat ne ressemble — clairement nouveau
+- 0.80-0.94 : probablement nouveau, les candidats sont très différents
+- 0.60-0.79 : un candidat ressemble un peu mais pas assez pour confirmer — à vérifier manuellement
+- <0.60 : un candidat ressemble fortement, tu n'es pas sûr que ce soit un nouvel événement
+
 Utilise l'outil event_judge_result pour structurer ta réponse.`
 }
 
@@ -279,13 +294,13 @@ export const eventJudgeTool = {
       },
       confidence: {
         type: 'number',
-        description: 'Score de confiance du match entre 0 et 1 (uniquement si found=true)',
+        description: 'Score de confiance entre 0 et 1. Si found=true: confiance que le match est correct. Si found=false: confiance que cet événement est vraiment NOUVEAU (pas un doublon). Exemples: 0.95 = très sûr, 0.7 = probable mais pas certain, 0.5 = douteux.',
       },
       reason: {
         type: 'string',
         description: 'Explication du jugement (match ou non-match)',
       },
     },
-    required: ['found', 'reason'],
+    required: ['found', 'confidence', 'reason'],
   },
 }
