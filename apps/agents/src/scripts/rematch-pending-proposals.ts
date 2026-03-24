@@ -20,6 +20,10 @@
  *   LLM_MATCHING_MODEL       - Model (default: claude-haiku-4-5-20251001)
  */
 
+import * as dotenv from 'dotenv'
+dotenv.config({ path: '/Users/fx/dev/data-agents/.env.prod', override: true })
+dotenv.config({ path: '/Users/fx/dev/data-agents/.env' })
+
 import { PrismaClient } from '@prisma/client'
 import {
   matchEvent,
