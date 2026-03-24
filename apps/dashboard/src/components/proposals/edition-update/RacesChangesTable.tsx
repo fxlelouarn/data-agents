@@ -32,8 +32,8 @@ import {
 import { DateTimePicker } from '@mui/x-date-pickers/DateTimePicker'
 import { LocalizationProvider } from '@mui/x-date-pickers/LocalizationProvider'
 import { AdapterDateFns } from '@mui/x-date-pickers/AdapterDateFns'
-import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
+import { formatDateInTimezone } from '@/utils/timezone'
 import BlockValidationButton from '../BlockValidationButton'
 import { ConsolidatedRaceChange } from '@/hooks/useProposalEditor'
 import AddRaceDialog from './AddRaceDialog'
@@ -147,7 +147,8 @@ export const CATEGORY_LEVEL_2_OPTIONS: Record<string, { value: string, label: st
   ]
 }
 
-const RACE_FIELDS: RaceField[] = [
+function buildRaceFields(timeZone?: string): RaceField[] {
+  return [
   { key: 'name', label: 'Nom' },
   {
     key: 'startDate',
@@ -155,9 +156,7 @@ const RACE_FIELDS: RaceField[] = [
     format: (v) => {
       if (!v) return '-'
       try {
-        const date = new Date(v)
-        if (isNaN(date.getTime())) return v
-        return format(date, 'EEEE dd/MM/yyyy HH:mm', { locale: fr })
+        return formatDateInTimezone(v, timeZone || 'Europe/Paris')
       } catch {
         return v
       }
@@ -171,7 +170,7 @@ const RACE_FIELDS: RaceField[] = [
   { key: 'walkDistance', label: 'Distance marche (km)', format: (v) => v ? `${v} km` : '-' },
   { key: 'runPositiveElevation', label: 'D+ (m)', format: (v) => v ? `${v} m` : '-' },
   { key: 'price', label: 'Prix', format: (v) => v != null ? `${v} €` : '-' },
-]
+]}
 
 const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   consolidatedRaces,
@@ -192,6 +191,8 @@ const RacesChangesTable: React.FC<RacesChangesTableProps> = ({
   showActions = true,
   showDeleteAction = true
 }) => {
+  const RACE_FIELDS = buildRaceFields(editionTimeZone)
+
   // États locaux uniquement pour l'édition en cours
   const [editingRace, setEditingRace] = useState<{ raceId: string, field: string } | null>(null)
   const [editValue, setEditValue] = useState<string>('')
