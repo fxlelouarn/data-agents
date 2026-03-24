@@ -118,20 +118,21 @@ export async function matchCompetition(
   sourceDb: any,
   config: FFAScraperConfig,
   logger: any,
-  meilisearchConfig?: MeilisearchMatchingConfig
+  meilisearchConfig?: MeilisearchMatchingConfig,
+  llmConfig?: LLMMatchingConfig
 ): Promise<MatchResult> {
   const input = ffaToMatchInput(competition)
   const adaptedLogger = adaptLogger(logger)
 
-  // Build LLM config from env vars
-  const llmConfig: LLMMatchingConfig | undefined = process.env.LLM_MATCHING_API_KEY ? {
+  // Use provided LLM config, or fall back to env vars
+  const resolvedLlmConfig: LLMMatchingConfig | undefined = llmConfig ?? (process.env.LLM_MATCHING_API_KEY ? {
     apiKey: process.env.LLM_MATCHING_API_KEY,
     model: process.env.LLM_MATCHING_MODEL,
     enabled: process.env.LLM_MATCHING_ENABLED !== 'false',
     shadowMode: process.env.LLM_MATCHING_SHADOW_MODE === 'true',
-  } : undefined
+  } : undefined)
 
-  const llmService = llmConfig ? new LLMMatchingService(llmConfig, adaptedLogger) : undefined
+  const llmService = resolvedLlmConfig ? new LLMMatchingService(resolvedLlmConfig, adaptedLogger) : undefined
 
   const result = await matchEvent(
     input,
@@ -141,7 +142,7 @@ export async function matchCompetition(
       distanceTolerancePercent: config.distanceTolerancePercent,
       confidenceBase: config.confidenceBase,
       meilisearch: meilisearchConfig,
-      llm: llmConfig,
+      llm: resolvedLlmConfig,
       llmService,
     },
     adaptedLogger

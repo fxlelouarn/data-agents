@@ -9,7 +9,7 @@
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMEventExtractor } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMEventExtractor } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -43,6 +43,7 @@ export class FFAScraperAgent extends BaseAgent {
   private stateService: IAgentStateService
   private prisma: typeof prisma
   private meilisearchConfig?: MeilisearchMatchingConfig
+  private llmConfig?: LLMMatchingConfig
   private extractor?: LLMEventExtractor
 
   constructor(config: any, db?: any, logger?: any) {
@@ -98,6 +99,21 @@ export class FFAScraperAgent extends BaseAgent {
         sourceDbKeys: this.sourceDb ? Object.keys(this.sourceDb).slice(0, 10) : []
       })
     }
+  }
+
+  /**
+   * Read LLM API key from DB settings (fallback when env var is not set)
+   */
+  private async getLLMApiKeyFromSettings(): Promise<string | undefined> {
+    try {
+      const settings = await this.prisma.settings.findFirst()
+      if (settings?.enableLlmMatching && settings?.llmMatchingApiKey) {
+        return settings.llmMatchingApiKey
+      }
+    } catch {
+      // Settings table may not exist or be accessible
+    }
+    return undefined
   }
 
   /**
@@ -1198,14 +1214,23 @@ export class FFAScraperAgent extends BaseAgent {
         context.logger.debug('Meilisearch non configuré, utilisation du fallback SQL')
       }
 
-      // Initialize LLM extractor for FFA page analysis
-      if (process.env.LLM_MATCHING_API_KEY) {
+      // Initialize LLM config from env vars or DB settings
+      const llmApiKey = process.env.LLM_MATCHING_API_KEY || await this.getLLMApiKeyFromSettings()
+      if (llmApiKey) {
+        this.llmConfig = {
+          apiKey: llmApiKey,
+          model: process.env.LLM_MATCHING_MODEL,
+          enabled: process.env.LLM_MATCHING_ENABLED !== 'false',
+          shadowMode: process.env.LLM_MATCHING_SHADOW_MODE === 'true',
+        }
         this.extractor = new LLMEventExtractor({
-          apiKey: process.env.LLM_MATCHING_API_KEY,
+          apiKey: llmApiKey,
           model: process.env.LLM_MATCHING_MODEL,
           logger: this.logger,
         })
-        this.logger.info('LLM event extractor initialized for FFA page analysis')
+        context.logger.info('🤖 LLM configuré pour matching + extraction FFA')
+      } else {
+        context.logger.debug('LLM non configuré (ni env LLM_MATCHING_API_KEY, ni settings DB)')
       }
 
       // Charger la progression
@@ -1239,7 +1264,8 @@ export class FFAScraperAgent extends BaseAgent {
               this.sourceDb,
               config,
               this.logger,
-              this.meilisearchConfig
+              this.meilisearchConfig,
+              this.llmConfig
             )
 
             const proposals = await this.createProposalsForCompetition(
