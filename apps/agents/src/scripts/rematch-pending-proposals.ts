@@ -169,13 +169,14 @@ async function processNewEvents(sourceDb: any) {
     // Extract event info from changes
     const eventName = changes.name?.new || proposal.eventName || ''
     const eventCity = changes.city?.new || proposal.eventCity || ''
-    const eventDepartment = changes.department?.new || ''
+    const eventDepartment = changes.department?.new || changes.countrySubdivisionDisplayCodeLevel2?.new || ''
     const editionData = changes.edition?.new
     const editionDate = editionData?.startDate
       ? new Date(editionData.startDate)
       : proposal.editionYear
         ? new Date(`${proposal.editionYear}-06-01`)
         : new Date()
+    const organizerName = editionData?.organizer?.name
 
     if (!eventName) {
       logger.warn(`Skipping proposal ${proposal.id}: no event name`)
@@ -186,7 +187,7 @@ async function processNewEvents(sourceDb: any) {
       logger.info(`[${stats.newEvents.processed}/${proposals.length}] Matching "${eventName}" (${eventCity})...`)
 
       const matchResult = await matchEvent(
-        { eventName, eventCity, eventDepartment, editionDate },
+        { eventName, eventCity, eventDepartment, editionDate, organizerName },
         sourceDb,
         {
           ...DEFAULT_MATCHING_CONFIG,
