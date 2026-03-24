@@ -7,10 +7,44 @@ import { IAgentStateService, AgentStateService } from '@data-agents/database'
 import { prisma } from '@data-agents/database'
 import { AgentContext, AgentRunResult, ProposalData } from '@data-agents/agent-framework'
 import axios from 'axios'
-import { fromZonedTime, toZonedTime } from 'date-fns-tz'
+import { toZonedTime } from 'date-fns-tz'
 import { format } from 'date-fns'
 import { fr } from 'date-fns/locale'
 import { verifyDateFromSource } from './google/date-verifier'
+
+/**
+ * Convert a local date/time in a given timezone to UTC.
+ * Uses Intl.DateTimeFormat — deterministic regardless of server TZ.
+ */
+function localToUtcRobust(localDateStr: string, timeZone: string): Date {
+  const [datePart, timePart] = localDateStr.split('T')
+  const [yearStr, monthStr, dayStr] = datePart.split('-')
+  const [hourStr, minuteStr] = (timePart || '00:00:00').split(':')
+  const year = parseInt(yearStr, 10)
+  const month = parseInt(monthStr, 10) - 1
+  const day = parseInt(dayStr, 10)
+  const hours = parseInt(hourStr, 10)
+  const minutes = parseInt(minuteStr, 10)
+
+  const utcGuess = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0))
+  const formatter = new Intl.DateTimeFormat('en-US', {
+    timeZone,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+    hour12: false,
+  })
+  const parts = formatter.formatToParts(utcGuess)
+  const get = (type: string) => parseInt(parts.find(p => p.type === type)?.value || '0', 10)
+  const zonedHour = get('hour') === 24 ? 0 : get('hour')
+  const zonedMinute = get('minute')
+  const zonedDay = get('day')
+  let offsetMinutes = (zonedHour * 60 + zonedMinute) - (hours * 60 + minutes)
+  if (zonedDay !== day) {
+    if (zonedDay > day || (zonedDay === 1 && day > 27)) offsetMinutes += 24 * 60
+    else offsetMinutes -= 24 * 60
+  }
+  return new Date(Date.UTC(year, month, day, hours, minutes, 0, 0) - offsetMinutes * 60 * 1000)
+}
 
 // Interface pour la configuration spécifique de l'agent
 interface GoogleSearchDateConfig {
@@ -849,7 +883,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
                 const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
-                date = fromZonedTime(localDateStr, timezone)
+                date = localToUtcRobust(localDateStr, timezone)
                 confidence = 0.8 // Haute confiance pour les dates explicites
               } else continue
 
@@ -865,7 +899,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
                 const localDateStr = `${editionYear}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
-                date = fromZonedTime(localDateStr, timezone)
+                date = localToUtcRobust(localDateStr, timezone)
                 confidence = 0.75 // Confiance légèrement inférieure car année inferred
               } else continue
 
@@ -879,7 +913,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
                 const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
-                date = fromZonedTime(localDateStr, timezone)
+                date = localToUtcRobust(localDateStr, timezone)
                 confidence = 0.7
               } else continue
 
@@ -893,7 +927,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 // ✅ Créer date en heure locale française (minuit) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
                 const localDateStr = `${year}-${String(month).padStart(2, '0')}-${String(day).padStart(2, '0')}T00:00:00`
-                date = fromZonedTime(localDateStr, timezone)
+                date = localToUtcRobust(localDateStr, timezone)
                 confidence = 0.8
               } else continue
 
@@ -907,7 +941,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
                 // ✅ Créer date en heure locale française (minuit du 1er) puis convertir en UTC
                 const timezone = event.edition?.timeZone || 'Europe/Paris'
                 const localDateStr = `${year}-${String(month).padStart(2, '0')}-01T00:00:00`
-                date = fromZonedTime(localDateStr, timezone)
+                date = localToUtcRobust(localDateStr, timezone)
                 confidence = 0.5 // Confiance plus faible pour mois seul
               } else continue
             }
