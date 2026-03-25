@@ -25,6 +25,7 @@ dotenv.config({ path: '/Users/fx/dev/data-agents/.env.prod', override: true })
 dotenv.config({ path: '/Users/fx/dev/data-agents/.env' })
 
 import { PrismaClient } from '@prisma/client'
+import Anthropic from '@anthropic-ai/sdk'
 import {
   matchEvent,
   matchRaces,
@@ -48,7 +49,7 @@ function getArg(name: string): string | undefined {
 const hasFlag = (name: string) => args.includes(`--${name}`)
 
 const LIMIT = parseInt(getArg('limit') || '100', 10)
-const TYPE_FILTER = getArg('type') as 'new-events' | 'races' | undefined
+const TYPE_FILTER = getArg('type') as 'new-events' | 'races' | 'confidence' | undefined
 const DRY_RUN = hasFlag('dry-run')
 const MIN_CONFIDENCE = parseFloat(getArg('min-confidence') || '0.80')
 const SINCE = getArg('since') // ISO date string, e.g. '2026-03-22T10:00:00Z'
@@ -79,6 +80,7 @@ const llmService = new LLMMatchingService(llmConfig, logger)
 const stats = {
   newEvents: { processed: 0, reclassified: 0, confirmed: 0, errors: 0 },
   races: { processed: 0, reclassifiedRaces: 0, confirmedNew: 0, errors: 0 },
+  confidence: { processed: 0, updated: 0, errors: 0 },
   startTime: Date.now(),
 }
 
@@ -110,6 +112,11 @@ async function main() {
   // Process EDITION_UPDATE with racesToAdd
   if (!TYPE_FILTER || TYPE_FILTER === 'races') {
     await processRacesToAdd(sourceDb)
+  }
+
+  // LLM review confidence for EDITION_UPDATE
+  if (!TYPE_FILTER || TYPE_FILTER === 'confidence') {
+    await processEditionUpdateConfidence()
   }
 
   // Report
@@ -528,6 +535,168 @@ async function processRacesToAdd(sourceDb: any) {
 // ---------------------------------------------------------------------------
 // Report
 // ---------------------------------------------------------------------------
+// ---------------------------------------------------------------------------
+// Phase 3: LLM review confidence for EDITION_UPDATE proposals
+// ---------------------------------------------------------------------------
+async function processEditionUpdateConfidence() {
+  console.log('\n--- LLM confidence review for EDITION_UPDATE proposals ---')
+
+  const anthropic = new Anthropic({ apiKey: llmApiKey })
+
+  const whereClause: any = {
+    type: 'EDITION_UPDATE',
+    status: { in: ['PENDING', 'PARTIALLY_APPROVED'] },
+    eventName: { not: null },
+  }
+  if (SINCE) {
+    whereClause.createdAt = { gte: new Date(SINCE) }
+  }
+
+  let allProposals = await prisma.proposal.findMany({
+    where: whereClause,
+    orderBy: { createdAt: 'desc' },
+    take: LIMIT ? LIMIT + 500 : undefined,
+  })
+
+  // Future-only filter
+  if (FUTURE_ONLY) {
+    const now = new Date()
+    allProposals = allProposals.filter(p => {
+      const changes = p.changes as any
+      const startDate = changes?.startDate?.new || changes?.edition?.new?.startDate
+      if (startDate) return new Date(startDate) >= now
+      const year = p.editionYear || changes?.edition?.new?.year
+      if (year) return parseInt(String(year)) >= now.getFullYear()
+      return true
+    })
+  }
+
+  if (LIMIT) allProposals = allProposals.slice(0, LIMIT)
+
+  // Filter: only proposals without a recent LLM review
+  const proposals = SINCE ? allProposals : allProposals.filter(p => {
+    const just = (p.justification as any[]) || []
+    return !just.some((j: any) => j.type === 'llm_confidence_review')
+  })
+
+  console.log(`Found ${allProposals.length} EDITION_UPDATE proposals (${allProposals.length - proposals.length} already reviewed, ${proposals.length} to process)`)
+
+  for (const proposal of proposals) {
+    stats.confidence.processed++
+    const changes = proposal.changes as any
+
+    try {
+      const racesToUpdate = changes.racesToUpdate?.new || []
+      const racesToAdd = changes.racesToAdd?.new || []
+      const racesExisting = changes.racesExisting?.new || []
+
+      // Build compact summary for LLM
+      const racesSummary = [
+        ...racesToUpdate.map((r: any) => {
+          const updates = Object.keys(r.updates || {}).filter(k => (r.updates as any)[k]?.new !== undefined)
+          return `  MATCH: "${r.raceName}" (id:${r.raceId}) — updates: ${updates.join(', ') || 'none'}`
+        }),
+        ...racesToAdd.map((r: any) => {
+          const dist = r.runDistance || r.walkDistance || r.bikeDistance || 0
+          return `  NEW: "${r.name}" (${dist}km)`
+        }),
+        ...racesExisting.map((r: any) => `  EXISTING (not matched): "${r.raceName}" (id:${r.raceId})`),
+      ].join('\n')
+
+      const editionUpdates = Object.entries(changes)
+        .filter(([k]) => !['racesToUpdate', 'racesToAdd', 'racesExisting', 'registrationUrl'].includes(k))
+        .map(([k, v]: [string, any]) => `  ${k}: ${v?.old ?? '-'} → ${v?.new ?? '-'}`)
+        .join('\n')
+
+      const prompt = `Tu es un expert en données d'événements sportifs. Évalue cette proposition de mise à jour.
+
+## Événement
+Nom: ${proposal.eventName}
+Ville: ${proposal.eventCity || '-'}
+Édition: ${proposal.editionYear || '-'}
+Confiance du match événement: ${proposal.confidence}
+
+## Mises à jour de l'édition
+${editionUpdates || '  (aucune)'}
+
+## Courses
+${racesSummary || '  (aucune)'}
+
+## Question
+Cette proposition est-elle correcte et peut-elle être auto-validée ?
+
+Évalue avec un score de 0 à 1:
+- 0.95+ : tout est cohérent, auto-validation recommandée
+- 0.80-0.94 : probablement correct mais un détail à surveiller
+- 0.60-0.79 : des doutes, review humain recommandé
+- <0.60 : problèmes détectés, ne pas auto-valider
+
+Utilise l'outil pour répondre.`
+
+      const response = await anthropic.messages.create({
+        model: 'claude-haiku-4-5-20251001',
+        max_tokens: 512,
+        tools: [{
+          name: 'confidence_score',
+          description: 'Score de confiance pour auto-validation',
+          input_schema: {
+            type: 'object' as const,
+            properties: {
+              score: { type: 'number', description: 'Score 0-1' },
+              reason: { type: 'string', description: 'Explication courte' },
+              issues: { type: 'array', items: { type: 'string' }, description: 'Problèmes détectés' },
+            },
+            required: ['score', 'reason'],
+          },
+        }],
+        tool_choice: { type: 'tool' as const, name: 'confidence_score' },
+        messages: [{ role: 'user', content: prompt }],
+      })
+
+      const toolBlock = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined
+      if (!toolBlock) {
+        logger.warn(`  No LLM response for ${proposal.eventName}`)
+        stats.confidence.errors++
+        continue
+      }
+
+      const result = toolBlock.input as { score: number, reason: string, issues?: string[] }
+      const issueStr = result.issues?.length ? ` [${result.issues.length} issues]` : ''
+
+      logger.info(`  [${stats.confidence.processed}] ${proposal.eventName}: ${result.score.toFixed(2)}${issueStr} — ${result.reason.substring(0, 100)}`)
+
+      if (!DRY_RUN) {
+        // Update confidence
+        await prisma.proposal.update({
+          where: { id: proposal.id },
+          data: { confidence: result.score },
+        })
+
+        // Store review in justification
+        const justifications = (proposal.justification as any[]) || []
+        justifications.push({
+          type: 'llm_confidence_review',
+          content: result.reason,
+          metadata: {
+            reviewedAt: new Date().toISOString(),
+            score: result.score,
+            issues: result.issues || [],
+          },
+        })
+        await prisma.proposal.update({
+          where: { id: proposal.id },
+          data: { justification: justifications as any },
+        })
+
+        stats.confidence.updated++
+      }
+    } catch (err: any) {
+      logger.error(`  ❌ ${proposal.eventName}: ${err.message}`)
+      stats.confidence.errors++
+    }
+  }
+}
+
 function printReport() {
   const elapsed = ((Date.now() - stats.startTime) / 1000).toFixed(1)
 
@@ -547,6 +716,12 @@ function printReport() {
     console.log(`  Courses reclassées (add → update) : ${stats.races.reclassifiedRaces}`)
     console.log(`  Courses confirmées nouvelles :      ${stats.races.confirmedNew}`)
     console.log(`  Erreurs :                           ${stats.races.errors}`)
+  }
+
+  if (!TYPE_FILTER || TYPE_FILTER === 'confidence') {
+    console.log(`\nEDITION_UPDATE LLM confidence (${stats.confidence.processed} traitées) :`)
+    console.log(`  Scores mis à jour :  ${stats.confidence.updated}`)
+    console.log(`  Erreurs :            ${stats.confidence.errors}`)
   }
 
   console.log(`\nDurée : ${elapsed}s`)
