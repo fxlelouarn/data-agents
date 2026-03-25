@@ -35,6 +35,7 @@ const LIMIT = getArg('limit') ? parseInt(getArg('limit')!, 10) : undefined
 const SINCE = getArg('since')
 const PROPOSAL_ID = getArg('id')
 const DRY_RUN = args.includes('--dry-run')
+const FUTURE_ONLY = args.includes('--future-only')
 const DELAY_MS = parseInt(getArg('delay') || '1000', 10)
 
 const prisma = new PrismaClient()
@@ -140,15 +141,23 @@ async function main() {
   console.log(`Mode: ${DRY_RUN ? 'DRY RUN' : '🔴 LIVE (will fix mismatches)'}`)
   if (PROPOSAL_ID) console.log(`Single proposal: ${PROPOSAL_ID}`)
   if (SINCE) console.log(`Since: ${SINCE}`)
+  if (FUTURE_ONLY) console.log(`Future events only`)
   if (LIMIT) console.log(`Limit: ${LIMIT}`)
   console.log()
 
   // Build query
-  let whereClause = `"agentId" = 'cmi3khznk0000g820hwxc2i8m' AND status = 'PENDING'`
+  let whereClause = `"agentId" = 'cmi3khznk0000g820hwxc2i8m' AND status IN ('PENDING', 'PARTIALLY_APPROVED')`
   if (PROPOSAL_ID) {
     whereClause = `id = '${PROPOSAL_ID}'`
   } else {
     if (SINCE) whereClause += ` AND "createdAt" >= '${SINCE}'`
+    if (FUTURE_ONLY) {
+      whereClause += ` AND (
+        (changes->'edition'->'new'->>'startDate')::timestamp >= NOW()
+        OR (changes->'startDate'->>'new')::timestamp >= NOW()
+        OR "editionYear" >= EXTRACT(YEAR FROM NOW())::int
+      )`
+    }
     whereClause += ` AND justification->0->'metadata'->>'source' IS NOT NULL`
   }
   const limitClause = LIMIT ? `LIMIT ${LIMIT}` : ''
