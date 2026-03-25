@@ -90,9 +90,14 @@ async function getConfidenceScore(
     ...racesExisting.map((r: any) => `  EXISTING (not matched): "${r.raceName}" (id:${r.raceId})`),
   ].join('\n')
 
+  const stringify = (val: any): string => {
+    if (val === null || val === undefined) return '-'
+    if (typeof val === 'object') return JSON.stringify(val)
+    return String(val)
+  }
   const editionUpdates = Object.entries(changes)
     .filter(([k]) => !['racesToUpdate', 'racesToAdd', 'racesExisting', 'registrationUrl'].includes(k))
-    .map(([k, v]: [string, any]) => `  ${k}: ${v?.old ?? '-'} → ${v?.new ?? '-'}`)
+    .map(([k, v]: [string, any]) => `  ${k}: ${stringify(v?.old)} → ${stringify(v?.new)}`)
     .join('\n')
 
   const prompt = `Tu es un expert en données d'événements sportifs. Évalue cette proposition de mise à jour.
