@@ -263,7 +263,7 @@ async function main() {
         eventCity: extracted.eventCity || p.eventCity || '',
         eventCountry: 'France',
         editionDate: extracted.editionDate,
-        editionYear: extracted.editionYear || p.editionYear,
+        editionYear: extracted.editionYear || p.editionYear || undefined,
         timeZone: 'Europe/Paris',
         races: (extracted.races || []).map(r => ({
           name: r.name,

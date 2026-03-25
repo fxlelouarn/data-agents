@@ -127,10 +127,15 @@ ${inputRaceLines || '  (aucune course proposée)'}
 
 Pour chaque course proposée (A, B, C...), détermine si elle correspond à une course existante (même course reformatée) ou s'il s'agit d'une nouvelle course.
 
-Une correspondance est valide si :
-- Les noms sont similaires ou décrivent la même épreuve
-- Les distances sont compatibles (marge de 15%)
-- La distance peut être 0 ou absente si les noms correspondent clairement
+RÈGLE PRINCIPALE : La **distance** est le critère de matching le plus important, pas le nom.
+
+Règles de correspondance :
+1. **Même distance (marge 15%)** = très probablement la même course, MÊME si les noms sont complètement différents. Les noms FFA sont souvent génériques ("Course 10 km", "Trail XXS") alors que la DB a le vrai nom ("Marathon de la ville", "Pitchoun'trail 4 km"). Une "Course 10 km" proposée correspond à un "10 km de Marseille" existant.
+2. **S'il n'y a qu'une seule course existante à cette distance**, c'est forcément la correspondance — valide-la.
+3. **S'il y a plusieurs courses existantes à la même distance**, utilise les noms, catégories et heures de départ pour départager.
+4. **Distance à 0 ou absente** : utilise uniquement le nom pour matcher (marches, randonnées sans distance).
+5. **Chaque course existante ne peut être matchée qu'une seule fois** (pas de doublons).
+6. **Une course proposée est "nouvelle" UNIQUEMENT si aucune course existante n'a une distance compatible**. Ne crée pas de "nouvelle course" quand une existante a la même distance.
 
 Utilise l'outil race_matching_result pour structurer ta réponse.`
 }
