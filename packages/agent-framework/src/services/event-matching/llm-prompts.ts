@@ -130,7 +130,7 @@ Pour chaque course proposée (A, B, C...), détermine si elle correspond à une 
 RÈGLE PRINCIPALE : La **distance** est le critère de matching le plus important, pas le nom.
 
 Règles de correspondance :
-1. **Même distance (marge 15%)** = très probablement la même course, MÊME si les noms sont complètement différents. Les noms FFA sont souvent génériques ("Course 10 km", "Trail XXS") alors que la DB a le vrai nom ("Marathon de la ville", "Pitchoun'trail 4 km"). Une "Course 10 km" proposée correspond à un "10 km de Marseille" existant.
+1. **Même distance (marge 15%)** = très probablement la même course, MÊME si les noms sont complètement différents. Les noms peuvent être génériques d'un côté et spécifiques de l'autre (ex: "Course 10 km" ↔ "10 km de Marseille", ou "Trail XXS" ↔ "Pitchoun'trail 4 km"). Ne te fie pas aux noms — fie-toi à la distance.
 2. **S'il n'y a qu'une seule course existante à cette distance**, c'est forcément la correspondance — valide-la.
 3. **S'il y a plusieurs courses existantes à la même distance**, utilise les noms, catégories et heures de départ pour départager.
 4. **Distance à 0 ou absente** : utilise uniquement le nom pour matcher (marches, randonnées sans distance).
