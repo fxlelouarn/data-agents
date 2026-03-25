@@ -311,8 +311,22 @@ async function main() {
     }
 
     if (!hasAnyMismatch) {
-      console.log(`${prefix} ✅ ${p.eventName} — all times correct`)
-      stats.correct++
+      // Even if races are correct, check if edition dates need recalculating
+      const editionFixed = recalcEditionDates(p.changes)
+      if (editionFixed && !DRY_RUN) {
+        await prisma.proposal.update({
+          where: { id: p.id },
+          data: { changes: p.changes as any },
+        })
+        console.log(`${prefix} ✅ ${p.eventName} — race times OK, fixed edition dates`)
+        stats.fixed++
+      } else if (editionFixed) {
+        console.log(`${prefix} ✅ ${p.eventName} — race times OK, edition dates need fix`)
+        stats.mismatch++
+      } else {
+        console.log(`${prefix} ✅ ${p.eventName} — all times correct`)
+        stats.correct++
+      }
     } else {
       stats.mismatch++
 
@@ -334,31 +348,16 @@ async function main() {
           }
         }
 
-        // Also fix edition startDate/endDate if they match the wrong time
-        if (p.changes.edition?.new?.startDate || p.changes.startDate?.new) {
-          const edStart = p.changes.edition?.new?.startDate || p.changes.startDate?.new
-          const matchingFix = fixes.find(f => f.oldUtc === edStart)
-          if (matchingFix) {
-            if (p.changes.edition?.new?.startDate) p.changes.edition.new.startDate = matchingFix.newUtc
-            if (p.changes.startDate?.new) p.changes.startDate.new = matchingFix.newUtc
-            changed = true
-          }
-          // Same for endDate
-          const edEnd = p.changes.edition?.new?.endDate || p.changes.endDate?.new
-          const endFix = fixes.find(f => f.oldUtc === edEnd)
-          if (endFix) {
-            if (p.changes.edition?.new?.endDate) p.changes.edition.new.endDate = endFix.newUtc
-            if (p.changes.endDate?.new) p.changes.endDate.new = endFix.newUtc
-            changed = true
-          }
-        }
+        // Recalculate edition startDate/endDate from all race times
+        recalcEditionDates(p.changes)
+        changed = true
 
         if (changed) {
           await prisma.proposal.update({
             where: { id: p.id },
             data: { changes: p.changes as any },
           })
-          console.log(`         → FIXED ${fixes.length} race(s)`)
+          console.log(`         → FIXED ${fixes.length} race(s) + edition dates`)
           stats.fixed++
         }
       }
@@ -380,6 +379,62 @@ async function main() {
   console.log()
 
   await prisma.$disconnect()
+}
+
+/**
+ * Recalculate edition startDate/endDate from race times.
+ * Returns true if dates were changed.
+ */
+function recalcEditionDates(changes: any): boolean {
+  // Collect all race start times
+  const raceTimes: Date[] = []
+
+  // From edition.new.races (NEW_EVENT)
+  const edRaces = changes.edition?.new?.races || []
+  for (const r of edRaces) {
+    if (r.startDate) raceTimes.push(new Date(r.startDate))
+  }
+
+  // From racesToUpdate (EDITION_UPDATE)
+  const rtUpdate = changes.racesToUpdate?.new || []
+  for (const r of rtUpdate) {
+    const sd = r.updates?.startDate?.new
+    if (sd) raceTimes.push(new Date(sd))
+  }
+
+  if (raceTimes.length === 0) return false
+
+  const validTimes = raceTimes.filter(d => !isNaN(d.getTime())).sort((a, b) => a.getTime() - b.getTime())
+  if (validTimes.length === 0) return false
+
+  const newStart = validTimes[0].toISOString()
+  const newEnd = validTimes[validTimes.length - 1].toISOString()
+
+  let changed = false
+
+  // Fix edition.new.startDate / endDate
+  if (changes.edition?.new) {
+    if (changes.edition.new.startDate && changes.edition.new.startDate !== newStart) {
+      changes.edition.new.startDate = newStart
+      changed = true
+    }
+    if (changes.edition.new.endDate && changes.edition.new.endDate !== newEnd) {
+      changes.edition.new.endDate = newEnd
+      changed = true
+    }
+  }
+
+  // Fix top-level startDate.new / endDate.new
+  if (changes.startDate?.new && changes.startDate.new !== newStart) {
+    changes.startDate.new = newStart
+    changed = true
+  }
+  if (changes.endDate?.new && changes.endDate.new !== newEnd) {
+    changes.endDate.new = newEnd
+    changed = true
+  }
+
+  return changed
 }
 
 function getOffsetMs(isoDate: string, timeZone: string): number {
