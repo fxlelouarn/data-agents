@@ -329,7 +329,7 @@ export class FFAScraperAgent extends BaseAgent {
 
     const details = await Promise.all(detailsPromises)
 
-    return details.filter(d => d !== null) as FFACompetitionDetails[]
+    return details.filter((d): d is FFACompetitionDetails => d !== null)
   }
 
   /**
