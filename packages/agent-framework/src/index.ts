@@ -30,6 +30,14 @@ export type {
 export { LLMEventExtractor } from './services/event-extraction/llm-event-extractor'
 export { preprocessHtml } from './services/event-extraction/html-preprocessor'
 
+// LLM confidence review for EDITION_UPDATE proposals
+export {
+  reviewEditionUpdateConfidence,
+  type ConfidenceReviewInput,
+  type ConfidenceReviewResult,
+  type ConfidenceReviewConfig,
+} from './services/confidence-review'
+
 // Legacy type alias for backwards compatibility
 export type { DbRace as RaceWithDistance } from './services/event-matching'
 

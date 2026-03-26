@@ -8,6 +8,12 @@ import type { ProposalRaceInput } from '@data-agents/types'
 
 const DEFAULT_TIMEZONE = 'Europe/Paris'
 
+/** Validates that a string looks like YYYY-MM-DD (optionally with a time part). */
+function isValidDateString(s: string): boolean {
+  const datePart = s.includes('T') ? s.split('T')[0] : s
+  return /^\d{4}-\d{2}-\d{2}$/.test(datePart)
+}
+
 /**
  * Convert a local date/time in a given timezone to UTC.
  * Uses Intl.DateTimeFormat — deterministic regardless of server TZ.
@@ -22,6 +28,11 @@ function localToUtc(localDateStr: string, timeZone: string): Date {
   const day = parseInt(dayStr, 10)
   const hours = parseInt(hourStr, 10)
   const minutes = parseInt(minuteStr, 10)
+
+  // Guard against invalid parsed values (e.g. "<UNKNOWN>" from LLM)
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)) {
+    return new Date(NaN)
+  }
 
   // Create a UTC date with the local time values
   const utcGuess = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0))
@@ -159,7 +170,7 @@ export function calculateRaceStartDate(
   timezone?: string,
   raceDate?: string
 ): Date | undefined {
-  if (!editionDate) return undefined
+  if (!editionDate || !isValidDateString(editionDate)) return undefined
 
   const tz = timezone || DEFAULT_TIMEZONE
 

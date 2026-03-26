@@ -190,6 +190,8 @@ export interface ProposalData {
     content: string
     metadata?: Record<string, any>
   }[]
+  /** Override confidence score (e.g. from LLM review). Takes precedence over justification metadata. */
+  confidence?: number
 }
 
 // Agent run result

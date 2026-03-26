@@ -9,7 +9,7 @@
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor, reviewEditionUpdateConfidence } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
 
 // Version exportée pour compatibilité
@@ -43,6 +43,11 @@ import { hasIdenticalPendingProposal, filterNewChanges } from './ffa/deduplicati
  * regardless of server TZ and handles DST transitions properly.
  */
 function localToUtcRobust(year: number, month: number, day: number, hours: number, minutes: number, timeZone: string): Date {
+  // Guard against invalid values
+  if (isNaN(year) || isNaN(month) || isNaN(day) || isNaN(hours) || isNaN(minutes)) {
+    return new Date(NaN)
+  }
+
   // Create a UTC date with the local time values
   const utcGuess = new Date(Date.UTC(year, month, day, hours, minutes, 0, 0))
 
@@ -379,6 +384,11 @@ export class FFAScraperAgent extends BaseAgent {
 
         // Calculer la date de la course FFA (pour événements multi-jours)
         const ffaRaceDate = this.calculateRaceStartDate(ffaData, ffaRace)
+        if (isNaN(ffaRaceDate.getTime())) {
+          this.logger.warn(`⚠️ Date invalide pour ${ffaRace.name}, skip matching par date`)
+          unmatchedFFA.push(ffaRace)
+          continue
+        }
         const ffaRaceDayStr = ffaRaceDate.toISOString().split('T')[0]
 
         const matchingRace = existingRacesWithMeters.find((dbRace: any) => {
@@ -897,6 +907,16 @@ export class FFAScraperAgent extends BaseAgent {
       baseDate = ffaData.startDate
     }
 
+    // Guard against invalid dates (e.g. LLM returned unparseable editionDate)
+    if (!baseDate || isNaN(baseDate.getTime())) {
+      this.logger.warn(`⚠️ Date de base invalide pour la course ${race.name}, utilisation de la date de compétition`)
+      baseDate = ffaData.competition.date
+      if (!baseDate || isNaN(baseDate.getTime())) {
+        this.logger.error(`❌ Aucune date valide pour la course ${race.name}`)
+        return new Date(NaN)
+      }
+    }
+
     const year = baseDate.getUTCFullYear()
     const month = baseDate.getUTCMonth()
     const day = baseDate.getUTCDate()
@@ -911,6 +931,11 @@ export class FFAScraperAgent extends BaseAgent {
 
       // Convertir heure locale → UTC en utilisant l'offset réel du timezone à cette date
       const utcDate = localToUtcRobust(year, month, day, hours, minutes, timeZone)
+
+      if (isNaN(utcDate.getTime())) {
+        this.logger.warn(`⚠️ Conversion timezone échouée pour ${race.name} (${race.startTime}), fallback minuit`)
+        return localToUtcRobust(year, month, day, 0, 0, timeZone)
+      }
 
       this.logger.info(`🕐 Conversion timezone: ${year}-${String(month + 1).padStart(2, '0')}-${String(day).padStart(2, '0')} ${race.startTime} ${timeZone} -> ${utcDate.toISOString()} (course: ${race.name})`)
 
@@ -1212,12 +1237,38 @@ export class FFAScraperAgent extends BaseAgent {
               return justif
             })
 
+            // LLM confidence review if API key is available
+            let reviewedConfidence = confidence
+            if (this.llmConfig?.apiKey) {
+              try {
+                const editionYear = fullEdition.year ? parseInt(fullEdition.year) : undefined
+                const review = await reviewEditionUpdateConfidence(
+                  { eventName: matchResult.event!.name, eventCity: matchResult.event!.city, editionYear, changes: filteredChanges },
+                  { apiKey: this.llmConfig.apiKey }
+                )
+                reviewedConfidence = review.score
+                enrichedJustifications.push({
+                  type: 'llm_confidence_review',
+                  content: review.reason,
+                  metadata: {
+                    reviewedAt: new Date().toISOString(),
+                    score: review.score,
+                    issues: review.issues,
+                  },
+                })
+                context.logger.info(`🤖 LLM confidence review: ${review.score.toFixed(2)}${review.issues.length ? ` [${review.issues.length} issues]` : ''}`)
+              } catch (err: any) {
+                context.logger.warn(`⚠️ LLM confidence review failed: ${err.message}`)
+              }
+            }
+
             proposals.push({
               type: ProposalType.EDITION_UPDATE,
               eventId: matchResult.event!.id.toString(),
               editionId: matchResult.edition.id.toString(),
               changes: filteredChanges,
-              justification: enrichedJustifications
+              justification: enrichedJustifications,
+              confidence: reviewedConfidence,
             })
           }
         }
@@ -1400,8 +1451,8 @@ export class FFAScraperAgent extends BaseAgent {
       context.logger.info(`💾 Sauvegarde de ${allProposals.length} propositions...`)
       for (const proposal of allProposals) {
         try {
-          // Extraire la confiance de la proposition
-          const proposalConfidence = proposal.justification?.[0]?.metadata?.confidence || 0.7
+          // Use explicit confidence if set (e.g. from LLM review), otherwise extract from justification
+          const proposalConfidence = proposal.confidence ?? proposal.justification?.[0]?.metadata?.confidence ?? 0.7
 
           await this.createProposal(
             proposal.type,

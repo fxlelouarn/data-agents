@@ -22,7 +22,6 @@ dotenv.config({ path: '/Users/fx/dev/data-agents/.env.prod', override: true })
 dotenv.config({ path: '/Users/fx/dev/data-agents/.env' })
 
 import { PrismaClient } from '@prisma/client'
-import Anthropic from '@anthropic-ai/sdk'
 import axios from 'axios'
 import {
   LLMEventExtractor,
@@ -32,6 +31,7 @@ import {
   createConsoleLogger,
   DatabaseManager,
   DbRace,
+  reviewEditionUpdateConfidence,
 } from '@data-agents/agent-framework'
 
 // ---------------------------------------------------------------------------
@@ -63,93 +63,8 @@ if (!apiKey) {
 const extractor = new LLMEventExtractor({ apiKey, logger })
 const llmConfig: LLMMatchingConfig = { apiKey, model: 'claude-haiku-4-5-20251001' }
 const llmService = new LLMMatchingService(llmConfig, logger)
-const anthropic = new Anthropic({ apiKey })
-
 const delay = (ms: number) => new Promise(r => setTimeout(r, ms))
-
-// ---------------------------------------------------------------------------
-// LLM confidence review
-// ---------------------------------------------------------------------------
-async function getConfidenceScore(
-  proposal: { eventName: string | null, eventCity: string | null, editionYear: number | null, confidence: number | null },
-  changes: any
-): Promise<{ score: number, reason: string, issues: string[] }> {
-  const racesToUpdate = changes.racesToUpdate?.new || []
-  const racesToAdd = changes.racesToAdd?.new || []
-  const racesExisting = changes.racesExisting?.new || []
-
-  const racesSummary = [
-    ...racesToUpdate.map((r: any) => {
-      const updates = Object.keys(r.updates || {}).filter(k => (r.updates as any)[k]?.new !== undefined)
-      return `  MATCH: "${r.raceName}" (id:${r.raceId}) — updates: ${updates.join(', ') || 'none'}`
-    }),
-    ...racesToAdd.map((r: any) => {
-      const dist = r.runDistance || r.walkDistance || r.bikeDistance || 0
-      return `  NEW: "${r.name}" (${dist}km)`
-    }),
-    ...racesExisting.map((r: any) => `  EXISTING (not matched): "${r.raceName}" (id:${r.raceId})`),
-  ].join('\n')
-
-  const stringify = (val: any): string => {
-    if (val === null || val === undefined) return '-'
-    if (typeof val === 'object') return JSON.stringify(val)
-    return String(val)
-  }
-  const editionUpdates = Object.entries(changes)
-    .filter(([k]) => !['racesToUpdate', 'racesToAdd', 'racesExisting', 'registrationUrl'].includes(k))
-    .map(([k, v]: [string, any]) => `  ${k}: ${stringify(v?.old)} → ${stringify(v?.new)}`)
-    .join('\n')
-
-  const prompt = `Tu es un expert en données d'événements sportifs. Évalue cette proposition de mise à jour.
-
-## Événement
-Nom: ${proposal.eventName}
-Ville: ${proposal.eventCity || '-'}
-Édition: ${proposal.editionYear || '-'}
-
-## Mises à jour de l'édition
-${editionUpdates || '  (aucune)'}
-
-## Courses
-${racesSummary || '  (aucune)'}
-
-## Question
-Cette proposition est-elle correcte et peut-elle être auto-validée ?
-
-Évalue avec un score de 0 à 1:
-- 0.95+ : tout est cohérent, auto-validation recommandée
-- 0.80-0.94 : probablement correct mais un détail à surveiller
-- 0.60-0.79 : des doutes, review humain recommandé
-- <0.60 : problèmes détectés, ne pas auto-valider
-
-Utilise l'outil pour répondre.`
-
-  const response = await anthropic.messages.create({
-    model: 'claude-haiku-4-5-20251001',
-    max_tokens: 512,
-    tools: [{
-      name: 'confidence_score',
-      description: 'Score de confiance pour auto-validation',
-      input_schema: {
-        type: 'object' as const,
-        properties: {
-          score: { type: 'number', description: 'Score 0-1' },
-          reason: { type: 'string', description: 'Explication courte' },
-          issues: { type: 'array', items: { type: 'string' }, description: 'Problèmes détectés' },
-        },
-        required: ['score', 'reason'],
-      },
-    }],
-    tool_choice: { type: 'tool' as const, name: 'confidence_score' },
-    messages: [{ role: 'user', content: prompt }],
-  })
-
-  const toolBlock = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined
-  if (!toolBlock) return { score: 0, reason: 'no LLM response', issues: [] }
-
-  const result = toolBlock.input as { score: number, reason: string, issues?: string[] }
-  return { score: result.score, reason: result.reason, issues: result.issues || [] }
-}
+const reviewConfig = { apiKey }
 
 // ---------------------------------------------------------------------------
 // Main
@@ -240,7 +155,7 @@ async function main() {
       // 2. Extract via LLM
       const extractResult = await extractor.extract(
         { type: 'html', content: html },
-        { cssSelector: ['#infoPratique', '#epreuves'], context: 'Page détail FFA', timeout: 30000 }
+        { context: 'Page détail FFA', timeout: 30000 }
       )
 
       if (!extractResult.success || !extractResult.data) {
@@ -267,9 +182,12 @@ async function main() {
         eventName: extracted.eventName || p.eventName,
         eventCity: extracted.eventCity || p.eventCity || '',
         eventCountry: 'France',
-        editionDate: extracted.editionDate,
+        editionDate: extracted.editionDate && /^\d{4}-\d{2}-\d{2}$/.test(extracted.editionDate)
+          ? extracted.editionDate
+          : (p.changes?.startDate?.new ? new Date(p.changes.startDate.new).toISOString().split('T')[0] : undefined),
         editionYear: extracted.editionYear || p.editionYear || undefined,
         timeZone: 'Europe/Paris',
+        calendarStatus: 'CONFIRMED',
         races: (extracted.races || []).map(r => ({
           name: r.name,
           distance: r.distance, // already in meters
@@ -308,7 +226,10 @@ async function main() {
       )
 
       // 7. Get LLM confidence score
-      const review = await getConfidenceScore(p, newChanges)
+      const review = await reviewEditionUpdateConfidence(
+        { eventName: p.eventName, eventCity: p.eventCity, editionYear: p.editionYear, changes: newChanges },
+        reviewConfig
+      )
 
       // 8. Report
       const racesToUpdate = newChanges.racesToUpdate?.new?.length || 0

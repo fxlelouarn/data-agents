@@ -1,55 +1,41 @@
 /**
  * HTML preprocessor for LLM extraction.
- * Strips unnecessary elements to minimize token usage.
+ * Converts HTML to clean markdown using cheerio + turndown.
  */
 
 import * as cheerio from 'cheerio'
+import TurndownService from 'turndown'
 
 /**
- * Preprocess HTML for LLM extraction.
- * Strips scripts, styles, nav, header, footer.
- * Optionally extracts specific CSS selector sections.
+ * Convert HTML to clean markdown for LLM extraction.
+ * Strips noise elements (scripts, nav, footer, images, empty links),
+ * then converts to markdown via turndown.
  *
  * @param html - Raw HTML string
- * @param cssSelector - Optional CSS selector(s) to extract. Can be:
- *   - A single selector: "#epreuves"
- *   - Multiple selectors (comma-separated CSS): "#infoPratique, #epreuves"
- *   - Multiple selectors (array): ["#infoPratique", "#epreuves"]
- * @returns Cleaned HTML string
+ * @returns Clean markdown string
  */
-export function preprocessHtml(html: string, cssSelector?: string | string[]): string {
+export function preprocessHtml(html: string): string {
   const $ = cheerio.load(html)
 
   // Remove noise elements
-  $('script, style, nav, header, footer, link, meta, noscript, svg, iframe').remove()
+  $('script, style, nav, header, footer, link, meta, noscript, svg, iframe, img').remove()
 
-  // If specific selectors are requested, extract those sections
-  if (cssSelector) {
-    const selectors = Array.isArray(cssSelector) ? cssSelector : [cssSelector]
-    const parts: string[] = []
+  // Remove empty links (sponsor logos, social icons with no text)
+  $('a').each((_, el) => {
+    const text = $(el).text().trim()
+    if (!text) $(el).remove()
+  })
 
-    for (const sel of selectors) {
-      $(sel).each((_, el) => {
-        const sectionHtml = $(el).html()
-        if (sectionHtml) {
-          parts.push(sectionHtml)
-        }
-      })
-    }
+  const body = $('body').html() || $.html()
 
-    if (parts.length > 0) {
-      return collapseWhitespace(parts.join('\n'))
-    }
-    // No selectors found — fall through to full document
-  }
+  const td = new TurndownService({ headingStyle: 'atx' })
+  const markdown = td.turndown(body)
 
-  const cleaned = $('body').html() || $.html()
-  return collapseWhitespace(cleaned)
+  return collapseWhitespace(markdown)
 }
 
 function collapseWhitespace(text: string): string {
   return text
     .replace(/\n{3,}/g, '\n\n')
-    .replace(/[ \t]+/g, ' ')
     .trim()
 }

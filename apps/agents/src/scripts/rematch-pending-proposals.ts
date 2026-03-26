@@ -25,7 +25,6 @@ dotenv.config({ path: '/Users/fx/dev/data-agents/.env.prod', override: true })
 dotenv.config({ path: '/Users/fx/dev/data-agents/.env' })
 
 import { PrismaClient } from '@prisma/client'
-import Anthropic from '@anthropic-ai/sdk'
 import {
   matchEvent,
   matchRaces,
@@ -36,6 +35,7 @@ import {
   DEFAULT_MATCHING_CONFIG,
   buildEditionUpdateChanges,
   DbRace,
+  reviewEditionUpdateConfidence,
 } from '@data-agents/agent-framework'
 
 // ---------------------------------------------------------------------------
@@ -310,6 +310,7 @@ async function processNewEvents(sourceDb: any) {
             editionDate: editionDate.toISOString(),
             editionYear: typeof matchResult.edition.year === 'string' ? parseInt(matchResult.edition.year) : matchResult.edition.year,
             timeZone: editionData?.timeZone || 'Europe/Paris',
+            calendarStatus: 'CONFIRMED' as const,
             races: races.map((r: any) => {
               let startTime: string | undefined
               if (r.startDate) {
@@ -323,6 +324,7 @@ async function processNewEvents(sourceDb: any) {
                 distance: r.distance ? r.distance * 1000 : undefined, // km → m for input
                 elevation: r.elevationGain || r.runPositiveElevation,
                 startTime,
+                price: r.price,
                 categoryLevel1: r.categoryLevel1,
                 categoryLevel2: r.categoryLevel2,
               }
@@ -350,6 +352,30 @@ async function processNewEvents(sourceDb: any) {
             })
           )
 
+          // LLM confidence review on the new EDITION_UPDATE changes
+          let reviewedConfidence = matchResult.confidence
+          const justifications = (proposal.justification as any[]) || []
+          try {
+            const edYear = typeof matchResult.edition.year === 'string' ? parseInt(matchResult.edition.year) : matchResult.edition.year
+            const review = await reviewEditionUpdateConfidence(
+              { eventName, eventCity, editionYear: edYear, changes: sanitizedChanges },
+              { apiKey: llmApiKey! }
+            )
+            reviewedConfidence = review.score
+            justifications.push({
+              type: 'llm_confidence_review',
+              content: review.reason,
+              metadata: {
+                reviewedAt: new Date().toISOString(),
+                score: review.score,
+                issues: review.issues,
+              },
+            })
+            logger.info(`  🤖 LLM confidence review: ${review.score.toFixed(2)}${review.issues.length ? ` [${review.issues.length} issues]` : ''}`)
+          } catch (err: any) {
+            logger.warn(`  ⚠️ LLM confidence review failed: ${err.message}`)
+          }
+
           // Update the proposal
           await prisma.proposal.update({
             where: { id: proposal.id },
@@ -358,7 +384,8 @@ async function processNewEvents(sourceDb: any) {
               eventId: matchResult.event.id.toString(),
               editionId: matchResult.edition.id.toString(),
               changes: sanitizedChanges,
-              confidence: matchResult.confidence,
+              confidence: reviewedConfidence,
+              justification: justifications as any,
             }
           })
           logger.info(`  📝 Updated proposal ${proposal.id}: NEW_EVENT → EDITION_UPDATE`)
@@ -541,8 +568,6 @@ async function processRacesToAdd(sourceDb: any) {
 async function processEditionUpdateConfidence() {
   console.log('\n--- LLM confidence review for EDITION_UPDATE proposals ---')
 
-  const anthropic = new Anthropic({ apiKey: llmApiKey })
-
   const whereClause: any = {
     type: 'EDITION_UPDATE',
     status: { in: ['PENDING', 'PARTIALLY_APPROVED'] },
@@ -583,101 +608,17 @@ async function processEditionUpdateConfidence() {
 
   for (const proposal of proposals) {
     stats.confidence.processed++
-    const changes = proposal.changes as any
 
     try {
-      const racesToUpdate = changes.racesToUpdate?.new || []
-      const racesToAdd = changes.racesToAdd?.new || []
-      const racesExisting = changes.racesExisting?.new || []
-
-      // Build compact summary for LLM
-      const racesSummary = [
-        ...racesToUpdate.map((r: any) => {
-          const updates = Object.keys(r.updates || {}).filter(k => (r.updates as any)[k]?.new !== undefined)
-          return `  MATCH: "${r.raceName}" (id:${r.raceId}) — updates: ${updates.join(', ') || 'none'}`
-        }),
-        ...racesToAdd.map((r: any) => {
-          const dist = r.runDistance || r.walkDistance || r.bikeDistance || 0
-          return `  NEW: "${r.name}" (${dist}km)`
-        }),
-        ...racesExisting.map((r: any) => `  EXISTING (not matched): "${r.raceName}" (id:${r.raceId})`),
-      ].join('\n')
-
-      const stringify = (val: any): string => {
-        if (val === null || val === undefined) return '-'
-        if (typeof val === 'object') return JSON.stringify(val)
-        return String(val)
-      }
-      const editionUpdates = Object.entries(changes)
-        .filter(([k]) => !['racesToUpdate', 'racesToAdd', 'racesExisting', 'registrationUrl'].includes(k))
-        .map(([k, v]: [string, any]) => `  ${k}: ${stringify(v?.old)} → ${stringify(v?.new)}`)
-        .join('\n')
-
-      const prompt = `Tu es un expert en données d'événements sportifs. Évalue cette proposition de mise à jour.
-
-## Événement
-Nom: ${proposal.eventName}
-Ville: ${proposal.eventCity || '-'}
-Édition: ${proposal.editionYear || '-'}
-Confiance du match événement: ${proposal.confidence}
-
-## Mises à jour de l'édition
-${editionUpdates || '  (aucune)'}
-
-## Courses
-${racesSummary || '  (aucune)'}
-
-## Question
-Cette proposition est-elle correcte et peut-elle être auto-validée ?
-
-Évalue avec un score de 0 à 1:
-- 0.95+ : tout est cohérent, auto-validation recommandée
-- 0.80-0.94 : probablement correct mais un détail à surveiller
-- 0.60-0.79 : des doutes, review humain recommandé
-- <0.60 : problèmes détectés, ne pas auto-valider
-
-Utilise l'outil pour répondre.`
-
-      const response = await anthropic.messages.create({
-        model: 'claude-haiku-4-5-20251001',
-        max_tokens: 512,
-        tools: [{
-          name: 'confidence_score',
-          description: 'Score de confiance pour auto-validation',
-          input_schema: {
-            type: 'object' as const,
-            properties: {
-              score: { type: 'number', description: 'Score 0-1' },
-              reason: { type: 'string', description: 'Explication courte' },
-              issues: { type: 'array', items: { type: 'string' }, description: 'Problèmes détectés' },
-            },
-            required: ['score', 'reason'],
-          },
-        }],
-        tool_choice: { type: 'tool' as const, name: 'confidence_score' },
-        messages: [{ role: 'user', content: prompt }],
-      })
-
-      const toolBlock = response.content.find(b => b.type === 'tool_use') as Anthropic.ToolUseBlock | undefined
-      if (!toolBlock) {
-        logger.warn(`  No LLM response for ${proposal.eventName}`)
-        stats.confidence.errors++
-        continue
-      }
-
-      const result = toolBlock.input as { score: number, reason: string, issues?: string[] }
+      const result = await reviewEditionUpdateConfidence(
+        { eventName: proposal.eventName, eventCity: proposal.eventCity, editionYear: proposal.editionYear, changes: proposal.changes },
+        { apiKey: process.env.LLM_MATCHING_API_KEY! }
+      )
       const issueStr = result.issues?.length ? ` [${result.issues.length} issues]` : ''
 
       logger.info(`  [${stats.confidence.processed}] ${proposal.eventName}: ${result.score.toFixed(2)}${issueStr} — ${result.reason.substring(0, 100)}`)
 
       if (!DRY_RUN) {
-        // Update confidence
-        await prisma.proposal.update({
-          where: { id: proposal.id },
-          data: { confidence: result.score },
-        })
-
-        // Store review in justification
         const justifications = (proposal.justification as any[]) || []
         justifications.push({
           type: 'llm_confidence_review',
@@ -690,7 +631,7 @@ Utilise l'outil pour répondre.`
         })
         await prisma.proposal.update({
           where: { id: proposal.id },
-          data: { justification: justifications as any },
+          data: { confidence: result.score, justification: justifications as any },
         })
 
         stats.confidence.updated++

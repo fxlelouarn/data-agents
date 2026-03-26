@@ -310,7 +310,7 @@ async function main() {
     try {
       const result = await extractor.extract(
         { type: 'html', content: html },
-        { cssSelector: ['#infoPratique', '#epreuves'], context: 'Page détail FFA', timeout: 30000 }
+        { context: 'Page détail FFA', timeout: 30000 }
       )
 
       if (!result.success || !result.data) {

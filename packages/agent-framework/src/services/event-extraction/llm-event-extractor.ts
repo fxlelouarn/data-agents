@@ -37,7 +37,7 @@ export class LLMEventExtractor {
     options?: ExtractionOptions
   ): Promise<ExtractionResult> {
     try {
-      const content = this.prepareContent(source, options)
+      const content = this.prepareContent(source)
       const timeout = options?.timeout ?? DEFAULT_TIMEOUT
       const userPrompt = buildExtractionUserPrompt(content, options?.context)
 
@@ -66,7 +66,7 @@ export class LLMEventExtractor {
         return { success: false, error: 'No tool_use block in LLM response' }
       }
 
-      const data = toolBlock.input as ExtractedEventData
+      const data = this.sanitizeOutput(toolBlock.input as ExtractedEventData)
       this.logger.info(`Extracted: "${data.eventName}" (${data.races?.length ?? 0} races, confidence: ${data.confidence})`)
 
       return { success: true, data }
@@ -77,10 +77,27 @@ export class LLMEventExtractor {
     }
   }
 
-  private prepareContent(source: ExtractionSource, options?: ExtractionOptions): string {
+  /** Replace LLM placeholder values like "<UNKNOWN>", "N/A", "?" with undefined. */
+  private sanitizeOutput(data: ExtractedEventData): ExtractedEventData {
+    const placeholders = /^(<unknown>|unknown|n\/a|none|\?|-)$/i
+    const clean = (v: string | undefined): string | undefined =>
+      v && placeholders.test(v.trim()) ? undefined : v
+
+    return {
+      ...data,
+      editionDate: clean(data.editionDate),
+      eventCity: clean(data.eventCity),
+      organizerName: clean(data.organizerName),
+      organizerEmail: clean(data.organizerEmail),
+      organizerPhone: clean(data.organizerPhone),
+      organizerWebsite: clean(data.organizerWebsite),
+    }
+  }
+
+  private prepareContent(source: ExtractionSource): string {
     switch (source.type) {
       case 'html':
-        return preprocessHtml(source.content, options?.cssSelector)
+        return preprocessHtml(source.content)
       case 'text':
         return source.content
       case 'image':
