@@ -11,6 +11,7 @@ import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
 import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor, reviewEditionUpdateConfidence } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
+import pLimit from 'p-limit'
 
 // Version exportée pour compatibilité
 export const FFA_SCRAPER_AGENT_VERSION = AGENT_VERSIONS.FFA_SCRAPER_AGENT
@@ -320,9 +321,10 @@ export class FFAScraperAgent extends BaseAgent {
       ? competitions.slice(0, config.maxCompetitionsPerMonth)
       : competitions
 
-    // Récupérer les détails de chaque compétition
+    // Récupérer les détails de chaque compétition (limiter la concurrence pour éviter le rate limit LLM)
+    const limit = pLimit(3)
     const detailsPromises = limitedCompetitions.map(comp =>
-      fetchCompetitionDetails(comp, this.extractor)
+      limit(() => fetchCompetitionDetails(comp, this.extractor))
     )
 
     const details = await Promise.all(detailsPromises)
@@ -1385,7 +1387,27 @@ export class FFAScraperAgent extends BaseAgent {
               }
             }
 
-            allProposals.push(...proposals)
+            // Save proposals immediately (don't accumulate — avoids data loss on crash)
+            for (const proposal of proposals) {
+              try {
+                const proposalConfidence = proposal.confidence ?? proposal.justification?.[0]?.metadata?.confidence ?? 0.7
+                await this.createProposal(
+                  proposal.type,
+                  proposal.changes,
+                  proposal.justification,
+                  proposal.eventId?.toString(),
+                  proposal.editionId?.toString(),
+                  proposal.raceId?.toString(),
+                  proposalConfidence
+                )
+                allProposals.push(proposal)
+              } catch (error) {
+                context.logger.error(`Erreur lors de la création d'une proposition`, {
+                  type: proposal.type,
+                  error: String(error)
+                })
+              }
+            }
           }
 
           context.logger.info(`📊 Stats: ${matchedCount} matches (${proposalsFromMatches} avec propositions)`)
@@ -1446,30 +1468,6 @@ export class FFAScraperAgent extends BaseAgent {
       progress.lastCompletedAt = new Date()
       // FIX 2: Sauvegarde finale pour les statistiques (progression déjà sauvegardée après chaque mois)
       await this.saveProgress(progress)
-
-      // Sauvegarder les propositions en base de données
-      context.logger.info(`💾 Sauvegarde de ${allProposals.length} propositions...`)
-      for (const proposal of allProposals) {
-        try {
-          // Use explicit confidence if set (e.g. from LLM review), otherwise extract from justification
-          const proposalConfidence = proposal.confidence ?? proposal.justification?.[0]?.metadata?.confidence ?? 0.7
-
-          await this.createProposal(
-            proposal.type,
-            proposal.changes,
-            proposal.justification,
-            proposal.eventId?.toString(),
-            proposal.editionId?.toString(),
-            proposal.raceId?.toString(),
-            proposalConfidence
-          )
-        } catch (error) {
-          context.logger.error(`Erreur lors de la création d'une proposition`, {
-            type: proposal.type,
-            error: String(error)
-          })
-        }
-      }
 
       context.logger.info(`✅ Scraping terminé: ${totalCompetitions} compétitions, ${allProposals.length} propositions sauvegardées`)
 

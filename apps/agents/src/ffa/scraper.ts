@@ -250,13 +250,10 @@ function mapExtractedToFFADetails(
   competition: FFACompetition,
   html: string
 ): FFACompetitionDetails {
-  // Use cheerio for multi-day date parsing (robust existing logic)
-  const cheerioDetails = parseCompetitionDetails(html, competition)
-
   return {
     competition,
-    startDate: data.editionDate ? new Date(data.editionDate) : cheerioDetails.startDate,
-    endDate: data.editionEndDate ? new Date(data.editionEndDate) : cheerioDetails.endDate,
+    startDate: data.editionDate ? new Date(data.editionDate) : competition.date,
+    endDate: data.editionEndDate ? new Date(data.editionEndDate) : (data.editionDate ? new Date(data.editionDate) : competition.date),
     organizerName: data.organizerName,
     organizerEmail: data.organizerEmail,
     organizerPhone: data.organizerPhone,

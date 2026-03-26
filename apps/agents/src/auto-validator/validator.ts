@@ -42,8 +42,26 @@ export async function validateProposal(
     }
   }
 
-  // 2. Vérifier Event.isFeatured
-  if (eventId) {
+  // 1b. Vérifier qu'un LLM confidence review a été effectué
+  const justifications = (proposal.justification as any[]) || []
+  const hasLLMReview = justifications.some((j: any) => j.type === 'llm_confidence_review')
+  if (!hasLLMReview) {
+    return {
+      isValid: false,
+      reason: 'Pas de LLM confidence review — proposition non reviewée',
+      exclusionReason: 'lowConfidence',
+      details: {
+        confidence: proposal.confidence,
+        hasLLMReview: false
+      }
+    }
+  }
+
+  // For NEW_EVENT proposals, skip event/edition DB checks (nothing exists yet)
+  const isNewEvent = proposal.type === 'NEW_EVENT'
+
+  // 2. Vérifier Event.isFeatured (EDITION_UPDATE only)
+  if (eventId && !isNewEvent) {
     try {
       const event = await sourceDb.event.findUnique({
         where: { id: parseInt(eventId) },
@@ -76,12 +94,12 @@ export async function validateProposal(
     }
   }
 
-  // 3. Vérifier Edition.customerType
+  // 3. Vérifier Edition.customerType (EDITION_UPDATE only)
   // EXCEPTION: Les propositions MR internes (justificationType: 'mr_internal') sont
   // valides même pour les éditions premium car c'est notre propre donnée (comptage Attendees)
   const isMRInternalProposal = isMRInternal(proposal)
 
-  if (editionId) {
+  if (editionId && !isNewEvent) {
     try {
       const edition = await sourceDb.edition.findUnique({
         where: { id: parseInt(editionId) },

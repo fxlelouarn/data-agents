@@ -244,13 +244,36 @@ export class AutoValidatorAgent extends BaseAgent {
       config.maxProposalsPerRun
     )
 
+    // ÉTAPE 4: Récupérer les NEW_EVENT éligibles (haute confiance + LLM review)
+    const newEventProposals = await this.prisma.$queryRawUnsafe<any[]>(
+      `SELECT p.*, a.name as "agentName"
+       FROM proposals p
+       LEFT JOIN agents a ON p."agentId" = a.id
+       WHERE p.status = 'PENDING'
+         AND p.type = 'NEW_EVENT'
+         AND p."agentId" IN (${agentIdPlaceholders})
+         AND p.confidence >= ${config.minConfidence}
+       ORDER BY p."createdAt" ASC
+       LIMIT $${limitParamIndex}`,
+      ...ffaAgentIds,
+      ...eligibleIdsArray,
+      config.maxProposalsPerRun
+    )
+
+    const allProposals = [...proposals, ...newEventProposals]
+    const newEventCount = newEventProposals.length
+
+    if (newEventCount > 0) {
+      this.logger.info(`📊 ${newEventCount} propositions NEW_EVENT éligibles (confidence >= ${config.minConfidence})`)
+    }
+
     // Reformater pour correspondre à l'ancienne structure
     return {
-      proposals: proposals.map(p => ({
+      proposals: allProposals.map(p => ({
         ...p,
         agent: { name: p.agentName }
       })),
-      totalCount
+      totalCount: totalCount + newEventCount
     }
   }
 
@@ -267,27 +290,40 @@ export class AutoValidatorAgent extends BaseAgent {
 
     // Déterminer les blocs à valider selon la configuration
     const changes = proposal.changes as Record<string, any>
+    const isNewEvent = proposal.type === 'NEW_EVENT'
 
-    // Bloc edition
-    if (config.enableEditionBlock) {
-      const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
-        'registrationClosingDate', 'registrationOpeningDate', 'registrantsNumber']
-      const hasEditionChanges = editionFields.some(field => changes[field] !== undefined)
-      if (hasEditionChanges) {
-        blocksToValidate.push('edition')
+    if (isNewEvent) {
+      // NEW_EVENT: validate all blocks at once (event + edition + organizer + races)
+      blocksToValidate.push('event', 'edition')
+      if (changes.edition?.new?.organizer) {
+        blocksToValidate.push('organizer')
       }
-    }
-
-    // Bloc organizer
-    if (config.enableOrganizerBlock && changes.organizer) {
-      blocksToValidate.push('organizer')
-    }
-
-    // Bloc races (seulement si pas de nouvelles courses)
-    if (config.enableRacesBlock) {
-      const hasRaceChanges = changes.racesToUpdate || changes.racesToAdd || changes.races
-      if (hasRaceChanges) {
+      if (changes.edition?.new?.races?.length > 0) {
         blocksToValidate.push('races')
+      }
+    } else {
+      // EDITION_UPDATE: validate blocks individually
+      // Bloc edition
+      if (config.enableEditionBlock) {
+        const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
+          'registrationClosingDate', 'registrationOpeningDate', 'registrantsNumber']
+        const hasEditionChanges = editionFields.some(field => changes[field] !== undefined)
+        if (hasEditionChanges) {
+          blocksToValidate.push('edition')
+        }
+      }
+
+      // Bloc organizer
+      if (config.enableOrganizerBlock && changes.organizer) {
+        blocksToValidate.push('organizer')
+      }
+
+      // Bloc races (seulement si pas de nouvelles courses)
+      if (config.enableRacesBlock) {
+        const hasRaceChanges = changes.racesToUpdate || changes.racesToAdd || changes.races
+        if (hasRaceChanges) {
+          blocksToValidate.push('races')
+        }
       }
     }
 
@@ -351,19 +387,7 @@ export class AutoValidatorAgent extends BaseAgent {
     }
 
     // Déterminer si tous les blocs attendus sont validés
-    const expectedBlocks = new Set<string>()
-    const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
-      'registrationClosingDate', 'registrationOpeningDate', 'registrantsNumber']
-
-    if (editionFields.some(field => changes[field] !== undefined)) {
-      expectedBlocks.add('edition')
-    }
-    if (changes.organizer) {
-      expectedBlocks.add('organizer')
-    }
-    if (changes.racesToUpdate || changes.racesToAdd || changes.races) {
-      expectedBlocks.add('races')
-    }
+    const expectedBlocks = new Set<string>(blocksToValidate)
 
     const allBlocksValidated = expectedBlocks.size > 0 &&
       Array.from(expectedBlocks).every(block => newApprovedBlocks[block] === true)
@@ -429,11 +453,16 @@ export class AutoValidatorAgent extends BaseAgent {
 
     const editionFields = ['startDate', 'endDate', 'calendarStatus', 'timeZone',
       'registrationClosingDate', 'registrationOpeningDate', 'year', 'registrantsNumber']
+    const eventFields = ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl',
+      'dataSource', 'countrySubdivisionNameLevel1', 'countrySubdivisionDisplayCodeLevel1',
+      'countrySubdivisionNameLevel2', 'countrySubdivisionDisplayCodeLevel2']
     const organizerFields = ['organizer']
     const racesFields = ['racesToAdd', 'racesToUpdate', 'racesToDelete', 'races']
 
     Object.entries(changes).forEach(([key, value]) => {
-      if (block === 'edition' && editionFields.includes(key)) {
+      if (block === 'event' && eventFields.includes(key)) {
+        filtered[key] = value
+      } else if (block === 'edition' && editionFields.includes(key)) {
         filtered[key] = value
       } else if (block === 'organizer' && organizerFields.includes(key)) {
         filtered[key] = value
@@ -441,6 +470,11 @@ export class AutoValidatorAgent extends BaseAgent {
         filtered[key] = value
       }
     })
+
+    // For NEW_EVENT, the 'edition' block contains the whole edition.new object
+    if (block === 'edition' && changes.edition) {
+      filtered.edition = changes.edition
+    }
 
     return filtered
   }
@@ -499,7 +533,7 @@ export class AutoValidatorAgent extends BaseAgent {
       const { proposals, totalCount } = await this.getEligibleProposals(ffaAgentIds, config)
       runResult.proposalsAnalyzed = proposals.length
 
-      context.logger.info(`📊 ${proposals.length}/${totalCount} propositions EDITION_UPDATE en attente`)
+      context.logger.info(`📊 ${proposals.length}/${totalCount} propositions en attente (EDITION_UPDATE + NEW_EVENT)`)
 
       if (proposals.length === 0) {
         // Mettre à jour totalEligibleProposals même si aucune proposition
