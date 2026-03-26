@@ -337,7 +337,7 @@ export async function matchEvent(
       } else if (llmResult) {
         if (llmResult.eventId) {
           // LLM confirmed a match
-          const matchedCandidate = scoredCandidates.find(c => c.event.id === llmResult.eventId)
+          const matchedCandidate = scoredCandidates.find(c => Number(c.event.id) === Number(llmResult.eventId))
           if (matchedCandidate) {
             const matchedEdition = matchedCandidate.event.editions?.find((e: any) => e.year === searchYear)
             logger.info(`  🤖 LLM confirmed match: "${matchedCandidate.event.name}" (confidence: ${llmResult.confidence}, reason: ${llmResult.reason})`)

@@ -192,8 +192,9 @@ export class LLMMatchingService {
       }
 
       // Hallucination guard: verify eventId is in the candidates list
-      const knownIds = slicedCandidates.map((c) => c.eventId)
-      if (!knownIds.includes(llmResult.eventId)) {
+      // Normalize to number to avoid type mismatch (string vs number from Meilisearch/Prisma)
+      const knownIds = slicedCandidates.map((c) => Number(c.eventId))
+      if (!knownIds.includes(Number(llmResult.eventId))) {
         this.logger.warn(
           `LLM event judge returned unknown eventId ${llmResult.eventId} (not in candidates)`
         )
