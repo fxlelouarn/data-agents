@@ -390,14 +390,18 @@ export async function buildEditionUpdateChanges(
                 }
               }
             } else {
-              // No precise time from source — only update if date changed
-              if (isDbMidnight) {
-                const sameDate = isSameDateInTimezone(new Date(db.startDate), startDate, dbTZ)
-                if (!sameDate) {
+              // No precise time from source — only update if calendar date changed
+              const sameDate = isSameDateInTimezone(new Date(db.startDate), startDate, dbTZ)
+              if (!sameDate) {
+                if (isDbMidnight) {
+                  // DB has midnight → use the new date (also at midnight)
                   updates.startDate = { old: new Date(db.startDate), new: startDate }
+                } else {
+                  // DB has a precise time → keep the time, change the date
+                  const newDate = cascadeDateToRace(startDate, new Date(db.startDate), dbTZ)
+                  updates.startDate = { old: new Date(db.startDate), new: newDate }
                 }
               }
-              // If DB has a precise time and source has none → preserve existing
             }
           } else {
             updates.startDate = { old: null, new: startDate }
