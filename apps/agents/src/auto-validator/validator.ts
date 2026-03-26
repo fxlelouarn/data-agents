@@ -26,6 +26,7 @@ export async function validateProposal(
   const eventId = proposal.eventId
   const editionId = proposal.editionId
   const changes = proposal.changes as Record<string, any>
+  const isNewEvent = proposal.type === 'NEW_EVENT'
 
   // 1. Vérifier la confiance minimale
   if (proposal.confidence !== null && proposal.confidence !== undefined) {
@@ -42,23 +43,32 @@ export async function validateProposal(
     }
   }
 
-  // 1b. Vérifier qu'un LLM confidence review a été effectué
+  // 1b. Vérifier qu'un LLM review a été effectué
   const justifications = (proposal.justification as any[]) || []
   const hasLLMReview = justifications.some((j: any) => j.type === 'llm_confidence_review')
-  if (!hasLLMReview) {
-    return {
-      isValid: false,
-      reason: 'Pas de LLM confidence review — proposition non reviewée',
-      exclusionReason: 'lowConfidence',
-      details: {
-        confidence: proposal.confidence,
-        hasLLMReview: false
+  const hasLLMNewEventConfidence = justifications.some((j: any) => j.metadata?.llmNewEventConfidence != null)
+
+  if (isNewEvent) {
+    // NEW_EVENT: require llmNewEventConfidence (from LLM event judge)
+    if (!hasLLMNewEventConfidence) {
+      return {
+        isValid: false,
+        reason: 'Pas de llmNewEventConfidence — NEW_EVENT non évaluée par le LLM judge',
+        exclusionReason: 'lowConfidence',
+        details: { confidence: proposal.confidence, hasLLMNewEventConfidence: false }
+      }
+    }
+  } else {
+    // EDITION_UPDATE: require llm_confidence_review
+    if (!hasLLMReview) {
+      return {
+        isValid: false,
+        reason: 'Pas de LLM confidence review — proposition non reviewée',
+        exclusionReason: 'lowConfidence',
+        details: { confidence: proposal.confidence, hasLLMReview: false }
       }
     }
   }
-
-  // For NEW_EVENT proposals, skip event/edition DB checks (nothing exists yet)
-  const isNewEvent = proposal.type === 'NEW_EVENT'
 
   // 2. Vérifier Event.isFeatured (EDITION_UPDATE only)
   if (eventId && !isNewEvent) {

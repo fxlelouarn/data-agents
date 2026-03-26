@@ -98,7 +98,7 @@ export async function matchEvent(
     }
 
     if (candidates.length === 0) {
-      return { type: 'NO_MATCH', confidence: 0 }
+      return { type: 'NO_MATCH', confidence: 0, llmNewEventConfidence: 0.95, llmReason: 'No candidates found' }
     }
 
     // 3. Prepare normalized data for fuse.js
@@ -153,7 +153,7 @@ export async function matchEvent(
     logger.debug(`  fuse.js: ${nameResults.length} name matches, ${keywordResults.length} keyword matches, ${cityResults.length} city matches`)
 
     if (nameResults.length === 0 && keywordResults.length === 0 && cityResults.length === 0) {
-      return { type: 'NO_MATCH', confidence: 0 }
+      return { type: 'NO_MATCH', confidence: 0, llmNewEventConfidence: 0.95, llmReason: 'No fuse.js matches' }
     }
 
     // 6. Combine scores
@@ -295,7 +295,8 @@ export async function matchEvent(
 
     if (best.combined < 0.3) {
       logger.info(`  → Result: NO_MATCH (best score ${best.combined.toFixed(3)} < 0.3)`)
-      return { type: 'NO_MATCH', confidence: 0 }
+      // No close candidates — high confidence this is genuinely new
+      return { type: 'NO_MATCH', confidence: 0, llmNewEventConfidence: 0.95, llmReason: `No candidate above 0.3 (best: ${best.combined.toFixed(3)})` }
     }
 
     // 9.5 LLM Event Judge for gray zone (0.30-0.95)

@@ -138,7 +138,11 @@ async function markAsRematched(proposalId: string, reason: string, matchResult?:
   justifications.push({
     type: 'rematch_no_match',
     content: reason,
-    metadata: { rematchedAt: new Date().toISOString() }
+    metadata: {
+      rematchedAt: new Date().toISOString(),
+      llmNewEventConfidence: matchResult?.llmNewEventConfidence,
+      llmReason: matchResult?.llmReason,
+    }
   })
 
   // If the match found candidates (even rejected), merge them into rejected_matches
