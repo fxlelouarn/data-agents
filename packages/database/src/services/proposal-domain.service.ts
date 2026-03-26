@@ -900,6 +900,36 @@ export class ProposalDomainService {
       }
 
       // =========================================================================
+      // PHASE 2.5: CASCADE - Update racesExisting dates to match edition startDate
+      // =========================================================================
+      const racesExisting = this.extractNewValue(changes.racesExisting) as any[] | undefined
+      if (shouldProcessRaces && racesExisting && Array.isArray(racesExisting) && racesExisting.length > 0) {
+        // Get the new edition startDate (from the same proposal changes)
+        const newEditionStartDate = changes.startDate ? this.extractNewValue(changes.startDate) : null
+
+        if (newEditionStartDate) {
+          this.logger.info(`📅 Cascade date édition vers ${racesExisting.length} course(s) existante(s) non matchées`)
+
+          for (const race of racesExisting) {
+            const raceId = parseInt(race.raceId)
+            if (isNaN(raceId)) continue
+            if (racesToDeleteSet.has(raceId)) continue
+
+            // The racesExisting entry contains the cascaded startDate (computed by proposal-builder)
+            if (race.startDate) {
+              const cascadedDate = new Date(race.startDate)
+              if (!isNaN(cascadedDate.getTime())) {
+                await milesRepo.updateRace(raceId, { startDate: cascadedDate })
+                this.logger.info(`  ✅ Course ${raceId} (${race.raceName || 'sans nom'}) date cascadée: ${cascadedDate.toISOString()}`)
+              }
+            }
+          }
+        } else {
+          this.logger.info(`⏭️  Pas de changement de startDate d'édition — racesExisting non mises à jour`)
+        }
+      }
+
+      // =========================================================================
       // PHASE 3/3: ADD - Ajout de nouvelles courses
       // =========================================================================
       this.logger.info(`\n➕ [PHASE 3/3] ADD - Ajout de nouvelles courses`)
