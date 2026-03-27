@@ -108,17 +108,18 @@ export class AutoValidatorAgent extends BaseAgent {
   /**
    * Récupère les IDs des agents FFA (Scraper et Results) par agentType
    */
-  private async getFFAAgentIds(): Promise<string[]> {
-    const ffaAgents = await this.prisma.agent.findMany({
+  private async getEligibleAgentIds(): Promise<string[]> {
+    const agents = await this.prisma.agent.findMany({
       where: {
         OR: [
           { config: { path: ['agentType'], equals: 'FFA_SCRAPER' } },
-          { config: { path: ['agentType'], equals: 'FFA_RESULTS' } }
+          { config: { path: ['agentType'], equals: 'FFA_RESULTS' } },
+          { config: { path: ['agentType'], equals: 'SLACK_EVENT' } }
         ]
       },
       select: { id: true }
     })
-    return ffaAgents.map(a => a.id)
+    return agents.map(a => a.id)
   }
 
   /**
@@ -517,7 +518,7 @@ export class AutoValidatorAgent extends BaseAgent {
       context.logger.info('✅ Connexion à Miles Republic établie')
 
       // Récupérer les IDs des agents FFA (Scraper et Results)
-      const ffaAgentIds = await this.getFFAAgentIds()
+      const ffaAgentIds = await this.getEligibleAgentIds()
       if (ffaAgentIds.length === 0) {
         context.logger.warn('⚠️  Aucun agent FFA (Scraper ou Results) trouvé en base')
         return {
