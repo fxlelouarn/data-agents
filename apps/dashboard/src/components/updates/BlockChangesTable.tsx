@@ -31,7 +31,7 @@ const BLOCK_FIELDS: Record<string, string[]> = {
   event: ['name', 'city', 'country', 'websiteUrl', 'facebookUrl', 'instagramUrl', 'countrySubdivisionNameLevel1'],
   edition: ['year', 'startDate', 'endDate', 'timeZone', 'calendarStatus', 'registrationOpeningDate', 'registrationClosingDate', 'registrantsNumber'],
   organizer: ['name', 'legalName', 'email', 'phone', 'address', 'city', 'zipCode', 'country', 'websiteUrl'],
-  races: ['races', 'racesToUpdate', 'racesToAdd', 'manuallyAddedRaces', 'racesToDelete'],
+  races: ['races', 'racesToUpdate', 'racesExisting', 'racesToAdd', 'manuallyAddedRaces', 'racesToDelete'],
 }
 
 // Labels français pour les champs
@@ -59,6 +59,7 @@ const FIELD_LABELS: Record<string, string> = {
   racesToUpdate: 'Courses à modifier',
   racesToAdd: 'Courses à ajouter',
   manuallyAddedRaces: 'Courses ajoutées manuellement',
+  racesExisting: 'Courses existantes (date cascadée)',
   racesToDelete: 'Courses à supprimer',
   countrySubdivisionNameLevel1: 'Région',
   runDistance: 'Distance',
@@ -235,6 +236,12 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
       }
     }
 
+    // ✅ racesExisting: courses non matchées dont la date a été cascadée
+    if (fieldName === 'racesExisting') {
+      const data = change.new || change
+      if (Array.isArray(data)) return data
+    }
+
     // Structure nouvelle (avec old/new)
     if (change.new !== undefined) {
       return change.new
@@ -304,7 +311,7 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
     if (typeof value === 'object') {
       if (Array.isArray(value)) {
         // ✅ Cas spécial courses : afficher le détail
-        if (fieldName && ['racesToUpdate', 'racesToAdd', 'racesToDelete', 'races', 'manuallyAddedRaces'].includes(fieldName)) {
+        if (fieldName && ['racesToUpdate', 'racesExisting', 'racesToAdd', 'racesToDelete', 'races', 'manuallyAddedRaces'].includes(fieldName)) {
           if (value.length === 0) return 'Aucune'
 
           // Helper pour extraire la valeur (gère les objets {new, old} créés par l'édition utilisateur)
@@ -340,6 +347,28 @@ const BlockChangesTable: React.FC<BlockChangesTableProps> = ({
                   // ignore
                 }
               }
+              return `• ${raceName}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
+            }
+
+            // Courses existantes (date cascadée) : afficher nom + date proposée
+            if (fieldName === 'racesExisting') {
+              const details: string[] = []
+              const runDistance = extractValue(race.runDistance)
+              const startDate = extractValue(race.startDate)
+              const raceId = race.raceId || race.id
+
+              if (runDistance) details.push(`${runDistance}km`)
+              if (startDate) {
+                try {
+                  const date = new Date(startDate)
+                  if (!isNaN(date.getTime())) {
+                    details.push(date.toLocaleString('fr-FR', { dateStyle: 'short', timeStyle: 'short' }))
+                  }
+                } catch {
+                  // ignore
+                }
+              }
+              if (raceId) details.push(`ID: ${raceId}`)
               return `• ${raceName}${details.length > 0 ? ` (${details.join(', ')})` : ''}`
             }
 
