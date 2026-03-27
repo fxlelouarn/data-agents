@@ -902,30 +902,24 @@ export class ProposalDomainService {
       // =========================================================================
       // PHASE 2.5: CASCADE - Update racesExisting dates to match edition startDate
       // =========================================================================
-      const racesExisting = this.extractNewValue(changes.racesExisting) as any[] | undefined
+      // Apply racesExisting dates — each entry contains its cascaded startDate (computed by proposal-builder)
+      const fullChanges = (proposal?.changes as Record<string, any>) || changes
+      const racesExisting = this.extractNewValue(fullChanges.racesExisting) as any[] | undefined
       if (shouldProcessRaces && racesExisting && Array.isArray(racesExisting) && racesExisting.length > 0) {
-        // Get the new edition startDate (from the same proposal changes)
-        const newEditionStartDate = changes.startDate ? this.extractNewValue(changes.startDate) : null
+        this.logger.info(`📅 Mise à jour de ${racesExisting.length} course(s) existante(s) non matchées (racesExisting)`)
 
-        if (newEditionStartDate) {
-          this.logger.info(`📅 Cascade date édition vers ${racesExisting.length} course(s) existante(s) non matchées`)
+        for (const race of racesExisting) {
+          const raceId = parseInt(race.raceId)
+          if (isNaN(raceId)) continue
+          if (racesToDeleteSet.has(raceId)) continue
 
-          for (const race of racesExisting) {
-            const raceId = parseInt(race.raceId)
-            if (isNaN(raceId)) continue
-            if (racesToDeleteSet.has(raceId)) continue
-
-            // The racesExisting entry contains the cascaded startDate (computed by proposal-builder)
-            if (race.startDate) {
-              const cascadedDate = new Date(race.startDate)
-              if (!isNaN(cascadedDate.getTime())) {
-                await milesRepo.updateRace(raceId, { startDate: cascadedDate })
-                this.logger.info(`  ✅ Course ${raceId} (${race.raceName || 'sans nom'}) date cascadée: ${cascadedDate.toISOString()}`)
-              }
+          if (race.startDate) {
+            const cascadedDate = new Date(race.startDate)
+            if (!isNaN(cascadedDate.getTime())) {
+              await milesRepo.updateRace(raceId, { startDate: cascadedDate })
+              this.logger.info(`  ✅ Course ${raceId} (${race.raceName || 'sans nom'}) date: ${cascadedDate.toISOString()}`)
             }
           }
-        } else {
-          this.logger.info(`⏭️  Pas de changement de startDate d'édition — racesExisting non mises à jour`)
         }
       }
 
