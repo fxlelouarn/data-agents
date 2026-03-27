@@ -1301,7 +1301,7 @@ function filterChangesByBlock(changes: Record<string, any>, blockType: string): 
               'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
               'volunteerCode', 'confirmedAt'],
     organizer: ['organizer', 'organizerId'],
-    races: ['races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered', 'consolidatedRaces']
+    races: ['races', 'racesToUpdate', 'racesToAdd', 'racesExisting', 'raceEdits', 'racesToDelete', 'racesToAddFiltered', 'consolidatedRaces']
   }
 
   const fields = blockFields[blockType] || []
