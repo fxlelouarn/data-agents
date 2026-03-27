@@ -9,11 +9,13 @@
  * Types de justification supportés
  */
 export type JustificationType =
-  | 'url_source'        // Source URL extraite
-  | 'rejected_matches'  // Événements similaires rejetés (score < seuil)
-  | 'matching'          // Résultat de matching avec événement existant
-  | 'extraction'        // Information sur l'extraction de données
-  | 'validation'        // Résultat de validation automatique
+  | 'url_source'              // Source URL extraite
+  | 'rejected_matches'        // Événements similaires rejetés (score < seuil)
+  | 'matching'                // Résultat de matching avec événement existant
+  | 'extraction'              // Information sur l'extraction de données
+  | 'validation'              // Résultat de validation automatique
+  | 'text'                    // Description textuelle libre (utilisé par FFA Scraper)
+  | 'llm_confidence_review'   // Revue de confiance par LLM
 
 /**
  * Justification standardisée

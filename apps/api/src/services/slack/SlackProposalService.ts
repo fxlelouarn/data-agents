@@ -43,6 +43,7 @@ import {
   buildEditionUpdateChanges as sharedBuildEditionUpdateChanges,
   lookupDepartmentFromCity,
   getDepartmentName,
+  reviewEditionUpdateConfidence,
 } from '@data-agents/agent-framework'
 import type { ProposalInput } from '@data-agents/types'
 import { settingsService } from '../../config/settings'
@@ -427,6 +428,7 @@ export async function createProposalFromSlack(
     let proposalType: ProposalType
     let changes: any
     let confidence: number
+    let llmReviewResult: { score: number; reason: string; issues: string[] } | undefined
 
     const hasOrganizerInfo = !!(extractedData.organizerEmail || extractedData.organizerWebsite)
     const raceCount = extractedData.races?.length || 0
@@ -436,12 +438,14 @@ export async function createProposalFromSlack(
       proposalType = ProposalType.NEW_EVENT
       const proposalInput = await enrichWithDepartment(toProposalInput(extractedData), meilisearchConfig)
       changes = sharedBuildNewEventChanges(proposalInput)
-      confidence = calculateNewEventConfidence(
-        extractedData.confidence, // Base sur confiance extraction
-        matchResult,
-        hasOrganizerInfo,
-        raceCount
-      )
+      // Use LLM confidence if available, otherwise fall back to heuristic
+      confidence = matchResult.llmNewEventConfidence ??
+        calculateNewEventConfidence(
+          extractedData.confidence, // Base sur confiance extraction
+          matchResult,
+          hasOrganizerInfo,
+          raceCount
+        )
 
       if (matchResult.event && !matchResult.edition) {
         logger.info(`Event "${matchResult.event.name}" found but no edition for searched year → creating NEW_EVENT`)
@@ -530,10 +534,65 @@ export async function createProposalFromSlack(
         hasOrganizerInfo,
         raceCount
       )
+
+      // LLM confidence review if API key is available
+      if (llmConfig?.apiKey) {
+        try {
+          const review = await reviewEditionUpdateConfidence(
+            {
+              eventName: matchResult.event!.name,
+              eventCity: matchResult.event!.city,
+              editionYear: normalizeEditionYear(extractedData),
+              changes,
+            },
+            { apiKey: llmConfig.apiKey }
+          )
+          confidence = review.score
+          llmReviewResult = review
+          logger.info(`🤖 LLM confidence review: ${review.score.toFixed(2)}${review.issues.length ? ` [${review.issues.length} issues]` : ''}`)
+        } catch (err: any) {
+          logger.warn(`⚠️ LLM confidence review failed: ${err.message}`)
+        }
+      }
     }
 
     // 6. Construire les justifications (sans doublon slack_source)
     const justifications = buildJustifications(extractedData, matchResult, sourceMetadata)
+
+    // 6a. Add LLM-specific justification entries
+    if (proposalType === ProposalType.NEW_EVENT && matchResult.llmNewEventConfidence != null) {
+      // Store llmNewEventConfidence in the matching justification metadata if available
+      const matchingJustif = justifications.find(j => j.type === 'matching')
+      if (matchingJustif) {
+        matchingJustif.metadata = {
+          ...matchingJustif.metadata,
+          llmNewEventConfidence: matchResult.llmNewEventConfidence,
+          llmReason: matchResult.llmReason,
+        }
+      } else {
+        // No matching justification (pure NO_MATCH) — add as text entry
+        justifications.push({
+          type: 'text',
+          content: `LLM new event confidence: ${matchResult.llmNewEventConfidence}`,
+          metadata: {
+            llmNewEventConfidence: matchResult.llmNewEventConfidence,
+            llmReason: matchResult.llmReason,
+          },
+        })
+      }
+    }
+
+    if (llmReviewResult) {
+      justifications.push({
+        type: 'llm_confidence_review',
+        content: llmReviewResult.reason,
+        metadata: {
+          reviewedAt: new Date().toISOString(),
+          score: llmReviewResult.score,
+          issues: llmReviewResult.issues,
+        },
+      })
+    }
 
     // 7. Convertir sourceMetadata au format générique (contrat)
     const genericSourceMetadata = convertToSourceMetadata(sourceMetadata)
