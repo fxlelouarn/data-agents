@@ -46,7 +46,10 @@ const LIMIT = getArg('limit') ? parseInt(getArg('limit')!, 10) : undefined
 const PROPOSAL_ID = getArg('id')
 const DRY_RUN = args.includes('--dry-run')
 const FUTURE_ONLY = args.includes('--future-only')
+const SPREAD_FIX = args.includes('--spread-fix')
+const MIN_SPREAD_DAYS = parseInt(getArg('min-spread') || '2', 10)
 const DELAY_MS = parseInt(getArg('delay') || '1000', 10)
+const OFFSET = parseInt(getArg('offset') || '0', 10)
 
 // ---------------------------------------------------------------------------
 // Setup
@@ -74,7 +77,9 @@ async function main() {
   console.log(`Mode: ${DRY_RUN ? 'DRY RUN' : '🔴 LIVE'}`)
   if (PROPOSAL_ID) console.log(`Single: ${PROPOSAL_ID}`)
   if (FUTURE_ONLY) console.log(`Future events only`)
+  if (SPREAD_FIX) console.log(`Spread fix mode: editions with races spread > ${MIN_SPREAD_DAYS} days`)
   if (LIMIT) console.log(`Limit: ${LIMIT}`)
+  if (OFFSET) console.log(`Offset: ${OFFSET} (skipping first ${OFFSET} proposals)`)
   console.log()
 
   // Connect to Miles Republic
@@ -86,25 +91,7 @@ async function main() {
   const sourceDb = await dbManager.getConnection(milesConn.id)
 
   // Fetch proposals
-  let whereClause: string
-  if (PROPOSAL_ID) {
-    whereClause = `id = '${PROPOSAL_ID}'`
-  } else {
-    whereClause = `type = 'EDITION_UPDATE'
-      AND status IN ('PENDING', 'PARTIALLY_APPROVED')
-      AND "eventName" IS NOT NULL
-      AND justification->0->'metadata'->>'source' IS NOT NULL`
-    if (FUTURE_ONLY) {
-      whereClause += ` AND (
-        (changes->'edition'->'new'->>'startDate')::timestamp >= NOW()
-        OR (changes->'startDate'->>'new')::timestamp >= NOW()
-        OR "editionYear" >= EXTRACT(YEAR FROM NOW())::int
-      )`
-    }
-  }
-  const limitClause = LIMIT ? `LIMIT ${LIMIT}` : ''
-
-  const proposals = await prisma.$queryRawUnsafe<Array<{
+  let proposals: Array<{
     id: string
     eventName: string
     eventCity: string | null
@@ -114,13 +101,78 @@ async function main() {
     confidence: number
     changes: any
     justification: any
-  }>>(
-    `SELECT id, "eventName", "eventCity", "eventId", "editionId", "editionYear", confidence, changes, justification
-     FROM proposals WHERE ${whereClause}
-     ORDER BY "createdAt" DESC ${limitClause}`
-  )
+  }>
 
-  console.log(`Found ${proposals.length} proposals to rebuild.\n`)
+  if (SPREAD_FIX) {
+    // Spread fix mode: find editions where races are spread over multiple days,
+    // then get the most recent APPLIED proposal with a FFA source for each edition
+    console.log(`Querying Miles Republic for editions with race spread > ${MIN_SPREAD_DAYS} days...`)
+
+    const spreadEditions: Array<{ id: number }> = await sourceDb.$queryRawUnsafe(`
+      SELECT e.id
+      FROM "Edition" e
+      JOIN "Race" r ON r."editionId" = e.id AND r."isArchived" = false
+      WHERE e."startDate" >= NOW()
+        AND e."calendarStatus" = 'CONFIRMED'
+      GROUP BY e.id
+      HAVING MAX(r."startDate"::date) - MIN(r."startDate"::date) > ${MIN_SPREAD_DAYS}
+    `)
+
+    const spreadIds = spreadEditions.map((e: any) => e.id)
+    console.log(`Found ${spreadIds.length} editions with spread > ${MIN_SPREAD_DAYS} days`)
+
+    if (spreadIds.length === 0) {
+      proposals = []
+    } else {
+      // Get the most recent APPLIED proposal per edition with a FFA source
+      const editionIdList = spreadIds.map((id: any) => `'${id}'`).join(',')
+      proposals = await prisma.$queryRawUnsafe(`
+        SELECT DISTINCT ON (p."editionId")
+          p.id, p."eventName", p."eventCity", p."eventId", p."editionId",
+          p."editionYear", p.confidence, p.changes, p.justification
+        FROM proposals p
+        JOIN proposal_applications pa ON pa."proposalId" = p.id AND pa.status = 'APPLIED'
+        WHERE p."editionId" IN (${editionIdList})
+          AND p."eventName" IS NOT NULL
+          AND p.justification->0->'metadata'->>'source' LIKE '%athle.fr%'
+        ORDER BY p."editionId", p."createdAt" DESC
+        ${LIMIT ? `LIMIT ${LIMIT}` : ''}
+      `)
+    }
+
+    console.log(`Found ${proposals.length} proposals with FFA source for spread editions`)
+  } else {
+    // Normal mode: rebuild PENDING proposals
+    let whereClause: string
+    if (PROPOSAL_ID) {
+      whereClause = `id = '${PROPOSAL_ID}'`
+    } else {
+      whereClause = `type = 'EDITION_UPDATE'
+        AND status IN ('PENDING', 'PARTIALLY_APPROVED')
+        AND "eventName" IS NOT NULL
+        AND justification->0->'metadata'->>'source' IS NOT NULL`
+      if (FUTURE_ONLY) {
+        whereClause += ` AND (
+          (changes->'edition'->'new'->>'startDate')::timestamp >= NOW()
+          OR (changes->'startDate'->>'new')::timestamp >= NOW()
+          OR "editionYear" >= EXTRACT(YEAR FROM NOW())::int
+        )`
+      }
+    }
+    const limitClause = LIMIT ? `LIMIT ${LIMIT}` : ''
+
+    proposals = await prisma.$queryRawUnsafe<typeof proposals>(
+      `SELECT id, "eventName", "eventCity", "eventId", "editionId", "editionYear", confidence, changes, justification
+       FROM proposals WHERE ${whereClause}
+       ORDER BY "createdAt" DESC ${limitClause}`
+    )
+  }
+
+  if (OFFSET > 0) {
+    console.log(`Found ${proposals.length} proposals, skipping first ${OFFSET}.\n`)
+    proposals = proposals.slice(OFFSET)
+  }
+  console.log(`Processing ${proposals.length} proposals to rebuild.\n`)
 
   const stats = { processed: 0, rebuilt: 0, noChange: 0, fetchError: 0, extractError: 0, errors: 0 }
 
@@ -242,34 +294,64 @@ async function main() {
       console.log(`       Before: ${oldRacesToUpdate} matched, ${oldRacesToAdd} new | confidence: ${p.confidence}`)
       console.log(`       After:  ${racesToUpdate} matched, ${racesToAdd} new | confidence: ${review.score.toFixed(2)}${issueStr}`)
 
-      if (racesToUpdate === oldRacesToUpdate && racesToAdd === oldRacesToAdd && Math.abs(review.score - p.confidence) < 0.05) {
+      if (!SPREAD_FIX && racesToUpdate === oldRacesToUpdate && racesToAdd === oldRacesToAdd && Math.abs(review.score - p.confidence) < 0.05) {
         console.log(`       → No significant change`)
         stats.noChange++
       } else {
         stats.rebuilt++
 
         if (!DRY_RUN) {
-          // Preserve original justification, add rebuild info
-          const justifications = (p.justification as any[]) || []
-          justifications.push({
+          const justifications: any[] = [{
+            type: 'text',
+            content: `Rebuild from FFA source`,
+            metadata: {
+              eventName: p.eventName,
+              eventCity: p.eventCity,
+              editionYear: p.editionYear,
+              source: p.justification?.[0]?.metadata?.source,
+            },
+          }, {
             type: 'llm_confidence_review',
             content: review.reason,
             metadata: {
               reviewedAt: new Date().toISOString(),
               score: review.score,
               issues: review.issues,
-              rebuiltFrom: 'rebuild-edition-updates',
+              rebuiltFrom: SPREAD_FIX ? 'spread-fix' : 'rebuild-edition-updates',
             },
-          })
+          }]
 
-          await prisma.proposal.update({
-            where: { id: p.id },
-            data: {
-              changes: newChanges as any,
-              confidence: review.score,
-              justification: justifications as any,
-            },
-          })
+          if (SPREAD_FIX) {
+            // Create a new PENDING proposal (don't touch the APPLIED one)
+            await prisma.proposal.create({
+              data: {
+                agentId: 'cmi3khznk0000g820hwxc2i8m', // FFA Scraper agent
+                type: 'EDITION_UPDATE',
+                status: 'PENDING',
+                eventId: p.eventId,
+                editionId: p.editionId,
+                eventName: p.eventName,
+                eventCity: p.eventCity,
+                editionYear: p.editionYear,
+                changes: newChanges as any,
+                confidence: review.score,
+                justification: justifications as any,
+              },
+            })
+          } else {
+            // Update existing PENDING proposal
+            const existingJust = (p.justification as any[]) || []
+            existingJust.push(justifications[1]) // Add just the review
+
+            await prisma.proposal.update({
+              where: { id: p.id },
+              data: {
+                changes: newChanges as any,
+                confidence: review.score,
+                justification: existingJust as any,
+              },
+            })
+          }
         }
       }
     } catch (err: any) {
