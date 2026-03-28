@@ -248,6 +248,8 @@ export class AutoValidatorAgent extends BaseAgent {
     )
 
     // ÉTAPE 4: Récupérer les NEW_EVENT éligibles (haute confiance + LLM review)
+    const newEventMinConfidenceIndex = ffaAgentIds.length + 1
+    const newEventLimitIndex = ffaAgentIds.length + 2
     const newEventProposals = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT p.*, a.name as "agentName"
        FROM proposals p
@@ -255,11 +257,11 @@ export class AutoValidatorAgent extends BaseAgent {
        WHERE p.status = 'PENDING'
          AND p.type = 'NEW_EVENT'
          AND p."agentId" IN (${agentIdPlaceholders})
-         AND p.confidence >= ${config.minConfidence}
+         AND p.confidence >= $${newEventMinConfidenceIndex}
        ORDER BY p."createdAt" ASC
-       LIMIT $${limitParamIndex}`,
+       LIMIT $${newEventLimitIndex}`,
       ...ffaAgentIds,
-      ...eligibleIdsArray,
+      config.minConfidence,
       config.maxProposalsPerRun
     )
 
