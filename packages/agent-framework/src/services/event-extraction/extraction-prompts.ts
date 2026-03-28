@@ -14,7 +14,8 @@ RÈGLES CRITIQUES:
 - Pour les distances: convertis TOUJOURS en mètres (10km = 10000, 42.195km = 42195). Si la course est un format chronométré (ex: 24h, 12h, 6h) sans distance fixe, mets distance à 0 et décris le format dans le champ description.
 - Pour les prix: extrais le montant en euros. Si plusieurs tarifs existent (early bird, sur place), prends le tarif standard.
 - Inclus TOUTES les épreuves: trails, courses, randonnées, marches, relais, formats spéciaux.
-- Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.`
+- Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.
+- Pour eventName: retourne un nom PÉRENNE qui survivra d'une édition à l'autre. Retire les années ("2026"), les numéros d'édition ("5ème édition", "XXIIe"), et les prépositions orphelines. Exemples: "5è édition du Trail des Loups 2026" → "Trail des Loups", "Marathon de Paris 2026" → "Marathon de Paris".`
 
 /**
  * Build the user prompt for extraction.

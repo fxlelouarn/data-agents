@@ -85,6 +85,7 @@ RÈGLES CRITIQUES:
 - Si le contenu est principalement du code JavaScript/CSS ou du charabia technique, retourne {"error": "page_spa_no_content", "eventName": null}
 - Si tu ne trouves pas de date précise, omets editionDate ET editionYear - ne les invente pas.
 - Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.
+- Pour eventName: retourne un nom PÉRENNE qui survivra d'une édition à l'autre. Retire les années ("2026"), les numéros d'édition ("5ème édition", "XXIIe"), et les prépositions orphelines. Exemples: "5è édition du Trail des Loups 2026" → "Trail des Loups", "Marathon de Paris 2026" → "Marathon de Paris".
 
 FORMAT:
 - Réponds UNIQUEMENT en JSON valide, sans commentaires ni texte avant/après

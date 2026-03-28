@@ -390,6 +390,7 @@ export async function matchEvent(
             confidence: 0,
             llmNewEventConfidence: llmResult.confidence,
             llmReason: llmResult.reason,
+            llmCleanedEventName: llmResult.cleanedEventName,
             rejectedMatches,
           }
         }

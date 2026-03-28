@@ -1,4 +1,4 @@
-export { buildNewEventChanges, buildEditionUpdateChanges } from './proposal-builder'
+export { buildNewEventChanges, buildEditionUpdateChanges, cleanEventNameForCreation } from './proposal-builder'
 export {
   assignDistanceByCategory,
   cascadeDateToRace,

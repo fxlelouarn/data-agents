@@ -83,6 +83,7 @@ function matchResultToFFA(result: EventMatchResult): MatchResult {
     })),
     llmNewEventConfidence: result.llmNewEventConfidence,
     llmReason: result.llmReason,
+    llmCleanedEventName: result.llmCleanedEventName,
   }
 }
 

@@ -218,6 +218,27 @@ Le champ confidence est OBLIGATOIRE dans tous les cas :
 - 0.60-0.79 : un candidat ressemble un peu mais pas assez pour confirmer — à vérifier manuellement
 - <0.60 : un candidat ressemble fortement, tu n'es pas sûr que ce soit un nouvel événement
 
+## Nom pérenne de l'événement (cleanedEventName)
+
+Le champ cleanedEventName est OBLIGATOIRE. Il doit contenir le nom de l'événement nettoyé de tout élément spécifique à une édition donnée, pour qu'il reste valable d'une année sur l'autre.
+
+Éléments à RETIRER :
+- Années : "2025", "2026"
+- Numéros d'édition : "5ème édition", "XXIIe", "3è", "10Eme Edition"
+- Prépositions orphelines après suppression : "du", "de la", "des" si elles ne servent plus à rien
+
+Éléments à CONSERVER :
+- Le nom de marque/identité de l'événement
+- La ville/lieu si elle fait partie du nom
+- Les mots descriptifs ("Trail", "Marathon", "Nocturne", etc.)
+
+Exemples :
+- "5è édition du Trail des Loups" → "Trail des Loups"
+- "Marathon de Paris 2026" → "Marathon de Paris"
+- "Les 28èMes Foulées Coudekerquoises" → "Les Foulées Coudekerquoises"
+- "XXIIe semi-marathon de Boulogne" → "Semi-marathon de Boulogne"
+- "Trail des Vikings" → "Trail des Vikings" (déjà propre)
+
 Utilise l'outil event_judge_result pour structurer ta réponse.`
 }
 
@@ -305,7 +326,11 @@ export const eventJudgeTool = {
         type: 'string',
         description: 'Explication du jugement (match ou non-match)',
       },
+      cleanedEventName: {
+        type: 'string',
+        description: "Nom de l'événement nettoyé des éléments spécifiques à une édition (année, numéro d'édition, etc.) pour qu'il reste valable d'année en année",
+      },
     },
-    required: ['found', 'confidence', 'reason'],
+    required: ['found', 'confidence', 'reason', 'cleanedEventName'],
   },
 }

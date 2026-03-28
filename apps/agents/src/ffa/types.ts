@@ -217,6 +217,9 @@ export interface MatchResult {
 
   /** LLM reason for the judgment */
   llmReason?: string
+
+  /** LLM-cleaned event name (edition-agnostic) */
+  llmCleanedEventName?: string
 }
 
 // ============================================================================

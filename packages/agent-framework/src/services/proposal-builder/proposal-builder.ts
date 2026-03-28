@@ -39,30 +39,61 @@ import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
 export function cleanEventNameForCreation(name: string): string {
   let cleaned = name.trim()
 
-  // Remove "Nè/ème/e/ères/èmes édition (de/du/des/de la/de l')" patterns
-  // Handles: "5è édition du", "3ème édition de la", "1ère édition", "10e édition de l'"
-  // Also handles spaces: "7 ème Edition", casing: "5Eme Edition"
-  cleaned = cleaned.replace(/\d+\s*[èe]?r?[èe]?m?e?s?\s+(?:é|e)dition\s+(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?/gi, '')
+  // Pattern for ordinal suffixes: è, ème, ères, èmes, Eme, etc.
+  // IMPORTANT: Only match è (with accent) or explicit ordinal suffixes, never bare 'e'
+  // to avoid matching normal words like "Ville", "Mile", "Dieppe"
+  const ordSuffix = `(?:è(?:me|re)?s?|ème|ères|èmes)`
+  const ordSuffixCI = new RegExp(ordSuffix, 'i')
 
-  // Remove standalone "Nè/ème/e édition" without preposition
-  cleaned = cleaned.replace(/\d+\s*[èe]?r?[èe]?m?e?s?\s+(?:é|e)dition/gi, '')
+  // Remove "N<ordinal> édition (de/du/des/de la/de l')" patterns
+  // e.g. "5è édition du", "3ème édition de la", "10Eme Edition de l'"
+  // Also handles: "7 ème Edition", "1ère édition"
+  const editionWithPrep = new RegExp(
+    `\\d+\\s*${ordSuffix}\\s+[éeÉE]dition\\s+(?:de\\s+la\\s+|de\\s+l['']|du\\s+|des\\s+|de\\s+|d[''])`,
+    'gi'
+  )
+  cleaned = cleaned.replace(editionWithPrep, '')
 
-  // Remove "édition" preceded by nothing useful (e.g. leftover "Edition Officielle" → "Officielle")
-  // but only when it's the start of the string or after a separator
-  cleaned = cleaned.replace(/(?:^|[-–—\s])(?:é|e)dition\b/gi, '')
+  // Remove "N<ordinal> édition" without preposition
+  const editionNoPrep = new RegExp(`\\d+\\s*${ordSuffix}\\s+[éeÉE]dition`, 'gi')
+  cleaned = cleaned.replace(editionNoPrep, '')
+
+  // Remove "Neme/Eme Edition" (no accent, case-insensitive) — common FFA pattern
+  // e.g. "5Eme Edition", "10Eme éDition", "14me Edition"
+  cleaned = cleaned.replace(/\d+\s*[eE]me\s+[éeÉE]dition\s+(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?/gi, '')
+  cleaned = cleaned.replace(/\d+\s*[eE]me\s+[éeÉE]dition/gi, '')
+  cleaned = cleaned.replace(/\d+\s*me\s+[éeÉE]dition/gi, '')
+
+  // Remove "N<ordinal> <word>" when NOT followed by "édition" — standalone ordinals
+  // e.g. "39èmes Trail", "15èMes Foulées", "46ème RANDONNÉE"
+  const standaloneOrd = new RegExp(`\\b\\d+\\s*${ordSuffix}s?\\b`, 'gi')
+  cleaned = cleaned.replace(standaloneOrd, '')
+
+  // Remove "Nè" specifically (single accent without suffix) — "5è", "3è"
+  cleaned = cleaned.replace(/\b\d+è\b/g, '')
+
+  // Remove "Ne édition" — "15e édition" (bare e + édition)
+  cleaned = cleaned.replace(/\b\d+e\s+[éeÉE]dition\s+(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?/gi, '')
+  cleaned = cleaned.replace(/\b\d+e\s+[éeÉE]dition/gi, '')
+
+  // Remove standalone "Edition" at start or after separator (leftover from above)
+  cleaned = cleaned.replace(/(?:^|[-–—\s])[éeÉE]dition\b/gi, '')
 
   // Remove Roman numeral editions: "XXIIe", "IVème édition (du/de la/...)"
-  cleaned = cleaned.replace(/\b[IVXLCDM]{2,}[èe]?r?[èe]?m?e?s?\s*(?:(?:é|e)dition\s*(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?)?/gi, '')
+  // Uses strict Roman numeral validation to avoid matching words like "Ville", "Divide"
+  // Accepts both è and e as ordinal suffix since Roman numerals are unambiguous
+  const romanNum = `(?:M{0,3})(?:CM|CD|D?C{0,3})(?:XC|XL|L?X{0,3})(?:IX|IV|V?I{1,3})`
+  const romanOrd = `(?:è(?:me|re)?s?|ème|e)`
+  cleaned = cleaned.replace(
+    new RegExp(`\\b${romanNum}${romanOrd}\\s*(?:[éeÉE]dition\\s*(?:de\\s+la\\s+|de\\s+l['']|du\\s+|des\\s+|de\\s+|d[''])?)?`, 'g'),
+    ''
+  )
 
   // Remove years (2020-2039)
   cleaned = cleaned.replace(/\b20[2-3]\d\b/g, '')
 
   // Remove "n°N" or "N°N" patterns (e.g. "Trail n°8")
   cleaned = cleaned.replace(/\bn°\s*\d+\b/gi, '')
-
-  // Remove standalone ordinals: "3ème", "15èMes", "1ère", "39èmes"
-  // Must be followed by a space or end-of-string, and not part of a word
-  cleaned = cleaned.replace(/\b\d+\s*[èe]r?[èe]?m?e?s?\b/gi, '')
 
   // Clean up leftover punctuation: dangling dashes, colons, pipes
   cleaned = cleaned.replace(/\s*[-–—:|]\s*$/g, '')

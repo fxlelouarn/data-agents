@@ -1058,6 +1058,10 @@ export class FFAScraperAgent extends BaseAgent {
       // Créer un nouvel événement via le builder partagé
       const proposalInput = this.toProposalInput(competition)
       proposalInput.confidence = confidence
+      // Use LLM-cleaned name if available (removes edition-specific elements like years, edition numbers)
+      if (matchResult.llmCleanedEventName) {
+        proposalInput.eventName = matchResult.llmCleanedEventName
+      }
       const changes = sharedBuildNewEventChanges(proposalInput)
 
       proposals.push({

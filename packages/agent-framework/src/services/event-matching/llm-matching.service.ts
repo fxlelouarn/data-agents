@@ -33,6 +33,7 @@ export interface EventJudgeResult {
   eventId: number | null
   confidence: number
   reason: string
+  cleanedEventName?: string
 }
 
 /** Timeout in milliseconds for LLM API calls */
@@ -180,6 +181,7 @@ export class LLMMatchingService {
         eventId?: number
         confidence?: number
         reason: string
+        cleanedEventName?: string
       }
 
       // No match case — preserve LLM confidence (how sure it is this is a NEW event)
@@ -188,6 +190,7 @@ export class LLMMatchingService {
           eventId: null,
           confidence: llmResult.confidence ?? 0,
           reason: llmResult.reason,
+          cleanedEventName: llmResult.cleanedEventName,
         }
       }
 
@@ -205,6 +208,7 @@ export class LLMMatchingService {
         eventId: llmResult.eventId,
         confidence: llmResult.confidence ?? 0,
         reason: llmResult.reason,
+        cleanedEventName: llmResult.cleanedEventName,
       }
     } catch (err: unknown) {
       const message = err instanceof Error ? err.message : String(err)

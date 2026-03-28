@@ -55,6 +55,9 @@ export interface EventMatchResult {
   /** LLM reason for the judgment */
   llmReason?: string
 
+  /** LLM-cleaned event name (edition-agnostic) */
+  llmCleanedEventName?: string
+
   /** Top 3 rejected matches for NEW_EVENT proposals */
   rejectedMatches?: RejectedMatch[]
 }
