@@ -231,6 +231,7 @@ Le champ cleanedEventName est OBLIGATOIRE. Il doit contenir le nom de l'événem
 - Le nom de marque/identité de l'événement
 - La ville/lieu si elle fait partie du nom
 - Les mots descriptifs ("Trail", "Marathon", "Nocturne", etc.)
+- Les arrondissements de Paris, Lyon et Marseille : "14ème", "19ème" etc. sont des arrondissements, PAS des numéros d'édition. Ex: "10 km du 14ème" → conserver tel quel
 
 Exemples :
 - "5è édition du Trail des Loups" → "Trail des Loups"

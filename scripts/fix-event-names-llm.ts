@@ -13,7 +13,9 @@ import Anthropic from '@anthropic-ai/sdk'
 const dryRun = process.argv.includes('--dry-run')
 const includeProposals = process.argv.includes('--proposals')
 
-const anthropic = new Anthropic()
+const anthropic = new Anthropic({
+  apiKey: process.env.LLM_MATCHING_API_KEY || process.env.ANTHROPIC_API_KEY,
+})
 
 const BATCH_SIZE = 50
 const MODEL = 'claude-haiku-4-5-20251001'
@@ -78,6 +80,7 @@ CONSERVER ABSOLUMENT :
 - La ville/lieu si elle fait partie du nom
 - Les mots descriptifs ("Trail", "Marathon", "Nocturne", "Semi", etc.)
 - Les numéros qui font partie du nom (ex: "6 miles", "24 Heures", "10km")
+- Les arrondissements de Paris, Lyon et Marseille : "14ème", "19ème", "3ème" etc. sont des arrondissements quand le nom contient Paris, Lyon ou Marseille. Ex: "10 km du 14ème" à Paris → conserver "10 km du 14ème", "Triathlon Super Sprint Paris 19ème" → conserver tel quel
 
 Si un nom est déjà propre, NE L'INCLUS PAS dans la réponse.
 
