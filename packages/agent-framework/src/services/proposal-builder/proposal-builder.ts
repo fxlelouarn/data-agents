@@ -20,6 +20,64 @@ import { matchRaces, RaceMatchLLMContext } from '../event-matching'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
 
 // ---------------------------------------------------------------------------
+// cleanEventNameForCreation
+// ---------------------------------------------------------------------------
+
+/**
+ * Cleans an event name for NEW_EVENT creation by removing edition-specific
+ * elements that won't survive to the next edition.
+ *
+ * Examples:
+ *   "5è édition du Trail des Loups"        → "Trail des Loups"
+ *   "Marathon de Paris 2026"                → "Marathon de Paris"
+ *   "3ème Trail du Mont Blanc 2025"         → "Trail du Mont Blanc"
+ *   "XXIIe semi-marathon de Boulogne"       → "Semi-marathon de Boulogne"
+ *   "10e course des remparts"               → "Course des remparts"
+ *   "La 2ème édition de la course du lac"   → "La course du lac"
+ *   "Trail n°8"                             → "Trail"
+ */
+export function cleanEventNameForCreation(name: string): string {
+  let cleaned = name.trim()
+
+  // Remove "Nè/ème/e/ères/èmes édition (de/du/des/de la/de l')" patterns
+  // Handles: "5è édition du", "3ème édition de la", "1ère édition", "10e édition de l'"
+  // Also handles spaces: "7 ème Edition", casing: "5Eme Edition"
+  cleaned = cleaned.replace(/\d+\s*[èe]?r?[èe]?m?e?s?\s+(?:é|e)dition\s+(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?/gi, '')
+
+  // Remove standalone "Nè/ème/e édition" without preposition
+  cleaned = cleaned.replace(/\d+\s*[èe]?r?[èe]?m?e?s?\s+(?:é|e)dition/gi, '')
+
+  // Remove "édition" preceded by nothing useful (e.g. leftover "Edition Officielle" → "Officielle")
+  // but only when it's the start of the string or after a separator
+  cleaned = cleaned.replace(/(?:^|[-–—\s])(?:é|e)dition\b/gi, '')
+
+  // Remove Roman numeral editions: "XXIIe", "IVème édition (du/de la/...)"
+  cleaned = cleaned.replace(/\b[IVXLCDM]{2,}[èe]?r?[èe]?m?e?s?\s*(?:(?:é|e)dition\s*(?:de\s+la\s+|de\s+l['']|du\s+|des\s+|de\s+|d[''])?)?/gi, '')
+
+  // Remove years (2020-2039)
+  cleaned = cleaned.replace(/\b20[2-3]\d\b/g, '')
+
+  // Remove "n°N" or "N°N" patterns (e.g. "Trail n°8")
+  cleaned = cleaned.replace(/\bn°\s*\d+\b/gi, '')
+
+  // Remove standalone ordinals: "3ème", "15èMes", "1ère", "39èmes"
+  // Must be followed by a space or end-of-string, and not part of a word
+  cleaned = cleaned.replace(/\b\d+\s*[èe]r?[èe]?m?e?s?\b/gi, '')
+
+  // Clean up leftover punctuation: dangling dashes, colons, pipes
+  cleaned = cleaned.replace(/\s*[-–—:|]\s*$/g, '')
+  cleaned = cleaned.replace(/^\s*[-–—:|]\s*/g, '')
+
+  // Collapse multiple spaces
+  cleaned = cleaned.replace(/\s+/g, ' ')
+
+  // Clean leading/trailing dashes, slashes, spaces
+  cleaned = cleaned.replace(/^[-–/\s]+|[-–/\s]+$/g, '')
+
+  return cleaned.trim()
+}
+
+// ---------------------------------------------------------------------------
 // buildNewEventChanges
 // ---------------------------------------------------------------------------
 
@@ -138,7 +196,7 @@ export function buildNewEventChanges(input: ProposalInput): Record<string, any> 
 
   // Build top-level changes
   const changes: Record<string, any> = {
-    name: { new: input.eventName, confidence },
+    name: { new: cleanEventNameForCreation(input.eventName), confidence },
     city: { new: input.eventCity, confidence },
     country: { new: input.eventCountry || 'France', confidence },
   }
