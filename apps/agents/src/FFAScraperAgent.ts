@@ -1464,13 +1464,13 @@ export class FFAScraperAgent extends BaseAgent {
           // Tous les mois et toutes les ligues complétés, cycle terminé
           progress.currentLigue = FFA_LIGUES[0]
           progress.currentMonth = allMonths[0]
+          progress.lastCompletedAt = new Date()
           context.logger.info(`🔄 Cycle complet terminé, redémarrage: ${progress.currentLigue} - ${progress.currentMonth}`)
         }
       }
 
       // Mettre à jour les statistiques finales
       progress.totalCompetitionsScraped += totalCompetitions
-      progress.lastCompletedAt = new Date()
       // FIX 2: Sauvegarde finale pour les statistiques (progression déjà sauvegardée après chaque mois)
       await this.saveProgress(progress)
 
