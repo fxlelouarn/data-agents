@@ -1063,6 +1063,7 @@ export class FFAScraperAgent extends BaseAgent {
       proposals.push({
         type: ProposalType.NEW_EVENT,
         changes,
+        confidence,
         justification: [{
           type: 'text',
           content: `Nouvelle compétition FFA: ${competition.competition.name}`,

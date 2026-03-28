@@ -353,6 +353,7 @@ export class FFAResultsAgent extends BaseAgent {
         type: ProposalType.EDITION_UPDATE,
         eventId: event.id.toString(),
         editionId: edition.id.toString(),
+        confidence: matchResult.confidence,
         changes: {
           registrantsNumber: {
             new: registrantsNumber,
@@ -441,10 +442,11 @@ export class FFAResultsAgent extends BaseAgent {
     return {
       type: ProposalType.EDITION_UPDATE,
       // PAS de eventId ni editionId - l'utilisateur les choisira dans le dashboard
+      confidence: 0.5, // Confiance basse car pas de match automatique
       changes: {
         registrantsNumber: {
           new: registrantsNumber,
-          confidence: 0.5 // Confiance basse car pas de match automatique
+          confidence: 0.5
         }
       },
       justification: justifications
@@ -520,11 +522,12 @@ export class FFAResultsAgent extends BaseAgent {
           type: ProposalType.EDITION_UPDATE,
           eventId: edition.event.id.toString(),
           editionId: edition.id.toString(),
+          confidence: 1.0, // Données internes MR = certitude totale
           changes: {
             registrantsNumber: {
               old: null,
               new: count,
-              confidence: 1.0 // Données internes MR = certitude totale
+              confidence: 1.0
             }
           },
           justification: [

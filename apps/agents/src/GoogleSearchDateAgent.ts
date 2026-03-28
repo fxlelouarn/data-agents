@@ -1147,6 +1147,7 @@ export class GoogleSearchDateAgent extends BaseAgent {
         eventId: event.id,
         editionId: event.edition.id,
         changes,
+        confidence: enhancedConfidence,
         justification: [consolidatedJustification]
       })
     }

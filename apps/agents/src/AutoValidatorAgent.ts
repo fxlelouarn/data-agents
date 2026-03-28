@@ -42,7 +42,7 @@ export class AutoValidatorAgent extends BaseAgent {
         version: AUTO_VALIDATOR_AGENT_VERSION,
         milesRepublicDatabase: config.milesRepublicDatabase || config.config?.milesRepublicDatabase,
         maxProposalsPerRun: config.maxProposalsPerRun || config.config?.maxProposalsPerRun || 100,
-        minConfidence: config.minConfidence || config.config?.minConfidence || 0.7,
+        minConfidence: config.minConfidence || config.config?.minConfidence || 0.9,
         enableEditionBlock: config.enableEditionBlock ?? config.config?.enableEditionBlock ?? true,
         enableOrganizerBlock: config.enableOrganizerBlock ?? config.config?.enableOrganizerBlock ?? true,
         enableRacesBlock: config.enableRacesBlock ?? config.config?.enableRacesBlock ?? true,
@@ -209,12 +209,15 @@ export class AutoValidatorAgent extends BaseAgent {
     const editionIdPlaceholders = eligibleIdsArray.map((_, i) => `$${ffaAgentIds.length + i + 1}`).join(', ')
 
     // Requête SQL brute — accepte les propositions avec 0 à 3 racesToAdd
+    // minConfidence filtré directement en SQL pour éviter de recharger les mêmes propositions à chaque run
+    const minConfidenceParamIndex = ffaAgentIds.length + eligibleIdsArray.length + 1
     const whereClause = `
       p.status = 'PENDING'
       AND p.type = 'EDITION_UPDATE'
       AND p."agentId" IN (${agentIdPlaceholders})
       AND p."editionId"::int IN (${editionIdPlaceholders})
       AND p."eventId" IS NOT NULL
+      AND p.confidence >= $${minConfidenceParamIndex}
       AND (
         p.changes->'racesToAdd' IS NULL
         OR p.changes->'racesToAdd' = 'null'::jsonb
@@ -222,17 +225,17 @@ export class AutoValidatorAgent extends BaseAgent {
       )
     `
 
-    // Compter le total de propositions éligibles (sans racesToAdd, sans premium)
+    const baseParams = [...ffaAgentIds, ...eligibleIdsArray, config.minConfidence]
+
+    // Compter le total de propositions éligibles (sans racesToAdd, sans premium, confidence >= min)
     const countResult = await this.prisma.$queryRawUnsafe<{ count: bigint }[]>(
       `SELECT COUNT(*) as count FROM proposals p WHERE ${whereClause}`,
-      ...ffaAgentIds,
-      ...eligibleIdsArray
+      ...baseParams
     )
     const totalCount = Number(countResult[0]?.count || 0)
 
     // Récupérer les propositions avec limite
-    // Le paramètre limite est après tous les IDs d'agents et editionIds
-    const limitParamIndex = ffaAgentIds.length + eligibleIdsArray.length + 1
+    const limitParamIndex = minConfidenceParamIndex + 1
     const proposals = await this.prisma.$queryRawUnsafe<any[]>(
       `SELECT p.*, a.name as "agentName"
        FROM proposals p
@@ -240,8 +243,7 @@ export class AutoValidatorAgent extends BaseAgent {
        WHERE ${whereClause}
        ORDER BY p."createdAt" ASC
        LIMIT $${limitParamIndex}`,
-      ...ffaAgentIds,
-      ...eligibleIdsArray,
+      ...baseParams,
       config.maxProposalsPerRun
     )
 
