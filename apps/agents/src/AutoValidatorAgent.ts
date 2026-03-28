@@ -210,6 +210,7 @@ export class AutoValidatorAgent extends BaseAgent {
 
     // Requête SQL brute — accepte les propositions avec 0 à 3 racesToAdd
     // minConfidence filtré directement en SQL pour éviter de recharger les mêmes propositions à chaque run
+    // Filtre sur éditions futures uniquement + tri par date d'édition la plus proche
     const minConfidenceParamIndex = ffaAgentIds.length + eligibleIdsArray.length + 1
     const whereClause = `
       p.status = 'PENDING'
@@ -235,30 +236,47 @@ export class AutoValidatorAgent extends BaseAgent {
     const totalCount = Number(countResult[0]?.count || 0)
 
     // Récupérer les propositions avec limite
+    // Tri par date d'édition la plus proche (futur d'abord), puis par date de création
+    // La date d'édition est extraite de changes.startDate.new quand disponible
     const limitParamIndex = minConfidenceParamIndex + 1
     const proposals = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT p.*, a.name as "agentName"
+      `SELECT p.*, a.name as "agentName",
+              (p.changes->'startDate'->>'new')::timestamptz as edition_date
        FROM proposals p
        LEFT JOIN agents a ON p."agentId" = a.id
        WHERE ${whereClause}
-       ORDER BY p."createdAt" ASC
+       ORDER BY
+         CASE
+           WHEN (p.changes->'startDate'->>'new')::timestamptz >= NOW() THEN 0
+           WHEN p.changes->'startDate'->>'new' IS NULL THEN 1
+           ELSE 2
+         END,
+         (p.changes->'startDate'->>'new')::timestamptz ASC NULLS LAST
        LIMIT $${limitParamIndex}`,
       ...baseParams,
       config.maxProposalsPerRun
     )
 
     // ÉTAPE 4: Récupérer les NEW_EVENT éligibles (haute confiance + LLM review)
+    // Tri par date d'édition la plus proche (futur d'abord)
     const newEventMinConfidenceIndex = ffaAgentIds.length + 1
     const newEventLimitIndex = ffaAgentIds.length + 2
     const newEventProposals = await this.prisma.$queryRawUnsafe<any[]>(
-      `SELECT p.*, a.name as "agentName"
+      `SELECT p.*, a.name as "agentName",
+              (p.changes->'edition'->'new'->>'startDate')::timestamptz as edition_date
        FROM proposals p
        LEFT JOIN agents a ON p."agentId" = a.id
        WHERE p.status = 'PENDING'
          AND p.type = 'NEW_EVENT'
          AND p."agentId" IN (${agentIdPlaceholders})
          AND p.confidence >= $${newEventMinConfidenceIndex}
-       ORDER BY p."createdAt" ASC
+       ORDER BY
+         CASE
+           WHEN (p.changes->'edition'->'new'->>'startDate')::timestamptz >= NOW() THEN 0
+           WHEN p.changes->'edition'->'new'->>'startDate' IS NULL THEN 1
+           ELSE 2
+         END,
+         (p.changes->'edition'->'new'->>'startDate')::timestamptz ASC NULLS LAST
        LIMIT $${newEventLimitIndex}`,
       ...ffaAgentIds,
       config.minConfidence,
