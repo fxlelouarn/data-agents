@@ -1,4 +1,4 @@
-import fetch from 'node-fetch'
+import axios, { AxiosError } from 'axios'
 import * as cheerio from 'cheerio'
 import type { UrlSource, UrlCheckResult } from './types'
 
@@ -69,18 +69,15 @@ export async function checkUrl(
   const base: Pick<UrlCheckResult, 'url' | 'sourceType'> = { url, sourceType }
 
   try {
-    const controller = new AbortController()
-    const timer = setTimeout(() => controller.abort(), timeoutMs)
-
-    const response = await fetch(url, {
+    const response = await axios.get(url, {
       headers: { 'User-Agent': USER_AGENT },
-      signal: controller.signal as any,
-      redirect: 'follow',
+      timeout: timeoutMs,
+      maxRedirects: 5,
+      responseType: 'text',
+      validateStatus: () => true, // Don't throw on non-2xx
     })
 
-    clearTimeout(timer)
-
-    if (!response.ok) {
+    if (response.status >= 400) {
       const isDead = response.status === 404 || response.status === 410 || response.status === 403
       return {
         ...base,
@@ -91,7 +88,7 @@ export async function checkUrl(
       }
     }
 
-    const html = await response.text()
+    const html = typeof response.data === 'string' ? response.data : String(response.data)
 
     // Check for parked domains
     if (isParkedDomain(html)) {
@@ -116,9 +113,10 @@ export async function checkUrl(
     }
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : String(err)
+    const code = err instanceof AxiosError ? err.code : undefined
 
     // DNS failure = dead URL
-    if (message.includes('ENOTFOUND') || message.includes('EAI_AGAIN')) {
+    if (code === 'ENOTFOUND' || code === 'EAI_AGAIN' || message.includes('ENOTFOUND') || message.includes('EAI_AGAIN')) {
       return {
         ...base,
         isAlive: false,
@@ -128,7 +126,7 @@ export async function checkUrl(
     }
 
     // Connection refused = dead
-    if (message.includes('ECONNREFUSED')) {
+    if (code === 'ECONNREFUSED' || message.includes('ECONNREFUSED')) {
       return {
         ...base,
         isAlive: false,
@@ -137,8 +135,8 @@ export async function checkUrl(
       }
     }
 
-    // Timeout or abort = NOT dead, just unreachable
-    if (message.includes('abort') || message.includes('timeout') || message.includes('ETIMEDOUT')) {
+    // Timeout = NOT dead, just unreachable
+    if (code === 'ECONNABORTED' || code === 'ETIMEDOUT' || message.includes('timeout') || message.includes('ETIMEDOUT')) {
       return {
         ...base,
         isAlive: false,

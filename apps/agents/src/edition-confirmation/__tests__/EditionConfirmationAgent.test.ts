@@ -14,8 +14,19 @@ jest.mock('@data-agents/types', () => ({
   EditionConfirmationAgentConfigSchema: {},
 }))
 
-const mockFetch = jest.fn()
-jest.mock('node-fetch', () => ({ __esModule: true, default: mockFetch }))
+const mockAxiosGet = jest.fn()
+jest.mock('axios', () => ({
+  __esModule: true,
+  default: { get: mockAxiosGet },
+  AxiosError: class AxiosError extends Error {
+    code?: string
+    constructor(message: string, code?: string) {
+      super(message)
+      this.code = code
+      this.name = 'AxiosError'
+    }
+  },
+}))
 
 const mockCreate = jest.fn()
 jest.mock('@anthropic-ai/sdk', () => ({
@@ -188,19 +199,15 @@ describe('EditionConfirmationAgent', () => {
 
   describe('when URL confirms the edition', () => {
     beforeEach(() => {
-      // fetch returns 200 with HTML confirming the edition
-      const mockResponse = {
-        ok: true,
+      // axios returns 200 with HTML confirming the edition
+      mockAxiosGet.mockResolvedValue({
         status: 200,
-        text: jest.fn().mockResolvedValue(`
-          <html><body>
+        data: `<html><body>
             <h1>Marathon de Lyon 2026</h1>
             <p>Inscriptions ouvertes ! L'édition 2026 aura lieu le 15 avril 2026.</p>
             <a href="/inscription">S'inscrire maintenant</a>
-          </body></html>
-        `),
-      }
-      mockFetch.mockResolvedValue(mockResponse)
+          </body></html>`,
+      })
 
       // LLM returns confirmed=true
       mockCreate.mockResolvedValue({
@@ -279,8 +286,10 @@ describe('EditionConfirmationAgent', () => {
 
   describe('when event URL is dead (DNS failure)', () => {
     beforeEach(() => {
-      // fetch throws DNS failure
-      mockFetch.mockRejectedValue(new Error('getaddrinfo ENOTFOUND marathon-lyon.fr'))
+      // axios throws DNS failure
+      const dnsErr = new Error('getaddrinfo ENOTFOUND marathon-lyon.fr') as any
+      dnsErr.code = 'ENOTFOUND'
+      mockAxiosGet.mockRejectedValue(dnsErr)
     })
 
     it('creates an EVENT_UPDATE proposal with null websiteUrl', async () => {
@@ -373,10 +382,9 @@ describe('EditionConfirmationAgent', () => {
       )
 
       // URL returns 200 and LLM confirms
-      mockFetch.mockResolvedValue({
-        ok: true,
+      mockAxiosGet.mockResolvedValue({
         status: 200,
-        text: jest.fn().mockResolvedValue('<html><body>Edition 2026 confirmed</body></html>'),
+        data: '<html><body>Edition 2026 confirmed</body></html>',
       })
       mockCreate.mockResolvedValue({
         content: [
@@ -414,12 +422,9 @@ describe('EditionConfirmationAgent', () => {
   describe('when dryRun is true', () => {
     it('does not create any proposals even with confirmed URL', async () => {
       // URL confirms the edition
-      mockFetch.mockResolvedValue({
-        ok: true,
+      mockAxiosGet.mockResolvedValue({
         status: 200,
-        text: jest.fn().mockResolvedValue(
-          '<html><body>Marathon de Lyon 2026 - Inscriptions ouvertes</body></html>'
-        ),
+        data: '<html><body>Marathon de Lyon 2026 - Inscriptions ouvertes</body></html>',
       })
       mockCreate.mockResolvedValue({
         content: [
@@ -451,7 +456,9 @@ describe('EditionConfirmationAgent', () => {
     })
 
     it('does not create dead URL proposals in dryRun mode', async () => {
-      mockFetch.mockRejectedValue(new Error('getaddrinfo ENOTFOUND marathon-lyon.fr'))
+      const dnsErr = new Error('getaddrinfo ENOTFOUND marathon-lyon.fr') as any
+      dnsErr.code = 'ENOTFOUND'
+      mockAxiosGet.mockRejectedValue(dnsErr)
 
       const agent = makeAgent({ dryRun: true })
       const createProposalMock = jest.fn()
@@ -471,10 +478,9 @@ describe('EditionConfirmationAgent', () => {
   describe('deduplication', () => {
     it('does not create a second EDITION_UPDATE if one is already PENDING', async () => {
       // URL confirms the edition
-      mockFetch.mockResolvedValue({
-        ok: true,
+      mockAxiosGet.mockResolvedValue({
         status: 200,
-        text: jest.fn().mockResolvedValue('<html><body>2026 confirmed</body></html>'),
+        data: '<html><body>2026 confirmed</body></html>',
       })
       mockCreate.mockResolvedValue({
         content: [
@@ -514,7 +520,9 @@ describe('EditionConfirmationAgent', () => {
 
   describe('progress tracking', () => {
     it('increments offset after processing a batch', async () => {
-      mockFetch.mockRejectedValue(new Error('getaddrinfo ENOTFOUND example.fr'))
+      const dnsErr = new Error('getaddrinfo ENOTFOUND example.fr') as any
+      dnsErr.code = 'ENOTFOUND'
+      mockAxiosGet.mockRejectedValue(dnsErr)
 
       const editions = [makeEdition({ id: 40001 }), makeEdition({ id: 40002 })]
       const agent = makeAgent({ dryRun: true })

@@ -1,13 +1,22 @@
 import { checkUrl, isParkedDomain } from '../url-checker'
+import { AxiosError } from 'axios'
 
-// Mock node-fetch
-jest.mock('node-fetch', () => ({
+// Mock axios
+jest.mock('axios', () => ({
   __esModule: true,
-  default: jest.fn(),
+  default: { get: jest.fn() },
+  AxiosError: class AxiosError extends Error {
+    code?: string
+    constructor(message: string, code?: string) {
+      super(message)
+      this.code = code
+      this.name = 'AxiosError'
+    }
+  },
 }))
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
-const mockFetch = require('node-fetch').default as jest.Mock
+const mockAxios = require('axios').default as { get: jest.Mock }
 
 describe('isParkedDomain', () => {
   it('detects GoDaddy parking pages', () => {
@@ -29,14 +38,13 @@ describe('isParkedDomain', () => {
 
 describe('checkUrl', () => {
   beforeEach(() => {
-    mockFetch.mockReset()
+    mockAxios.get.mockReset()
   })
 
   it('returns isAlive=true and extracted text for a 200 response', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
+    mockAxios.get.mockResolvedValueOnce({
       status: 200,
-      text: async () => '<html><head><title>Marathon</title></head><body><main><h1>Marathon de Lyon 2026</h1><p>Inscriptions ouvertes</p></main></body></html>',
+      data: '<html><head><title>Marathon</title></head><body><main><h1>Marathon de Lyon 2026</h1><p>Inscriptions ouvertes</p></main></body></html>',
     })
 
     const result = await checkUrl({ url: 'https://marathon-lyon.fr', sourceType: 'event' })
@@ -49,10 +57,9 @@ describe('checkUrl', () => {
   })
 
   it('returns isDead=true for 404 responses', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: false,
+    mockAxios.get.mockResolvedValueOnce({
       status: 404,
-      text: async () => 'Not Found',
+      data: 'Not Found',
     })
 
     const result = await checkUrl({ url: 'https://dead-site.fr', sourceType: 'event' })
@@ -63,7 +70,9 @@ describe('checkUrl', () => {
   })
 
   it('returns isDead=true for DNS failures', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('getaddrinfo ENOTFOUND dead-site.fr'))
+    const err = new AxiosError('getaddrinfo ENOTFOUND dead-site.fr')
+    ;(err as any).code = 'ENOTFOUND'
+    mockAxios.get.mockRejectedValueOnce(err)
 
     const result = await checkUrl({ url: 'https://dead-site.fr', sourceType: 'event' })
 
@@ -73,10 +82,9 @@ describe('checkUrl', () => {
   })
 
   it('returns isDead=true for parking pages', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
+    mockAxios.get.mockResolvedValueOnce({
       status: 200,
-      text: async () => '<html><body>This domain is parked free, courtesy of GoDaddy.com</body></html>',
+      data: '<html><body>This domain is parked free, courtesy of GoDaddy.com</body></html>',
     })
 
     const result = await checkUrl({ url: 'https://parked-domain.fr', sourceType: 'event' })
@@ -87,7 +95,9 @@ describe('checkUrl', () => {
   })
 
   it('returns isDead=false for timeout (not dead, just unreachable)', async () => {
-    mockFetch.mockRejectedValueOnce(new Error('network timeout'))
+    const err = new AxiosError('timeout of 10000ms exceeded')
+    ;(err as any).code = 'ECONNABORTED'
+    mockAxios.get.mockRejectedValueOnce(err)
 
     const result = await checkUrl({ url: 'https://slow-site.fr', sourceType: 'event' })
 
@@ -97,10 +107,9 @@ describe('checkUrl', () => {
   })
 
   it('strips nav, footer, script, style from extracted text', async () => {
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
+    mockAxios.get.mockResolvedValueOnce({
       status: 200,
-      text: async () => `<html><body>
+      data: `<html><body>
         <nav>Menu item 1</nav>
         <script>var x = 1;</script>
         <style>.body { color: red; }</style>
@@ -120,10 +129,9 @@ describe('checkUrl', () => {
 
   it('truncates extracted text to maxChars', async () => {
     const longText = 'A'.repeat(20000)
-    mockFetch.mockResolvedValueOnce({
-      ok: true,
+    mockAxios.get.mockResolvedValueOnce({
       status: 200,
-      text: async () => `<html><body><p>${longText}</p></body></html>`,
+      data: `<html><body><p>${longText}</p></body></html>`,
     })
 
     const result = await checkUrl({ url: 'https://example.fr', sourceType: 'event' }, { maxChars: 5000 })
