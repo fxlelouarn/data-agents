@@ -47,6 +47,10 @@ function loadAgentMetadata(): Record<string, AgentMetadata> {
     'ffa-results-agent': {
       version: AGENT_VERSIONS.FFA_RESULTS_AGENT,
       description: `Agent qui récupère le nombre de participants depuis les résultats FFA (v${AGENT_VERSIONS.FFA_RESULTS_AGENT})`
+    },
+    'edition-confirmation-agent': {
+      version: AGENT_VERSIONS.EDITION_CONFIRMATION_AGENT,
+      description: `Agent qui visite les sites web des événements pour confirmer les éditions TO_BE_CONFIRMED (v${AGENT_VERSIONS.EDITION_CONFIRMATION_AGENT})`
     }
   }
 }
@@ -85,6 +89,10 @@ function detectAgentType(name: string, config?: Record<string, any>): string | n
 
   if (lowerName.includes('ffa') && lowerName.includes('results')) {
     return 'FFA_RESULTS'
+  }
+
+  if (lowerName.includes('edition') && lowerName.includes('confirmation')) {
+    return 'EDITION_CONFIRMATION'
   }
 
   return null
@@ -200,7 +208,8 @@ const agentTypeCategories: Record<string, 'EXTRACTOR' | 'VALIDATOR' | 'COMPARATO
   GOOGLE_SEARCH_DATE: 'EXTRACTOR',
   AUTO_VALIDATOR: 'VALIDATOR',
   SLACK_EVENT: 'EXTRACTOR',
-  DUPLICATE_DETECTION: 'ANALYZER'
+  DUPLICATE_DETECTION: 'ANALYZER',
+  EDITION_CONFIRMATION: 'EXTRACTOR'
 }
 
 /**
