@@ -15,6 +15,7 @@ export { AutoValidatorAgentConfigSchema } from './auto-validator.js'
 export { SlackEventAgentConfigSchema } from './slack-event.js'
 export { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 export { WebsiteCheckerAgentConfigSchema } from './website-checker.js'
+export { EditionDuplicatorAgentConfigSchema } from './edition-duplicator.js'
 
 // Re-export pour accès par clé
 import { FFAScraperAgentConfigSchema } from './ffa-scraper.js'
@@ -24,6 +25,7 @@ import { AutoValidatorAgentConfigSchema } from './auto-validator.js'
 import { SlackEventAgentConfigSchema } from './slack-event.js'
 import { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 import { WebsiteCheckerAgentConfigSchema } from './website-checker.js'
+import { EditionDuplicatorAgentConfigSchema } from './edition-duplicator.js'
 import type { ConfigSchema } from '../config.js'
 
 /**
@@ -37,4 +39,5 @@ export const AGENT_CONFIG_SCHEMAS: Record<string, ConfigSchema> = {
   SLACK_EVENT: SlackEventAgentConfigSchema,
   DUPLICATE_DETECTION: DuplicateDetectionAgentConfigSchema,
   WEBSITE_CHECKER: WebsiteCheckerAgentConfigSchema,
+  EDITION_DUPLICATOR: EditionDuplicatorAgentConfigSchema,
 }
