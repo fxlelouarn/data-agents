@@ -26,6 +26,18 @@ export interface UrlAnalysis {
   reasoning: string
 }
 
+export type PageAnalysisResult = UrlAnalysis
+
+export interface EditionTarget {
+  editionId: number
+  eventId: number
+  eventName: string
+  eventCity?: string | null
+  editionYear: string
+  startDate: Date | null
+  urls: UrlSource[]
+}
+
 export type UrlCheckResultWithAnalysis =
   | (UrlCheckResult & { isAlive: true; analysis: UrlAnalysis })
   | (UrlCheckResult & { isAlive: false; analysis?: undefined })
