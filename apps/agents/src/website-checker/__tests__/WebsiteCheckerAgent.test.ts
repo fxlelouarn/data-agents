@@ -1,5 +1,5 @@
 /**
- * Integration tests for EditionConfirmationAgent
+ * Integration tests for WebsiteCheckerAgent
  *
  * Mocks all external dependencies (fetch, Anthropic, database) and verifies
  * the agent's behavior end-to-end through its run() method.
@@ -9,9 +9,9 @@
 
 // Mock @data-agents/types to avoid ESM `.js` extension resolution issues
 jest.mock('@data-agents/types', () => ({
-  AGENT_VERSIONS: { EDITION_CONFIRMATION_AGENT: '1.0.0' },
-  getAgentName: jest.fn().mockReturnValue('Edition Confirmation Agent'),
-  EditionConfirmationAgentConfigSchema: {},
+  AGENT_VERSIONS: { WEBSITE_CHECKER_AGENT: '1.0.0' },
+  getAgentName: jest.fn().mockReturnValue('Website Checker Agent'),
+  WebsiteCheckerAgentConfigSchema: {},
 }))
 
 const mockAxiosGet = jest.fn()
@@ -65,7 +65,7 @@ jest.mock('@data-agents/agent-framework', () => ({
 
 // --- Imports (after mocks) ---
 
-import { EditionConfirmationAgent } from '../../EditionConfirmationAgent'
+import { WebsiteCheckerAgent } from '../../WebsiteCheckerAgent'
 
 // --- Helpers ---
 
@@ -83,9 +83,9 @@ function makeContext() {
 }
 
 function makeAgent(overrides: Record<string, any> = {}) {
-  return new EditionConfirmationAgent({
+  return new WebsiteCheckerAgent({
     id: 'test-edition-agent',
-    name: 'Test Edition Confirmation Agent',
+    name: 'Test Website Checker Agent',
     config: {
       sourceDatabase: 'test-source-db',
       batchSize: 10,
@@ -136,7 +136,7 @@ function makeEdition(overrides: Partial<any> = {}) {
 }
 
 /** Mount agent with mocked sourceDb and skip real DB connection */
-function mountAgent(agent: EditionConfirmationAgent, sourceDb: any) {
+function mountAgent(agent: WebsiteCheckerAgent, sourceDb: any) {
   ;(agent as any).sourceDb = sourceDb
   ;(agent as any).initializeSourceConnection = jest.fn().mockResolvedValue(undefined)
   ;(agent as any).connectToSource = jest.fn().mockResolvedValue(sourceDb)
@@ -145,7 +145,7 @@ function mountAgent(agent: EditionConfirmationAgent, sourceDb: any) {
 
 // --- Tests ---
 
-describe('EditionConfirmationAgent', () => {
+describe('WebsiteCheckerAgent', () => {
   let createProposalSpy: jest.SpyInstance
 
   beforeEach(() => {

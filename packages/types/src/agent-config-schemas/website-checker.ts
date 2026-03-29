@@ -1,7 +1,7 @@
 import { ConfigSchema } from '../config.js'
 
-export const EditionConfirmationAgentConfigSchema: ConfigSchema = {
-  title: "Configuration Edition Confirmation Agent",
+export const WebsiteCheckerAgentConfigSchema: ConfigSchema = {
+  title: "Configuration Website Checker Agent",
   description: "Agent qui visite les sites web des événements pour confirmer les éditions TO_BE_CONFIRMED",
   categories: [
     { id: "database", label: "Base de données", description: "Configuration de la source de données" },

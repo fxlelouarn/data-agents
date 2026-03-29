@@ -1,7 +1,7 @@
 /**
- * Configuration for the Edition Confirmation Agent
+ * Configuration for the Website Checker Agent
  */
-export interface EditionConfirmationConfig {
+export interface WebsiteCheckerConfig {
   sourceDatabase: string       // Miles Republic database ID
   batchSize: number            // Editions to process per run (default: 30)
   cooldownDays: number         // Days before re-checking an edition (default: 14)

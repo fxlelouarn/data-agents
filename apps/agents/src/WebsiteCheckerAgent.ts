@@ -1,38 +1,38 @@
-import { AGENT_VERSIONS, EditionConfirmationAgentConfigSchema, getAgentName } from '@data-agents/types'
+import { AGENT_VERSIONS, WebsiteCheckerAgentConfigSchema, getAgentName } from '@data-agents/types'
 import { BaseAgent, AgentType } from '@data-agents/agent-framework'
 import { IAgentStateService, AgentStateService, prisma } from '@data-agents/database'
 import type { AgentContext, AgentRunResult } from '@data-agents/agent-framework'
 
-import { checkUrl } from './edition-confirmation/url-checker'
-import { analyzePage } from './edition-confirmation/page-analyzer'
-import { computeFinalConfidence } from './edition-confirmation/confidence'
+import { checkUrl } from './website-checker/url-checker'
+import { analyzePage } from './website-checker/page-analyzer'
+import { computeFinalConfidence } from './website-checker/confidence'
 import type {
-  EditionConfirmationConfig,
+  WebsiteCheckerConfig,
   EditionTarget,
   UrlCheckResult,
   UrlCheckResultWithAnalysis,
   EditionCheckResult,
   ConfirmationProgress,
   ConfirmationStats,
-} from './edition-confirmation/types'
+} from './website-checker/types'
 
-export const EDITION_CONFIRMATION_AGENT_VERSION = AGENT_VERSIONS.EDITION_CONFIRMATION_AGENT
+export const WEBSITE_CHECKER_AGENT_VERSION = AGENT_VERSIONS.WEBSITE_CHECKER_AGENT
 
-export class EditionConfirmationAgent extends BaseAgent {
+export class WebsiteCheckerAgent extends BaseAgent {
   private sourceDb: any
   private stateService: IAgentStateService
   private prisma: typeof prisma
 
   constructor(config: any, db?: any, logger?: any) {
     const agentConfig = {
-      id: config.id || 'edition-confirmation-agent',
-      name: config.name || getAgentName('EDITION_CONFIRMATION'),
-      description: `Agent qui vérifie les URLs des éditions TO_BE_CONFIRMED et propose des mises à jour de statut (v${EDITION_CONFIRMATION_AGENT_VERSION})`,
+      id: config.id || 'website-checker-agent',
+      name: config.name || getAgentName('WEBSITE_CHECKER'),
+      description: `Agent qui vérifie les URLs des éditions TO_BE_CONFIRMED et propose des mises à jour de statut (v${WEBSITE_CHECKER_AGENT_VERSION})`,
       type: 'EXTRACTOR' as AgentType,
       frequency: config.frequency || '0 */8 * * *',
       isActive: config.isActive ?? true,
       config: {
-        version: EDITION_CONFIRMATION_AGENT_VERSION,
+        version: WEBSITE_CHECKER_AGENT_VERSION,
         sourceDatabase: config.config?.sourceDatabase,
         batchSize: config.config?.batchSize || 30,
         cooldownDays: config.config?.cooldownDays || 14,
@@ -43,7 +43,7 @@ export class EditionConfirmationAgent extends BaseAgent {
         llmModel: config.config?.llmModel || 'claude-haiku-4-5-20251001',
         dryRun: config.config?.dryRun ?? false,
         ...config.config,
-        configSchema: EditionConfirmationAgentConfigSchema,
+        configSchema: WebsiteCheckerAgentConfigSchema,
       },
     }
 
@@ -53,11 +53,11 @@ export class EditionConfirmationAgent extends BaseAgent {
   }
 
   async run(context: AgentContext): Promise<AgentRunResult> {
-    const config = this.config.config as EditionConfirmationConfig
+    const config = this.config.config as WebsiteCheckerConfig
 
     try {
-      context.logger.info(`Démarrage Edition Confirmation Agent v${EDITION_CONFIRMATION_AGENT_VERSION}`, {
-        version: EDITION_CONFIRMATION_AGENT_VERSION,
+      context.logger.info(`Démarrage Website Checker Agent v${WEBSITE_CHECKER_AGENT_VERSION}`, {
+        version: WEBSITE_CHECKER_AGENT_VERSION,
         batchSize: config.batchSize,
         cooldownDays: config.cooldownDays,
         lookAheadMonths: config.lookAheadMonths,
@@ -199,7 +199,7 @@ export class EditionConfirmationAgent extends BaseAgent {
     }
   }
 
-  private async getEditionTargets(config: EditionConfirmationConfig, offset: number): Promise<EditionTarget[]> {
+  private async getEditionTargets(config: WebsiteCheckerConfig, offset: number): Promise<EditionTarget[]> {
     if (!this.sourceDb) {
       throw new Error('Pas de connexion source - impossible de continuer')
     }
@@ -290,7 +290,7 @@ export class EditionConfirmationAgent extends BaseAgent {
 
   private async checkEdition(
     target: EditionTarget,
-    config: EditionConfirmationConfig,
+    config: WebsiteCheckerConfig,
     context: AgentContext
   ): Promise<EditionCheckResult> {
     const urlResults: UrlCheckResultWithAnalysis[] = []
@@ -367,7 +367,7 @@ export class EditionConfirmationAgent extends BaseAgent {
   private async createConfirmationProposal(
     target: EditionTarget,
     result: EditionCheckResult,
-    config: EditionConfirmationConfig,
+    config: WebsiteCheckerConfig,
     context: AgentContext
   ): Promise<number> {
     if (config.dryRun) {
@@ -439,7 +439,7 @@ export class EditionConfirmationAgent extends BaseAgent {
   private async createCancellationProposal(
     target: EditionTarget,
     result: EditionCheckResult,
-    config: EditionConfirmationConfig,
+    config: WebsiteCheckerConfig,
     context: AgentContext
   ): Promise<number> {
     if (config.dryRun) {
@@ -511,7 +511,7 @@ export class EditionConfirmationAgent extends BaseAgent {
   private async createDeadUrlProposal(
     target: EditionTarget,
     deadUrl: UrlCheckResult,
-    config: EditionConfirmationConfig,
+    config: WebsiteCheckerConfig,
     context: AgentContext
   ): Promise<number> {
     // Only handle event website URLs

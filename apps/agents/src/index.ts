@@ -5,7 +5,7 @@ import { GoogleSearchDateAgent, GOOGLE_SEARCH_DATE_AGENT_VERSION } from './Googl
 import { AutoValidatorAgent, AUTO_VALIDATOR_AGENT_VERSION } from './AutoValidatorAgent'
 import { SlackEventAgent, SLACK_EVENT_AGENT_VERSION } from './SlackEventAgent'
 import { DuplicateDetectionAgent, DUPLICATE_DETECTION_AGENT_VERSION } from './DuplicateDetectionAgent'
-import { EditionConfirmationAgent, EDITION_CONFIRMATION_AGENT_VERSION } from './EditionConfirmationAgent'
+import { WebsiteCheckerAgent, WEBSITE_CHECKER_AGENT_VERSION } from './WebsiteCheckerAgent'
 
 // Register all available agents
 agentRegistry.register('FFA_SCRAPER', FFAScraperAgent)
@@ -14,7 +14,7 @@ agentRegistry.register('GOOGLE_SEARCH_DATE', GoogleSearchDateAgent)
 agentRegistry.register('AUTO_VALIDATOR', AutoValidatorAgent)
 agentRegistry.register('SLACK_EVENT', SlackEventAgent)
 agentRegistry.register('DUPLICATE_DETECTION', DuplicateDetectionAgent)
-agentRegistry.register('EDITION_CONFIRMATION', EditionConfirmationAgent)
+agentRegistry.register('WEBSITE_CHECKER', WebsiteCheckerAgent)
 
 // Export for use in other applications
 export { FFAScraperAgent, FFA_SCRAPER_AGENT_VERSION }
@@ -23,7 +23,7 @@ export { GoogleSearchDateAgent, GOOGLE_SEARCH_DATE_AGENT_VERSION }
 export { AutoValidatorAgent, AUTO_VALIDATOR_AGENT_VERSION }
 export { SlackEventAgent, SLACK_EVENT_AGENT_VERSION }
 export { DuplicateDetectionAgent, DUPLICATE_DETECTION_AGENT_VERSION }
-export { EditionConfirmationAgent, EDITION_CONFIRMATION_AGENT_VERSION }
+export { WebsiteCheckerAgent, WEBSITE_CHECKER_AGENT_VERSION }
 export { agentRegistry }
 
 // Export versions object for easy access
@@ -34,7 +34,7 @@ export const AGENT_VERSIONS = {
   autoValidator: AUTO_VALIDATOR_AGENT_VERSION,
   slackEvent: SLACK_EVENT_AGENT_VERSION,
   duplicateDetection: DUPLICATE_DETECTION_AGENT_VERSION,
-  editionConfirmation: EDITION_CONFIRMATION_AGENT_VERSION
+  websiteChecker: WEBSITE_CHECKER_AGENT_VERSION
 }
 
 console.log('📦 Sample agents registered:', agentRegistry.getRegisteredTypes())
