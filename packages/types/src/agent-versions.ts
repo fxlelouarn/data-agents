@@ -17,7 +17,8 @@ export const AGENT_VERSIONS = {
   GOOGLE_SEARCH_DATE_AGENT: '1.1.0',
   AUTO_VALIDATOR_AGENT: '1.0.0',
   SLACK_EVENT_AGENT: '1.0.0',
-  DUPLICATE_DETECTION_AGENT: '1.0.0'
+  DUPLICATE_DETECTION_AGENT: '1.0.0',
+  EDITION_CONFIRMATION_AGENT: '1.0.0'
 } as const
 
 export type AgentVersionKey = keyof typeof AGENT_VERSIONS
@@ -25,7 +26,7 @@ export type AgentVersionKey = keyof typeof AGENT_VERSIONS
 /**
  * Identifiants techniques des agents (clés du registry)
  */
-export type AgentTypeKey = 'FFA_SCRAPER' | 'FFA_RESULTS' | 'GOOGLE_SEARCH_DATE' | 'AUTO_VALIDATOR' | 'SLACK_EVENT' | 'DUPLICATE_DETECTION'
+export type AgentTypeKey = 'FFA_SCRAPER' | 'FFA_RESULTS' | 'GOOGLE_SEARCH_DATE' | 'AUTO_VALIDATOR' | 'SLACK_EVENT' | 'DUPLICATE_DETECTION' | 'EDITION_CONFIRMATION'
 
 /**
  * Noms lisibles des agents (utilisés en base de données)
@@ -37,7 +38,8 @@ export const AGENT_NAMES: Record<AgentTypeKey, string> = {
   GOOGLE_SEARCH_DATE: 'Google Search Date Agent',
   AUTO_VALIDATOR: 'Auto Validator Agent',
   SLACK_EVENT: 'Slack Event Agent',
-  DUPLICATE_DETECTION: 'Duplicate Detection Agent'
+  DUPLICATE_DETECTION: 'Duplicate Detection Agent',
+  EDITION_CONFIRMATION: 'Edition Confirmation Agent'
 } as const
 
 /**
