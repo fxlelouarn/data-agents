@@ -349,6 +349,48 @@ export class MilesRepublicRepository {
     })
   }
 
+  /**
+   * Create an EditionPartner for an edition
+   */
+  async createEditionPartner(editionId: number, data: {
+    role: string  // 'ORGANIZER' | 'TIMER' | 'SPONSOR'
+    name?: string | null
+    websiteUrl?: string | null
+    instagramUrl?: string | null
+    facebookUrl?: string | null
+    logoUrl?: string | null
+    sortOrder?: number
+  }) {
+    return this.milesDb.editionPartner.create({
+      data: {
+        editionId,
+        role: data.role,
+        name: data.name || null,
+        websiteUrl: data.websiteUrl || null,
+        instagramUrl: data.instagramUrl || null,
+        facebookUrl: data.facebookUrl || null,
+        logoUrl: data.logoUrl || null,
+        sortOrder: data.sortOrder ?? 0,
+      },
+    })
+  }
+
+  /**
+   * Create an EditionPartnerLocalizedContent for a partner
+   */
+  async createEditionPartnerLocalizedContent(editionPartnerId: string, data: {
+    locale: string
+    description?: string | null
+  }) {
+    return this.milesDb.editionPartnerLocalizedContent.create({
+      data: {
+        editionPartnerId,
+        locale: data.locale,
+        description: data.description || null,
+      },
+    })
+  }
+
   // ============== RACE OPERATIONS ==============
 
   /**
