@@ -888,7 +888,19 @@ async function findCandidateEvents(
 ): Promise<CandidateEvent[]> {
   // Try Meilisearch first if configured
   if (meilisearchConfig) {
-    const searchQuery = `${name} ${city}`.trim()
+    // Clean the search query: normalize, remove edition numbers/years, stop words,
+    // and avoid duplicating the city if it's already in the event name
+    const cleanedName = removeStopwords(normalizeString(
+      name
+        .replace(/\b\d+[eèE]?\s*/g, '')       // Remove ordinals: "24E", "5è", "3e"
+        .replace(/\b20[2-3]\d\b/g, '')          // Remove years
+        .replace(/\b[eéÉ]dition\b/gi, '')       // Remove "édition"
+    ))
+    const normalizedCity = normalizeString(city)
+    // Only append city if not already present in the cleaned name
+    const cityInName = cleanedName.includes(normalizedCity.split(' ')[0])
+    const searchQuery = cityInName ? cleanedName : `${cleanedName} ${normalizedCity}`.trim()
+    logger.info(`[MEILISEARCH] Search query: "${searchQuery}" (from: "${name}" / "${city}")`)
     const msCandidates = await findCandidatesViaMeilisearch(searchQuery, meilisearchConfig, logger)
 
     if (msCandidates.length > 0) {
