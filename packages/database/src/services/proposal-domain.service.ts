@@ -182,7 +182,12 @@ export class ProposalDomainService {
           if (!proposal.editionId) {
             throw new Error('EditionId manquant pour EDITION_UPDATE')
           }
-          result = await this.applyEditionUpdate(proposal.editionId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName }, proposal)
+          // Detect edition duplication (vs normal edition update)
+          if (filteredFinalChanges.editionToCreate) {
+            result = await this.applyEditionDuplication(proposal.editionId, filteredFinalChanges, { ...options, agentName })
+          } else {
+            result = await this.applyEditionUpdate(proposal.editionId, filteredFinalChanges, filteredSelectedChanges, { ...options, agentName }, proposal)
+          }
           break
 
         case 'RACE_UPDATE':
@@ -1234,6 +1239,171 @@ export class ProposalDomainService {
       }
     } catch (error) {
       return this.errorResult('update', `Erreur lors de la mise à jour: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
+    }
+  }
+
+  /**
+   * Apply an edition duplication — creates a new edition for the next year
+   * with races and partners copied from the source edition.
+   *
+   * Replaces the n8n "CRON - Edition Duplicate" workflow.
+   */
+  async applyEditionDuplication(
+    sourceEditionId: string,
+    changes: any,
+    options: ApplyOptions = {}
+  ): Promise<ProposalApplicationResult> {
+    try {
+      const milesRepo = await this.getMilesRepublicRepository(options.milesRepublicDatabaseId, options.agentName, options.userEmail)
+      const numericEditionId = parseInt(sourceEditionId)
+
+      if (isNaN(numericEditionId)) {
+        return this.errorResult('editionId', `ID d'édition source invalide: ${sourceEditionId}`)
+      }
+
+      const { editionToCreate, oldEditionUpdate, racesToCreate, partnersToCreate } = changes
+
+      if (!editionToCreate) {
+        return this.errorResult('changes', 'editionToCreate manquant dans les changes')
+      }
+
+      this.logger.info(`\n📋 Application EDITION_DUPLICATION pour l'édition source ${sourceEditionId}`)
+      this.logger.info(`  → Nouvelle année: ${editionToCreate.year}`)
+      this.logger.info(`  → Courses à dupliquer: ${racesToCreate?.length || 0}`)
+      this.logger.info(`  → Partners à dupliquer: ${partnersToCreate?.length || 0}`)
+
+      // Step 1: Clear currentEditionEventId on old edition
+      if (oldEditionUpdate) {
+        this.logger.info(`\n1️⃣  Mise à jour de l'ancienne édition ${numericEditionId}`)
+        await milesRepo.updateEdition(numericEditionId, oldEditionUpdate)
+        this.logger.info(`  ✅ currentEditionEventId supprimé`)
+      }
+
+      // Step 2: Create new edition
+      this.logger.info(`\n2️⃣  Création de la nouvelle édition ${editionToCreate.year}`)
+      const newEdition = await milesRepo.createEdition({
+        eventId: editionToCreate.eventId,
+        year: editionToCreate.year,
+        startDate: editionToCreate.startDate ? new Date(editionToCreate.startDate) : null,
+        endDate: editionToCreate.endDate ? new Date(editionToCreate.endDate) : null,
+        status: editionToCreate.status,
+        calendarStatus: editionToCreate.calendarStatus || 'TO_BE_CONFIRMED',
+        clientStatus: editionToCreate.clientStatus || 'NEW_SALES_FUNNEL',
+        currentEditionEventId: editionToCreate.currentEditionEventId,
+        isAttendeeListPublic: editionToCreate.isAttendeeListPublic,
+        organizerStripeConnectedAccountId: editionToCreate.organizerStripeConnectedAccountId,
+        currency: editionToCreate.currency,
+        medusaVersion: editionToCreate.medusaVersion,
+        timeZone: editionToCreate.timeZone,
+        slug: editionToCreate.slug,
+      })
+      this.logger.info(`  ✅ Édition créée avec ID ${newEdition.id}`)
+
+      // Step 3: Create races
+      const createdRaceIds: number[] = []
+      if (racesToCreate && Array.isArray(racesToCreate)) {
+        this.logger.info(`\n3️⃣  Création de ${racesToCreate.length} course(s)`)
+        for (const raceData of racesToCreate) {
+          const newRace = await milesRepo.createRace({
+            editionId: newEdition.id,
+            eventId: editionToCreate.eventId,
+            name: raceData.name,
+            startDate: raceData.startDate ? new Date(raceData.startDate) : null,
+            price: raceData.price,
+            priceType: raceData.priceType,
+            paymentCollectionType: raceData.paymentCollectionType,
+            runDistance: raceData.runDistance,
+            runDistance2: raceData.runDistance2,
+            bikeDistance: raceData.bikeDistance,
+            swimDistance: raceData.swimDistance,
+            walkDistance: raceData.walkDistance,
+            bikeRunDistance: raceData.bikeRunDistance,
+            swimRunDistance: raceData.swimRunDistance,
+            runPositiveElevation: raceData.runPositiveElevation,
+            runNegativeElevation: raceData.runNegativeElevation,
+            bikePositiveElevation: raceData.bikePositiveElevation,
+            bikeNegativeElevation: raceData.bikeNegativeElevation,
+            walkPositiveElevation: raceData.walkPositiveElevation,
+            walkNegativeElevation: raceData.walkNegativeElevation,
+            categoryLevel1: raceData.categoryLevel1,
+            categoryLevel2: raceData.categoryLevel2,
+            distanceCategory: raceData.distanceCategory,
+            licenseNumberType: raceData.licenseNumberType,
+            adultJustificativeOptions: raceData.adultJustificativeOptions,
+            minorJustificativeOptions: raceData.minorJustificativeOptions,
+            askAttendeeBirthDate: raceData.askAttendeeBirthDate,
+            askAttendeeGender: raceData.askAttendeeGender,
+            askAttendeeNationality: raceData.askAttendeeNationality,
+            askAttendeePhoneNumber: raceData.askAttendeePhoneNumber,
+            askAttendeePostalAddress: raceData.askAttendeePostalAddress,
+            showClubOrAssoInput: raceData.showClubOrAssoInput,
+            showPublicationConsentCheckbox: raceData.showPublicationConsentCheckbox,
+            minTeamSize: raceData.minTeamSize,
+            maxTeamSize: raceData.maxTeamSize,
+            displayOrder: raceData.displayOrder,
+            isArchived: raceData.isArchived ?? false,
+            slug: raceData.slug,
+            timeZone: raceData.timeZone,
+            mainRaceEditionId: raceData.isMainRace ? newEdition.id : undefined,
+          })
+          createdRaceIds.push(newRace.id)
+          this.logger.info(`  ✅ Course "${raceData.name}" créée avec ID ${newRace.id}`)
+        }
+      }
+
+      // Step 4: Create partners
+      const createdPartnerIds: string[] = []
+      if (partnersToCreate && Array.isArray(partnersToCreate)) {
+        this.logger.info(`\n4️⃣  Création de ${partnersToCreate.length} partner(s)`)
+        for (const partnerData of partnersToCreate) {
+          const newPartner = await milesRepo.createEditionPartner(newEdition.id, {
+            role: partnerData.role,
+            name: partnerData.name,
+            websiteUrl: partnerData.websiteUrl,
+            instagramUrl: partnerData.instagramUrl,
+            facebookUrl: partnerData.facebookUrl,
+            logoUrl: partnerData.logoUrl,
+            sortOrder: partnerData.sortOrder,
+          })
+          createdPartnerIds.push(newPartner.id)
+          this.logger.info(`  ✅ Partner "${partnerData.name}" (${partnerData.role}) créé avec ID ${newPartner.id}`)
+
+          // Create localized contents
+          if (partnerData.localizedContents && Array.isArray(partnerData.localizedContents)) {
+            for (const lc of partnerData.localizedContents) {
+              await milesRepo.createEditionPartnerLocalizedContent(newPartner.id, {
+                locale: lc.locale,
+                description: lc.description,
+              })
+              this.logger.info(`    ✅ Contenu localisé (${lc.locale}) créé`)
+            }
+          }
+        }
+      }
+
+      this.logger.info(`\n✅ Duplication terminée: édition ${newEdition.id}, ${createdRaceIds.length} courses, ${createdPartnerIds.length} partners`)
+
+      return {
+        success: true,
+        appliedChanges: {
+          editionDuplication: {
+            sourceEditionId: numericEditionId,
+            newEditionId: newEdition.id,
+            newYear: editionToCreate.year,
+            createdRaceIds,
+            createdPartnerIds,
+          },
+        },
+        rollbackData: {
+          editionId: newEdition.id,
+          raceIds: createdRaceIds,
+          partnerIds: createdPartnerIds,
+          sourceEditionId: numericEditionId,
+        },
+      }
+    } catch (error) {
+      this.logger.error(`❌ Erreur lors de la duplication:`, error)
+      return this.errorResult('duplication', `Erreur lors de la duplication: ${error instanceof Error ? error.message : 'Erreur inconnue'}`)
     }
   }
 
