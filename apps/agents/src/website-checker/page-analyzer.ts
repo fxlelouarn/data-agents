@@ -33,10 +33,18 @@ const analysisTool: Anthropic.Tool = {
         type: 'boolean',
         description: 'True if registrations/inscriptions are currently open for the target edition',
       },
+      startDate: {
+        type: 'string',
+        description: 'The start date of the edition in ISO format (YYYY-MM-DD), if found on the page. null if not found.',
+      },
+      endDate: {
+        type: 'string',
+        description: 'The end date of the edition in ISO format (YYYY-MM-DD), if found and different from startDate. null if single-day event or not found.',
+      },
       datesFound: {
         type: 'array',
         items: { type: 'string' },
-        description: 'Any dates found on the page in ISO format (YYYY-MM-DD) that seem related to the target edition',
+        description: 'All dates found on the page in ISO format (YYYY-MM-DD) that seem related to the target edition',
       },
       yearMentioned: {
         type: 'boolean',
@@ -51,7 +59,7 @@ const analysisTool: Anthropic.Tool = {
         description: 'Short (1-2 sentence) explanation of your conclusion',
       },
     },
-    required: ['confirmed', 'canceled', 'registrationOpen', 'datesFound', 'yearMentioned', 'confidence', 'reasoning'],
+    required: ['confirmed', 'canceled', 'registrationOpen', 'startDate', 'endDate', 'datesFound', 'yearMentioned', 'confidence', 'reasoning'],
   },
 }
 
@@ -76,6 +84,7 @@ export function buildAnalysisPrompt(target: EditionTarget, pageText: string): st
 - "canceled = true" UNIQUEMENT si la page dit explicitement que l'événement est annulé/supprimé pour ${target.editionYear}.
 - Si la page parle d'une édition passée ou d'une autre année, ce n'est PAS une confirmation.
 - Si la page est un site générique sans mention de ${target.editionYear}, ce n'est PAS une confirmation.
+- **Extraction des dates** : Si tu trouves la date de l'événement pour ${target.editionYear}, remplis "startDate" (et "endDate" si multi-jours). Format YYYY-MM-DD. C'est CRITIQUE — une confirmation sans date est inutile.
 - Confidence élevée (≥ 0.9) : inscriptions ouvertes OU dates ${target.editionYear} explicites.
 - Confidence moyenne (0.7-0.9) : année mentionnée mais pas de détails précis.
 - Confidence basse (< 0.7) : page ambiguë ou contenu ancien.
@@ -126,6 +135,8 @@ export async function analyzePage(
       confirmed: Boolean(input.confirmed),
       canceled: Boolean(input.canceled),
       registrationOpen: Boolean(input.registrationOpen),
+      startDate: typeof input.startDate === 'string' ? input.startDate : null,
+      endDate: typeof input.endDate === 'string' ? input.endDate : null,
       datesFound: Array.isArray(input.datesFound) ? input.datesFound : [],
       yearMentioned: Boolean(input.yearMentioned),
       confidence: typeof input.confidence === 'number' ? input.confidence : 0.5,

@@ -134,9 +134,16 @@ export class WebsiteCheckerAgent extends BaseAgent {
           }
 
           if (result.decision === 'CONFIRMED') {
-            const created = await this.createConfirmationProposal(target, result, config, context)
-            proposalsCreated += created
-            stats.confirmed++
+            // No date found → cannot confirm (useless without a date)
+            const bestAnalysis = result.urlResults.find(r => r.isAlive && r.analysis?.confirmed)?.analysis
+            if (!bestAnalysis?.startDate) {
+              context.logger.info(`Confirmation détectée mais AUCUNE date trouvée pour ${target.eventName} ${target.editionYear} — ignorée`)
+              stats.inconclusive++
+            } else {
+              const created = await this.createConfirmationProposal(target, result, config, context)
+              proposalsCreated += created
+              stats.confirmed++
+            }
           } else if (result.decision === 'CANCELED') {
             const created = await this.createCancellationProposal(target, result, config, context)
             proposalsCreated += created
@@ -391,12 +398,27 @@ export class WebsiteCheckerAgent extends BaseAgent {
     }
 
     const bestResult = result.urlResults.find(r => r.isAlive && r.analysis?.confirmed)
+    const analysis = bestResult?.analysis
 
-    const changes = {
+    const changes: Record<string, any> = {
       calendarStatus: {
         old: 'TO_BE_CONFIRMED',
         new: 'CONFIRMED',
       },
+    }
+
+    // Include dates extracted by the LLM
+    if (analysis?.startDate) {
+      changes.startDate = {
+        old: target.startDate ? target.startDate.toISOString().split('T')[0] : null,
+        new: analysis.startDate,
+      }
+    }
+    if (analysis?.endDate) {
+      changes.endDate = {
+        old: null,
+        new: analysis.endDate,
+      }
     }
 
     const justification = [

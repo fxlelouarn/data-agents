@@ -56,7 +56,9 @@ export interface PageAnalysisResult {
   confirmed: boolean
   canceled: boolean
   registrationOpen: boolean
-  datesFound: string[]          // ISO date strings found on page
+  startDate: string | null      // ISO date YYYY-MM-DD if found
+  endDate: string | null        // ISO date YYYY-MM-DD if multi-day, null otherwise
+  datesFound: string[]          // All ISO date strings found on page
   yearMentioned: boolean        // Whether the target year appears on page
   confidence: number            // LLM's own confidence (0-1)
   reasoning: string             // Short explanation

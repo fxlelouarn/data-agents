@@ -55,6 +55,8 @@ describe('analyzePage', () => {
           confirmed: true,
           canceled: false,
           registrationOpen: true,
+          startDate: '2026-04-15',
+          endDate: null,
           datesFound: ['2026-04-15'],
           yearMentioned: true,
           confidence: 0.95,
@@ -72,6 +74,8 @@ describe('analyzePage', () => {
     expect(result).not.toBeNull()
     expect(result!.confirmed).toBe(true)
     expect(result!.registrationOpen).toBe(true)
+    expect(result!.startDate).toBe('2026-04-15')
+    expect(result!.endDate).toBeNull()
     expect(result!.confidence).toBe(0.95)
   })
 
