@@ -230,11 +230,11 @@ export class WebsiteCheckerAgent extends BaseAgent {
         },
         editionPartners: {
           where: {
-            type: { in: ['ORGANIZER', 'TIMER'] },
+            role: { in: ['ORGANIZER', 'TIMER'] },
             websiteUrl: { not: null },
           },
           select: {
-            type: true,
+            role: true,
             name: true,
             websiteUrl: true,
           },
@@ -263,7 +263,7 @@ export class WebsiteCheckerAgent extends BaseAgent {
         if (partner.websiteUrl) {
           urls.push({
             url: partner.websiteUrl,
-            sourceType: partner.type.toLowerCase() as 'organizer' | 'timer',
+            sourceType: partner.role.toLowerCase() as 'organizer' | 'timer',
             sourceName: partner.name || undefined,
           })
         }
