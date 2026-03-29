@@ -413,11 +413,11 @@ export class WebsiteCheckerAgent extends BaseAgent {
         old: target.startDate ? target.startDate.toISOString().split('T')[0] : null,
         new: analysis.startDate,
       }
-    }
-    if (analysis?.endDate) {
+      // endDate = endDate if multi-day, startDate if mono-day
+      const effectiveEndDate = analysis.endDate || analysis.startDate
       changes.endDate = {
         old: null,
-        new: analysis.endDate,
+        new: effectiveEndDate,
       }
     }
 
