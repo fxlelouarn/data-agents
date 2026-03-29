@@ -30,6 +30,9 @@ export type {
 export { LLMEventExtractor } from './services/event-extraction/llm-event-extractor'
 export { preprocessHtml } from './services/event-extraction/html-preprocessor'
 
+// LLM event name cleaner
+export { cleanEventNameWithLLM } from './services/event-name-cleaner'
+
 // LLM confidence review for EDITION_UPDATE proposals
 export {
   reviewEditionUpdateConfidence,

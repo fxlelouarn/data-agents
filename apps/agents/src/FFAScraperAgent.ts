@@ -9,7 +9,7 @@
 
 import { AGENT_VERSIONS, FFAScraperAgentConfigSchema, getAgentName } from '@data-agents/types'
 import type { ProposalInput, ProposalRaceInput } from '@data-agents/types'
-import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor, reviewEditionUpdateConfidence } from '@data-agents/agent-framework'
+import { BaseAgent, AgentContext, AgentRunResult, ProposalData, ProposalType, AgentType, MeilisearchMatchingConfig, LLMMatchingConfig, LLMMatchingService, LLMEventExtractor, reviewEditionUpdateConfidence, cleanEventNameWithLLM } from '@data-agents/agent-framework'
 import { buildNewEventChanges as sharedBuildNewEventChanges, buildEditionUpdateChanges as sharedBuildEditionUpdateChanges } from '@data-agents/agent-framework'
 import pLimit from 'p-limit'
 
@@ -1058,9 +1058,15 @@ export class FFAScraperAgent extends BaseAgent {
       // Créer un nouvel événement via le builder partagé
       const proposalInput = this.toProposalInput(competition)
       proposalInput.confidence = confidence
-      // Use LLM-cleaned name if available (removes edition-specific elements like years, edition numbers)
+      // Always clean event name via LLM (removes edition-specific elements like years, "24E", etc.)
+      // Falls back to LLM judge's cleanedEventName if available, then regex fallback in buildNewEventChanges
       if (matchResult.llmCleanedEventName) {
         proposalInput.eventName = matchResult.llmCleanedEventName
+      } else if (this.llmConfig?.apiKey) {
+        proposalInput.eventName = await cleanEventNameWithLLM(
+          proposalInput.eventName,
+          { apiKey: this.llmConfig.apiKey }
+        )
       }
       const changes = sharedBuildNewEventChanges(proposalInput)
 

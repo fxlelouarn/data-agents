@@ -296,6 +296,7 @@ export async function matchEvent(
     if (best.combined < 0.3) {
       logger.info(`  → Result: NO_MATCH (best score ${best.combined.toFixed(3)} < 0.3)`)
       // No close candidates — high confidence this is genuinely new
+      // LLM not called in this fast path, so no llmCleanedEventName
       return { type: 'NO_MATCH', confidence: 0, llmNewEventConfidence: 0.95, llmReason: `No candidate above 0.3 (best: ${best.combined.toFixed(3)})` }
     }
 
