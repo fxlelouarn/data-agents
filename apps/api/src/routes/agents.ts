@@ -2,14 +2,14 @@ import { Router, Request, Response, NextFunction } from 'express'
 import { body, param, query, validationResult } from 'express-validator'
 import { getDatabaseServiceSync } from '../services/database'
 import { validateFrequencyConfig } from '@data-agents/database'
-import { FlexibleScheduler } from '../services/flexible-scheduler'
+import { getScheduler } from '../services/flexible-scheduler'
 import { asyncHandler, createError } from '../middleware/error-handler'
 import { enrichAgentWithMetadata, getAvailableAgentsForUI } from '../services/agent-metadata'
 import type { FrequencyConfig } from '@data-agents/types'
 
 const router = Router()
 const db = getDatabaseServiceSync()
-const scheduler = new FlexibleScheduler()
+const scheduler = getScheduler()
 
 // GET /api/agents/available - List available agent types for creation
 // IMPORTANT: This route must be defined BEFORE /:id to avoid conflicts

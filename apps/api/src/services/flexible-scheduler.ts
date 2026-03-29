@@ -638,3 +638,13 @@ export class FlexibleScheduler {
 
 // Export the old name as alias for backwards compatibility during transition
 export { FlexibleScheduler as AgentScheduler }
+
+// Singleton instance - ensures a single scheduler across the entire application
+let _schedulerInstance: FlexibleScheduler | null = null
+
+export function getScheduler(): FlexibleScheduler {
+  if (!_schedulerInstance) {
+    _schedulerInstance = new FlexibleScheduler()
+  }
+  return _schedulerInstance
+}

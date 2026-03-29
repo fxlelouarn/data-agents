@@ -20,7 +20,7 @@ import { versionRouter } from './routes/version'
 import authRouter from './routes/auth'
 import { slackRouter } from './routes/slack'
 import { slackService } from './services/slack/SlackService'
-import { FlexibleScheduler } from './services/flexible-scheduler'
+import { getScheduler } from './services/flexible-scheduler'
 import { updateAutoApplyScheduler } from './services/update-auto-apply-scheduler'
 import { errorHandler } from './middleware/error-handler'
 import { APP_VERSION } from './version'
@@ -113,7 +113,7 @@ app.use('*', (req, res) => {
 })
 
 // Initialize scheduler
-const scheduler = new FlexibleScheduler()
+const scheduler = getScheduler()
 
 // Graceful shutdown
 process.on('SIGTERM', async () => {
