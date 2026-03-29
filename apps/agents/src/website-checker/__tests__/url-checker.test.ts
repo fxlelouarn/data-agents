@@ -1,3 +1,15 @@
+// Mock @data-agents/agent-framework to provide preprocessHtml
+jest.mock('@data-agents/agent-framework', () => ({
+  preprocessHtml: jest.fn((html: string) => {
+    // Simplified version: strip tags, collapse whitespace
+    return html
+      .replace(/<(nav|footer|script|style|noscript|iframe|svg|header)[^>]*>[\s\S]*?<\/\1>/gi, '')
+      .replace(/<[^>]+>/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim()
+  }),
+}))
+
 import { checkUrl, isParkedDomain } from '../url-checker'
 import { AxiosError } from 'axios'
 

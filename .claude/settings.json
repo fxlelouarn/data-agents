@@ -1,7 +1,8 @@
 {
   "permissions": {
     "allow": [
-      "Bash(psql \"postgresql://data_agents_user:epbhY7JjPVJERAY7tkHzBWx3THEFFy0M@dpg-d4c5448dl3ps73b959s0-a.frankfurt-postgres.render.com/data_agents_8bni\" -c \":*)"
+      "Bash(psql \"postgresql://data_agents_user:epbhY7JjPVJERAY7tkHzBWx3THEFFy0M@dpg-d4c5448dl3ps73b959s0-a.frankfurt-postgres.render.com/data_agents_8bni\" -c \":*)",
+      "Bash(rtk proxy:*)"
     ]
   }
 }

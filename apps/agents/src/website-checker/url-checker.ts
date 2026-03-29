@@ -1,5 +1,5 @@
 import axios, { AxiosError } from 'axios'
-import * as cheerio from 'cheerio'
+import { preprocessHtml } from '@data-agents/agent-framework'
 import type { UrlSource, UrlCheckResult } from './types'
 
 const DEFAULT_TIMEOUT = 10_000
@@ -28,21 +28,12 @@ export function isParkedDomain(html: string): boolean {
 }
 
 /**
- * Extracts readable text from HTML, stripping nav, footer, scripts, styles.
+ * Converts HTML to clean markdown using shared preprocessor (cheerio + turndown).
  * Truncates to maxChars.
  */
-function extractText(html: string, maxChars: number): string {
-  const $ = cheerio.load(html)
-
-  // Remove non-content elements
-  $('nav, footer, script, style, noscript, iframe, svg, header').remove()
-
-  // Get text, collapse whitespace
-  const text = $('body').text()
-    .replace(/\s+/g, ' ')
-    .trim()
-
-  return text.slice(0, maxChars)
+function extractContent(html: string, maxChars: number): string {
+  const markdown = preprocessHtml(html)
+  return markdown.slice(0, maxChars)
 }
 
 interface CheckUrlOptions {
@@ -101,7 +92,7 @@ export async function checkUrl(
       }
     }
 
-    const htmlText = extractText(html, maxChars)
+    const htmlText = extractContent(html, maxChars)
 
     return {
       ...base,

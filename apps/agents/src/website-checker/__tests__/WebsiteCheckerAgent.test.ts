@@ -61,6 +61,11 @@ const mockBaseAgent = class {
 jest.mock('@data-agents/agent-framework', () => ({
   BaseAgent: mockBaseAgent,
   AgentType: { EXTRACTOR: 'EXTRACTOR' },
+  preprocessHtml: (html: string) => html
+    .replace(/<(nav|footer|script|style|noscript|iframe|svg|header)[^>]*>[\s\S]*?<\/\1>/gi, '')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim(),
 }))
 
 // --- Imports (after mocks) ---
