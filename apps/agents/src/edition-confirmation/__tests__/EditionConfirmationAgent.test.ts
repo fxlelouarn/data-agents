@@ -38,6 +38,20 @@ jest.mock('@data-agents/database', () => ({
   IAgentStateService: {},
 }))
 
+// Mock @data-agents/agent-framework to avoid deep import chain with .js extensions
+const mockBaseAgent = class {
+  config: any
+  constructor(config: any) { this.config = config }
+  async connectToSource() { return {} }
+  async closeSourceConnections() {}
+  async createProposal(...args: any[]) { return { id: 'mock-proposal' } }
+  protected async getDb() { return {} }
+}
+jest.mock('@data-agents/agent-framework', () => ({
+  BaseAgent: mockBaseAgent,
+  AgentType: { EXTRACTOR: 'EXTRACTOR' },
+}))
+
 // --- Imports (after mocks) ---
 
 import { EditionConfirmationAgent } from '../../EditionConfirmationAgent'
