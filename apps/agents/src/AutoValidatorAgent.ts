@@ -114,7 +114,8 @@ export class AutoValidatorAgent extends BaseAgent {
         OR: [
           { config: { path: ['agentType'], equals: 'FFA_SCRAPER' } },
           { config: { path: ['agentType'], equals: 'FFA_RESULTS' } },
-          { config: { path: ['agentType'], equals: 'SLACK_EVENT' } }
+          { config: { path: ['agentType'], equals: 'SLACK_EVENT' } },
+          { config: { path: ['agentType'], equals: 'EDITION_CONFIRMATION' } }
         ]
       },
       select: { id: true }
