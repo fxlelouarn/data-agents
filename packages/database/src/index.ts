@@ -26,6 +26,8 @@ export type { IAgentStateService } from './services/AgentStateService'
 export { AgentRegistryService, agentRegistryService } from './services/AgentRegistryService'
 export { MeilisearchService, getMeilisearchService } from './services/meilisearch-service'
 export type { MeilisearchEvent, MeilisearchSearchParams, MeilisearchSearchResult } from './services/meilisearch-service'
+export { EditionProtectionService } from './services/edition-protection.service'
+export type { ProtectionResult } from './services/edition-protection.service'
 
 // Export validation schemas and types
 export * from './validation/schemas'
