@@ -169,11 +169,66 @@ class UpdateAutoApplyScheduler {
         return result
       }
 
-      console.log(`📋 Found ${pendingApplications.length} pending updates`)
+      // ✅ Edition Protection: Skip applications for protected editions
+      const { EditionProtectionService } = await import('@data-agents/database')
+      const { getDatabaseService } = await import('./database')
+      const db = await getDatabaseService()
+      const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+        where: { type: 'MILES_REPUBLIC', isActive: true }
+      })
+
+      let filteredApplications = pendingApplications
+
+      if (milesRepublicConn) {
+        const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+        const logger = createConsoleLogger('API', 'auto-apply-scheduler')
+        const dbManager = DatabaseManager.getInstance(logger)
+        const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+        const protectionService = new EditionProtectionService(sourceDb)
+
+        // Collect distinct editionIds
+        const editionIds = [...new Set(
+          pendingApplications
+            .map(app => app.proposal?.editionId)
+            .filter((id): id is string => id != null)
+            .map(id => parseInt(id))
+            .filter(id => !isNaN(id))
+        )]
+
+        const protectedEditions = await protectionService.getProtectedEditionIds(editionIds)
+
+        // Filter out applications for protected editions (unless force flag is set)
+        filteredApplications = pendingApplications.filter(app => {
+          const editionId = app.proposal?.editionId ? parseInt(app.proposal.editionId) : null
+          if (!editionId) return true // No editionId = not edition-related, allow
+
+          const protection = protectedEditions.get(editionId)
+          if (!protection) return true // Not protected, allow
+
+          // Check for force flag in proposal's userModifiedChanges
+          const userModifiedChanges = app.proposal?.userModifiedChanges as Record<string, any> | null
+          if (userModifiedChanges?.forceProtectedEdition === true) {
+            console.log(`🛡️ Edition ${editionId} protégée mais force=true, application autorisée`)
+            return true
+          }
+
+          console.log(`🛡️ Skip application ${app.id} — édition ${editionId} protégée: ${protection.reasons.join(', ')}`)
+          return false
+        })
+
+        const skippedCount = pendingApplications.length - filteredApplications.length
+        if (skippedCount > 0) {
+          console.log(`🛡️ ${skippedCount} application(s) skippée(s) car édition(s) protégée(s)`)
+        }
+      } else {
+        console.log('⚠️ Miles Republic connection not found, skipping edition protection check')
+      }
+
+      console.log(`📋 Found ${filteredApplications.length} pending updates (${pendingApplications.length} total before protection filter)`)
 
       // Grouper les applications par proposalId pour trier CHAQUE proposition séparément
-      const applicationsByProposal = new Map<string, typeof pendingApplications>()
-      for (const app of pendingApplications) {
+      const applicationsByProposal = new Map<string, typeof filteredApplications>()
+      for (const app of filteredApplications) {
         const proposalId = app.proposalId
         if (!applicationsByProposal.has(proposalId)) {
           applicationsByProposal.set(proposalId, [])
@@ -182,7 +237,7 @@ class UpdateAutoApplyScheduler {
       }
 
       // Trier les blocs au sein de chaque proposition, puis concaténer
-      const applicationsInOrder: typeof pendingApplications = []
+      const applicationsInOrder: typeof filteredApplications = []
       for (const [_proposalId, apps] of applicationsByProposal) {
         // Trier par dépendances au sein de cette proposition
         const sortedBlocks = sortBlocksByDependencies(
