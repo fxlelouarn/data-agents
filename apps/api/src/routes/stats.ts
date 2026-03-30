@@ -603,4 +603,78 @@ router.get('/user-leaderboard', async (req, res) => {
   }
 })
 
+/**
+ * GET /api/stats/confirmation-rate-by-sport
+ * Snapshot: taux de confirmation des éditions futures par groupe sport
+ */
+router.get('/confirmation-rate-by-sport', async (req, res) => {
+  try {
+    const sourceDb = await getMilesRepublicConnection()
+    const now = new Date()
+
+    const SPORT_LABELS: Record<SportGroupKey, string> = {
+      running_trail: 'Course à pied / Trail',
+      triathlon: 'Triathlon',
+      cycling: 'Cyclisme',
+      other: 'Autres',
+    }
+
+    const rows: any[] = await sourceDb.$queryRawUnsafe(`
+      WITH edition_sports AS (
+        SELECT e.id, e."calendarStatus",
+          ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+        FROM "Edition" e
+        WHERE e."startDate" >= $1
+          AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+      )
+      SELECT
+        ${SPORT_GROUP_SQL_CASE} as sport_group,
+        "calendarStatus",
+        COUNT(*)::int as count
+      FROM edition_sports
+      GROUP BY sport_group, "calendarStatus"
+    `, now)
+
+    // Aggregate into sport groups
+    const sportData: Record<SportGroupKey, { confirmed: number; toBeConfirmed: number }> = {
+      running_trail: { confirmed: 0, toBeConfirmed: 0 },
+      triathlon: { confirmed: 0, toBeConfirmed: 0 },
+      cycling: { confirmed: 0, toBeConfirmed: 0 },
+      other: { confirmed: 0, toBeConfirmed: 0 },
+    }
+
+    for (const row of rows) {
+      const group = row.sport_group as SportGroupKey
+      if (!(group in sportData)) continue
+      if (row.calendarStatus === 'CONFIRMED') {
+        sportData[group].confirmed = row.count
+      } else if (row.calendarStatus === 'TO_BE_CONFIRMED') {
+        sportData[group].toBeConfirmed = row.count
+      }
+    }
+
+    const results = ALL_SPORT_GROUPS.map(sport => {
+      const data = sportData[sport]
+      const total = data.confirmed + data.toBeConfirmed
+      return {
+        sport,
+        label: SPORT_LABELS[sport],
+        confirmed: data.confirmed,
+        toBeConfirmed: data.toBeConfirmed,
+        total,
+        rate: total > 0 ? Math.round((data.confirmed / total) * 1000) / 10 : 0
+      }
+    })
+
+    res.json({ success: true, data: { results } })
+  } catch (error) {
+    console.error('Error fetching confirmation rate by sport:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch confirmation rate by sport',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
 export { router as statsRouter }
