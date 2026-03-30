@@ -51,16 +51,23 @@ export class EditionProtectionService {
     })
 
     for (const edition of editions) {
+      // Protection criteria: isFeatured OR customerType
+      const isFeatured = edition.event?.isFeatured === true
+      const hasCustomerType = !!edition.customerType
+
+      if (!isFeatured && !hasCustomerType) continue
+
       const reasons: string[] = []
 
-      if (edition.event?.isFeatured === true) {
+      if (isFeatured) {
         reasons.push('isFeatured')
       }
 
-      if (edition.customerType) {
+      if (hasCustomerType) {
         reasons.push(`customerType:${edition.customerType}`)
       }
 
+      // Additional info for the banner (not protection criteria on their own)
       if (
         edition.registrationOpeningDate &&
         edition.registrationOpeningDate <= now &&
@@ -77,9 +84,7 @@ export class EditionProtectionService {
         reasons.push(`hasAttendees:${totalAttendees}`)
       }
 
-      if (reasons.length > 0) {
-        results.set(edition.id, { protected: true, reasons })
-      }
+      results.set(edition.id, { protected: true, reasons })
     }
 
     return results
