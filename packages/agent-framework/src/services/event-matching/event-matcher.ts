@@ -293,15 +293,10 @@ export async function matchEvent(
     // 9. Select best match
     const best = scoredCandidates[0]
 
-    if (best.combined < 0.3) {
-      logger.info(`  → Result: NO_MATCH (best score ${best.combined.toFixed(3)} < 0.3)`)
-      // No close candidates — high confidence this is genuinely new
-      // LLM not called in this fast path, so no llmCleanedEventName
-      return { type: 'NO_MATCH', confidence: 0, llmNewEventConfidence: 0.95, llmReason: `No candidate above 0.3 (best: ${best.combined.toFixed(3)})` }
-    }
-
-    // 9.5 LLM Event Judge for gray zone (0.30-0.95)
-    if (best.combined < 0.95 && config.llmService) {
+    // 9.5 LLM Event Judge — always delegate to LLM when available.
+    // fuse.js normalization can miss obvious matches (e.g. "10 km de falaise" vs "10 Kms De Falaise"
+    // scored 0.147) and EXACT_MATCH could be a false positive (different events, similar names).
+    if (config.llmService) {
       const llmCandidates = scoredCandidates.slice(0, config.llm?.maxCandidates ?? 5).map(c => {
         const candidateEdition = c.event.editions?.find((e: any) => e.year === searchYear)
         return {
