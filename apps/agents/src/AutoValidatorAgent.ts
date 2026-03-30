@@ -136,25 +136,22 @@ export class AutoValidatorAgent extends BaseAgent {
   private async getEligibleEditionIds(editionIds: number[]): Promise<Set<number>> {
     if (editionIds.length === 0) return new Set()
 
-    // Limiter à 5000 IDs pour éviter des requêtes trop lourdes
     const limitedIds = editionIds.slice(0, 5000)
 
-    // On filtre uniquement sur isFeatured, pas sur customerType
-    // Les propositions MR internes pour éditions premium sont valides
-    const eligibleEditions = await this.sourceDb.edition.findMany({
-      where: {
-        id: { in: limitedIds },
-        event: {
-          OR: [
-            { isFeatured: false },
-            { isFeatured: null }
-          ]
-        }
-      },
-      select: { id: true }
-    })
+    // Use EditionProtectionService to find protected editions
+    const { EditionProtectionService } = await import('@data-agents/database')
+    const protectionService = new EditionProtectionService(this.sourceDb)
+    const protectedEditions = await protectionService.getProtectedEditionIds(limitedIds)
 
-    return new Set(eligibleEditions.map((e: { id: number }) => e.id))
+    // Log protected editions for visibility
+    for (const [editionId, result] of protectedEditions) {
+      this.logger.info(`🛡️ Edition ${editionId} protégée: ${result.reasons.join(', ')} — exclue de l'auto-validation`)
+    }
+
+    // Return only unprotected editions
+    const eligible = new Set(limitedIds.filter(id => !protectedEditions.has(id)))
+    this.logger.info(`📊 Éditions éligibles: ${eligible.size}/${limitedIds.length} (${protectedEditions.size} protégées)`)
+    return eligible
   }
 
   /**

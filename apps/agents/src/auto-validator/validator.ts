@@ -70,6 +70,8 @@ export async function validateProposal(
     }
   }
 
+  // NOTE: These checks (isFeatured, customerType) are also performed upstream by
+  // getEligibleEditionIds() via EditionProtectionService. Kept here as safety net.
   // 2. Vérifier Event.isFeatured (EDITION_UPDATE only)
   if (eventId && !isNewEvent) {
     try {
