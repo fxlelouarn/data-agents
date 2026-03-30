@@ -83,7 +83,7 @@ router.get('/edition-protection/:editionId', requireAuth, asyncHandler(async (re
   const protectionService = new EditionProtectionService(sourceDb)
   const result = await protectionService.isEditionProtected(editionId)
 
-  return res.json(result)
+  return res.json({ success: true, data: result })
 }))
 
 // POST /api/proposals - Create a manual proposal
