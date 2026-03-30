@@ -13,7 +13,7 @@ interface EditionDuplicatorConfig {
 }
 
 interface ProcessedEditionsState {
-  [editionId: string]: string // editionId → proposalId
+  [editionId: string]: string
 }
 
 export class EditionDuplicatorAgent extends BaseAgent {
@@ -54,19 +54,15 @@ export class EditionDuplicatorAgent extends BaseAgent {
         dryRun: config.dryRun,
       })
 
-      // 1. Connect to Miles Republic
       this.sourceDb = await this.connectToSource(config.sourceDatabase)
       context.logger.info('Connexion source initialisée')
 
-      // 2. Load already-processed editions
       const processed = await this.loadProcessedEditions()
       context.logger.info(`${Object.keys(processed).length} éditions déjà traitées`)
 
-      // 3. Find editions to duplicate
       const editions = await this.findEditionsToDuplicate(config.batchSize)
       context.logger.info(`${editions.length} éditions candidates trouvées`)
 
-      // 4. Filter out already-processed
       const toProcess = editions.filter((ed: any) => !processed[ed.id.toString()])
       context.logger.info(`${toProcess.length} éditions à traiter (après déduplication)`)
 
@@ -78,12 +74,10 @@ export class EditionDuplicatorAgent extends BaseAgent {
         }
       }
 
-      // 5. Create proposals
       let created = 0
       let skipped = 0
 
       for (const edition of toProcess) {
-        // Validate year is numeric
         const yearNum = parseInt(edition.year)
         if (isNaN(yearNum)) {
           context.logger.warn(`Édition ${edition.id}: année non numérique "${edition.year}", ignorée`)
@@ -100,9 +94,8 @@ export class EditionDuplicatorAgent extends BaseAgent {
         }
 
         const proposal = await this.createProposal(proposalData)
-        context.logger.info(`Proposition créée: ${proposal.id} — ${edition.event.name} ${edition.year} → ${yearNum + 1}`)
+        context.logger.info(`✅ Proposition créée: ${proposal.id} — ${edition.event.name} ${edition.year} → ${yearNum + 1}`)
 
-        // Track as processed
         processed[edition.id.toString()] = proposal.id
         await this.saveProcessedEditions(processed)
         created++
@@ -130,16 +123,11 @@ export class EditionDuplicatorAgent extends BaseAgent {
     }
   }
 
-  /**
-   * Find current-year editions that have ended and have no next-year edition.
-   * Equivalent of the n8n SQL query.
-   */
   private async findEditionsToDuplicate(batchSize: number): Promise<any[]> {
     const now = new Date()
     const currentYear = now.getFullYear()
     const nextYear = currentYear + 1
 
-    // Find ended editions for current year with no next-year edition
     const editions = await this.sourceDb.edition.findMany({
       where: {
         year: currentYear.toString(),
@@ -147,7 +135,6 @@ export class EditionDuplicatorAgent extends BaseAgent {
         currentEditionEventId: { not: null },
         endDate: {
           not: null,
-          // endDate + 1 day <= today → endDate < start of today
           lt: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
         },
       },
@@ -164,18 +151,16 @@ export class EditionDuplicatorAgent extends BaseAgent {
           },
         },
       },
-      take: batchSize * 2, // Take more to account for filtering
+      take: batchSize * 2,
       orderBy: { endDate: 'asc' },
     })
 
-    // Filter: endDate year must be current year
     const filtered = editions.filter((ed: any) => {
       if (!ed.endDate) return false
       const endYear = new Date(ed.endDate).getFullYear()
       return endYear === currentYear
     })
 
-    // Filter: no next-year edition exists for same event
     const result: any[] = []
     for (const edition of filtered) {
       const nextYearEdition = await this.sourceDb.edition.findFirst({
@@ -194,9 +179,6 @@ export class EditionDuplicatorAgent extends BaseAgent {
     return result.slice(0, batchSize)
   }
 
-  /**
-   * Build a proposal payload for duplicating an edition to next year.
-   */
   private buildProposalForEdition(edition: any): any {
     const currentYear = parseInt(edition.year)
     const nextYear = currentYear + 1
@@ -299,9 +281,6 @@ export class EditionDuplicatorAgent extends BaseAgent {
     }
   }
 
-  /**
-   * Shift a date by +1 year. Returns null if input is null.
-   */
   private shiftDateByOneYear(date: Date | null): string | null {
     if (!date) return null
     const d = new Date(date)
