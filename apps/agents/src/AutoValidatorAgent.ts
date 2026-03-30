@@ -115,7 +115,8 @@ export class AutoValidatorAgent extends BaseAgent {
           { config: { path: ['agentType'], equals: 'FFA_SCRAPER' } },
           { config: { path: ['agentType'], equals: 'FFA_RESULTS' } },
           { config: { path: ['agentType'], equals: 'SLACK_EVENT' } },
-          { config: { path: ['agentType'], equals: 'WEBSITE_CHECKER' } }
+          { config: { path: ['agentType'], equals: 'WEBSITE_CHECKER' } },
+          { config: { path: ['agentType'], equals: 'EDITION_DUPLICATOR' } }
         ]
       },
       select: { id: true }
