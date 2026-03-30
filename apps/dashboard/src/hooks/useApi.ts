@@ -11,7 +11,8 @@ import {
   updatesApi,
   cacheApi,
   eventsApi,
-  statsApi
+  statsApi,
+  type SportGroup
 } from '@/services/api'
 import {
   AgentFilters,
@@ -1171,11 +1172,12 @@ export const useCalendarConfirmations = (filters: {
   startDate?: string
   endDate?: string
   granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  sport?: SportGroup
 } = {}) => {
   return useQuery({
     queryKey: ['stats', 'calendar-confirmations', filters],
     queryFn: () => statsApi.getCalendarConfirmations(filters),
-    staleTime: 300000, // 5 minutes
+    staleTime: 300000,
   })
 }
 
@@ -1183,11 +1185,12 @@ export const usePendingConfirmations = (filters: {
   startDate?: string
   endDate?: string
   granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+  sport?: SportGroup
 } = {}) => {
   return useQuery({
     queryKey: ['stats', 'pending-confirmations', filters],
     queryFn: () => statsApi.getPendingConfirmations(filters),
-    staleTime: 300000, // 5 minutes
+    staleTime: 300000,
   })
 }
 
@@ -1199,7 +1202,7 @@ export const useProposalsCreated = (filters: {
   return useQuery({
     queryKey: ['stats', 'proposals-created', filters],
     queryFn: () => statsApi.getProposalsCreated(filters),
-    staleTime: 300000, // 5 minutes
+    staleTime: 300000,
   })
 }
 
@@ -1210,7 +1213,15 @@ export const useUserLeaderboard = (filters: {
   return useQuery({
     queryKey: ['stats', 'user-leaderboard', filters],
     queryFn: () => statsApi.getUserLeaderboard(filters),
-    staleTime: 300000, // 5 minutes
+    staleTime: 300000,
+  })
+}
+
+export const useConfirmationRateBySport = () => {
+  return useQuery({
+    queryKey: ['stats', 'confirmation-rate-by-sport'],
+    queryFn: () => statsApi.getConfirmationRateBySport(),
+    staleTime: 300000,
   })
 }
 
