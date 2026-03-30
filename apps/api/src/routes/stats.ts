@@ -303,66 +303,102 @@ router.get('/pending-confirmations', async (req, res) => {
     const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
     const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
     const granularity = (req.query.granularity as TimeGranularity) || 'month'
+    const sportFilter = req.query.sport as SportGroupKey | undefined
 
-    // Connexion à Miles Republic
     const sourceDb = await getMilesRepublicConnection()
 
     const endPeriodBoundary = getNextPeriodStart(endDate, granularity)
     const intervals = generateTimeIntervals(startDate, endDate, granularity)
-    const results = []
-
-    // Date actuelle pour filtrer les éditions futures
     const now = new Date()
+    const results = []
 
     for (let i = 0; i < intervals.length; i++) {
       const currentDate = intervals[i]
       const nextDate = intervals[i + 1] || endPeriodBoundary
 
-      // Compte les éditions TO_BE_CONFIRMED (futures)
-      const toBeConfirmedCount = await sourceDb.edition.count({
-        where: {
-          calendarStatus: 'TO_BE_CONFIRMED',
-          startDate: {
-            gte: now // Seulement les éditions futures
-          },
-          AND: [
-            { startDate: { gte: currentDate } },
-            { startDate: { lt: nextDate } }
-          ]
-        }
-      })
+      if (sportFilter) {
+        // Filtered mode: return confirmed/toBeConfirmed for selected sport
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id, e."calendarStatus",
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."startDate" >= $1
+              AND e."startDate" >= $2
+              AND e."startDate" < $3
+              AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+          )
+          SELECT
+            "calendarStatus",
+            COUNT(*)::int as count
+          FROM edition_sports
+          WHERE ${SPORT_GROUP_SQL_CASE} = $4
+          GROUP BY "calendarStatus"
+        `, now, currentDate, nextDate, sportFilter)
 
-      // Compte les éditions CONFIRMED (futures)
-      const confirmedCount = await sourceDb.edition.count({
-        where: {
-          calendarStatus: 'CONFIRMED',
-          startDate: {
-            gte: now // Seulement les éditions futures
-          },
-          AND: [
-            { startDate: { gte: currentDate } },
-            { startDate: { lt: nextDate } }
-          ]
+        let confirmed = 0
+        let toBeConfirmed = 0
+        for (const row of rows) {
+          if (row.calendarStatus === 'CONFIRMED') confirmed = row.count
+          if (row.calendarStatus === 'TO_BE_CONFIRMED') toBeConfirmed = row.count
         }
-      })
 
-      results.push({
-        date: formatDateLabel(currentDate, granularity),
-        confirmed: confirmedCount,
-        toBeConfirmed: toBeConfirmedCount,
-        total: confirmedCount + toBeConfirmedCount,
-        timestamp: currentDate.toISOString()
-      })
+        results.push({
+          date: formatDateLabel(currentDate, granularity),
+          confirmed,
+          toBeConfirmed,
+          total: confirmed + toBeConfirmed,
+          timestamp: currentDate.toISOString()
+        })
+      } else {
+        // Default mode: grouped+stacked by sport
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id, e."calendarStatus",
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."startDate" >= $1
+              AND e."startDate" >= $2
+              AND e."startDate" < $3
+              AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+          )
+          SELECT
+            ${SPORT_GROUP_SQL_CASE} as sport_group,
+            "calendarStatus",
+            COUNT(*)::int as count
+          FROM edition_sports
+          GROUP BY sport_group, "calendarStatus"
+        `, now, currentDate, nextDate)
+
+        const dataPoint: any = {
+          date: formatDateLabel(currentDate, granularity),
+          timestamp: currentDate.toISOString()
+        }
+
+        let total = 0
+        for (const group of ALL_SPORT_GROUPS) {
+          dataPoint[`${group}_confirmed`] = 0
+          dataPoint[`${group}_toBeConfirmed`] = 0
+        }
+
+        for (const row of rows) {
+          const group = row.sport_group as SportGroupKey
+          if (row.calendarStatus === 'CONFIRMED') {
+            dataPoint[`${group}_confirmed`] = row.count
+          } else if (row.calendarStatus === 'TO_BE_CONFIRMED') {
+            dataPoint[`${group}_toBeConfirmed`] = row.count
+          }
+          total += row.count
+        }
+
+        dataPoint.total = total
+        results.push(dataPoint)
+      }
     }
 
     res.json({
       success: true,
-      data: {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        granularity,
-        results
-      }
+      data: { startDate: startDate.toISOString(), endDate: endDate.toISOString(), granularity, results }
     })
   } catch (error) {
     console.error('Error fetching pending confirmations stats:', error)
