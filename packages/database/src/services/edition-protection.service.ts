@@ -51,29 +51,15 @@ export class EditionProtectionService {
     })
 
     for (const edition of editions) {
-      // Protection criteria: isFeatured OR customerType
-      const isFeatured = edition.event?.isFeatured === true
-      const hasCustomerType = !!edition.customerType
-
-      if (!isFeatured && !hasCustomerType) continue
-
       const reasons: string[] = []
 
-      if (isFeatured) {
+      // Protection criteria: isFeatured OR customerType OR hasAttendees
+      if (edition.event?.isFeatured === true) {
         reasons.push('isFeatured')
       }
 
-      if (hasCustomerType) {
+      if (edition.customerType) {
         reasons.push(`customerType:${edition.customerType}`)
-      }
-
-      // Additional info for the banner (not protection criteria on their own)
-      if (
-        edition.registrationOpeningDate &&
-        edition.registrationOpeningDate <= now &&
-        (!edition.registrationClosingDate || edition.registrationClosingDate > now)
-      ) {
-        reasons.push('registrationOpen')
       }
 
       const totalAttendees = edition.races.reduce(
@@ -84,7 +70,20 @@ export class EditionProtectionService {
         reasons.push(`hasAttendees:${totalAttendees}`)
       }
 
-      results.set(edition.id, { protected: true, reasons })
+      // Not a protection criterion on its own, but useful context in the banner
+      if (
+        edition.registrationOpeningDate &&
+        edition.registrationOpeningDate <= now &&
+        (!edition.registrationClosingDate || edition.registrationClosingDate > now)
+      ) {
+        reasons.push('registrationOpen')
+      }
+
+      // Protected if at least one protection criterion matched
+      const protectionReasons = reasons.filter(r => !r.startsWith('registrationOpen'))
+      if (protectionReasons.length > 0) {
+        results.set(edition.id, { protected: true, reasons })
+      }
     }
 
     return results
