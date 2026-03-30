@@ -300,8 +300,8 @@ router.get('/calendar-confirmations', async (req, res) => {
  */
 router.get('/pending-confirmations', async (req, res) => {
   try {
-    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date()
+    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date(Date.now() + 180 * 24 * 60 * 60 * 1000) // 6 mois dans le futur
     const granularity = (req.query.granularity as TimeGranularity) || 'month'
     const sportFilter = req.query.sport as SportGroupKey | undefined
 
