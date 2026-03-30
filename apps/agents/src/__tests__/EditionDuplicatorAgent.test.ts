@@ -1,4 +1,9 @@
-import { EditionDuplicatorAgent, EDITION_DUPLICATOR_AGENT_VERSION } from '../EditionDuplicatorAgent'
+// Mock @data-agents/types to avoid ESM `.js` extension resolution issues
+jest.mock('@data-agents/types', () => ({
+  AGENT_VERSIONS: { EDITION_DUPLICATOR_AGENT: '1.0.0' },
+  getAgentName: jest.fn().mockReturnValue('Edition Duplicator Agent'),
+  EditionDuplicatorAgentConfigSchema: {},
+}))
 
 jest.mock('@data-agents/agent-framework', () => ({
   BaseAgent: class MockBaseAgent {
@@ -19,6 +24,8 @@ jest.mock('@data-agents/database', () => ({
   },
   IAgentStateService: {},
 }))
+
+import { EditionDuplicatorAgent, EDITION_DUPLICATOR_AGENT_VERSION } from '../EditionDuplicatorAgent'
 
 describe('EditionDuplicatorAgent', () => {
   describe('version', () => {

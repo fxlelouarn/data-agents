@@ -93,7 +93,15 @@ export class EditionDuplicatorAgent extends BaseAgent {
           continue
         }
 
-        const proposal = await this.createProposal(proposalData)
+        const proposal = await this.createProposal(
+          proposalData.type,
+          proposalData.changes,
+          proposalData.justification,
+          proposalData.eventId,
+          proposalData.editionId,
+          undefined, // raceId
+          proposalData.confidence
+        )
         context.logger.info(`✅ Proposition créée: ${proposal.id} — ${edition.event.name} ${edition.year} → ${yearNum + 1}`)
 
         processed[edition.id.toString()] = proposal.id
