@@ -93,6 +93,34 @@ export class ProposalDomainService {
       this.logger.info(`   Blocs validés: ${approvedBlocks.length > 0 ? approvedBlocks.join(', ') : 'aucun'}`)
     }
 
+    // 2b. Edition protection safety net
+    // This is the last line of defense — upstream callers should check earlier
+    if (proposal.editionId && !options.force) {
+      try {
+        const { EditionProtectionService } = await import('./edition-protection.service')
+        const milesDb = await this.getMilesRepublicConnection()
+        const protectionService = new EditionProtectionService(milesDb)
+        const editionId = parseInt(proposal.editionId)
+
+        if (!isNaN(editionId)) {
+          const protection = await protectionService.isEditionProtected(editionId)
+          const userModifiedChanges = proposal.userModifiedChanges as Record<string, any> | null
+
+          if (protection.protected && !userModifiedChanges?.forceProtectedEdition) {
+            this.logger.warn(`🛡️ BLOCKED: Édition ${editionId} protégée: ${protection.reasons.join(', ')}`)
+            return this.errorResult(
+              'editionProtected',
+              `Édition protégée (${protection.reasons.join(', ')}). Validation manuelle avec forceProtectedEdition requise.`
+            )
+          }
+        }
+      } catch (error) {
+        this.logger.warn(`⚠️ Edition protection check failed (non-blocking): ${error}`)
+        // Non-blocking: if the check fails, we don't prevent application
+        // The upstream checks (auto-validator, scheduler) are the primary guards
+      }
+    }
+
     // 3. Extract agent name for audit trail
     const agentName = (proposal as any).agent?.name || 'data-agents'
     this.logger.info(`🤖 Application par l'agent: ${agentName}`)
