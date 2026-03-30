@@ -1,5 +1,6 @@
 import React, { useState, useMemo } from 'react'
 import { useNavigate } from 'react-router-dom'
+import { useQuery } from '@tanstack/react-query'
 import {
   Box,
   LinearProgress,
@@ -16,6 +17,7 @@ import {
 } from '@mui/material'
 import ProposalHeader from '@/components/proposals/ProposalHeader'
 import ProposalNavigation from '@/components/proposals/ProposalNavigation'
+import EditionProtectionBanner from '@/components/proposals/EditionProtectionBanner'
 import { useProposalLogic } from '@/hooks/useProposalLogic'
 import { useBlockValidation } from '@/hooks/useBlockValidation'
 import { useProposalEditor, ConsolidatedRaceChange, isGroupReturn } from '@/hooks/useProposalEditor'
@@ -28,6 +30,16 @@ import {
 } from '@/hooks/useApi'
 import type { Proposal } from '@/types'
 import { isFieldInBlock, getBlockForField } from '@/utils/blockFieldMapping'
+import { proposalsApi } from '@/services/api'
+
+function useEditionProtection(editionId: string | undefined | null) {
+  return useQuery({
+    queryKey: ['edition-protection', editionId],
+    queryFn: () => proposalsApi.getEditionProtection(parseInt(editionId!)),
+    enabled: !!editionId && !isNaN(parseInt(editionId)),
+    staleTime: 60_000,
+  })
+}
 
 export interface ConsolidatedChange {
   field: string
@@ -292,6 +304,8 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     return blocks
   }, [proposal, consolidatedChanges, consolidatedRaceChanges, isNewEvent])
 
+  const { data: protectionData } = useEditionProtection(proposal?.editionId)
+
   // ⚠️ Validation par blocs : Lecture seule (pas d'édition)
   // Hook de validation désactivé car ProposalDetailBase est maintenant lecture seule
   const {
@@ -304,7 +318,8 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
     blockProposals,
     selectedChanges: {}, // Vide - lecture seule
     userModifiedChanges: {}, // Vide - lecture seule
-    userModifiedRaceChanges: {} // Vide - lecture seule
+    userModifiedRaceChanges: {}, // Vide - lecture seule
+    isEditionProtected: protectionData?.data?.protected ?? false
   })
 
   // Wrappers (lecture seule)
@@ -501,6 +516,10 @@ const ProposalDetailBase: React.FC<ProposalDetailBaseProps> = ({
         ]}
         {...customHeaderProps}
       />
+
+      {protectionData?.data?.protected && (
+        <EditionProtectionBanner reasons={protectionData.data.reasons} />
+      )}
 
       <Grid container spacing={3}>
         <Grid item xs={12} md={renderSidebar ? 8 : 12}>

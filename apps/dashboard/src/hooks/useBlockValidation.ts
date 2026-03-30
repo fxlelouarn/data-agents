@@ -20,6 +20,8 @@ interface UseBlockValidationProps {
   selectedChanges?: Record<string, any>
   userModifiedChanges?: Record<string, any>
   userModifiedRaceChanges?: Record<string, Record<string, any>> // ✅ Les raceId sont des strings
+  // Edition protection: if true, forceProtectedEdition flag will be added to validation payload
+  isEditionProtected?: boolean
 }
 
 export const useBlockValidation = (props?: UseBlockValidationProps) => {
@@ -29,7 +31,8 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
     primaryProposalId,  // ✅ Two-Panes: proposition prioritaire
     selectedChanges = {},
     userModifiedChanges = {},
-    userModifiedRaceChanges = {}
+    userModifiedRaceChanges = {},
+    isEditionProtected = false
   } = props || {}
   const { enqueueSnackbar } = useSnackbar()
   const updateProposalMutation = useUpdateProposal()
@@ -76,6 +79,11 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       // ✅ Construire le payload consolidé avec UNIQUEMENT les modifications utilisateur
       // Le backend mergera automatiquement avec proposal.changes
       const changes: Record<string, any> = { ...userModifiedChanges }
+
+      // If edition is protected, mark that user explicitly approved
+      if (isEditionProtected) {
+        changes.forceProtectedEdition = true
+      }
 
       // ✅ FIX 2025-11-17 : Construire racesToAddFiltered POUR TOUS LES BLOCS
       // Les suppressions de nouvelles courses doivent être incluses même si on valide
@@ -142,7 +150,7 @@ export const useBlockValidation = (props?: UseBlockValidationProps) => {
       console.error(`Error validating block ${blockKey}:`, error)
       throw error
     }
-  }, [updateProposalMutation, blockProposals, primaryProposalId, userModifiedChanges, userModifiedRaceChanges])
+  }, [updateProposalMutation, blockProposals, primaryProposalId, userModifiedChanges, userModifiedRaceChanges, isEditionProtected])
 
   // Vérifier si un bloc est validé (utilise syncedBlockStatus au lieu de blockStatus)
   // ✅ Défini AVANT unvalidateBlock pour éviter la référence circulaire

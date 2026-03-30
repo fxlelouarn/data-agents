@@ -391,6 +391,10 @@ export const proposalsApi = {
 
   linkToEdition: (id: string, eventId: number, editionId: number): Promise<ApiResponse<Proposal>> =>
     api.patch(`/proposals/${id}/link-edition`, { eventId, editionId }).then(res => res.data),
+
+  // Check if an edition is protected from automatic modifications
+  getEditionProtection: (editionId: number): Promise<ApiResponse<{ protected: boolean; reasons: string[] }>> =>
+    api.get(`/proposals/edition-protection/${editionId}`).then(res => res.data),
 }
 
 // Runs API
