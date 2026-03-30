@@ -56,6 +56,36 @@ router.get('/eligible-count', asyncHandler(async (req: Request, res: Response) =
   })
 }))
 
+// GET /api/proposals/edition-protection/:editionId - Check if edition is protected
+// IMPORTANT: Cette route doit être AVANT /:id pour éviter le conflit
+router.get('/edition-protection/:editionId', requireAuth, asyncHandler(async (req: Request, res: Response) => {
+  const editionId = parseInt(req.params.editionId)
+
+  if (isNaN(editionId)) {
+    return res.status(400).json({ error: 'Invalid editionId' })
+  }
+
+  const { EditionProtectionService } = await import('@data-agents/database')
+
+  const milesRepublicConn = await db.prisma.databaseConnection.findFirst({
+    where: { type: 'MILES_REPUBLIC', isActive: true }
+  })
+
+  if (!milesRepublicConn) {
+    throw createError(500, 'Miles Republic connection not found', 'DATABASE_CONNECTION_NOT_FOUND')
+  }
+
+  const { DatabaseManager, createConsoleLogger } = await import('@data-agents/agent-framework')
+  const logger = createConsoleLogger('API', 'edition-protection')
+  const dbManager = DatabaseManager.getInstance(logger)
+  const sourceDb = await dbManager.getConnection(milesRepublicConn.id)
+
+  const protectionService = new EditionProtectionService(sourceDb)
+  const result = await protectionService.isEditionProtected(editionId)
+
+  return res.json(result)
+}))
+
 // POST /api/proposals - Create a manual proposal
 router.post('/', [
   body('eventId').optional().isString(),
