@@ -5,6 +5,43 @@ import { DatabaseManager, createConsoleLogger } from '@data-agents/agent-framewo
 const router = express.Router()
 const prisma = new PrismaClient()
 
+// Sport group mapping: categoryLevel1 → sport group key
+const SPORT_GROUP_SQL_CASE = `
+  CASE
+    WHEN dominant_sport IN ('RUNNING', 'TRAIL', 'WALK') THEN 'running_trail'
+    WHEN dominant_sport = 'TRIATHLON' THEN 'triathlon'
+    WHEN dominant_sport = 'CYCLING' THEN 'cycling'
+    ELSE 'other'
+  END
+`
+
+const ALL_SPORT_GROUPS = ['running_trail', 'triathlon', 'cycling', 'other'] as const
+
+/**
+ * Sous-requête SQL pour déterminer le sport dominant d'une édition.
+ * Retourne le categoryLevel1 le plus fréquent parmi les courses de l'édition.
+ */
+const DOMINANT_SPORT_SUBQUERY = `
+  COALESCE(
+    (SELECT r."categoryLevel1"
+     FROM "Race" r
+     WHERE r."editionId" = e.id
+     GROUP BY r."categoryLevel1"
+     ORDER BY COUNT(*) DESC, r."categoryLevel1" ASC
+     LIMIT 1),
+    'OTHER'
+  )
+`
+
+type SportGroupKey = typeof ALL_SPORT_GROUPS[number]
+
+/**
+ * Initialise un objet avec tous les groupes sport à 0
+ */
+function emptySportCounts(): Record<SportGroupKey, number> {
+  return { running_trail: 0, triathlon: 0, cycling: 0, other: 0 }
+}
+
 // Cache pour la connexion Miles Republic
 let milesRepublicDb: any = null
 let milesRepublicDbInitPromise: Promise<any> | null = null
@@ -172,16 +209,13 @@ function formatDateLabel(date: Date, granularity: TimeGranularity): string {
  */
 router.get('/calendar-confirmations', async (req, res) => {
   try {
-    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000) // 90 jours par défaut
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
     const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
     const granularity = (req.query.granularity as TimeGranularity) || 'month'
+    const sportFilter = req.query.sport as SportGroupKey | undefined
 
-    // Connexion à Miles Republic pour récupérer les éditions confirmées
     const sourceDb = await getMilesRepublicConnection()
-
-    // Pour le dernier intervalle, on va jusqu'au début de la période suivante
     const endPeriodBoundary = getNextPeriodStart(endDate, granularity)
-
     const intervals = generateTimeIntervals(startDate, endDate, granularity)
     const results = []
 
@@ -189,33 +223,65 @@ router.get('/calendar-confirmations', async (req, res) => {
       const currentDate = intervals[i]
       const nextDate = intervals[i + 1] || endPeriodBoundary
 
-      // Compte le nombre d'éditions confirmées dans cet intervalle
-      // On utilise confirmedAt pour tracer quand l'édition a été confirmée
-      const count = await sourceDb.edition.count({
-        where: {
-          confirmedAt: {
-            gte: currentDate,
-            lt: nextDate
-          },
-          calendarStatus: 'CONFIRMED'
-        }
-      })
+      if (sportFilter) {
+        // Filtered mode: return count for selected sport only
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id,
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."calendarStatus" = 'CONFIRMED'
+              AND e."confirmedAt" >= $1
+              AND e."confirmedAt" < $2
+          )
+          SELECT COUNT(*)::int as count
+          FROM edition_sports
+          WHERE ${SPORT_GROUP_SQL_CASE} = $3
+        `, currentDate, nextDate, sportFilter)
 
-      results.push({
-        date: formatDateLabel(currentDate, granularity),
-        count,
-        timestamp: currentDate.toISOString()
-      })
+        results.push({
+          date: formatDateLabel(currentDate, granularity),
+          count: rows[0]?.count || 0,
+          timestamp: currentDate.toISOString()
+        })
+      } else {
+        // Default mode: return breakdown by sport group
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id,
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."calendarStatus" = 'CONFIRMED'
+              AND e."confirmedAt" >= $1
+              AND e."confirmedAt" < $2
+          )
+          SELECT ${SPORT_GROUP_SQL_CASE} as sport_group, COUNT(*)::int as count
+          FROM edition_sports
+          GROUP BY sport_group
+        `, currentDate, nextDate)
+
+        const counts = emptySportCounts()
+        let total = 0
+        for (const row of rows) {
+          const key = row.sport_group as SportGroupKey
+          if (key in counts) {
+            counts[key] = row.count
+            total += row.count
+          }
+        }
+
+        results.push({
+          date: formatDateLabel(currentDate, granularity),
+          ...counts,
+          total,
+          timestamp: currentDate.toISOString()
+        })
+      }
     }
 
     res.json({
       success: true,
-      data: {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        granularity,
-        results
-      }
+      data: { startDate: startDate.toISOString(), endDate: endDate.toISOString(), granularity, results }
     })
   } catch (error) {
     console.error('Error fetching calendar confirmations stats:', error)
@@ -234,69 +300,105 @@ router.get('/calendar-confirmations', async (req, res) => {
  */
 router.get('/pending-confirmations', async (req, res) => {
   try {
-    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date(Date.now() - 90 * 24 * 60 * 60 * 1000)
-    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date()
+    const startDate = req.query.startDate ? new Date(req.query.startDate as string) : new Date()
+    const endDate = req.query.endDate ? new Date(req.query.endDate as string) : new Date(Date.now() + 180 * 24 * 60 * 60 * 1000) // 6 mois dans le futur
     const granularity = (req.query.granularity as TimeGranularity) || 'month'
+    const sportFilter = req.query.sport as SportGroupKey | undefined
 
-    // Connexion à Miles Republic
     const sourceDb = await getMilesRepublicConnection()
 
     const endPeriodBoundary = getNextPeriodStart(endDate, granularity)
     const intervals = generateTimeIntervals(startDate, endDate, granularity)
-    const results = []
-
-    // Date actuelle pour filtrer les éditions futures
     const now = new Date()
+    const results = []
 
     for (let i = 0; i < intervals.length; i++) {
       const currentDate = intervals[i]
       const nextDate = intervals[i + 1] || endPeriodBoundary
 
-      // Compte les éditions TO_BE_CONFIRMED (futures)
-      const toBeConfirmedCount = await sourceDb.edition.count({
-        where: {
-          calendarStatus: 'TO_BE_CONFIRMED',
-          startDate: {
-            gte: now // Seulement les éditions futures
-          },
-          AND: [
-            { startDate: { gte: currentDate } },
-            { startDate: { lt: nextDate } }
-          ]
-        }
-      })
+      if (sportFilter) {
+        // Filtered mode: return confirmed/toBeConfirmed for selected sport
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id, e."calendarStatus",
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."startDate" >= $1
+              AND e."startDate" >= $2
+              AND e."startDate" < $3
+              AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+          )
+          SELECT
+            "calendarStatus",
+            COUNT(*)::int as count
+          FROM edition_sports
+          WHERE ${SPORT_GROUP_SQL_CASE} = $4
+          GROUP BY "calendarStatus"
+        `, now, currentDate, nextDate, sportFilter)
 
-      // Compte les éditions CONFIRMED (futures)
-      const confirmedCount = await sourceDb.edition.count({
-        where: {
-          calendarStatus: 'CONFIRMED',
-          startDate: {
-            gte: now // Seulement les éditions futures
-          },
-          AND: [
-            { startDate: { gte: currentDate } },
-            { startDate: { lt: nextDate } }
-          ]
+        let confirmed = 0
+        let toBeConfirmed = 0
+        for (const row of rows) {
+          if (row.calendarStatus === 'CONFIRMED') confirmed = row.count
+          if (row.calendarStatus === 'TO_BE_CONFIRMED') toBeConfirmed = row.count
         }
-      })
 
-      results.push({
-        date: formatDateLabel(currentDate, granularity),
-        confirmed: confirmedCount,
-        toBeConfirmed: toBeConfirmedCount,
-        total: confirmedCount + toBeConfirmedCount,
-        timestamp: currentDate.toISOString()
-      })
+        results.push({
+          date: formatDateLabel(currentDate, granularity),
+          confirmed,
+          toBeConfirmed,
+          total: confirmed + toBeConfirmed,
+          timestamp: currentDate.toISOString()
+        })
+      } else {
+        // Default mode: grouped+stacked by sport
+        const rows: any[] = await sourceDb.$queryRawUnsafe(`
+          WITH edition_sports AS (
+            SELECT e.id, e."calendarStatus",
+              ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+            FROM "Edition" e
+            WHERE e."startDate" >= $1
+              AND e."startDate" >= $2
+              AND e."startDate" < $3
+              AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+          )
+          SELECT
+            ${SPORT_GROUP_SQL_CASE} as sport_group,
+            "calendarStatus",
+            COUNT(*)::int as count
+          FROM edition_sports
+          GROUP BY sport_group, "calendarStatus"
+        `, now, currentDate, nextDate)
+
+        const dataPoint: any = {
+          date: formatDateLabel(currentDate, granularity),
+          timestamp: currentDate.toISOString()
+        }
+
+        let total = 0
+        for (const group of ALL_SPORT_GROUPS) {
+          dataPoint[`${group}_confirmed`] = 0
+          dataPoint[`${group}_toBeConfirmed`] = 0
+        }
+
+        for (const row of rows) {
+          const group = row.sport_group as SportGroupKey
+          if (row.calendarStatus === 'CONFIRMED') {
+            dataPoint[`${group}_confirmed`] = row.count
+          } else if (row.calendarStatus === 'TO_BE_CONFIRMED') {
+            dataPoint[`${group}_toBeConfirmed`] = row.count
+          }
+          total += row.count
+        }
+
+        dataPoint.total = total
+        results.push(dataPoint)
+      }
     }
 
     res.json({
       success: true,
-      data: {
-        startDate: startDate.toISOString(),
-        endDate: endDate.toISOString(),
-        granularity,
-        results
-      }
+      data: { startDate: startDate.toISOString(), endDate: endDate.toISOString(), granularity, results }
     })
   } catch (error) {
     console.error('Error fetching pending confirmations stats:', error)
@@ -496,6 +598,80 @@ router.get('/user-leaderboard', async (req, res) => {
     res.status(500).json({
       success: false,
       message: 'Failed to fetch user leaderboard',
+      error: error instanceof Error ? error.message : 'Unknown error'
+    })
+  }
+})
+
+/**
+ * GET /api/stats/confirmation-rate-by-sport
+ * Snapshot: taux de confirmation des éditions futures par groupe sport
+ */
+router.get('/confirmation-rate-by-sport', async (req, res) => {
+  try {
+    const sourceDb = await getMilesRepublicConnection()
+    const now = new Date()
+
+    const SPORT_LABELS: Record<SportGroupKey, string> = {
+      running_trail: 'Course à pied / Trail',
+      triathlon: 'Triathlon',
+      cycling: 'Cyclisme',
+      other: 'Autres',
+    }
+
+    const rows: any[] = await sourceDb.$queryRawUnsafe(`
+      WITH edition_sports AS (
+        SELECT e.id, e."calendarStatus",
+          ${DOMINANT_SPORT_SUBQUERY} as dominant_sport
+        FROM "Edition" e
+        WHERE e."startDate" >= $1
+          AND e."calendarStatus" IN ('CONFIRMED', 'TO_BE_CONFIRMED')
+      )
+      SELECT
+        ${SPORT_GROUP_SQL_CASE} as sport_group,
+        "calendarStatus",
+        COUNT(*)::int as count
+      FROM edition_sports
+      GROUP BY sport_group, "calendarStatus"
+    `, now)
+
+    // Aggregate into sport groups
+    const sportData: Record<SportGroupKey, { confirmed: number; toBeConfirmed: number }> = {
+      running_trail: { confirmed: 0, toBeConfirmed: 0 },
+      triathlon: { confirmed: 0, toBeConfirmed: 0 },
+      cycling: { confirmed: 0, toBeConfirmed: 0 },
+      other: { confirmed: 0, toBeConfirmed: 0 },
+    }
+
+    for (const row of rows) {
+      const group = row.sport_group as SportGroupKey
+      if (!(group in sportData)) continue
+      if (row.calendarStatus === 'CONFIRMED') {
+        sportData[group].confirmed = row.count
+      } else if (row.calendarStatus === 'TO_BE_CONFIRMED') {
+        sportData[group].toBeConfirmed = row.count
+      }
+    }
+
+    const results = ALL_SPORT_GROUPS.map(sport => {
+      const data = sportData[sport]
+      const total = data.confirmed + data.toBeConfirmed
+      return {
+        sport,
+        label: SPORT_LABELS[sport],
+        confirmed: data.confirmed,
+        toBeConfirmed: data.toBeConfirmed,
+        total,
+        rate: total > 0 ? Math.round((data.confirmed / total) * 1000) / 10 : 0
+      }
+    })
+
+    res.json({ success: true, data: { results } })
+  } catch (error) {
+    console.error('Error fetching confirmation rate by sport:', error)
+    res.status(500).json({
+      success: false,
+      message: 'Failed to fetch confirmation rate by sport',
       error: error instanceof Error ? error.message : 'Unknown error'
     })
   }

@@ -758,20 +758,19 @@ export const cacheApi = {
 }
 
 // Stats API
+export type SportGroup = 'running_trail' | 'triathlon' | 'cycling' | 'other'
+
 export const statsApi = {
   getCalendarConfirmations: (filters: {
     startDate?: string
     endDate?: string
     granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+    sport?: SportGroup
   } = {}): Promise<ApiResponse<{
     startDate: string
     endDate: string
     granularity: string
-    results: Array<{
-      date: string
-      count: number
-      timestamp: string
-    }>
+    results: Array<Record<string, any>>
   }>> =>
     api.get('/stats/calendar-confirmations', { params: filters }).then(res => res.data),
 
@@ -779,17 +778,12 @@ export const statsApi = {
     startDate?: string
     endDate?: string
     granularity?: 'day' | 'week' | 'month' | 'quarter' | 'year'
+    sport?: SportGroup
   } = {}): Promise<ApiResponse<{
     startDate: string
     endDate: string
     granularity: string
-    results: Array<{
-      date: string
-      confirmed: number
-      toBeConfirmed: number
-      total: number
-      timestamp: string
-    }>
+    results: Array<Record<string, any>>
   }>> =>
     api.get('/stats/pending-confirmations', { params: filters }).then(res => res.data),
 
@@ -831,6 +825,18 @@ export const statsApi = {
     }>
   }>> =>
     api.get('/stats/user-leaderboard', { params: filters }).then(res => res.data),
+
+  getConfirmationRateBySport: (): Promise<ApiResponse<{
+    results: Array<{
+      sport: string
+      label: string
+      confirmed: number
+      toBeConfirmed: number
+      total: number
+      rate: number
+    }>
+  }>> =>
+    api.get('/stats/confirmation-rate-by-sport').then(res => res.data),
 }
 
 // Health API
