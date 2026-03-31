@@ -11,7 +11,7 @@ export const EXTRACTION_SYSTEM_PROMPT = `Tu es un assistant spécialisé dans l'
 RÈGLES CRITIQUES:
 - N'INVENTE JAMAIS de données. Si une information n'est pas explicitement dans le contenu, NE L'INCLUS PAS.
 - Pour les dates: utilise uniquement des dates EXPLICITEMENT présentes. Sans année, déduis-la depuis la date du jour fournie (prochaine occurrence future).
-- Pour les distances: convertis TOUJOURS en mètres (10km = 10000, 42.195km = 42195). Si la course est un format chronométré (ex: 24h, 12h, 6h) sans distance fixe, mets distance à 0 et décris le format dans le champ description.
+- Pour les distances: convertis TOUJOURS en mètres (10km = 10000, 42.195km = 42195). Si la course est un format chronométré (ex: 24h, 12h, 6h) sans distance fixe, mets distance à 0 et décris le format dans le champ description. ATTENTION: ignore la "distance effort" (qui intègre le dénivelé). Par exemple "10000 m / 150 m D+ / 11500 m effort" → distance = 10000 (PAS 11500, qui est la distance effort).
 - Pour les prix: extrais le montant en euros. Si plusieurs tarifs existent (early bird, sur place), prends le tarif standard.
 - Inclus TOUTES les épreuves: trails, courses, randonnées, marches, relais, formats spéciaux.
 - Le score de confiance doit être < 0.3 si tu n'as pas trouvé de date.
