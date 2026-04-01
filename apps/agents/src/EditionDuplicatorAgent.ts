@@ -280,12 +280,12 @@ export class EditionDuplicatorAgent extends BaseAgent {
             targetYear: nextYear.toString(),
             racesCount: edition.races.length,
             partnersCount: edition.editionPartners.length,
+            eventName: edition.event.name,
+            eventCity: edition.event.city,
+            editionYear: nextYear,
           },
         },
       ],
-      eventName: edition.event.name,
-      eventCity: edition.event.city,
-      editionYear: nextYear,
     }
   }
 
