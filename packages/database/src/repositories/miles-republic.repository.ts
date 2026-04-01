@@ -279,6 +279,16 @@ export class MilesRepublicRepository {
     })
   }
 
+  /**
+   * Find edition by event ID and year
+   */
+  async findEditionByEventAndYear(eventId: number, year: string) {
+    return this.milesDb.edition.findFirst({
+      where: { eventId, year },
+      select: { id: true },
+    })
+  }
+
   // ============== EDITION PARTNER OPERATIONS ==============
 
   /**

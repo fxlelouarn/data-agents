@@ -1300,6 +1300,12 @@ export class ProposalDomainService {
       this.logger.info(`  → Courses à dupliquer: ${racesToCreate?.length || 0}`)
       this.logger.info(`  → Partners à dupliquer: ${partnersToCreate?.length || 0}`)
 
+      // Garde-fou : vérifier qu'une édition n'existe pas déjà pour cet événement et cette année
+      const existingEdition = await milesRepo.findEditionByEventAndYear(editionToCreate.eventId, editionToCreate.year)
+      if (existingEdition) {
+        return this.errorResult('duplication', `Une édition ${editionToCreate.year} existe déjà pour cet événement (edition ID: ${existingEdition.id})`)
+      }
+
       // Step 1: Clear currentEditionEventId on old edition
       if (oldEditionUpdate) {
         this.logger.info(`\n1️⃣  Mise à jour de l'ancienne édition ${numericEditionId}`)
