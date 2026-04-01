@@ -33,6 +33,70 @@ function getAgentPriority(agentName: string | undefined): number {
 }
 
 /**
+ * Normalize Edition Duplicator changes for UI display.
+ * The duplicator produces editionToCreate/racesToCreate/partnersToCreate/oldEditionUpdate keys
+ * that the UI pipeline doesn't recognize. This converts them to standard UI keys.
+ * Returns a NEW object — does NOT mutate the original.
+ */
+function normalizeEditionDuplicatorChanges(changes: Record<string, any>): Record<string, any> {
+  if (!changes.editionToCreate) return {}
+
+  const editionToCreate = changes.editionToCreate
+  const normalized: Record<string, any> = {}
+
+  // Convert edition fields to {old: null, new: value} format
+  const editionFields = [
+    'startDate', 'endDate', 'calendarStatus', 'timeZone', 'currency',
+    'status', 'year'
+  ]
+  for (const field of editionFields) {
+    if (editionToCreate[field] !== undefined) {
+      normalized[field] = { old: null, new: editionToCreate[field] }
+    }
+  }
+
+  // Convert racesToCreate to racesToAdd format
+  if (changes.racesToCreate && Array.isArray(changes.racesToCreate)) {
+    normalized.racesToAdd = {
+      old: null,
+      new: changes.racesToCreate.map((race: any) => ({
+        name: race.name,
+        startDate: race.startDate,
+        runDistance: race.runDistance,
+        bikeDistance: race.bikeDistance,
+        swimDistance: race.swimDistance,
+        walkDistance: race.walkDistance,
+        runPositiveElevation: race.runPositiveElevation,
+        bikePositiveElevation: race.bikePositiveElevation,
+        walkPositiveElevation: race.walkPositiveElevation,
+        categoryLevel1: race.categoryLevel1,
+        categoryLevel2: race.categoryLevel2,
+        timeZone: race.timeZone,
+        price: race.price,
+      }))
+    }
+  }
+
+  // Convert first ORGANIZER partner to organizer format
+  if (changes.partnersToCreate && Array.isArray(changes.partnersToCreate)) {
+    const organizer = changes.partnersToCreate.find((p: any) => p.role === 'ORGANIZER')
+    if (organizer) {
+      normalized.organizer = {
+        old: null,
+        new: {
+          name: organizer.name,
+          websiteUrl: organizer.websiteUrl,
+          facebookUrl: organizer.facebookUrl,
+          instagramUrl: organizer.instagramUrl,
+        }
+      }
+    }
+  }
+
+  return normalized
+}
+
+/**
  * État consolidé d'une proposition
  * ✅ Aligné sur WorkingProposalGroup : changes proposés + userModifiedChanges séparés
  */
@@ -480,7 +544,8 @@ export function useProposalEditor(
    */
   const extractChangesFromSingleProposal = (proposal: Proposal): ConsolidatedChange[] => {
     const changes: ConsolidatedChange[] = []
-    const proposalChanges = proposal.changes || {}
+    const normalizedChanges = normalizeEditionDuplicatorChanges(proposal.changes || {})
+    const proposalChanges = { ...proposal.changes, ...normalizedChanges }
     const userMods = proposal.userModifiedChanges || {}
     const merged = mergeChanges(proposalChanges, userMods)
 
@@ -496,7 +561,12 @@ export function useProposalEditor(
         if (value.organizer) {
           flattenedMerged['organizer'] = value.organizer
         }
-      } else if (!key.startsWith('races') && key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting') {
+      } else if (
+        !key.startsWith('races') &&
+        key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting' &&
+        key !== 'editionToCreate' && key !== 'oldEditionUpdate' &&
+        key !== 'racesToCreate' && key !== 'partnersToCreate'
+      ) {
         flattenedMerged[key] = value
       }
     })
@@ -546,7 +616,9 @@ export function useProposalEditor(
     const originalRaces = extractRacesOriginalData(proposal)
 
     // Extraire les valeurs PROPOSÉES
-    const merged = mergeChanges(proposal.changes, proposal.userModifiedChanges || {})
+    const normalizedChanges = normalizeEditionDuplicatorChanges(proposal.changes || {})
+    const pChanges = { ...proposal.changes, ...normalizedChanges }
+    const merged = mergeChanges(pChanges, proposal.userModifiedChanges || {})
     const proposedRaces = extractRaces(merged, proposal, false)
 
     Object.entries(proposedRaces).forEach(([raceId, raceData]) => {
@@ -574,8 +646,11 @@ export function useProposalEditor(
    */
   const initializeWorkingProposal = (proposal: Proposal): WorkingProposal => {
     // 1. Extraire les changements PROPOSES (sans userModifiedChanges)
+    const normalizedChanges = normalizeEditionDuplicatorChanges(proposal.changes || {})
+    const rawChanges = { ...proposal.changes, ...normalizedChanges }
+
     const proposedChanges: Record<string, any> = {}
-    Object.entries(proposal.changes).forEach(([field, value]) => {
+    Object.entries(rawChanges).forEach(([field, value]) => {
       proposedChanges[field] = extractNewValue(value)
     })
 
@@ -587,6 +662,10 @@ export function useProposalEditor(
     delete cleanedChanges.races
     delete cleanedChanges.racesToAdd
     delete cleanedChanges.racesToUpdate
+    delete cleanedChanges.editionToCreate
+    delete cleanedChanges.oldEditionUpdate
+    delete cleanedChanges.racesToCreate
+    delete cleanedChanges.partnersToCreate
     Object.keys(cleanedChanges).forEach(key => {
       if (key.startsWith('race_')) {
         delete cleanedChanges[key]
@@ -650,7 +729,9 @@ export function useProposalEditor(
     const map = new Map<string, ConsolidatedChange>()
 
     proposals.forEach(p => {
-      const merged = mergeChanges(p.changes, p.userModifiedChanges || {})
+      const normalizedChanges = normalizeEditionDuplicatorChanges(p.changes || {})
+      const pChanges = { ...p.changes, ...normalizedChanges }
+      const merged = mergeChanges(pChanges, p.userModifiedChanges || {})
 
       // ✅ NOUVEAU : Aplatir la structure edition.new pour NEW_EVENT
       const flattenedMerged: Record<string, any> = {}
@@ -666,7 +747,12 @@ export function useProposalEditor(
           if (value.organizer) {
             flattenedMerged['organizer'] = value.organizer
           }
-        } else {
+        } else if (
+          !key.startsWith('races') &&
+          key !== 'racesToUpdate' && key !== 'racesToAdd' && key !== 'racesExisting' &&
+          key !== 'editionToCreate' && key !== 'oldEditionUpdate' &&
+          key !== 'racesToCreate' && key !== 'partnersToCreate'
+        ) {
           flattenedMerged[key] = value
         }
       })
