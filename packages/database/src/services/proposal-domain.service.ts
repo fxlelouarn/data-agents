@@ -1751,6 +1751,11 @@ export class ProposalDomainService {
       return 'races'
     }
 
+    // Duplication block
+    if (field === 'editionToCreate' || field === 'oldEditionUpdate' || field === 'racesToCreate' || field === 'partnersToCreate') {
+      return 'duplication'
+    }
+
     // Default: edition (pour les champs non listés)
     return 'edition'
   }
@@ -1968,7 +1973,8 @@ export class ProposalDomainService {
                 'registrantsNumber', 'whatIsIncluded', 'clientExternalUrl', 'bibWithdrawalFullAddress',
                 'volunteerCode', 'confirmedAt'],
       organizer: ['edition', 'organizer', 'organizerId'],
-      races: ['edition', 'races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered']
+      races: ['edition', 'races', 'racesToUpdate', 'racesToAdd', 'raceEdits', 'racesToDelete', 'racesToAddFiltered'],
+      duplication: ['editionToCreate', 'oldEditionUpdate', 'racesToCreate', 'partnersToCreate']
     }
 
     const fields = blockFields[blockType] || []

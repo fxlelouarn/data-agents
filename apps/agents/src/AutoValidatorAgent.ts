@@ -313,6 +313,60 @@ export class AutoValidatorAgent extends BaseAgent {
     // Déterminer les blocs à valider selon la configuration
     const changes = proposal.changes as Record<string, any>
     const isNewEvent = proposal.type === 'NEW_EVENT'
+    const isEditionDuplication = !!changes.editionToCreate
+
+    // Edition Duplication : bulk-approve (toutes les données d'un coup)
+    if (isEditionDuplication) {
+      if (config.dryRun) {
+        context.logger.info(`🧪 [DRY RUN] Duplication ${proposal.id} aurait été validée`, {
+          eventName: proposal.eventName
+        })
+        return { blocksValidated: ['duplication'], applicationIds: [] }
+      }
+
+      // Vérifier si une application existe déjà
+      const existingApp = await this.prisma.proposalApplication.findFirst({
+        where: {
+          proposalId: proposal.id,
+          status: { in: ['PENDING', 'APPLIED'] }
+        }
+      })
+
+      if (existingApp) {
+        context.logger.info(`ℹ️  Application déjà existante pour duplication ${proposal.id}`)
+        return { blocksValidated: [], applicationIds: [] }
+      }
+
+      // Créer une application unique avec tous les changes
+      const application = await this.prisma.proposalApplication.create({
+        data: {
+          proposalId: proposal.id,
+          proposalIds: [proposal.id],
+          blockType: 'duplication',
+          status: 'PENDING',
+          appliedChanges: changes,
+          logs: [`Auto-validated edition duplication by Auto Validator Agent v${AUTO_VALIDATOR_AGENT_VERSION}`]
+        }
+      })
+
+      // Approuver la proposition
+      await this.prisma.proposal.update({
+        where: { id: proposal.id },
+        data: {
+          approvedBlocks: { duplication: true },
+          status: 'APPROVED',
+          reviewedAt: new Date(),
+          reviewedBy: 'auto-validator-agent'
+        }
+      })
+
+      context.logger.info(`✅ Duplication validée: ${proposal.eventName}`, {
+        applicationId: application.id,
+        proposalId: proposal.id
+      })
+
+      return { blocksValidated: ['duplication'], applicationIds: [application.id] }
+    }
 
     if (isNewEvent) {
       // NEW_EVENT: validate all blocks at once (event + edition + organizer + races)

@@ -27,6 +27,7 @@ export async function validateProposal(
   const editionId = proposal.editionId
   const changes = proposal.changes as Record<string, any>
   const isNewEvent = proposal.type === 'NEW_EVENT'
+  const isEditionDuplication = !!changes.editionToCreate
 
   // 1. Vérifier la confiance minimale
   if (proposal.confidence !== null && proposal.confidence !== undefined) {
@@ -39,6 +40,19 @@ export async function validateProposal(
           confidence: proposal.confidence,
           minRequired: config.minConfidence
         }
+      }
+    }
+  }
+
+  // Edition Duplication : seule la confiance est vérifiée
+  if (isEditionDuplication) {
+    return {
+      isValid: true,
+      details: {
+        confidence: proposal.confidence,
+        eventId,
+        editionId,
+        isEditionDuplication: true
       }
     }
   }
