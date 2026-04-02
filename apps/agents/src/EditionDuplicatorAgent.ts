@@ -143,7 +143,7 @@ export class EditionDuplicatorAgent extends BaseAgent {
         currentEditionEventId: { not: null },
         endDate: {
           not: null,
-          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate()),
+          lt: new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1),
         },
       },
       include: {
