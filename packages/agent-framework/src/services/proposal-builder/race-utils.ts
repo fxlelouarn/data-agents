@@ -199,8 +199,12 @@ export function calculateRaceStartDate(
 
   if (startTime) {
     const [hours, minutes] = startTime.split(':').map(Number)
-    const localDateStr = `${baseDateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
-    return localToUtc(localDateStr, tz)
+    // Guard against non-parseable startTime (e.g. "libre de 8h à 9h")
+    if (!isNaN(hours) && !isNaN(minutes) && hours >= 0 && hours <= 23 && minutes >= 0 && minutes <= 59) {
+      const localDateStr = `${baseDateStr}T${String(hours).padStart(2, '0')}:${String(minutes).padStart(2, '0')}:00`
+      return localToUtc(localDateStr, tz)
+    }
+    // Invalid startTime format — fall through to midnight
   }
 
   // No time provided — return midnight in local timezone

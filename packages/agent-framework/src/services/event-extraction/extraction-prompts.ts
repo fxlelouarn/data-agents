@@ -57,7 +57,7 @@ export const extractionTool = {
             name: { type: 'string', description: 'Nom de la course' },
             distance: { type: 'number', description: 'Distance en mètres (0 si format chronométré sans distance fixe)' },
             elevation: { type: 'number', description: 'Dénivelé positif en mètres' },
-            startTime: { type: 'string', description: 'Heure de départ (HH:mm)' },
+            startTime: { type: 'string', description: 'Heure de départ au format strict HH:mm (ex: "08:00", "14:30"). Si l\'horaire est une plage ("de 8h à 9h", "libre entre 9h et 10h"), utilise la première heure de la plage (ex: "08:00"). Ne JAMAIS mettre de texte libre.' },
             price: { type: 'number', description: 'Prix d\'inscription en euros' },
             raceDate: { type: 'string', description: 'Date de la course DD/MM (pour événements multi-jours)' },
             description: { type: 'string', description: 'Description du format si spécial (ex: relais 24h, boucle 4.4km)' },

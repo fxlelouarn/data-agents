@@ -204,6 +204,13 @@ describe('calculateRaceStartDate', () => {
     expect(result?.toISOString()).toBe('2026-03-08T08:00:00.000Z')
   })
 
+  it('with non-parseable startTime → falls back to midnight', () => {
+    // "libre de 8h à 9h" is not HH:mm format — should fall back to midnight
+    const result = calculateRaceStartDate('2026-04-04', 'libre de 8h à 9h', 'Europe/Paris')
+    // Apr 4 2026 00:00 Paris (UTC+2 summer) = Apr 3 22:00 UTC
+    expect(result?.toISOString()).toBe('2026-04-03T22:00:00.000Z')
+  })
+
   it('with raceDate and year rollover (Dec → Jan)', () => {
     // editionDate = "2025-12-28", raceDate = "03/01" → should be 2026
     const result = calculateRaceStartDate('2025-12-28', '10:00', 'Europe/Paris', '03/01')
