@@ -43,8 +43,8 @@ export const extractionTool = {
     type: 'object' as const,
     properties: {
       eventName: { type: 'string', description: 'Nom de l\'événement' },
-      eventCity: { type: 'string', description: 'Ville' },
-      eventDepartment: { type: 'string', description: 'Code département (ex: "42", "69", "2A")' },
+      eventCity: { type: 'string', description: 'Ville où se déroule l\'événement. Utiliser le nom complet tel qu\'il apparaît (ex: "Anglars-Juillac", pas juste "Anglars"). Si un code postal est visible, l\'utiliser pour confirmer la ville.' },
+      eventDepartment: { type: 'string', description: 'Code département français (ex: "42", "69", "2A"). IMPORTANT: si un code postal est visible (ex: "46140"), le département correspond aux 2 premiers chiffres ("46"). Ne JAMAIS deviner le département depuis le nom de la ville — utilise uniquement le code postal ou une mention explicite.' },
       editionYear: { type: 'number', description: 'Année de l\'édition' },
       editionDate: { type: 'string', description: 'Date de début ISO (YYYY-MM-DD)' },
       editionEndDate: { type: 'string', description: 'Date de fin ISO si multi-jours' },

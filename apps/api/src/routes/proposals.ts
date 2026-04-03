@@ -2346,15 +2346,26 @@ router.post('/:id/convert-to-edition-update', [
       for (const { ffa: ffaRace, db: matchingRace } of matchingResult.matched) {
         const raceUpdates: any = {}
 
-        // Vérifier l'élévation
-        if (ffaRace.runPositiveElevation &&
-            (!matchingRace.runPositiveElevation ||
-             Math.abs(matchingRace.runPositiveElevation - ffaRace.runPositiveElevation) > 10)) {
-          raceUpdates.runPositiveElevation = {
-            old: matchingRace.runPositiveElevation,
-            new: ffaRace.runPositiveElevation,
-            confidence
+        // Vérifier les distances (run, walk, bike)
+        for (const field of ['runDistance', 'walkDistance', 'bikeDistance'] as const) {
+          if (ffaRace[field] && (!matchingRace[field] || Math.abs(matchingRace[field] - ffaRace[field]) > 0.1)) {
+            raceUpdates[field] = { old: matchingRace[field] || null, new: ffaRace[field], confidence }
           }
+        }
+
+        // Vérifier les élévations (run, walk, bike)
+        for (const field of ['runPositiveElevation', 'walkPositiveElevation', 'bikePositiveElevation'] as const) {
+          if (ffaRace[field] && (!matchingRace[field] || Math.abs(matchingRace[field] - ffaRace[field]) > 10)) {
+            raceUpdates[field] = { old: matchingRace[field] || null, new: ffaRace[field], confidence }
+          }
+        }
+
+        // Vérifier les catégories (proposer si la DB n'en a pas)
+        if (ffaRace.categoryLevel1 && !matchingRace.categoryLevel1) {
+          raceUpdates.categoryLevel1 = { old: null, new: ffaRace.categoryLevel1, confidence }
+        }
+        if (ffaRace.categoryLevel2 && !matchingRace.categoryLevel2) {
+          raceUpdates.categoryLevel2 = { old: null, new: ffaRace.categoryLevel2, confidence }
         }
 
         // Vérifier la date/heure de départ
@@ -2378,7 +2389,11 @@ router.post('/:id/convert-to-edition-update', [
             raceName: matchingRace.name,
             // ✅ Inclure tous les champs FFA pour affichage dans l'interface
             runDistance: ffaRace.runDistance,
+            walkDistance: ffaRace.walkDistance,
+            bikeDistance: ffaRace.bikeDistance,
             runPositiveElevation: ffaRace.runPositiveElevation,
+            walkPositiveElevation: ffaRace.walkPositiveElevation,
+            bikePositiveElevation: ffaRace.bikePositiveElevation,
             categoryLevel1: ffaRace.categoryLevel1,
             categoryLevel2: ffaRace.categoryLevel2,
             startDate: ffaRace.startDate,
