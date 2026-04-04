@@ -165,6 +165,9 @@ model Edition {
   raceResultSyncCancelFlag           RaceResultSyncCancelFlag?
   partnerOptionEditions              PartnerOptionEdition[]
   orderReads                         OrderRead[]
+  optionReads                        OptionRead[]
+  organizationSettings               EditionOrganizationSettings?
+  pendingBankingConfirmations        PendingBankingConfirmation[]
 
   @@index([eventId])
   @@index([slug])
@@ -527,6 +530,8 @@ model Race {
 
   raceResultContestMappings RaceResultContestMapping[]
   orderReads                OrderRead[]
+  groupInvoiceItems         GroupInvoiceItem[]
+  optionReads               OptionRead[]
 
   @@index([editionId])
   @@index([eventId])
@@ -713,13 +718,121 @@ model RaceCategoryLevel2Translation {
 }
 
 model Organization {
-  id                  Int       @id @default(autoincrement())
-  name                String?
+  id Int @id @default(autoincrement())
+
+  // Lien direct avec le propriétaire
+  ownerUserId String @unique
+  owner       User   @relation("OrganizationOwner", fields: [ownerUserId], references: [id])
+
+  // Identité de l'organisation
+  legalName String? // Raison sociale
+  name      String? // Nom commercial (conservé)
+
+  // Contact principal
+  contactFirstName String?
+  contactLastName  String?
+  contactPhone     String?
+  contactEmail     String?
+
+  // Adresse
+  addressLine1 String?
+  addressLine2 String?
+  city         String?
+  postalCode   String?
+  country      String? // ISO alpha-2 : "FR", "BE", "CH", "ES", "LU"
+
+  // Numéros légaux (format variable selon pays)
+  registrationNumber String? // SIRET (FR), BCE (BE), UID (CH), CIF/NIF (ES), RCS (LU)
+  vatNumber          String? // Numéro TVA intracommunautaire
+
+  // Coordonnées bancaires
+  ibanEncrypted   String? // IBAN chiffré AES-256-GCM
+  ibanMasked      String? // Affichage masqué : "FR76 **** **** **** **** **** 123"
+  bic             String? // BIC/SWIFT
+  bankBeneficiary String? // Nom du titulaire du compte
+
+  // Champs existants (conservés)
   hubspotEnterpriseId String?
-  createdAt           DateTime  @default(now())
-  updatedAt           DateTime  @updatedAt
   hubspotContactId    String?
-  editions            Edition[]
+  createdAt           DateTime @default(now())
+  updatedAt           DateTime @updatedAt
+
+  editions                    Edition[]
+  bankingAuditLogs            OrganizationBankingAuditLog[]
+  pendingBankingConfirmations PendingBankingConfirmation[]
+}
+
+model OrganizationBankingAuditLog {
+  id             Int      @id @default(autoincrement())
+  organizationId Int
+  userId         String
+  action         String // "UPDATE_BANKING_INFO"
+  ipAddress      String?
+  createdAt      DateTime @default(now())
+
+  organization Organization @relation(fields: [organizationId], references: [id])
+}
+
+model PendingBankingConfirmation {
+  id              String    @id @default(dbgenerated("gen_random_uuid()")) @db.Uuid
+  organizationId  Int?
+  userId          String
+  ibanEncrypted   String
+  ibanMasked      String
+  bic             String
+  bankBeneficiary String
+  ipAddress       String
+  locale          String    @default("fr")
+  expiresAt       DateTime
+  confirmedAt     DateTime?
+  createdAt       DateTime  @default(now())
+
+  editionId Int?
+  edition   Edition? @relation(fields: [editionId], references: [id])
+
+  organization Organization? @relation(fields: [organizationId], references: [id])
+}
+
+model EditionOrganizationSettings {
+  id        Int      @id @default(autoincrement())
+  editionId Int      @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  // Profile / Beneficiary structure
+  legalName          String?
+  contactFirstName   String?
+  contactLastName    String?
+  contactPhone       String?
+  contactEmail       String?
+  addressLine1       String?
+  addressLine2       String?
+  city               String?
+  postalCode         String?
+  country            String?
+  registrationNumber String?
+  vatNumber          String?
+
+  // Banking (encrypted)
+  ibanEncrypted   String?
+  ibanMasked      String?
+  bic             String?
+  bankBeneficiary String?
+
+  // Relations
+  edition          Edition                  @relation(fields: [editionId], references: [id])
+  bankingAuditLogs EditionBankingAuditLog[]
+}
+
+model EditionBankingAuditLog {
+  id                            Int      @id @default(autoincrement())
+  editionOrganizationSettingsId Int
+  userId                        String
+  action                        String
+  ipAddress                     String?
+  createdAt                     DateTime @default(now())
+
+  editionOrganizationSettings EditionOrganizationSettings @relation(fields: [editionOrganizationSettingsId], references: [id])
 }
 
 model CountrySubdivision {
@@ -774,48 +887,49 @@ model Attendees {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  firstName                String
-  lastName                 String
-  email                    String
-  cartId                   String?
-  orderId                  String?
-  raceId                   Int?
-  boughtAt                 DateTime?
-  cancelledAt              DateTime?
-  birthDate                DateTime?
-  bibNumber                String?
-  bibTeamNumber            String?
-  nationality              String?
-  phoneNumber              String?
-  postalAddressMain        String?
-  postalAddressSecondary   String?
-  hasPaidParticipation     Boolean         @default(false)
-  clubId                   String?
-  clubOrAssociation        String?
-  licenseNumber            String?
-  licenseType              String?
-  ffaMutationFlag          Boolean?
+  firstName                    String
+  lastName                     String
+  email                        String
+  cartId                       String?
+  orderId                      String?
+  raceId                       Int?
+  boughtAt                     DateTime?
+  cancelledAt                  DateTime?
+  birthDate                    DateTime?
+  bibNumber                    String?
+  bibTeamNumber                String?
+  nationality                  String?
+  phoneNumber                  String?
+  postalAddressMain            String?
+  postalAddressSecondary       String?
+  hasPaidParticipation         Boolean         @default(false)
+  clubId                       String?
+  clubOrAssociation            String?
+  licenseNumber                String?
+  licenseType                  String?
+  ffaMutationFlag              Boolean?
+  isLicenseInvalidAtTimeOfRace Boolean?
   /// true means that the attendee will not have to complete the add license experience steps again
-  completedCompetitionPass Boolean?
-  hideInResults            Boolean?        @default(false)
-  fftriReceivePromo        Boolean?
-  fftriSendInvoice         Boolean?
-  isRegisteredByOrganizer  Boolean?        @default(false)
-  postalAddressAreaLevel1  String?
-  postalAddressAreaLevel2  String?
-  postalAddressCity        String?
-  postalAddressCountry     String?
-  postalAddressZipcode     String?
-  bibWithdrawalDate        DateTime?
-  hasParentalAuthorization Boolean?        @default(false)
-  status                   AttendeeStatus?
-  paymentMethod            PaymentMethod?
-  gender                   Gender?
-  federationName           Federation?
-  language                 String          @default("fr")
+  completedCompetitionPass     Boolean?
+  hideInResults                Boolean?        @default(false)
+  fftriReceivePromo            Boolean?
+  fftriSendInvoice             Boolean?
+  isRegisteredByOrganizer      Boolean?        @default(false)
+  postalAddressAreaLevel1      String?
+  postalAddressAreaLevel2      String?
+  postalAddressCity            String?
+  postalAddressCountry         String?
+  postalAddressZipcode         String?
+  bibWithdrawalDate            DateTime?
+  hasParentalAuthorization     Boolean?        @default(false)
+  status                       AttendeeStatus?
+  paymentMethod                PaymentMethod?
+  gender                       Gender?
+  federationName               Federation?
+  language                     String          @default("fr")
   /// @deprecated this field is about to be deleted and must no longer be used
-  isOffStock               Boolean         @default(false)
-  paymentLinkSent          Boolean?        @default(false)
+  isOffStock                   Boolean         @default(false)
+  paymentLinkSent              Boolean?        @default(false)
 
   /// @deprecated use fillJustification instead
   fillJustificationLaterId String?
@@ -840,6 +954,8 @@ model Attendees {
   waitingListHistoryAsReseller WaitingListHistory[]    @relation("WaitingListHistoryReseller")
   waitingListHistoryAsBuyer    WaitingListHistory[]    @relation("WaitingListHistoryBuyer")
   orderRead                    OrderRead?
+  groupInvoiceItems            GroupInvoiceItem[]
+  optionReads                  OptionRead[]
 
   @@index([raceId])
   @@index([attendeeProfileId])
@@ -1032,6 +1148,7 @@ model User {
   userGroups         UserGroup[]
   userEventFavorites UserEventFavorite[]
   exportPresets      ExportPreset[]
+  organization       Organization?       @relation("OrganizationOwner")
 }
 
 model VerificationToken {
@@ -1139,6 +1256,23 @@ model EmailTemplate {
   @@index([module])
 }
 
+/// Tracks sent transactional emails to prevent duplicates (e.g., split orders triggering multiple sends for the same cartId)
+/// Deduplication record for transactional emails.
+/// - cartId + type: prevents duplicate ORDER_CONFIRMATION per cart (Order Split)
+/// - attendeeId + type: prevents duplicate REGISTRATION_CONFIRMATION per attendee
+model SentEmail {
+  id         String      @id @default(uuid()) @db.Uuid
+  cartId     String?
+  attendeeId String?
+  type       WebhookType
+  sentAt     DateTime    @default(now())
+
+  @@unique([cartId, type])
+  @@unique([attendeeId, type])
+  @@index([cartId])
+  @@index([attendeeId])
+}
+
 enum EmailProvider {
   BREVO
   MAILJET
@@ -1186,11 +1320,11 @@ model FormFunnelConfig {
 }
 
 model PartnerOption {
-  id                    String                  @id @default(uuid()) @db.Uuid
+  id                    String                 @id @default(uuid()) @db.Uuid
   logoUrl               String?
-  visibility            Boolean                 @default(true)
-  createdAt             DateTime                @default(now())
-  updatedAt             DateTime                @updatedAt
+  visibility            Boolean                @default(true)
+  createdAt             DateTime               @default(now())
+  updatedAt             DateTime               @updatedAt
   partnerOptionRaces    PartnerOptionRace[]
   partnerOptionEditions PartnerOptionEdition[]
   config                Json?
@@ -1393,8 +1527,88 @@ model Group {
   userGroups   UserGroup[]
   attendees    Attendees[]
   emailConfigs EmailConfig[]
+  invoices     GroupInvoice[]
+  billingInfo  GroupBillingInfo?
 
   @@index([editionId])
+}
+
+model GroupInvoice {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  stripeInvoiceId     String?            @unique
+  stripeInvoiceNumber String?
+  stripeCustomerId    String?
+  stripeInvoiceUrl    String?
+  stripeInvoicePdfUrl String?
+  status              GroupInvoiceStatus @default(DRAFT)
+  currency            String
+  vatRate             Int                @default(0)
+
+  theoreticalAmount Int
+  discountType      GroupInvoiceDiscountType @default(NONE)
+  discountValue     Int?
+  finalAmount       Int
+  commissionRate    Int
+  commissionAmount  Int
+
+  recipientEmail String
+  memo           String?
+  medusaOrderId  String?
+
+  group   Group @relation(fields: [groupId], references: [id])
+  groupId Int
+
+  items GroupInvoiceItem[]
+
+  @@index([groupId])
+  @@index([status])
+}
+
+model GroupInvoiceItem {
+  id Int @id @default(autoincrement())
+
+  originalAmount Int
+  paidAmount     Int
+  invoicedAmount Int
+
+  groupInvoice   GroupInvoice @relation(fields: [groupInvoiceId], references: [id])
+  groupInvoiceId Int
+
+  attendee   Attendees @relation(fields: [attendeeId], references: [id])
+  attendeeId String    @db.Uuid
+
+  race   Race @relation(fields: [raceId], references: [id])
+  raceId Int
+
+  @@unique([groupInvoiceId, attendeeId])
+  @@index([groupInvoiceId])
+  @@index([attendeeId])
+}
+
+enum GroupBillingRecipientType {
+  COMPANY
+  ASSOCIATION
+  INDIVIDUAL
+}
+
+model GroupBillingInfo {
+  id        Int      @id @default(autoincrement())
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  recipientType GroupBillingRecipientType
+  recipientName String
+  address       String
+  postalCode    String
+  city          String
+  country       String
+  vatNumber     String?
+
+  groupId Int   @unique
+  group   Group @relation(fields: [groupId], references: [id])
 }
 
 model GroupRace {
@@ -1490,6 +1704,7 @@ enum ConfigKey {
   I18N_LAST_INVALIDATION_AT
   MEDUSA_DEFAULT_STOCK_LOCATION_ID
   GEONAMES_RECOMMENDED_LOCATION_IDS
+  GROUP_INVOICE_COMMISSION_RATE
 }
 
 enum BibsAttributionStrategy {
@@ -1565,6 +1780,23 @@ enum WebhookType {
   RESALE_STARTED_TO_BUYER
   GIFT_CARD_CONFIRMATION
   GIFT_CARD_SENT_TO_RECIPIENT
+  GROUP_INVOICE_SENT
+  ORGANIZER_BANKING_CONFIRMATION
+}
+
+enum GroupInvoiceStatus {
+  DRAFT
+  FINALIZED
+  SENT
+  PAID
+  VOID
+  MANUALLY_PAID
+}
+
+enum GroupInvoiceDiscountType {
+  PERCENT
+  FIXED
+  NONE
 }
 
 enum DecisionReasonType {
@@ -1707,6 +1939,7 @@ enum PaymentMethod {
 
 enum UserRole {
   ADMIN
+  TIMER
   ORGANIZER
   GROUP_CONTACT
   VOLUNTEER
@@ -2122,10 +2355,12 @@ model OrderRead {
   bibOrganizerFees Decimal @default(0) @db.Decimal(10, 2)
   bibRunnerFees    Decimal @default(0) @db.Decimal(10, 2)
 
-  optionAmount     Decimal @default(0) @db.Decimal(10, 2)
-  optionRunnerFees Decimal @default(0) @db.Decimal(10, 2)
-  optionOtherFees  Decimal @default(0) @db.Decimal(10, 2)
-  optionMrFees     Decimal @default(0) @db.Decimal(10, 2)
+  optionAmount          Decimal @default(0) @db.Decimal(10, 2)
+  optionRunnerFees      Decimal @default(0) @db.Decimal(10, 2)
+  optionOtherFees       Decimal @default(0) @db.Decimal(10, 2)
+  optionMrFees          Decimal @default(0) @db.Decimal(10, 2)
+  optionGrossAmount     Decimal @default(0) @db.Decimal(10, 2)
+  optionReductionAmount Decimal @default(0) @db.Decimal(10, 2)
 
   adminFees    Decimal @default(0) @db.Decimal(10, 2)
   adminRefunds Decimal @default(0) @db.Decimal(10, 2)
@@ -2149,6 +2384,8 @@ model OrderRead {
   groupName String?
   teamName  String?
 
+  source String @default("worker")
+
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -2158,4 +2395,39 @@ model OrderRead {
 
   @@index([editionId, raceId])
   @@index([boughtAt])
+}
+
+model OptionRead {
+  id Int @id @default(autoincrement())
+
+  attendeeId String @db.Uuid
+  orderId    String
+  editionId  Int
+  raceId     Int
+  raceName   String
+
+  attendeeEmail String
+
+  boughtAt DateTime
+
+  productFormId String
+  itemName      String
+  itemPrice     Decimal @default(0) @db.Decimal(10, 2)
+  runnerFees    Decimal @default(0) @db.Decimal(10, 2)
+  organizerFees Decimal @default(0) @db.Decimal(10, 2)
+  currency      String
+
+  source String @default("worker")
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  attendee Attendees @relation(fields: [attendeeId], references: [id])
+  edition  Edition   @relation(fields: [editionId], references: [id])
+  race     Race      @relation(fields: [raceId], references: [id])
+
+  @@unique([attendeeId, productFormId])
+  @@index([editionId, raceId])
+  @@index([attendeeId])
+  @@index([editionId, itemName])
 }
