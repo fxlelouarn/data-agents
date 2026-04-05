@@ -79,3 +79,4 @@ coverage/
 # Cache
 .cache/
 .eslintcache
+.worktrees/
