@@ -19,11 +19,14 @@ function getAgentPriority(agentName: string | undefined): number {
 
   const name = agentName.toLowerCase()
 
-  // FFA Scraper : Source officielle, priorité maximale
-  if (name.includes('ffa')) return 100
+  // FFA / FFTRI Scraper : Source fédérale officielle, priorité maximale
+  if (name.includes('ffa') || name.includes('fftri')) return 100
 
   // Slack Event Agent : Données utilisateur, haute priorité
   if (name.includes('slack')) return 90
+
+  // Website Checker : Données web vérifiées, priorité moyenne
+  if (name.includes('website')) return 40
 
   // Google Search Date Agent : Données web extraites, priorité basse
   if (name.includes('google')) return 30
