@@ -121,7 +121,7 @@ export function parseEventsList(html: string, referenceYear: number): FFTRIEvent
  */
 function parseRacesFromElement(
   $: cheerio.CheerioAPI,
-  $el: cheerio.Cheerio<cheerio.Element>
+  $el: cheerio.Cheerio<any>
 ): FFTRIRace[] {
   const races: FFTRIRace[] = []
 
