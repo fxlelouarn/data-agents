@@ -10,7 +10,7 @@
 
 import axios from 'axios'
 import { FFTRIEvent, FFTRIEventDetails, FFTRI_LIGUE_FILTER_KEYS, FFTRI_MONTH_FILTER_KEYS } from './types'
-import { parseEventsList, parseEventDetails } from './parser'
+import { parseEventsList, parseEventDetails, countRawBlocks } from './parser'
 
 const PAGE_SIZE = 10
 
@@ -67,7 +67,10 @@ export async function fetchListingPage(
   })
 
   const events = parseEventsList(response.data, referenceYear)
-  const hasMore = events.length >= PAGE_SIZE
+  // Use raw block count (before dedup) to determine pagination,
+  // since multi-day events produce multiple blocks for the same fftriId
+  const rawBlockCount = countRawBlocks(response.data)
+  const hasMore = rawBlockCount >= PAGE_SIZE
 
   return { events, hasMore }
 }

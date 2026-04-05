@@ -31,6 +31,15 @@ const FRENCH_MONTH_MAP: Record<string, number> = {
  * @param html - Raw HTML from the listing page or infinite scroll fragment
  * @param referenceYear - Year to assign to dates (the listing doesn't include the year)
  */
+/**
+ * Count raw blocEvent elements in HTML (before deduplication).
+ * Used to determine if there are more pages to fetch.
+ */
+export function countRawBlocks(html: string): number {
+  const $ = cheerio.load(html)
+  return $('a.blocEvent').length
+}
+
 export function parseEventsList(html: string, referenceYear: number): FFTRIEvent[] {
   const $ = cheerio.load(html)
   const eventsMap = new Map<string, FFTRIEvent>()
