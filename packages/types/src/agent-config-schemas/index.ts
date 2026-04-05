@@ -16,6 +16,7 @@ export { SlackEventAgentConfigSchema } from './slack-event.js'
 export { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 export { WebsiteCheckerAgentConfigSchema } from './website-checker.js'
 export { EditionDuplicatorAgentConfigSchema } from './edition-duplicator.js'
+export { FFTRIScraperAgentConfigSchema } from './fftri-scraper.js'
 
 // Re-export pour accès par clé
 import { FFAScraperAgentConfigSchema } from './ffa-scraper.js'
@@ -26,6 +27,7 @@ import { SlackEventAgentConfigSchema } from './slack-event.js'
 import { DuplicateDetectionAgentConfigSchema } from './duplicate-detection.js'
 import { WebsiteCheckerAgentConfigSchema } from './website-checker.js'
 import { EditionDuplicatorAgentConfigSchema } from './edition-duplicator.js'
+import { FFTRIScraperAgentConfigSchema } from './fftri-scraper.js'
 import type { ConfigSchema } from '../config.js'
 
 /**
@@ -40,4 +42,5 @@ export const AGENT_CONFIG_SCHEMAS: Record<string, ConfigSchema> = {
   DUPLICATE_DETECTION: DuplicateDetectionAgentConfigSchema,
   WEBSITE_CHECKER: WebsiteCheckerAgentConfigSchema,
   EDITION_DUPLICATOR: EditionDuplicatorAgentConfigSchema,
+  FFTRI_SCRAPER: FFTRIScraperAgentConfigSchema,
 }

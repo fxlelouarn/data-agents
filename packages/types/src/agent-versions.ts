@@ -19,7 +19,8 @@ export const AGENT_VERSIONS = {
   SLACK_EVENT_AGENT: '1.0.0',
   DUPLICATE_DETECTION_AGENT: '1.0.0',
   WEBSITE_CHECKER_AGENT: '1.0.0',
-  EDITION_DUPLICATOR_AGENT: '1.0.0'
+  EDITION_DUPLICATOR_AGENT: '1.0.0',
+  FFTRI_SCRAPER_AGENT: '1.0.0'
 } as const
 
 export type AgentVersionKey = keyof typeof AGENT_VERSIONS
@@ -27,7 +28,7 @@ export type AgentVersionKey = keyof typeof AGENT_VERSIONS
 /**
  * Identifiants techniques des agents (clés du registry)
  */
-export type AgentTypeKey = 'FFA_SCRAPER' | 'FFA_RESULTS' | 'GOOGLE_SEARCH_DATE' | 'AUTO_VALIDATOR' | 'SLACK_EVENT' | 'DUPLICATE_DETECTION' | 'WEBSITE_CHECKER' | 'EDITION_DUPLICATOR'
+export type AgentTypeKey = 'FFA_SCRAPER' | 'FFA_RESULTS' | 'GOOGLE_SEARCH_DATE' | 'AUTO_VALIDATOR' | 'SLACK_EVENT' | 'DUPLICATE_DETECTION' | 'WEBSITE_CHECKER' | 'EDITION_DUPLICATOR' | 'FFTRI_SCRAPER'
 
 /**
  * Noms lisibles des agents (utilisés en base de données)
@@ -41,7 +42,8 @@ export const AGENT_NAMES: Record<AgentTypeKey, string> = {
   SLACK_EVENT: 'Slack Event Agent',
   DUPLICATE_DETECTION: 'Duplicate Detection Agent',
   WEBSITE_CHECKER: 'Website Checker Agent',
-  EDITION_DUPLICATOR: 'Edition Duplicator Agent'
+  EDITION_DUPLICATOR: 'Edition Duplicator Agent',
+  FFTRI_SCRAPER: 'FFTRI Scraper Agent'
 } as const
 
 /**
